@@ -31,13 +31,13 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete (but Phase 1 is not required for keyword-only work)
 
-- [ ] T004 Create search_service.py and implement SearchMode enum (KEYWORD, SEMANTIC, HYBRID) and SearchScope enum (CURRENT_BOOK, ALL_BOOKS)
-- [ ] T005 [P] Implement SearchQuery dataclass in search_service.py with validation in __post_init__ (FR-010: empty term handling)
-- [ ] T006 [P] Implement SearchResult dataclass in search_service.py with all required fields per data-model.md
-- [ ] T007 [P] Implement SearchResultSet dataclass in search_service.py with get_status_message() method (FR-022a: partial failure messaging)
-- [ ] T008 Implement normalize_for_search() function in search_service.py (FR-009: Latin diacritic normalization, preserve non-Latin)
-- [ ] T009 Implement extract_context() function in search_service.py (FR-012: 20 words or 40 chars before/after match)
-- [ ] T010 Implement escape_for_highlighting() function in search_service.py (FR-012a: HTML entity escaping for XSS prevention)
+- [x] T004 Create search_service.py and implement SearchMode enum (KEYWORD, SEMANTIC, HYBRID) and SearchScope enum (CURRENT_BOOK, ALL_BOOKS)
+- [x] T005 [P] Implement SearchQuery dataclass in search_service.py with validation in __post_init__ (FR-010: empty term handling)
+- [x] T006 [P] Implement SearchResult dataclass in search_service.py with all required fields per data-model.md
+- [x] T007 [P] Implement SearchResultSet dataclass in search_service.py with get_status_message() method (FR-022a: partial failure messaging)
+- [x] T008 Implement normalize_for_search() function in search_service.py (FR-009: Latin diacritic normalization, preserve non-Latin)
+- [x] T009 Implement extract_context() function in search_service.py (FR-012: 20 words or 40 chars before/after match)
+- [x] T010 Implement escape_for_highlighting() function in search_service.py (FR-012a: HTML entity escaping for XSS prevention)
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
@@ -51,25 +51,25 @@
 
 ### Backend Implementation (User Story 1)
 
-- [ ] T011 [P] [US1] Implement search_text() function in search_service.py (FR-002, FR-004: keyword matching with case-insensitive default, FR-008a: limit to max_results)
-- [ ] T012 [US1] Implement search_book() function in search_service.py (FR-001 to FR-012: load book.pkl, search all chapters, extract context, calculate relevance, return SearchResultSet)
-- [ ] T013 [US1] Add GET /api/search/{book_id} endpoint in server.py (maps to search_book(), accepts q, mode, case_sensitive, max_results query params)
-- [ ] T014 [US1] Add request validation and error handling (400 for invalid params, 404 for book not found, 500 for internal errors) in /api/search/{book_id} endpoint
-- [ ] T015 [US1] Add POST /api/highlight/{book_id}/{chapter_order} endpoint in server.py (FR-005: generate HighlightRange objects for all occurrences in chapter)
-- [ ] T016 [US1] Implement highlight range generation logic with XSS-safe escaping in /api/highlight endpoint (FR-012a: escape search term, FR-011: return selected_occurrence_index for scrolling)
+- [x] T011 [P] [US1] Implement search_text() function in search_service.py (FR-002, FR-004: keyword matching with case-insensitive default, FR-008a: limit to max_results)
+- [x] T012 [US1] Implement search_book() function in search_service.py (FR-001 to FR-012: load book.pkl, search all chapters, extract context, calculate relevance, return SearchResultSet)
+- [x] T013 [US1] Add GET /api/search/{book_id} endpoint in server.py (maps to search_book(), accepts q, mode, case_sensitive, max_results query params)
+- [x] T014 [US1] Add request validation and error handling (400 for invalid params, 404 for book not found, 500 for internal errors) in /api/search/{book_id} endpoint
+- [x] T015 [US1] Add POST /api/highlight/{book_id}/{chapter_order} endpoint in server.py (FR-005: generate HighlightRange objects for all occurrences in chapter)
+- [x] T016 [US1] Implement highlight range generation logic with XSS-safe escaping in /api/highlight endpoint (FR-012a: escape search term, FR-011: return selected_occurrence_index for scrolling)
 
 ### Frontend Implementation (User Story 1)
 
-- [ ] T017 [P] [US1] Create static/search.css with styles for search box, results list, search-match highlighting, result-snippet display
-- [ ] T018 [US1] Update templates/reader.html to add search box div in sidebar with input field, search button, clear button (FR-001: always visible)
-- [ ] T019 [US1] Update templates/reader.html to add search results container div with status message and scrollable results list (FR-003: chapter title, context, match position)
-- [ ] T020 [US1] Create static/search.js with SearchUI class initialization (extract book_id from URL path)
-- [ ] T021 [US1] Implement performSearch() method in static/search.js (FR-032: debounce 300ms, fetch /api/search/{book_id}, display results or "No results found" message per FR-003 scenario 3)
-- [ ] T022 [US1] Implement displayResults() method in static/search.js (FR-003: render result items with chapter title, context snippet with <mark> tags, click handler for navigation)
-- [ ] T023 [US1] Implement clearSearch() method in static/search.js (FR-007, FR-010: clear input, hide results, remove highlighting from chapter content)
-- [ ] T024 [US1] Implement result click navigation in static/search.js (FR-011: redirect to /read/{book_id}/{chapter_order}?q={term}&occurrence={index} for exact occurrence)
-- [ ] T025 [US1] Add chapter highlighting logic in static/search.js (FR-005: fetch /api/highlight endpoint, apply <mark> tags to all occurrences, scroll to selected occurrence or first as fallback)
-- [ ] T026 [US1] Link static/search.js and static/search.css in templates/reader.html before closing </body> tag
+- [x] T017 [P] [US1] Create static/search.css with styles for search box, results list, search-match highlighting, result-snippet display
+- [x] T018 [US1] Update templates/reader.html to add search box div in sidebar with input field, search button, clear button (FR-001: always visible)
+- [x] T019 [US1] Update templates/reader.html to add search results container div with status message and scrollable results list (FR-003: chapter title, context, match position)
+- [x] T020 [US1] Create static/search.js with SearchUI class initialization (extract book_id from URL path)
+- [x] T021 [US1] Implement performSearch() method in static/search.js (FR-032: debounce 300ms, fetch /api/search/{book_id}, display results or "No results found" message per FR-003 scenario 3)
+- [x] T022 [US1] Implement displayResults() method in static/search.js (FR-003: render result items with chapter title, context snippet with <mark> tags, click handler for navigation)
+- [x] T023 [US1] Implement clearSearch() method in static/search.js (FR-007, FR-010: clear input, hide results, remove highlighting from chapter content)
+- [x] T024 [US1] Implement result click navigation in static/search.js (FR-011: redirect to /read/{book_id}/{chapter_order}?q={term}&occurrence={index} for exact occurrence)
+- [x] T025 [US1] Add chapter highlighting logic in static/search.js (FR-005: fetch /api/highlight endpoint, apply <mark> tags to all occurrences, scroll to selected occurrence or first as fallback)
+- [x] T026 [US1] Link static/search.js and static/search.css in templates/reader.html before closing </body> tag
 
 **Checkpoint**: User Story 1 (In-Book Keyword Search) is fully functional and independently testable. Users can search within a book, see all results with context, and navigate to exact highlighted occurrences.
 
@@ -87,21 +87,21 @@
 - [ ] T028 [P] [US2] Implement ChapterIndex dataclass in search_service.py (normalized_text for fast matching, original_text for context extraction)
 - [ ] T029 [P] [US2] Implement BookIndex dataclass in search_service.py with from_book_pkl() classmethod (loads book.pkl, builds ChapterIndex list)
 - [ ] T030 [US2] Implement SearchIndex.build_from_library() classmethod in search_service.py (FR-014: scan *_data/ directories, build index for all books, handle partial failures per FR-022a)
-- [ ] T031 [US2] Implement search_library() function in search_service.py (FR-013 to FR-022a: search across all indexed books, group results by book_id, apply max_results_per_book limit, sort by relevance/title/author)
-- [ ] T032 [US2] Add GET /api/search/library endpoint in server.py (accepts q, mode, max_results_per_book, max_total_results, sort_by query params, returns SearchResultSet with grouped_by_book populated)
-- [ ] T033 [US2] Implement relevance scoring for library search (FR-022: exact phrase hits desc, total hit count desc, earliest occurrence position asc) in search_library() function
-- [ ] T034 [US2] Add error handling for partial book failures in search_library() (FR-022a: populate failed_books array, continue with successful results)
+- [x] T031 [US2] Implement search_library() function in search_service.py (FR-013 to FR-022a: search across all indexed books, group results by book_id, apply max_results_per_book limit, sort by relevance/title/author)
+- [x] T032 [US2] Add GET /api/search/library endpoint in server.py (accepts q, mode, max_results_per_book, max_total_results, sort_by query params, returns SearchResultSet with grouped_by_book populated)
+- [x] T033 [US2] Implement relevance scoring for library search (FR-022: exact phrase hits desc, total hit count desc, earliest occurrence position asc) in search_library() function
+- [x] T034 [US2] Add error handling for partial book failures in search_library() (FR-022a: populate failed_books array, continue with successful results)
 
 ### Frontend Implementation (User Story 2)
 
-- [ ] T035 [P] [US2] Update templates/library.html to add library search box div above/beside book grid with input field and search button (FR-013: prominent placement)
-- [ ] T036 [US2] Update templates/library.html to add library search results container div with status message and book-grouped results (FR-015: show book metadata - title, author, cover if available)
-- [ ] T037 [US2] Create static/library-search.js with LibrarySearchUI class initialization
-- [ ] T038 [US2] Implement performLibrarySearch() method in static/library-search.js (FR-019: show loading indicator, fetch /api/search/library, display results grouped by book, FR-010: clear on empty query)
-- [ ] T039 [US2] Implement displayLibraryResults() method in static/library-search.js (FR-015: render each book section with title/author/cover, FR-016: show up to 3 passages per book with "Show more" button)
-- [ ] T040 [US2] Implement result passage click navigation in static/library-search.js (FR-018: redirect to /read/{book_id}/{chapter_order}?q={term}&occurrence={index} for exact highlighted occurrence)
-- [ ] T041 [US2] Implement sort control in static/library-search.js (FR-020: toggle between relevance, book_title, book_author, re-fetch with sort_by param)
-- [ ] T042 [US2] Link static/library-search.js in templates/library.html before closing </body> tag
+- [x] T035 [P] [US2] Update templates/library.html to add library search box div above/beside book grid with input field and search button (FR-013: prominent placement)
+- [x] T036 [US2] Update templates/library.html to add library search results container div with status message and book-grouped results (FR-015: show book metadata - title, author, cover if available)
+- [x] T037 [US2] Create static/library-search.js with LibrarySearchUI class initialization
+- [x] T038 [US2] Implement performLibrarySearch() method in static/library-search.js (FR-019: show loading indicator, fetch /api/search/library, display results grouped by book, FR-010: clear on empty query)
+- [x] T039 [US2] Implement displayLibraryResults() method in static/library-search.js (FR-015: render each book section with title/author/cover, FR-016: show up to 3 passages per book with "Show more" button)
+- [x] T040 [US2] Implement result passage click navigation in static/library-search.js (FR-018: redirect to /read/{book_id}/{chapter_order}?q={term}&occurrence={index} for exact highlighted occurrence)
+- [x] T041 [US2] Implement sort control in static/library-search.js (FR-020: toggle between relevance, book_title, book_author, re-fetch with sort_by param)
+- [x] T042 [US2] Link static/library-search.js in templates/library.html before closing </body> tag
 
 **Checkpoint**: User Story 2 (Cross-Book Library Search) is fully functional and independently testable. Users can search across entire library, see grouped results from all matching books, and navigate to exact occurrences in any book.
 
@@ -148,11 +148,11 @@
 **Purpose**: Improvements, validation, and documentation that affect multiple user stories
 
 - [ ] T063 [P] Add input validation for search terms in search_service.py (max length, regex injection prevention per constitution security principle)
-- [ ] T064 [P] Add book_id validation against enumerated *_data/ directories in server.py endpoints (FR path security, prevent traversal attacks)
+- [x] T064 [P] Add book_id validation against enumerated *_data/ directories in server.py endpoints (FR path security, prevent traversal attacks)
 - [ ] T065 [P] Add performance logging for search operations (execution_time_ms tracking, log slow queries >2s for library search per FR-031)
 - [ ] T066 Add graceful degradation when books have no searchable text (FR-034: return empty results with clear message "No searchable content in this book")
 - [ ] T067 Add UI truncation for very long result contexts (FR-035: limit to 150 chars per SearchResult.get_display_snippet() in data model)
-- [ ] T068 Implement search state persistence in sessionStorage (FR-036: save query and results during navigation, restore on back button)
+- [x] T068 Implement search state persistence in sessionStorage (FR-036: save query and results during navigation, restore on back button)
 - [ ] T069 [P] Add CSS responsive design for search UI on mobile/tablet viewports
 - [ ] T070 [P] Update CLAUDE.md with search functionality usage instructions (how to index books, use search modes, performance tips)
 - [ ] T071 Validate against quickstart.md instructions (run all manual test steps from quickstart, verify behavior matches documentation)

@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ book.metadata.title }}</title>
+    <link rel="stylesheet" href="/static/search.css">
     <style>
         /* Layout */
         body { margin: 0; padding: 0; display: flex; height: 100vh; overflow: hidden; font-family: "Georgia", serif; background: #fff; }
@@ -150,5 +151,34 @@
             }
         }
     </script>
+
+    <!-- Right-side toolbar + drawer (WeRead-style) -->
+    <div id="right-toolbar" aria-label="Reader tools">
+        <button type="button" class="rt-btn" id="reader-search-toggle" title="Search" aria-label="Search">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                <path fill="currentColor" d="M10 4a6 6 0 1 1 0 12A6 6 0 0 1 10 4m0-2a8 8 0 1 0 4.9 14.3l4.4 4.4 1.4-1.4-4.4-4.4A8 8 0 0 0 10 2z"/>
+            </svg>
+        </button>
+    </div>
+
+    <div id="reader-search-drawer" aria-hidden="true">
+        <div class="drawer-header">
+            <div class="drawer-search-row">
+                <input type="text" id="reader-search-input" placeholder="Search…" autocomplete="off" />
+                <button type="button" class="drawer-btn" id="reader-search-clear" title="Clear" aria-label="Clear">×</button>
+                <button type="button" class="drawer-btn drawer-cancel" id="reader-search-close">Cancel</button>
+            </div>
+            <label class="drawer-case">
+                <input type="checkbox" id="reader-search-case" />
+                Case sensitive
+            </label>
+        </div>
+        <div class="search-results" id="reader-search-panel">
+            <div class="search-status" id="reader-search-status"></div>
+            <div class="search-results-list" id="reader-search-results"></div>
+        </div>
+    </div>
+
+    <script src="/static/search.js"></script>
 </body>
 </html>

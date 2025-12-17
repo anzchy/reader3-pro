@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>My Library</title>
+    <link rel="stylesheet" href="/static/search.css">
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f4f4f9; margin: 0; padding: 40px; }
         .container { max-width: 800px; margin: 0 auto; }
@@ -20,11 +21,35 @@
     <div class="container">
         <h1>Library</h1>
 
+        <div class="search-box">
+            <input type="text" id="library-search-input" placeholder="Search across your library…" autocomplete="off" />
+            <div class="search-actions">
+                <button type="button" class="search-btn" id="library-search-clear">Clear</button>
+                <label>
+                    <input type="checkbox" id="library-search-case" />
+                    Case
+                </label>
+                <label>
+                    Sort
+                    <select id="library-search-sort">
+                        <option value="relevance">relevance</option>
+                        <option value="book_title">title</option>
+                        <option value="book_author">author</option>
+                    </select>
+                </label>
+            </div>
+        </div>
+
+        <div class="library-search-panel" id="library-search-panel" style="display:none;">
+            <div class="search-status" id="library-search-status"></div>
+            <div id="library-search-results"></div>
+        </div>
+
         {% if not books %}
             <p>No processed books found. Run <code>reader3.py</code> on an epub first.</p>
         {% endif %}
 
-        <div class="book-grid">
+        <div class="book-grid" id="library-book-grid">
             {% for book in books %}
             <div class="book-card">
                 <div class="book-title">{{ book.title }}</div>
@@ -37,5 +62,6 @@
             {% endfor %}
         </div>
     </div>
+    <script src="/static/library-search.js"></script>
 </body>
 </html>
