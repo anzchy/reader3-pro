@@ -293,14 +293,33 @@ def save_to_pickle(book: Book, output_dir: str):
 # --- CLI ---
 
 if __name__ == "__main__":
+    import argparse
 
-    import sys
-    if len(sys.argv) < 2:
-        print("Usage: python reader3.py <file.epub>")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(description="Process EPUBs for Reader3 Pro")
+    parser.add_argument("epub", nargs="?", help="Path to .epub file to process")
+    parser.add_argument("--index", dest="index_book_id", help="Index a processed book folder (e.g. dracula_data)")
+    parser.add_argument("--force", action="store_true", help="Force re-index (semantic search)")
+    args = parser.parse_args()
 
-    epub_file = sys.argv[1]
-    assert os.path.exists(epub_file), "File not found."
+    if args.index_book_id:
+        from vector_search import BookVectorIndex
+
+        book_id = args.index_book_id
+        book_dir = os.path.join(".", book_id)
+        if not os.path.exists(os.path.join(book_dir, "book.pkl")):
+            raise SystemExit(f"Book not found or not processed: {book_id} (expected {book_dir}/book.pkl)")
+        idx = BookVectorIndex(book_id, books_dir=".")
+        meta = idx.index_book(force_reindex=args.force)
+        print(f"Indexed {book_id}: {meta.get('chunk_count', 0)} chunks using {meta.get('model_name')}")
+        raise SystemExit(0)
+
+    if not args.epub:
+        raise SystemExit("Usage: python reader3.py <file.epub> OR python reader3.py --index <book_id>")
+
+    epub_file = args.epub
+    if not os.path.exists(epub_file):
+        raise SystemExit("File not found.")
+
     out_dir = os.path.splitext(epub_file)[0] + "_data"
 
     book_obj = process_epub(epub_file, out_dir)
