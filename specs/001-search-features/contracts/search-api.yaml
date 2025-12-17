@@ -1,0 +1,627 @@
+openapi: 3.0.3
+info:
+  title: Reader3 Pro Search API
+  description: |
+    Search functionality for Reader3 Pro EPUB reader.
+    Supports keyword and semantic search across single books or entire library.
+  version: 1.0.0
+  contact:
+    name: Reader3 Pro
+    url: https://github.com/karpathy/reader3
+
+servers:
+  - url: http://127.0.0.1:8123
+    description: Local development server
+
+tags:
+  - name: search
+    description: Search operations
+  - name: index
+    description: Index management
+
+paths:
+  /api/search/{book_id}:
+    get:
+      summary: Search within a single book
+      description: |
+        Perform keyword or semantic search within a specific book.
+        Returns matching occurrences with context and highlighting information.
+        Implements FR-001 to FR-012a (in-book search requirements).
+      operationId: searchBook
+      tags:
+        - search
+      parameters:
+        - name: book_id
+          in: path
+          required: true
+          description: Book identifier (matches the folder name, e.g. `{bookname}_data`)
+          schema:
+            type: string
+            example: dracula_data
+        - name: q
+          in: query
+          required: false
+          description: Search query term (empty/whitespace is treated as "clear search", per FR-010)
+          schema:
+            type: string
+            example: vampire
+        - name: mode
+          in: query
+          required: false
+          description: Search mode (keyword or semantic)
+          schema:
+            type: string
+            enum: [keyword, semantic, hybrid]
+            default: keyword
+        - name: case_sensitive
+          in: query
+          required: false
+          description: Whether to match case exactly (keyword search only)
+          schema:
+            type: boolean
+            default: false
+        - name: max_results
+          in: query
+          required: false
+          description: Maximum number of results to return (capped at 1000 per FR-008a)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+      responses:
+        '200':
+          description: Search completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResultSet'
+              examples:
+                keywordSearch:
+                  summary: Keyword search results
+                  value:
+                    query:
+                      term: vampire
+                      mode: keyword
+                      scope: current_book
+                      case_sensitive: false
+                      max_results: 100
+                      book_id: dracula_data
+                    results:
+                      - book_id: dracula_data
+                        book_title: "Dracula"
+                        chapter_id: chapter_03
+                        chapter_title: "Jonathan Harker's Journal (continued)"
+                        chapter_order: 2
+                        occurrence_index: 0
+                        match_text: vampire
+                        context_before: "the count is a "
+                        context_after: " and must be destroyed"
+                        position: 1234
+                        relevance_score: 0.95
+                    total_matches: 23
+                    searched_books: 1
+                    failed_books: []
+                    is_truncated: false
+                    execution_time_ms: 45.2
+                    grouped_by_book: {}
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Invalid request
+                message: Invalid request parameters
+        '404':
+          description: Book not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Book not found
+                message: No book with id 'nonexistent' in library
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/search/library:
+    get:
+      summary: Search across all books in library
+      description: |
+        Perform keyword or semantic search across entire library.
+        Returns results grouped by book with metadata.
+        Implements FR-013 to FR-022a (cross-book search requirements).
+      operationId: searchLibrary
+      tags:
+        - search
+      parameters:
+        - name: q
+          in: query
+          required: false
+          description: Search query term (empty/whitespace clears results and returns the default view behavior, per FR-010)
+          schema:
+            type: string
+            example: immortality
+        - name: mode
+          in: query
+          required: false
+          description: Search mode (keyword or semantic)
+          schema:
+            type: string
+            enum: [keyword, semantic, hybrid]
+            default: keyword
+        - name: max_results_per_book
+          in: query
+          required: false
+          description: Maximum results to return per book (implements FR-016)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10
+            default: 3
+        - name: max_total_results
+          in: query
+          required: false
+          description: Maximum total results to return across all books (implements FR-021)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+        - name: sort_by
+          in: query
+          required: false
+          description: Result sorting method (implements FR-020)
+          schema:
+            type: string
+            enum: [relevance, book_title, book_author]
+            default: relevance
+      responses:
+        '200':
+          description: Library search completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResultSet'
+              examples:
+                librarySearch:
+                  summary: Cross-book search results
+                  value:
+                    query:
+                      term: immortality
+                      mode: semantic
+                      scope: all_books
+                      max_results: 100
+                    results:
+                      - book_id: dracula_data
+                        book_title: "Dracula"
+                        chapter_id: chapter_05
+                        chapter_title: "Letters—Lucy and Mina"
+                        chapter_order: 4
+                        occurrence_index: 0
+                        match_text: eternal life
+                        context_before: "seeking to achieve "
+                        context_after: " through dark means"
+                        position: 5678
+                        relevance_score: 0.88
+                      - book_id: frankenstein_data
+                        book_title: "Frankenstein"
+                        chapter_id: chapter_08
+                        chapter_title: "Volume II, Chapter III"
+                        chapter_order: 11
+                        occurrence_index: 0
+                        match_text: defy death
+                        context_before: "my ambition was to "
+                        context_after: " and create new life"
+                        position: 2345
+                        relevance_score: 0.82
+                    total_matches: 47
+                    searched_books: 15
+                    failed_books: []
+                    is_truncated: false
+                    execution_time_ms: 1234.5
+                    grouped_by_book:
+                      dracula_data: [...]
+                      frankenstein_data: [...]
+        '400':
+          description: Invalid request parameters
+        '500':
+          description: Internal server error
+
+  /api/index/{book_id}:
+    post:
+      summary: Index a book for semantic search
+      description: |
+        Generate embeddings for a book to enable semantic search.
+        Implements FR-024 (build semantic representations).
+      operationId: indexBook
+      tags:
+        - index
+      parameters:
+        - name: book_id
+          in: path
+          required: true
+          description: Book identifier to index
+          schema:
+            type: string
+            example: dracula_data
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                force_reindex:
+                  type: boolean
+                  description: Regenerate embeddings even if already indexed (implements FR-028)
+                  default: false
+      responses:
+        '200':
+          description: Indexing completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IndexStatus'
+              example:
+                book_id: dracula_data
+                status: indexed
+                chunk_count: 324
+                model_name: paraphrase-multilingual-MiniLM-L12-v2
+                indexed_at: "2025-12-17T10:30:00Z"
+        '202':
+          description: Indexing in progress (async operation)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IndexStatus'
+              example:
+                book_id: dracula_data
+                status: indexing
+                progress: 45
+                estimated_time_remaining_seconds: 8
+        '404':
+          description: Book not found
+        '500':
+          description: Indexing failed
+
+  /api/index/{book_id}/status:
+    get:
+      summary: Get indexing status for a book
+      description: |
+        Check whether a book has been indexed for semantic search.
+        Implements FR-027 (indicate indexing status to users).
+      operationId: getIndexStatus
+      tags:
+        - index
+      parameters:
+        - name: book_id
+          in: path
+          required: true
+          description: Book identifier
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Status retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IndexStatus'
+              examples:
+                indexed:
+                  summary: Book is indexed
+                  value:
+                    book_id: dracula_data
+                    status: indexed
+                    chunk_count: 324
+                    model_name: paraphrase-multilingual-MiniLM-L12-v2
+                    indexed_at: "2025-12-17T10:30:00Z"
+                notIndexed:
+                  summary: Book is not indexed
+                  value:
+                    book_id: frankenstein_data
+                    status: not_indexed
+                    chunk_count: 0
+        '404':
+          description: Book not found
+
+  /api/highlight/{book_id}/{chapter_order}:
+    post:
+      summary: Generate highlight ranges for a chapter
+      description: |
+        Given a search term and chapter, return highlight ranges for UI rendering.
+        Used by reader.html to apply <mark> tags to search matches.
+        Implements FR-005 (highlight ALL occurrences) and FR-012a (XSS prevention).
+      operationId: getHighlightRanges
+      tags:
+        - search
+      parameters:
+        - name: book_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: chapter_order
+          in: path
+          required: true
+          description: Zero-indexed chapter position in spine
+          schema:
+            type: integer
+            minimum: 0
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - search_term
+              properties:
+                search_term:
+                  type: string
+                  description: Term to highlight (will be HTML-escaped for XSS prevention)
+                occurrence_index:
+                  type: integer
+                  nullable: true
+                  description: 0-indexed occurrence to scroll to (fallback: first)
+                case_sensitive:
+                  type: boolean
+                  default: false
+      responses:
+        '200':
+          description: Highlight ranges generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ranges:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/HighlightRange'
+                  total_matches:
+                    type: integer
+                    description: Total matches found in this chapter
+                  selected_occurrence_index:
+                    type: integer
+                    nullable: true
+                    description: Occurrence index that the UI should scroll to
+              example:
+                ranges:
+                  - start: 1234
+                    end: 1241
+                    style: search-match
+                    occurrence_index: 0
+                  - start: 5678
+                    end: 5685
+                    style: search-match
+                    occurrence_index: 1
+                total_matches: 2
+                selected_occurrence_index: 1
+        '404':
+          description: Book or chapter not found
+
+components:
+  schemas:
+    SearchQuery:
+      type: object
+      required:
+        - term
+      properties:
+        term:
+          type: string
+          minLength: 0
+          description: Search query string (empty/whitespace indicates "clear search", per FR-010)
+        mode:
+          type: string
+          enum: [keyword, semantic, hybrid]
+          default: keyword
+          description: Search algorithm
+        scope:
+          type: string
+          enum: [current_book, all_books]
+          description: Search target scope
+        case_sensitive:
+          type: boolean
+          default: false
+          description: Whether to match case exactly (keyword only)
+        max_results:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 1000
+          description: Maximum results to return
+        book_id:
+          type: string
+          nullable: true
+          description: Required if scope is current_book
+
+    SearchResult:
+      type: object
+      required:
+        - book_id
+        - book_title
+        - chapter_id
+        - chapter_title
+        - chapter_order
+        - occurrence_index
+        - match_text
+        - context_before
+        - context_after
+        - relevance_score
+      properties:
+        book_id:
+          type: string
+          description: Book identifier
+        book_title:
+          type: string
+          description: Human-readable book title
+        chapter_id:
+          type: string
+          description: EPUB internal chapter ID
+        chapter_title:
+          type: string
+          description: Chapter title for display
+        chapter_order:
+          type: integer
+          minimum: 0
+          description: Sequential position in spine
+        occurrence_index:
+          type: integer
+          minimum: 0
+          description: 0-indexed occurrence within the chapter for this query (FR-011)
+        match_text:
+          type: string
+          description: The matching text snippet
+        context_before:
+          type: string
+          description: Text before match (20 words or 40 chars)
+        context_after:
+          type: string
+          description: Text after match (20 words or 40 chars)
+        position:
+          type: integer
+          nullable: true
+          description: Character offset in chapter.text
+        relevance_score:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          description: Normalized relevance score
+        highlight_start:
+          type: integer
+          nullable: true
+          description: Start offset for highlighting
+        highlight_end:
+          type: integer
+          nullable: true
+          description: End offset for highlighting
+
+    SearchResultSet:
+      type: object
+      required:
+        - query
+        - results
+        - total_matches
+        - searched_books
+        - failed_books
+        - is_truncated
+        - execution_time_ms
+      properties:
+        query:
+          $ref: '#/components/schemas/SearchQuery'
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchResult'
+        total_matches:
+          type: integer
+          description: Total matches found (may exceed len(results))
+        searched_books:
+          type: integer
+          description: Number of books searched
+        failed_books:
+          type: array
+          items:
+            type: string
+          description: Book IDs that failed to search (FR-022a)
+        is_truncated:
+          type: boolean
+          description: Whether results were limited by max_results
+        execution_time_ms:
+          type: number
+          format: float
+          description: Search operation duration
+        grouped_by_book:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              $ref: '#/components/schemas/SearchResult'
+          description: Results organized by book_id (for library search)
+
+    HighlightRange:
+      type: object
+      required:
+        - start
+        - end
+        - style
+        - occurrence_index
+      properties:
+        start:
+          type: integer
+          description: Start character offset within chapter.text (plain text)
+        end:
+          type: integer
+          description: End character offset within chapter.text (plain text)
+        style:
+          type: string
+          enum: [search-match, search-context, search-current]
+          description: CSS class for styling
+        occurrence_index:
+          type: integer
+          minimum: 0
+          description: 0-indexed occurrence within the chapter
+
+    IndexStatus:
+      type: object
+      required:
+        - book_id
+        - status
+      properties:
+        book_id:
+          type: string
+        status:
+          type: string
+          enum: [not_indexed, indexing, indexed, failed]
+          description: Current indexing state
+        chunk_count:
+          type: integer
+          description: Number of text chunks indexed
+        model_name:
+          type: string
+          description: Embedding model used
+        indexed_at:
+          type: string
+          format: date-time
+          description: ISO 8601 timestamp of indexing completion
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+          nullable: true
+          description: Percentage complete (if status=indexing)
+        estimated_time_remaining_seconds:
+          type: integer
+          nullable: true
+          description: Estimated seconds until completion
+
+    Error:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: Error category
+        message:
+          type: string
+          description: Human-readable error message
+        details:
+          type: object
+          nullable: true
+          description: Additional error context
+
+  securitySchemes: {}
+
+# No authentication required (self-hosted, trusted environment per constitution)
+security: []
