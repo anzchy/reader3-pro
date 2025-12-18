@@ -9,6 +9,22 @@ wheels/
 # Virtual environments
 .venv
 
+# macOS
+.DS_Store
+
+# Jupyter
+.ipynb_checkpoints/
+.jupyter/
+
+# Local demos/scratch
+demo/
+
 # Custom
 *_data/
 *.epub
+
+# Local model/cache (semantic search)
+.cache/
+
+# Local offline models (do not commit)
+models/

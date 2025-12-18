@@ -179,7 +179,10 @@ class ReaderSearchUI {
     this.closeBtn = document.getElementById("reader-search-close");
     this.input = document.getElementById("reader-search-input");
     this.caseBox = document.getElementById("reader-search-case");
+    this.modeSelect = document.getElementById("reader-search-mode");
     this.clearBtn = document.getElementById("reader-search-clear");
+    this.indexBtn = document.getElementById("reader-index-btn");
+    this.indexStatus = document.getElementById("reader-index-status");
     this.status = document.getElementById("reader-search-status");
     this.list = document.getElementById("reader-search-results");
     this.panel = document.getElementById("reader-search-panel");
@@ -195,6 +198,11 @@ class ReaderSearchUI {
     this.caseBox?.addEventListener("change", () => {
       if (this.input.value.trim()) this.performSearch();
     });
+    this.modeSelect?.addEventListener("change", () => {
+      this.refreshIndexStatus();
+      if (this.input.value.trim()) this.performSearch();
+    });
+    this.indexBtn?.addEventListener("click", () => this.indexBook());
     this.input.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         e.preventDefault();
@@ -210,6 +218,7 @@ class ReaderSearchUI {
     });
 
     this.restoreFromSession();
+    this.refreshIndexStatus();
 
     const qp = getQueryParams();
     if (qp.q) {
@@ -241,6 +250,7 @@ class ReaderSearchUI {
       const data = JSON.parse(raw);
       if (data?.q) this.input.value = data.q;
       if (typeof data?.caseSensitive === "boolean" && this.caseBox) this.caseBox.checked = data.caseSensitive;
+      if (data?.mode && this.modeSelect) this.modeSelect.value = data.mode;
       if (Array.isArray(data?.results)) this.renderResults(data.results, data.statusMessage || "");
     } catch {
       // ignore
@@ -277,20 +287,26 @@ class ReaderSearchUI {
     }
 
     const caseSensitive = Boolean(this.caseBox?.checked);
+    const mode = this.modeSelect?.value || "keyword";
     this.status.textContent = "Searching…";
 
     const url = new URL(`/api/search/${encodeURIComponent(this.bookId)}`, window.location.origin);
     url.searchParams.set("q", q);
     url.searchParams.set("max_results", "1000");
+    url.searchParams.set("mode", mode);
     if (caseSensitive) url.searchParams.set("case_sensitive", "true");
 
     const resp = await fetch(url.toString());
     const data = await resp.json();
+    if (!resp.ok) {
+      this.status.textContent = data?.detail || "Search failed";
+      return;
+    }
     const results = Array.isArray(data?.results) ? data.results : [];
     const statusMessage = data?.status_message || "";
     this.renderResults(results, statusMessage);
 
-    this.persistToSession({ q, caseSensitive, results, statusMessage });
+    this.persistToSession({ q, caseSensitive, mode, results, statusMessage });
   }
 
   renderResults(results, statusMessage) {
@@ -308,6 +324,7 @@ class ReaderSearchUI {
     for (const r of results) {
       const item = document.createElement("div");
       item.className = "search-result-item";
+      if (r.match_explanation) item.title = r.match_explanation;
 
       const chapter = document.createElement("div");
       chapter.className = "search-result-chapter";
@@ -315,10 +332,17 @@ class ReaderSearchUI {
 
       const snippet = document.createElement("div");
       snippet.className = "search-result-snippet";
-      snippet.innerHTML =
-        `${escapeHtml(r.context_before)} ` +
-        `<mark class="search-match">${escapeHtml(r.match_text)}</mark>` +
-        ` ${escapeHtml(r.context_after)}`;
+      const before = r.context_before ? `${escapeHtml(r.context_before)} ` : "";
+      const after = r.context_after ? ` ${escapeHtml(r.context_after)}` : "";
+      snippet.innerHTML = `${before}<mark class="search-match">${escapeHtml(r.match_text)}</mark>${after}`;
+
+      if (r.match_explanation) {
+        const expl = document.createElement("div");
+        expl.className = "search-status";
+        expl.style.marginTop = "6px";
+        expl.textContent = r.match_explanation;
+        item.appendChild(expl);
+      }
 
       item.appendChild(chapter);
       item.appendChild(snippet);
@@ -326,10 +350,63 @@ class ReaderSearchUI {
       item.addEventListener("click", () => {
         const term = this.input.value.trim();
         const occ = Number(r.occurrence_index);
+        const mode = this.modeSelect?.value || "keyword";
+        if (mode === "semantic" && r.mode === "semantic") {
+          window.location.href = `/read/${this.bookId}/${r.chapter_order}`;
+          return;
+        }
         window.location.href = `/read/${this.bookId}/${r.chapter_order}?q=${encodeURIComponent(term)}&occurrence=${encodeURIComponent(String(occ))}`;
       });
 
       this.list.appendChild(item);
+    }
+  }
+
+  async refreshIndexStatus() {
+    const mode = this.modeSelect?.value || "keyword";
+    if (!this.indexBtn || !this.indexStatus) return;
+    if (mode === "keyword") {
+      this.indexBtn.style.display = "none";
+      this.indexStatus.textContent = "";
+      return;
+    }
+    try {
+      const resp = await fetch(`/api/index/${encodeURIComponent(this.bookId)}/status`);
+      const data = await resp.json();
+      if (resp.ok && data?.status === "indexed") {
+        this.indexBtn.style.display = "none";
+        this.indexStatus.textContent = `Indexed (${data.chunk_count ?? "?"} chunks)`;
+      } else {
+        this.indexBtn.style.display = "inline-block";
+        this.indexStatus.textContent = "Not indexed";
+      }
+    } catch {
+      this.indexBtn.style.display = "inline-block";
+      this.indexStatus.textContent = "Index status unavailable";
+    }
+  }
+
+  async indexBook() {
+    if (!this.indexBtn || !this.indexStatus) return;
+    this.indexBtn.disabled = true;
+    this.indexStatus.textContent = "Indexing…";
+    try {
+      const resp = await fetch(`/api/index/${encodeURIComponent(this.bookId)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force_reindex: false }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        this.indexStatus.textContent = data?.detail || "Indexing failed";
+      } else {
+        this.indexStatus.textContent = `Indexed (${data.chunk_count ?? "?"} chunks)`;
+        this.indexBtn.style.display = "none";
+      }
+    } catch (e) {
+      this.indexStatus.textContent = "Indexing failed";
+    } finally {
+      this.indexBtn.disabled = false;
     }
   }
 
