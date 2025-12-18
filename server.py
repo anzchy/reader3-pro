@@ -28,7 +28,8 @@ templates = Jinja2Templates(directory="templates")
 logger = logging.getLogger("reader3.search")
 
 # Where are the book folders located?
-BOOKS_DIR = "."
+BOOKS_DIR = "books"
+os.makedirs(BOOKS_DIR, exist_ok=True)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -71,7 +72,7 @@ async def library_view(request: Request):
     # Scan directory for folders ending in '_data' that have a book.pkl
     if os.path.exists(BOOKS_DIR):
         for item in os.listdir(BOOKS_DIR):
-            if item.endswith("_data") and os.path.isdir(item):
+            if item.endswith("_data") and os.path.isdir(os.path.join(BOOKS_DIR, item)):
                 # Try to load it to get the title
                 book = load_book_cached(item)
                 if book:

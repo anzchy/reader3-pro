@@ -1,37 +1,86 @@
-# reader 3
+# reader 3 Pro
 
 ![reader3](reader3.png)
 
 A lightweight, self-hosted EPUB reader that lets you read through EPUB books one chapter at a time. This makes it very easy to copy paste the contents of a chapter to an LLM, to read along. Basically - get epub books (e.g. [Project Gutenberg](https://www.gutenberg.org/) has many), open them up in this reader, copy paste text around to your favorite LLM, and read together and along.
 
-This project was 90% vibe coded just to illustrate how one can very easily [read books together with LLMs](https://x.com/karpathy/status/1990577951671509438). I'm not going to support it in any way, it's provided here as is for other people's inspiration and I don't intend to improve it. Code is ephemeral now and libraries are over, ask your LLM to change it in whatever way you like.
+This project is an enhanced version (thus add `pro` to repo name) of Andrie Karpathy's reader3 project.
 
-## Usage
 
-The project uses [uv](https://docs.astral.sh/uv/). So for example, download [Dracula EPUB3](https://www.gutenberg.org/ebooks/345) to this directory as `dracula.epub`, then:
 
-```bash
-uv run reader3.py dracula.epub
+## How It Works
+
+#### Reader
+
+1. `reader3.py` parses an `.epub`, cleans HTML, extracts plain text, and writes a `{bookname}_data/` folder.
+2. The folder contains `book.pkl` (a pickled `Book` dataclass) and `images/` (extracted assets).
+3. `server.py` serves the Library + Reader UI and reads chapters from `book.pkl` one spine item at a time.
+
+#### Search (Keyword + RAG/Semantic)
+
+- **Keyword search** scans `ChapterContent.text` with Latin diacritic normalization (e.g. `café` → `cafe`) and returns matches with context.
+- **Semantic search** is a lightweight local RAG-style retrieval:
+  - Indexing chunks each chapter into ~1000-character passages (with overlap), embeds them using `sentence-transformers`, and stores vectors in ChromaDB under `{book_id}/chroma_db/`.
+  - Searching embeds your query and retrieves the most similar passages (even without exact keyword matches).
+
+## Project Structure
+
+```text
+.
+├── reader3.py              # EPUB processing + (optional) CLI indexing
+├── server.py               # FastAPI server + API endpoints
+├── search_service.py       # Keyword + library search logic
+├── vector_search.py        # ChromaDB indexing + semantic retrieval
+├── templates/              # Jinja templates (library.html, reader.html)
+├── static/                 # JS/CSS for search UI
+├── specs/                  # Feature specs + tasks (search lives in specs/001-search-features/)
+└── books/                  # Generated per-book folders (ignored by git)
+    └── *_data/             # One folder per book (book.pkl, images/, chroma_db/)
 ```
 
-This creates the directory `dracula_data`, which registers the book to your local library. We can then run the server:
+
+
+## How to Use 
+
+#### Setup
+
+This project uses [uv](https://docs.astral.sh/uv/).
+
+```bash
+uv sync
+```
+
+#### Add a New EPUB (from scratch)
+
+Download an EPUB (e.g. [Dracula EPUB3](https://www.gutenberg.org/ebooks/345)) and run:
+
+```bash
+uv run reader3.py ./books/dracula.epub
+```
+
+This creates `books/dracula_data/`, which registers the book to your local library. Then start the server:
 
 ```bash
 uv run server.py
 ```
 
-And visit [localhost:8123](http://localhost:8123/) to see your current Library. You can easily add more books, or delete them from your library by deleting the folder. It's not supposed to be complicated or complex.
+Visit [localhost:8123](http://localhost:8123/) to see your Library. To remove a book, delete its `books/*_data/` folder.
 
-## (Optional) Manual Setup: Semantic Search Dependencies (Phase 1)
+If you already have `*_data/` folders at repo root, move them into `books/`:
 
-Keyword search works out of the box. If you want to prepare your environment for future semantic search (P3), install the extra dependencies and download the embedding model:
+```bash
+mkdir -p books
+find . -maxdepth 1 -type d -name '*_data' -print0 | xargs -0 -I{} mv "{}" books/
+```
+
+#### (Optional) Manual Setup: Semantic Search Dependencies (Phase 1)
+
+Keyword search works out of the box. Semantic search needs the extra dependencies and an embedding model:
 
 ```bash
 uv add chromadb sentence-transformers
-# activate当前文件夹下的虚拟环境
-source .venv/bin/activate
-python -c "import chromadb; import sentence_transformers; print('OK')"
-python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')"
+uv run python -c "import chromadb, sentence_transformers; print('OK')"
+uv run python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')"
 ```
 
 The model download is large (~420MB) and is cached by HuggingFace after the first run.
@@ -58,7 +107,7 @@ The model download is large (~420MB) and is cached by HuggingFace after the firs
 
 ```
 mkdir -p models/huggingface
-HF_HOME="$PWD/models/huggingface" python -c "from sentence_transformers import SentenceTransformer;
+HF_HOME="$PWD/models/huggingface" uv run python -c "from sentence_transformers import SentenceTransformer;
 SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')"
 ```
 
@@ -72,13 +121,27 @@ export TRANSFORMERS_OFFLINE=1 HF_HUB_OFFLINE=1
 export READER3_EMBED_MODEL="$PWD/models/huggingface/hub/models--sentence-transformers--paraphrase-multilingual-MiniLM-L12-v2/snapshots/86741b4e3f5cb7765a600d3a3d55a0f6a6cb443d"
 ```
 
+#### Index a Book (Semantic Search)
+
+You can index from the Library UI (the button appears when a book is “Not indexed”), or via CLI:
+
+```bash
+uv run reader3.py --index dracula_data
+```
+
+This writes a per-book vector store to `books/dracula_data/chroma_db/`.
 
 
-## Search
+
+## How to Search
 
 ### Reader (in-book)
 
-Open any book (e.g. from the Library). Click the **search button** in the right-side vertical toolbar to open the search drawer, type your query, then press **Enter**. Results show a snippet; click any result to jump to that chapter and highlight all occurrences (scrolls to the selected match). Use **×** to clear results/highlights. Toggle **Case sensitive** as needed.
+Open any book. Click the **search button** in the right-side vertical toolbar to open the search drawer, type your query, then press **Enter**.
+
+- **Mode**: `keyword` (exact) / `semantic` (meaning) / `hybrid` (mix)
+- Click a result to jump to that chapter. Keyword results highlight all occurrences and scroll to the selected match.
+- Use **×** to clear results/highlights. Toggle **Case sensitive** as needed.
 
 You can also deep-link to a highlighted chapter/occurrence:
 
@@ -88,13 +151,13 @@ Where `book_id` is the processed folder name (e.g. `dracula_data`).
 
 ### Library (cross-book)
 
-On the Library page, use **Search across your library…** to search across all processed books (`*_data/`). Results are grouped by book; click a passage to open the book at the matching chapter/occurrence. Use **Sort** (relevance/title/author), **Case**, and the **Mode** dropdown (keyword/semantic/hybrid).
+On the Library page, use **Search across your library…** to search across all processed books (`*_data/`).
 
-Semantic search requires indexing. You can index from the UI (button shown when a book is “Not indexed”), or via CLI:
+- Results are grouped by book; click a passage to open the book at the matching chapter/occurrence.
+- Use **Sort** (relevance/title/author), **Case**, and **Mode**.
+- In semantic/hybrid mode, each book shows its index status; click **Index** to build vectors if needed.
 
-```bash
-uv run reader3.py --index dracula_data
-```
+
 
 ## License
 
