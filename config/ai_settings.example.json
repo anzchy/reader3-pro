@@ -1,0 +1,10 @@
+{
+  "default_provider": "anthropic",
+  "providers": {
+    "anthropic": {
+      "enabled": true,
+      "model_name": "claude-sonnet-4-20250514",
+      "api_key": ""
+    }
+  }
+}

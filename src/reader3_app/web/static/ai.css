@@ -1,0 +1,162 @@
+/* AI Assistant Panel (P1 MVP) */
+
+#reader-ai-toggle {
+  margin-top: 10px;
+}
+
+#reader-ai-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100vh;
+  width: 380px;
+  max-width: min(92vw, 420px);
+  background: #0f172a;
+  color: #e2e8f0;
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.25);
+  transform: translateX(100%);
+  transition: transform 180ms ease;
+  z-index: 1001;
+  display: flex;
+  flex-direction: column;
+}
+
+#reader-ai-panel.is-open {
+  transform: translateX(0);
+}
+
+.ai-header {
+  padding: 14px 14px 10px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ai-title {
+  font-family: -apple-system, system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.2px;
+}
+
+.ai-provider {
+  font-family: -apple-system, system-ui, sans-serif;
+  font-size: 12px;
+  opacity: 0.9;
+}
+
+.ai-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ai-btn {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ai-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.ai-quick-actions {
+  padding: 10px 14px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ai-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ai-msg {
+  max-width: 95%;
+  padding: 10px 12px;
+  border-radius: 14px;
+  line-height: 1.45;
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ai-msg.user {
+  align-self: flex-end;
+  background: #2563eb;
+  color: white;
+}
+
+.ai-msg.assistant {
+  align-self: flex-start;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+}
+
+.ai-citations {
+  margin-top: 8px;
+  font-size: 12px;
+  opacity: 0.9;
+}
+
+.ai-citations a {
+  color: #93c5fd;
+  text-decoration: none;
+}
+.ai-citations a:hover {
+  text-decoration: underline;
+}
+
+.ai-input {
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 10px 12px;
+  display: flex;
+  gap: 8px;
+}
+
+.ai-input textarea {
+  flex: 1;
+  resize: none;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+  color: #e2e8f0;
+  padding: 10px 10px;
+  font-family: -apple-system, system-ui, sans-serif;
+  font-size: 13px;
+  outline: none;
+  min-height: 38px;
+  max-height: 120px;
+}
+
+.ai-input textarea::placeholder {
+  color: rgba(226, 232, 240, 0.65);
+}
+
+.ai-input .ai-send {
+  border: 0;
+  background: #22c55e;
+  color: #052e16;
+  padding: 0 14px;
+  border-radius: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.ai-input .ai-send:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

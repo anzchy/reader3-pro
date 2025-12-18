@@ -33,7 +33,9 @@ class _Reader3Unpickler(pickle.Unpickler):
 
     def find_class(self, module: str, name: str):  # type: ignore[override]
         if module == "__main__" and name in self._REMAP:
-            module = "reader3"
+            module = "reader3_app.reader3"
+        if module == "reader3" and name in self._REMAP:
+            module = "reader3_app.reader3"
         return super().find_class(module, name)
 
 

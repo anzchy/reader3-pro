@@ -15,3 +15,21 @@ dependencies = [
     "sentence-transformers>=5.2.0",
     "uvicorn>=0.38.0",
 ]
+
+[project.scripts]
+reader3 = "reader3_app.reader3:main"
+reader3-server = "reader3_app.web.server:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"reader3_app.web" = ["templates/*.html", "static/*"]

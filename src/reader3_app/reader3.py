@@ -5,6 +5,7 @@ Parses an EPUB file into a structured object that can be used to serve the book 
 import os
 import pickle
 import shutil
+from pathlib import Path
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Any
 from datetime import datetime
@@ -291,39 +292,38 @@ def save_to_pickle(book: Book, output_dir: str):
     print(f"Saved structured data to {p_path}")
 
 
-# --- CLI ---
-
-if __name__ == "__main__":
+def main(argv: Optional[List[str]] = None) -> int:
     import argparse
 
     parser = argparse.ArgumentParser(description="Process EPUBs for Reader3 Pro")
     parser.add_argument("epub", nargs="?", help="Path to .epub file to process")
     parser.add_argument("--index", dest="index_book_id", help="Index a processed book folder (e.g. dracula_data)")
     parser.add_argument("--force", action="store_true", help="Force re-index (semantic search)")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+
+    books_dir = os.environ.get("READER3_BOOKS_DIR", "books")
 
     if args.index_book_id:
-        from vector_search import BookVectorIndex
+        from .vector_search import BookVectorIndex
 
         book_id = args.index_book_id
-        books_dir = os.path.join(".", "books")
         book_dir = os.path.join(books_dir, book_id)
         if not os.path.exists(os.path.join(book_dir, "book.pkl")):
             raise SystemExit(f"Book not found or not processed: {book_id} (expected {book_dir}/book.pkl)")
         idx = BookVectorIndex(book_id, books_dir=books_dir)
         meta = idx.index_book(force_reindex=args.force)
         print(f"Indexed {book_id}: {meta.get('chunk_count', 0)} chunks using {meta.get('model_name')}")
-        raise SystemExit(0)
+        return 0
 
     if not args.epub:
-        raise SystemExit("Usage: python reader3.py <file.epub> OR python reader3.py --index <book_id>")
+        raise SystemExit("Usage: reader3 <file.epub> OR reader3 --index <book_id>")
 
     epub_file = args.epub
     if not os.path.exists(epub_file):
         raise SystemExit("File not found.")
 
     base = os.path.splitext(os.path.basename(epub_file))[0]
-    out_dir = os.path.join("books", base + "_data")
+    out_dir = str(Path(books_dir) / (base + "_data"))
 
     book_obj = process_epub(epub_file, out_dir)
     save_to_pickle(book_obj, out_dir)
@@ -333,3 +333,8 @@ if __name__ == "__main__":
     print(f"Physical Files (Spine): {len(book_obj.spine)}")
     print(f"TOC Root Items: {len(book_obj.toc)}")
     print(f"Images extracted: {len(book_obj.images)}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
