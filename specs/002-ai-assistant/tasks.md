@@ -234,3 +234,16 @@ This checklist turns `spec.md` + `plan.md` + `data-model.md` + `contracts/*.yaml
   - [x] AI assistant commands and endpoints
   - [x] Provider configuration guide
   - [x] Troubleshooting common issues (Ollama not running, API key errors)
+
+## New Requirements: Multi-Chat + On-Disk Storage
+
+- [ ] Add on-disk conversation storage under `books/{book_folder}/ai_conversations/` (JSON per conversation)
+- [ ] Add Conversation APIs:
+  - [ ] `GET /api/ai/conversations/{book_uuid}?provider=...` (list threads)
+  - [ ] `GET /api/ai/conversations/{book_uuid}/{conversation_id}` (load thread)
+  - [ ] `PUT /api/ai/conversations/{book_uuid}/{conversation_id}` (save thread)
+  - [ ] `DELETE /api/ai/conversations/{book_uuid}/{conversation_id}` (optional)
+- [ ] Update AI panel UI:
+  - [ ] Add thread list UI (show history)
+  - [ ] Add "New chat" button (creates new thread without deleting history)
+  - [ ] Persist thread changes to disk JSON via Conversation APIs
