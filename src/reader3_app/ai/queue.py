@@ -21,6 +21,15 @@ class _QueueItem:
     request_label: str
 
 
+@dataclass(frozen=True)
+class QueueLease:
+    key: str
+    item: _QueueItem
+    queue: "_PerKeyQueue"
+    deadline: float
+    request_label: str
+
+
 class _PerKeyQueue:
     def __init__(self, *, max_pending: int) -> None:
         self._lock = asyncio.Lock()
@@ -122,18 +131,52 @@ class AIRequestQueueManager:
         except TimeoutError as e:
             logger.warning("queue wait timeout key=%s label=%s", key, request_label)
             raise HTTPException(status_code=504, detail="AI request timed out") from e
-        started = time.monotonic()
+
+        deadline = item.enqueued_at + max(0.1, float(timeout_s))
+        task = asyncio.create_task(fn())
         try:
-            remaining = max(0.1, timeout_s - (started - item.enqueued_at))
-            return await asyncio.wait_for(fn(), timeout=remaining)
-        except asyncio.TimeoutError as e:
-            logger.warning("timeout key=%s label=%s", key, request_label)
-            raise HTTPException(status_code=504, detail="AI request timed out") from e
+            while True:
+                now = time.monotonic()
+                if now >= deadline:
+                    task.cancel()
+                    logger.warning("timeout key=%s label=%s", key, request_label)
+                    raise HTTPException(status_code=504, detail="AI request timed out")
+
+                if request is not None and await request.is_disconnected():
+                    task.cancel()
+                    logger.info("client disconnected key=%s label=%s", key, request_label)
+                    raise asyncio.CancelledError("Client disconnected")
+
+                done, _pending = await asyncio.wait({task}, timeout=min(0.25, max(0.0, deadline - now)))
+                if task in done:
+                    return task.result()
         except asyncio.CancelledError:
             logger.info("cancelled key=%s label=%s", key, request_label)
             raise
         finally:
+            if not task.done():
+                task.cancel()
             await q.exit(item)
+
+    async def acquire(
+        self,
+        key: str,
+        *,
+        request: Optional[Request],
+        timeout_s: float,
+        request_label: str,
+    ) -> QueueLease:
+        q = await self._get_queue(key)
+        try:
+            item = await q.enter(request=request, request_label=request_label, timeout_s=timeout_s)
+        except TimeoutError as e:
+            logger.warning("queue wait timeout key=%s label=%s", key, request_label)
+            raise HTTPException(status_code=504, detail="AI request timed out") from e
+        deadline = item.enqueued_at + max(0.1, float(timeout_s))
+        return QueueLease(key=key, item=item, queue=q, deadline=deadline, request_label=request_label)
+
+    async def release(self, lease: QueueLease) -> None:
+        await lease.queue.exit(lease.item)
 
     async def _get_queue(self, key: str) -> _PerKeyQueue:
         async with self._lock:

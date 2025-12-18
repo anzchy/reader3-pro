@@ -2,20 +2,36 @@ import os
 import pickle
 import logging
 import time
+import json
+import asyncio
+import threading
+import urllib.request
+import urllib.error
 from pathlib import Path
 from functools import lru_cache
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from ..ai.books import BookUuidResolver
-from ..ai.config import get_provider_api_key, get_provider_settings, load_ai_settings
+from ..ai.config import (
+    default_settings_dict,
+    get_provider_api_key,
+    get_provider_settings,
+    load_ai_settings,
+    save_ai_settings,
+)
+from ..ai.config import get_provider_base_url
 from ..ai.providers.anthropic import anthropic_messages
+from ..ai.providers.gemini import gemini_generate_content
+from ..ai.providers.ollama import ollama_chat_completions
+from ..ai.providers.openai import openai_chat_completions
+from ..ai.providers.openrouter import openrouter_chat_completions
 from ..ai.queue import AIRequestQueueManager
 from ..ai.rag import retrieve_passages
 from ..reader3 import Book, BookMetadata, ChapterContent, TOCEntry
@@ -107,6 +123,10 @@ async def library_view(request: Request):
 
     return templates.TemplateResponse("library.html", {"request": request, "books": books})
 
+@app.get("/settings", response_class=HTMLResponse)
+async def settings_view(request: Request):
+    return templates.TemplateResponse("settings.html", {"request": request})
+
 @app.get("/read/{book_id}", response_class=HTMLResponse)
 async def redirect_to_first_chapter(book_id: str):
     """Helper to just go to chapter 0."""
@@ -136,6 +156,7 @@ async def read_chapter(request: Request, book_id: str, chapter_index: int):
         "chapter_index": chapter_index,
         "book_id": book_id,
         "book_uuid": book_uuid,
+        "ai_default_provider": _ui_default_provider(),
         "prev_idx": prev_idx,
         "next_idx": next_idx
     })
@@ -368,25 +389,457 @@ class AIRagRequest(BaseModel):
     min_similarity: float = 0.5
 
 
-def _require_anthropic(provider_name: str) -> None:
-    if (provider_name or "").strip().lower() != "anthropic":
-        raise HTTPException(status_code=400, detail="P1 supports provider=anthropic only")
+SUPPORTED_AI_PROVIDERS = {"anthropic", "openai", "gemini", "ollama", "openrouter"}
 
 
-def _get_anthropic_runtime(provider_from_request: str, model_from_request: Optional[str]) -> tuple[str, str, int]:
+def _provider_requires_api_key(provider_name: str) -> bool:
+    return provider_name in {"anthropic", "openai", "gemini", "openrouter"}
+
+
+def _ui_default_provider() -> str:
     settings = load_ai_settings()
-    _require_anthropic(provider_from_request)
-    provider = get_provider_settings("anthropic", settings=settings)
+    configured = str(settings.get("default_provider") or "").strip().lower()
+
+    def provider_is_usable(name: str) -> bool:
+        if name not in SUPPORTED_AI_PROVIDERS:
+            return False
+        provider = get_provider_settings(name, settings=settings)
+        if not provider.enabled:
+            return False
+        if _provider_requires_api_key(name) and not get_provider_api_key(name, settings=settings):
+            return False
+        return True
+
+    if configured and provider_is_usable(configured):
+        return configured
+
+    # Prefer a local/offline provider when available so the UI works out-of-the-box.
+    for candidate in ("ollama", "anthropic", "openai", "gemini", "openrouter"):
+        if provider_is_usable(candidate):
+            return candidate
+
+    # Fallback: return a supported provider even if it isn't usable, so the UI can still render.
+    return configured if configured in SUPPORTED_AI_PROVIDERS else "anthropic"
+
+
+def _get_provider_runtime(
+    provider_from_request: str,
+    model_from_request: Optional[str],
+) -> tuple[str, Optional[str], str, str, int]:
+    settings = load_ai_settings()
+    provider_name = (provider_from_request or settings.get("default_provider") or "anthropic").strip().lower()
+    if provider_name not in SUPPORTED_AI_PROVIDERS:
+        raise HTTPException(status_code=400, detail=f"Unsupported provider: {provider_name}")
+
+    provider = get_provider_settings(provider_name, settings=settings)
     if not provider.enabled:
         raise HTTPException(status_code=503, detail="AI provider is disabled in settings")
-    api_key = get_provider_api_key("anthropic", settings=settings)
-    if not api_key:
-        raise HTTPException(
-            status_code=503,
-            detail="Anthropic API key not configured. Create config/ai_settings.json (see config/ai_settings.example.json).",
-        )
+
+    api_key: Optional[str] = None
+    if _provider_requires_api_key(provider_name):
+        api_key = get_provider_api_key(provider_name, settings=settings)
+        if not api_key:
+            raise HTTPException(
+                status_code=503,
+                detail=f"{provider_name} API key not configured. Create config/ai_settings.json (see config/ai_settings.example.json).",
+            )
+
+    base_url = get_provider_base_url(provider_name, settings=settings) or provider.base_url or ""
     model = (model_from_request or provider.model_name).strip()
-    return api_key, model, provider.timeout_s
+    return provider_name, api_key, base_url, model, provider.timeout_s
+
+
+def _call_provider(
+    provider_name: str,
+    *,
+    api_key: Optional[str],
+    base_url: str,
+    model: str,
+    system: str,
+    messages: list[dict],
+    max_tokens: int,
+    timeout_s: int,
+):
+    if provider_name == "anthropic":
+        assert api_key is not None
+        return anthropic_messages(
+            api_key=api_key,
+            model=model,
+            system=system,
+            messages=messages,
+            max_tokens=max_tokens,
+            timeout_s=timeout_s,
+        )
+    if provider_name == "gemini":
+        assert api_key is not None
+        return gemini_generate_content(
+            api_key=api_key,
+            base_url=base_url or "https://generativelanguage.googleapis.com",
+            model=model,
+            system=system,
+            messages=messages,
+            max_tokens=max_tokens,
+            timeout_s=timeout_s,
+        )
+    if provider_name == "ollama":
+        return ollama_chat_completions(
+            base_url=base_url or "http://localhost:11434",
+            model=model,
+            system=system,
+            messages=messages,
+            max_tokens=max_tokens,
+            timeout_s=timeout_s,
+        )
+    if provider_name == "openai":
+        assert api_key is not None
+        return openai_chat_completions(
+            api_key=api_key,
+            base_url=base_url or "https://api.openai.com/v1",
+            model=model,
+            system=system,
+            messages=messages,
+            max_tokens=max_tokens,
+            timeout_s=timeout_s,
+        )
+    if provider_name == "openrouter":
+        assert api_key is not None
+        return openrouter_chat_completions(
+            api_key=api_key,
+            base_url=base_url or "https://openrouter.ai/api/v1",
+            model=model,
+            system=system,
+            messages=messages,
+            max_tokens=max_tokens,
+            timeout_s=timeout_s,
+        )
+    raise HTTPException(status_code=400, detail=f"Unsupported provider: {provider_name}")
+
+
+def _provider_default_base_url(provider_name: str) -> str:
+    provider_name = (provider_name or "").strip().lower()
+    if provider_name == "anthropic":
+        return "https://api.anthropic.com"
+    if provider_name == "openai":
+        return "https://api.openai.com/v1"
+    if provider_name == "gemini":
+        return "https://generativelanguage.googleapis.com"
+    if provider_name == "ollama":
+        return "http://localhost:11434"
+    if provider_name == "openrouter":
+        return "https://openrouter.ai/api/v1"
+    return ""
+
+
+def _public_provider_config(provider_name: str, *, settings: dict) -> dict:
+    provider = get_provider_settings(provider_name, settings=settings)
+    base_url = get_provider_base_url(provider_name, settings=settings) or provider.base_url or _provider_default_base_url(provider_name)
+    api_key_configured = False
+    if _provider_requires_api_key(provider_name):
+        api_key_configured = bool(get_provider_api_key(provider_name, settings=settings))
+    return {
+        "name": provider_name,
+        "api_key_configured": api_key_configured,
+        "base_url": base_url,
+        "model_name": provider.model_name,
+        "enabled": provider.enabled,
+        "timeout": provider.timeout_s,
+        "max_retries": provider.max_retries,
+    }
+
+
+def _public_settings_response(settings: dict) -> dict:
+    provider_list = []
+    for name in ("anthropic", "openai", "gemini", "ollama", "openrouter"):
+        if name not in SUPPORTED_AI_PROVIDERS:
+            continue
+        provider_list.append(_public_provider_config(name, settings=settings))
+
+    prefs_default = (default_settings_dict().get("preferences") or {}).copy()
+    prefs = (settings.get("preferences") or {}).copy()
+    prefs_default.update(prefs)
+    return {
+        "default_provider": str(settings.get("default_provider") or "anthropic").strip().lower(),
+        "providers": provider_list,
+        "preferences": prefs_default,
+    }
+
+
+def _settings_update_provider(
+    provider_name: str,
+    *,
+    settings: dict,
+    patch: dict,
+) -> dict:
+    provider_name = provider_name.strip().lower()
+    if provider_name not in SUPPORTED_AI_PROVIDERS:
+        raise HTTPException(status_code=404, detail="Provider not found")
+
+    providers = dict(settings.get("providers") or {})
+    base = dict(providers.get(provider_name) or {})
+    for key in ("enabled", "model_name", "base_url", "timeout", "timeout_s", "max_retries"):
+        if key in patch:
+            base[key] = patch.get(key)
+    if "api_key" in patch:
+        base["api_key"] = str(patch.get("api_key") or "").strip()
+    providers[provider_name] = base
+    settings["providers"] = providers
+    return settings
+
+
+def _http_get_json(url: str, *, timeout_s: int = 3) -> dict:
+    req = urllib.request.Request(url, method="GET")
+    req.add_header("Accept", "application/json")
+    with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+        body = resp.read().decode("utf-8", errors="replace")
+        parsed = json.loads(body or "{}")
+        if isinstance(parsed, dict):
+            return parsed
+        return {"data": parsed}
+
+
+def _ollama_root_base_url(base_url: str) -> str:
+    base = (base_url or "").strip().rstrip("/")
+    if not base:
+        base = "http://localhost:11434"
+    if base.endswith("/v1"):
+        base = base[: -len("/v1")]
+    return base.rstrip("/")
+
+def _ollama_openai_base_url(base_url: str) -> str:
+    base = (base_url or "").strip().rstrip("/")
+    if not base:
+        base = "http://localhost:11434"
+    if base.endswith("/v1"):
+        return base
+    return base + "/v1"
+
+def _sse_event(event: str, data: Any) -> bytes:
+    payload = json.dumps(data, ensure_ascii=False)
+    return f"event: {event}\ndata: {payload}\n\n".encode("utf-8")
+
+
+@app.get("/api/settings")
+async def api_get_settings():
+    settings = load_ai_settings()
+    return _public_settings_response(settings)
+
+
+class UpdateSettingsRequest(BaseModel):
+    default_provider: Optional[str] = None
+    preferences: Optional[dict] = None
+
+
+@app.put("/api/settings")
+async def api_put_settings(body: UpdateSettingsRequest):
+    settings = load_ai_settings()
+    updated = dict(settings or {})
+    if body.default_provider is not None:
+        provider = str(body.default_provider or "").strip().lower()
+        if provider and provider not in SUPPORTED_AI_PROVIDERS:
+            raise HTTPException(status_code=400, detail="Invalid default_provider")
+        updated["default_provider"] = provider or updated.get("default_provider") or "anthropic"
+    if body.preferences is not None:
+        prefs_default = (default_settings_dict().get("preferences") or {}).copy()
+        prefs_patch = body.preferences if isinstance(body.preferences, dict) else {}
+        merged = dict(prefs_default)
+        merged.update({k: v for k, v in prefs_patch.items() if v is not None})
+        updated["preferences"] = merged
+
+    save_ai_settings(updated)
+    return _public_settings_response(load_ai_settings())
+
+
+@app.get("/api/settings/providers")
+async def api_list_settings_providers():
+    providers = []
+    defaults = default_settings_dict()
+    default_providers = defaults.get("providers") or {}
+    for name in ("anthropic", "openai", "gemini", "ollama", "openrouter"):
+        if name not in SUPPORTED_AI_PROVIDERS:
+            continue
+        p = default_providers.get(name) or {}
+        providers.append(
+            {
+                "name": name,
+                "display_name": {
+                    "anthropic": "Anthropic Claude",
+                    "openai": "OpenAI",
+                    "gemini": "Google Gemini",
+                    "ollama": "Ollama (Local)",
+                    "openrouter": "OpenRouter",
+                }.get(name, name),
+                "description": {
+                    "ollama": "Local AI provider via Ollama (offline-capable)",
+                    "openrouter": "Unified API for many models/providers",
+                }.get(name, ""),
+                "default_base_url": str(p.get("base_url") or _provider_default_base_url(name) or "").strip(),
+                "default_model": str(p.get("model_name") or "").strip(),
+                "supported_features": {
+                    "streaming": True,
+                    "function_calling": False,
+                    "vision": False,
+                },
+                "documentation_url": {
+                    "anthropic": "https://docs.anthropic.com",
+                    "openai": "https://platform.openai.com/docs",
+                    "gemini": "https://ai.google.dev",
+                    "ollama": "https://ollama.com",
+                    "openrouter": "https://openrouter.ai/docs",
+                }.get(name, ""),
+            }
+        )
+    return {"providers": providers}
+
+
+@app.get("/api/settings/providers/{provider_name}")
+async def api_get_provider(provider_name: str):
+    name = (provider_name or "").strip().lower()
+    if name not in SUPPORTED_AI_PROVIDERS:
+        raise HTTPException(status_code=404, detail="Provider not found")
+    settings = load_ai_settings()
+    return _public_provider_config(name, settings=settings)
+
+
+class UpdateProviderRequest(BaseModel):
+    api_key: Optional[str] = None
+    base_url: Optional[str] = None
+    model_name: Optional[str] = None
+    enabled: Optional[bool] = None
+    timeout: Optional[int] = None
+    max_retries: Optional[int] = None
+
+
+@app.put("/api/settings/providers/{provider_name}")
+async def api_put_provider(provider_name: str, body: UpdateProviderRequest):
+    name = (provider_name or "").strip().lower()
+    if name not in SUPPORTED_AI_PROVIDERS:
+        raise HTTPException(status_code=404, detail="Provider not found")
+
+    patch: dict[str, Any] = {}
+    if body.api_key is not None:
+        patch["api_key"] = body.api_key
+    if body.base_url is not None:
+        patch["base_url"] = str(body.base_url or "").strip()
+    if body.model_name is not None:
+        patch["model_name"] = str(body.model_name or "").strip()
+    if body.enabled is not None:
+        patch["enabled"] = bool(body.enabled)
+    if body.timeout is not None:
+        patch["timeout_s"] = int(body.timeout)
+        patch["timeout"] = int(body.timeout)
+    if body.max_retries is not None:
+        patch["max_retries"] = int(body.max_retries)
+
+    settings = load_ai_settings()
+    updated = _settings_update_provider(name, settings=settings, patch=patch)
+    save_ai_settings(updated)
+    return _public_provider_config(name, settings=load_ai_settings())
+
+
+@app.delete("/api/settings/providers/{provider_name}", status_code=204)
+async def api_delete_provider(provider_name: str):
+    name = (provider_name or "").strip().lower()
+    if name not in SUPPORTED_AI_PROVIDERS:
+        raise HTTPException(status_code=404, detail="Provider not found")
+    settings = load_ai_settings()
+    providers = dict(settings.get("providers") or {})
+    providers.pop(name, None)
+    settings["providers"] = providers
+    save_ai_settings(settings)
+    return None
+
+
+class TestProviderRequest(BaseModel):
+    api_key: Optional[str] = None
+    base_url: Optional[str] = None
+    model_name: Optional[str] = None
+
+
+@app.post("/api/settings/providers/{provider_name}/test")
+async def api_test_provider(provider_name: str, body: TestProviderRequest):
+    name = (provider_name or "").strip().lower()
+    if name not in SUPPORTED_AI_PROVIDERS:
+        raise HTTPException(status_code=404, detail="Provider not found")
+
+    settings = load_ai_settings()
+    provider_cfg = get_provider_settings(name, settings=settings)
+    api_key = body.api_key if body.api_key is not None else get_provider_api_key(name, settings=settings)
+    base_url = str(body.base_url or "").strip() if body.base_url is not None else (get_provider_base_url(name, settings=settings) or provider_cfg.base_url or "")
+    model = str(body.model_name or "").strip() if body.model_name is not None else provider_cfg.model_name
+
+    if _provider_requires_api_key(name) and not api_key:
+        raise HTTPException(status_code=401, detail="API key not configured")
+
+    system = "You are a connectivity test. Reply with a single word: OK."
+    messages = [{"role": "user", "content": "OK"}]
+
+    started = time.perf_counter()
+    try:
+        resp = await run_in_threadpool(
+            _call_provider,
+            name,
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
+            system=system,
+            messages=messages,
+            max_tokens=16,
+            timeout_s=min(10, provider_cfg.timeout_s),
+        )
+    except Exception as e:
+        return {
+            "success": False,
+            "provider": name,
+            "message": str(e),
+            "details": {"model": model, "latency_ms": int((time.perf_counter() - started) * 1000)},
+        }
+
+    latency_ms = int((time.perf_counter() - started) * 1000)
+    return {
+        "success": True,
+        "provider": name,
+        "message": "OK",
+        "details": {"model": resp.model, "latency_ms": latency_ms},
+    }
+
+
+@app.get("/api/ollama/status")
+async def api_ollama_status():
+    settings = load_ai_settings()
+    base_url = get_provider_base_url("ollama", settings=settings) or get_provider_settings("ollama", settings=settings).base_url or "http://localhost:11434"
+    root = _ollama_root_base_url(base_url)
+    try:
+        info = _http_get_json(root + "/api/version", timeout_s=2)
+        return {"running": True, "base_url": root, "version": info.get("version")}
+    except Exception as e:
+        return {"running": False, "base_url": root, "error": str(e)}
+
+
+@app.get("/api/ollama/models")
+async def api_ollama_models():
+    settings = load_ai_settings()
+    base_url = get_provider_base_url("ollama", settings=settings) or get_provider_settings("ollama", settings=settings).base_url or "http://localhost:11434"
+    root = _ollama_root_base_url(base_url)
+    try:
+        tags = _http_get_json(root + "/api/tags", timeout_s=4)
+        models = tags.get("models") if isinstance(tags, dict) else None
+        if not isinstance(models, list):
+            models = []
+        out = []
+        for m in models:
+            if not isinstance(m, dict):
+                continue
+            out.append(
+                {
+                    "name": str(m.get("name") or ""),
+                    "size": m.get("size"),
+                    "modified_at": m.get("modified_at"),
+                    "details": m.get("details") or {},
+                }
+            )
+        return {"models": out, "base_url": root}
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
 
 def _summary_prompt(summary_type: str) -> str:
@@ -459,8 +912,8 @@ async def api_ai_summary(
     except Exception:
         raise HTTPException(status_code=404, detail="Book not found")
 
-    api_key, model, timeout_s = _get_anthropic_runtime(body.provider, body.model)
-    queue_key = f"{book_uuid}:anthropic"
+    provider_name, api_key, base_url, model, timeout_s = _get_provider_runtime(body.provider, body.model)
+    queue_key = f"{book_uuid}:{provider_name}"
 
     async def _do() -> dict:
         try:
@@ -492,8 +945,10 @@ async def api_ai_summary(
         )
         user = f"书籍片段（用于总结）：\n{context}\n"
         resp = await run_in_threadpool(
-            anthropic_messages,
+            _call_provider,
+            provider_name,
             api_key=api_key,
+            base_url=base_url,
             model=model,
             system=system,
             messages=[{"role": "user", "content": user}],
@@ -504,7 +959,7 @@ async def api_ai_summary(
         return {
             "book_uuid": str(book_uuid),
             "content": payload,
-            "provider": "anthropic",
+            "provider": provider_name,
             "model": resp.model,
             "generated_at": __import__("datetime").datetime.utcnow().isoformat() + "Z",
             "token_count": resp.token_count,
@@ -525,7 +980,7 @@ async def api_ai_summary(
 
 
 @app.post("/api/ai/question/{book_uuid}")
-async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequest):
+async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequest, stream: bool = False):
     try:
         book_folder = book_uuid_resolver.folder_for_book_uuid(book_uuid)
     except Exception:
@@ -537,8 +992,195 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
     if len(question) > 1000:
         raise HTTPException(status_code=400, detail="question too long (max 1000 chars)")
 
-    api_key, model, timeout_s = _get_anthropic_runtime(body.provider, body.model)
-    queue_key = f"{book_uuid}:anthropic"
+    provider_name, api_key, base_url, model, timeout_s = _get_provider_runtime(body.provider, body.model)
+    queue_key = f"{book_uuid}:{provider_name}"
+
+    if stream:
+        lease = await ai_queue.acquire(
+            queue_key,
+            request=request,
+            timeout_s=float(timeout_s),
+            request_label="question",
+        )
+
+        try:
+            passages, retrieval_time_ms = retrieve_passages(
+                book_folder,
+                books_dir=BOOKS_DIR,
+                query=question,
+                k=body.rag_k,
+                min_similarity=0.35,
+            )
+        except RuntimeError as e:
+            await ai_queue.release(lease)
+            raise HTTPException(status_code=400, detail=str(e))
+
+        context = "\n\n".join([f"[{p['chapter_order'] + 1}] {p['chapter_title']}\n{p['text']}" for p in passages])
+        history = (body.conversation_history or [])[-50:]
+        chat_history = []
+        for m in history:
+            role = (m.role or "").strip().lower()
+            if role not in ("user", "assistant"):
+                continue
+            content = (m.content or "").strip()
+            if not content:
+                continue
+            chat_history.append({"role": role, "content": content})
+
+        system = (
+            "你是 Reader3 的 AI 阅读助手。"
+            "只基于提供的书籍片段回答与书相关的问题；如果片段不足以回答，请明确说明需要更多上下文。"
+            "回答要清晰、简洁。"
+        )
+        user = f"书籍片段（用于回答）：\n{context}\n\n问题：{question}\n"
+
+        message_id = str(__import__("uuid").uuid4())
+        started = time.perf_counter()
+
+        async def event_gen():
+            q: asyncio.Queue[dict] = asyncio.Queue()
+            loop = asyncio.get_running_loop()
+
+            def push(evt: dict) -> None:
+                try:
+                    q.put_nowait(evt)
+                except Exception:
+                    pass
+
+            def worker_ollama() -> None:
+                url = _ollama_openai_base_url(base_url or "http://localhost:11434") + "/chat/completions"
+                openai_messages = []
+                if system:
+                    openai_messages.append({"role": "system", "content": system})
+                openai_messages.extend([*chat_history, {"role": "user", "content": user}])
+                payload = {
+                    "model": model,
+                    "messages": openai_messages,
+                    "stream": True,
+                    "max_tokens": max(64, min(int(body.max_tokens), 4096)),
+                }
+                data = json.dumps(payload).encode("utf-8")
+                req = urllib.request.Request(url, data=data, method="POST")
+                req.add_header("Content-Type", "application/json")
+                req.add_header("Accept", "text/event-stream")
+
+                model_out = model
+                finish_reason = "stop"
+                try:
+                    with urllib.request.urlopen(req, timeout=int(timeout_s)) as resp:
+                        while True:
+                            line = resp.readline()
+                            if not line:
+                                break
+                            if not line.startswith(b"data:"):
+                                continue
+                            raw = line[len(b"data:") :].strip()
+                            if not raw:
+                                continue
+                            if raw == b"[DONE]":
+                                break
+                            try:
+                                obj = json.loads(raw.decode("utf-8", errors="replace") or "{}")
+                            except Exception:
+                                continue
+                            if isinstance(obj, dict):
+                                if obj.get("model"):
+                                    model_out = str(obj.get("model") or model_out)
+                                choices = obj.get("choices") or []
+                                if isinstance(choices, list) and choices:
+                                    c0 = choices[0] or {}
+                                    if isinstance(c0, dict):
+                                        fr = c0.get("finish_reason")
+                                        if fr:
+                                            finish_reason = str(fr)
+                                        delta = c0.get("delta") or {}
+                                        if isinstance(delta, dict):
+                                            content = delta.get("content")
+                                            if content:
+                                                loop.call_soon_threadsafe(push, {"type": "chunk", "delta": str(content)})
+                    loop.call_soon_threadsafe(
+                        push,
+                        {
+                            "type": "done",
+                            "model": model_out,
+                            "finish_reason": finish_reason,
+                        },
+                    )
+                except Exception as e:
+                    loop.call_soon_threadsafe(push, {"type": "error", "message": str(e)})
+
+            async def worker_non_stream() -> None:
+                try:
+                    resp = await run_in_threadpool(
+                        _call_provider,
+                        provider_name,
+                        api_key=api_key,
+                        base_url=base_url,
+                        model=model,
+                        system=system,
+                        messages=[*chat_history, {"role": "user", "content": user}],
+                        max_tokens=body.max_tokens,
+                        timeout_s=timeout_s,
+                    )
+                except Exception as e:
+                    await q.put({"type": "error", "message": str(e)})
+                    return
+                await q.put({"type": "chunk", "delta": resp.text})
+                await q.put({"type": "done", "model": resp.model, "finish_reason": resp.finish_reason})
+
+            try:
+                yield _sse_event(
+                    "meta",
+                    {
+                        "message_id": message_id,
+                        "retrieval_sources": passages,
+                        "metadata": {"retrieval_time_ms": retrieval_time_ms, "provider": provider_name},
+                    },
+                )
+
+                if provider_name == "ollama":
+                    threading.Thread(target=worker_ollama, daemon=True).start()
+                else:
+                    asyncio.create_task(worker_non_stream())
+
+                while True:
+                    if request is not None and await request.is_disconnected():
+                        yield _sse_event("error", {"message": "Client disconnected"})
+                        return
+                    if time.monotonic() >= lease.deadline:
+                        yield _sse_event("error", {"message": "AI request timed out"})
+                        return
+                    try:
+                        evt = await asyncio.wait_for(q.get(), timeout=0.5)
+                    except asyncio.TimeoutError:
+                        continue
+
+                    et = str(evt.get("type") or "")
+                    if et == "chunk":
+                        yield _sse_event("chunk", {"delta": str(evt.get("delta") or "")})
+                        continue
+                    if et == "done":
+                        generation_time_ms = int((time.perf_counter() - started) * 1000)
+                        yield _sse_event(
+                            "done",
+                            {
+                                "model": str(evt.get("model") or model),
+                                "finish_reason": str(evt.get("finish_reason") or "stop"),
+                                "metadata": {
+                                    "retrieval_time_ms": retrieval_time_ms,
+                                    "generation_time_ms": generation_time_ms,
+                                    "provider": provider_name,
+                                },
+                            },
+                        )
+                        return
+                    if et == "error":
+                        yield _sse_event("error", {"message": str(evt.get("message") or "AI request failed")})
+                        return
+            finally:
+                await ai_queue.release(lease)
+
+        return StreamingResponse(event_gen(), media_type="text/event-stream")
 
     async def _do() -> dict:
         try:
@@ -578,8 +1220,10 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
 
         started = time.perf_counter()
         resp = await run_in_threadpool(
-            anthropic_messages,
+            _call_provider,
+            provider_name,
             api_key=api_key,
+            base_url=base_url,
             model=model,
             system=system,
             messages=[*anthropic_history, {"role": "user", "content": user}],
@@ -599,6 +1243,7 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
                 "finish_reason": resp.finish_reason,
                 "retrieval_time_ms": retrieval_time_ms,
                 "generation_time_ms": generation_time_ms,
+                "provider": provider_name,
             },
         }
 

@@ -56,6 +56,96 @@ This project uses [uv](https://docs.astral.sh/uv/).
 uv sync
 ```
 
+## AI Assistant (Anthropic / Ollama)
+
+The AI panel uses the `default_provider` from `config/ai_settings.json` (editable via the web Settings page at `/settings` or by editing the file directly).
+
+1) Copy the example config:
+
+```bash
+cp config/ai_settings.example.json config/ai_settings.json
+```
+
+2) Make sure the book is indexed for semantic retrieval (required for RAG summary/Q&A citations):
+
+```bash
+# 无需带./books/dracula_data
+uv run reader3 --index dracula_data
+# 成功后后显示：Indexed the-power-broker_data: 4556 chunks using paraphrase-multilingual-MiniLM-L12-v2
+```
+
+3) Start the server:
+
+```bash
+uv run reader3-server
+```
+
+Open a book, click the **AI** button on the right toolbar, and use quick actions or chat.
+
+### Use Anthropic (Claude)
+
+Edit `config/ai_settings.json`:
+
+- Set `default_provider` to `"anthropic"`
+- Set `providers.anthropic.enabled` to `true`
+- Fill `providers.anthropic.api_key`
+- Optionally change `providers.anthropic.model_name`
+
+Restart `reader3-server` after changing the config.
+
+
+
+#### Anthropic进行AI问答的原理：
+
+ 在这个项目里调用流程是这样的（选 anthropic 时）：
+
+1. 浏览器把问题发到本地服务：POST /api/ai/question/{book_uuid}（见 `src/reader3_app/web/server.py`）
+2. 服务端先在本地做 RAG 检索：从 books/<book>_data/chroma_db/ 里用向量相似度找 top‑k 段落（见 `src/reader3_app/ai/rag.py:9`、`src/reader3_app/vector_search.py:36`）
+
+3. 把这些段落拼成 context，再加上你的 question 和 conversation_history，组装成 Anthropic 的 messages 请求体（见 `src/reader3_app/web/server.py`）
+
+4. 通过 HTTPS POST https://api.anthropic.com/v1/messages 发给 Anthropic（见 `src/reader3_app/ai/providers/anthropic.py:51`），拿到生成结果后返回前端
+
+
+
+ “会发出去多少书的内容”取决于检索参数：
+
+ \- 问答默认 rag_k=5（最多 20），每个 chunk 默认约 1000 字符左右（见 `src/reader3_app/vector_search.py:100`）
+
+ \- “全书总结”会取更多片段：固定取 k=12（见 `src/reader3_app/web/server.py`）
+
+ \- 所以通常是“若干段摘录”，不是整本书；但这些摘录确实会离开本机发送到 Anthropic（再加上你的提问/历史消息）
+
+ 如果你不希望任何书籍内容发送到第三方 API，就只用 ollama（本地生成）；不要选 anthropic/gemini。
+
+
+
+### Use Ollama (offline / local)
+
+1) Install and start Ollama:
+
+- macOS: `brew install ollama`
+- Start: `ollama serve`
+
+2) Download a model into this repo’s `models/` directory (recommended):
+
+```bash
+mkdir -p models/ollama
+export OLLAMA_MODELS="$PWD/models/ollama"
+ollama pull qwen3:8b
+```
+
+3) Edit `config/ai_settings.json`:
+
+- Set `default_provider` to `"ollama"`
+- Set `providers.ollama.enabled` to `true`
+- Set `providers.ollama.base_url` to `"http://localhost:11434"`
+- Set `providers.ollama.model_name` to the model you pulled (e.g. `"qwen3:8b"`)
+
+Restart `reader3-server`, then use the AI panel normally.
+
+
+
 #### Add a New EPUB (from scratch)
 
 Download an EPUB (e.g. [Dracula EPUB3](https://www.gutenberg.org/ebooks/345)) and run:
@@ -136,6 +226,55 @@ uv run reader3 --index dracula_data
 ```
 
 This writes a per-book vector store to `books/dracula_data/chroma_db/`.
+
+
+
+## How to Optimize AI Response Speed using Ollama
+
+Most “slow” AI responses come from (1) long prompts (RAG context + chat history) and/or (2) long generations (high `max_tokens`) and/or (3) a large/slower model.
+
+### Tune `rag_k` and `max_tokens`
+
+These values are currently hard-coded in the frontend request payloads (so changing backend defaults alone won’t help).
+
+- Q&A request knobs:
+  - `rag_k`: `src/reader3_app/web/static/ai.js` (search for `rag_k: 5`)
+  - `max_tokens`: `src/reader3_app/web/static/ai.js` (search for `max_tokens: 1000`)
+- Summary request knob:
+  - `max_tokens`: `src/reader3_app/web/static/ai.js` (search for `max_tokens: 2000`)
+- Backend fallback defaults (only used if the client doesn’t send values):
+  - `src/reader3_app/web/server.py` (`AIQuestionRequest` / `AISummaryRequest`)
+
+Practical presets (start here):
+- Faster Q&A: `rag_k=3`, `max_tokens=384` or `512`
+- Balanced Q&A: `rag_k=5`, `max_tokens=768`
+- Faster summaries: `max_tokens=800`–`1200` (quality may drop vs `2000`)
+
+### Use a faster local model
+
+On the same machine, smaller models are dramatically faster:
+- Fast: `qwen3:4b`, `llama3.2:3b`
+- Balanced: `qwen2.5:7b` / `qwen3:8b`
+- Higher quality (slower): `qwen2.5:14b`
+
+Update `config/ai_settings.json` → `providers.ollama.model_name`, restart `reader3-server`.
+
+### Reduce prompt size (RAG + history)
+
+- Reduce chat history sent each turn: `src/reader3_app/web/static/ai.js` (search for `slice(-50)`).
+- Reduce chunk size / overlap for indexing (requires re-index): `src/reader3_app/vector_search.py` (`_chunk_text(chunk_size=1000, overlap=120)`).
+
+### About `stream=true` (perceived speed)
+
+Ollama supports streaming token output, which improves perceived latency (text appears earlier), but does not necessarily increase tokens/sec.
+
+- Backend supports SSE streaming for Q&A: `POST /api/ai/question/{book_uuid}?stream=true` (see `src/reader3_app/web/server.py`).
+- Frontend uses streaming when enabled in Settings (see `src/reader3_app/web/static/ai.js`), and shows a **Stop** button to abort the request.
+
+### macOS GPU acceleration notes (Apple Silicon)
+
+Ollama on Apple Silicon typically uses Metal (integrated GPU) automatically when running the native `arm64` build.
+- If Ollama is running under Rosetta (`x86_64`), performance is much worse—install the native arm64 version instead.
 
 
 

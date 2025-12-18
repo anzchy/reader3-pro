@@ -11,6 +11,47 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function parseSseBlock(block) {
+  const lines = String(block || "").split(/\r?\n/);
+  let event = "message";
+  let data = "";
+  for (const line of lines) {
+    if (line.startsWith("event:")) event = line.slice("event:".length).trim() || "message";
+    if (line.startsWith("data:")) data += line.slice("data:".length).trim();
+  }
+  if (!data) return null;
+  try {
+    return { event, data: JSON.parse(data) };
+  } catch {
+    return { event, data };
+  }
+}
+
+async function* streamSseResponse(resp) {
+  const reader = resp.body?.getReader?.();
+  if (!reader) return;
+  const decoder = new TextDecoder("utf-8");
+  let buf = "";
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    while (true) {
+      const idx = buf.indexOf("\n\n");
+      if (idx < 0) break;
+      const block = buf.slice(0, idx);
+      buf = buf.slice(idx + 2);
+      const evt = parseSseBlock(block);
+      if (evt) yield evt;
+    }
+  }
+  const tail = buf.trim();
+  if (tail) {
+    const evt = parseSseBlock(tail);
+    if (evt) yield evt;
+  }
+}
+
 const DB_NAME = "reader3_ai_assistant";
 const DB_VERSION = 1;
 const STORE_CONVERSATIONS = "conversations";
@@ -101,12 +142,16 @@ class ReaderAIUI {
     this.messagesEl = document.getElementById("reader-ai-messages");
     this.inputEl = document.getElementById("reader-ai-input");
     this.sendBtn = document.getElementById("reader-ai-send");
+    this.stopBtn = document.getElementById("reader-ai-stop");
     this.quickBtns = Array.from(document.querySelectorAll("[data-ai-summary-type]"));
 
     this.db = null;
     this.conversation = null;
     this.currentModel = localStorage.getItem(modelStorageKey(ctx.bookUuid, ctx.provider)) || "";
     this.isBusy = false;
+    this.streamingEnabled = true;
+    this.abortController = null;
+    this.msgElById = new Map();
 
     this.toggleBtn?.addEventListener("click", () => this.toggle());
     this.closeBtn?.addEventListener("click", () => this.close());
@@ -117,6 +162,7 @@ class ReaderAIUI {
     });
 
     this.sendBtn?.addEventListener("click", () => this.sendQuestion());
+    this.stopBtn?.addEventListener("click", () => this.abort());
     this.inputEl?.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
@@ -139,6 +185,7 @@ class ReaderAIUI {
     this.isBusy = !!busy;
     if (this.sendBtn) this.sendBtn.disabled = busy;
     if (this.inputEl) this.inputEl.disabled = busy;
+    if (this.stopBtn) this.stopBtn.style.display = busy && this.abortController ? "inline-flex" : "none";
   }
 
   setProvider(provider, model) {
@@ -163,7 +210,27 @@ class ReaderAIUI {
       return;
     }
     this.open();
+    await this.loadPreferences();
     await this.restoreConversation();
+  }
+
+  async loadPreferences() {
+    try {
+      const resp = await fetch("/api/settings");
+      const data = await resp.json().catch(() => ({}));
+      const prefs = data?.preferences || {};
+      this.streamingEnabled = !!prefs.streaming_enabled;
+    } catch {
+      this.streamingEnabled = true;
+    }
+  }
+
+  abort() {
+    try {
+      this.abortController?.abort?.();
+    } catch {
+      // ignore
+    }
   }
 
   async restoreConversation() {
@@ -190,6 +257,7 @@ class ReaderAIUI {
 
   renderAll() {
     if (!this.messagesEl) return;
+    this.msgElById.clear();
     this.messagesEl.innerHTML = "";
     const msgs = (this.conversation?.messages || []).slice();
     msgs.forEach((m) => this.appendMessageToDOM(m));
@@ -202,7 +270,7 @@ class ReaderAIUI {
   }
 
   appendMessageToDOM(msg) {
-    if (!this.messagesEl) return;
+    if (!this.messagesEl) return null;
     const div = document.createElement("div");
     div.className = `ai-msg ${msg.role}`;
     div.innerText = msg.content || "";
@@ -224,6 +292,8 @@ class ReaderAIUI {
     }
 
     this.messagesEl.appendChild(div);
+    if (msg?.id) this.msgElById.set(msg.id, div);
+    return div;
   }
 
   async persistConversation() {
@@ -244,9 +314,9 @@ class ReaderAIUI {
       metadata: metadata || {},
     };
     this.conversation.messages = [...(this.conversation.messages || []), msg];
-    this.appendMessageToDOM(msg);
+    const el = this.appendMessageToDOM(msg);
     this.scrollToBottom();
-    return msg;
+    return { msg, el };
   }
 
   async clearConversation() {
@@ -272,13 +342,16 @@ class ReaderAIUI {
     if (!this.conversation) await this.restoreConversation();
 
     this.inputEl.value = "";
-    this.setBusy(true);
-
     this.addMessage("user", text, {});
-    const placeholder = this.addMessage("assistant", "…", {});
+    const placeholderWrap = this.addMessage("assistant", "…", {});
+    const placeholder = placeholderWrap?.msg || null;
+    const placeholderEl = placeholderWrap?.el || null;
     await this.persistConversation();
 
     try {
+      if (this.streamingEnabled) this.abortController = new AbortController();
+      this.setBusy(true);
+
       const history = (this.conversation.messages || []).slice(-50).map((m) => ({
         id: m.id,
         conversation_id: m.conversation_id,
@@ -288,30 +361,65 @@ class ReaderAIUI {
         metadata: m.metadata || {},
       }));
 
-      const resp = await fetch(`/api/ai/question/${encodeURIComponent(this.ctx.bookUuid)}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          question: text,
-          provider: this.ctx.provider,
-          model: this.currentModel || undefined,
-          conversation_history: history,
-          rag_k: 5,
-          max_tokens: 1000,
-        }),
-      });
-      const data = await resp.json().catch(() => ({}));
-      if (!resp.ok) throw new Error(data?.detail || "AI request failed");
+      const payload = {
+        question: text,
+        provider: this.ctx.provider,
+        model: this.currentModel || undefined,
+        conversation_history: history,
+        rag_k: 5,
+        max_tokens: 1000,
+      };
 
-      const model = data?.metadata?.model || "";
+      let answer = "";
+      let sources = [];
+      let model = "";
+
+      if (this.streamingEnabled) {
+        const resp = await fetch(`/api/ai/question/${encodeURIComponent(this.ctx.bookUuid)}?stream=true`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          signal: this.abortController?.signal,
+        });
+        if (!resp.ok) {
+          const data = await resp.json().catch(() => ({}));
+          throw new Error(data?.detail || "AI request failed");
+        }
+
+        for await (const evt of streamSseResponse(resp)) {
+          if (!evt) continue;
+          if (evt.event === "meta") {
+            sources = Array.isArray(evt.data?.retrieval_sources) ? evt.data.retrieval_sources : [];
+          } else if (evt.event === "chunk") {
+            const delta = String(evt.data?.delta || "");
+            answer += delta;
+            if (placeholder) placeholder.content = answer || "";
+            if (placeholderEl) placeholderEl.innerText = answer || "";
+          } else if (evt.event === "done") {
+            model = String(evt.data?.model || "");
+            break;
+          } else if (evt.event === "error") {
+            throw new Error(String(evt.data?.message || "AI request failed"));
+          }
+        }
+      } else {
+        const resp = await fetch(`/api/ai/question/${encodeURIComponent(this.ctx.bookUuid)}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data?.detail || "AI request failed");
+        model = data?.metadata?.model || "";
+        answer = String(data?.answer || "");
+        sources = Array.isArray(data?.retrieval_sources) ? data.retrieval_sources : [];
+      }
+
       if (model) {
         this.currentModel = model;
         localStorage.setItem(modelStorageKey(this.ctx.bookUuid, this.ctx.provider), model);
       }
       this.setProvider(this.ctx.provider, this.currentModel);
-
-      const answer = String(data?.answer || "");
-      const sources = Array.isArray(data?.retrieval_sources) ? data.retrieval_sources : [];
 
       if (placeholder) {
         placeholder.content = answer;
@@ -323,11 +431,15 @@ class ReaderAIUI {
       await this.persistConversation();
     } catch (e) {
       const msg = e?.message || String(e);
-      if (placeholder) placeholder.content = `Error: ${msg}`;
+      if (placeholder) {
+        placeholder.content = `Error: ${msg}`;
+        if (placeholderEl) placeholderEl.innerText = placeholder.content;
+      }
       else this.addMessage("assistant", `Error: ${msg}`, {});
       this.renderAll();
       await this.persistConversation();
     } finally {
+      this.abortController = null;
       this.setBusy(false);
     }
   }
@@ -338,7 +450,8 @@ class ReaderAIUI {
     if (!this.conversation) await this.restoreConversation();
 
     this.setBusy(true);
-    const placeholder = this.addMessage("assistant", "生成中…", { summary_type: st });
+    const placeholderWrap = this.addMessage("assistant", "生成中…", { summary_type: st });
+    const placeholder = placeholderWrap?.msg || null;
     await this.persistConversation();
 
     try {

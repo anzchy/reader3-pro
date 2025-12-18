@@ -4,20 +4,12 @@ import json
 import time
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
+from .types import ProviderResponse
 
 ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
-
-
-@dataclass(frozen=True)
-class ProviderResponse:
-    text: str
-    model: str
-    finish_reason: str
-    token_count: Optional[int] = None
 
 
 def _post_json(url: str, *, headers: Dict[str, str], payload: Dict[str, Any], timeout_s: int) -> Tuple[int, Dict[str, Any]]:
@@ -106,4 +98,3 @@ def anthropic_messages(
         finish_reason=finish_reason,
         token_count=token_count,
     )
-

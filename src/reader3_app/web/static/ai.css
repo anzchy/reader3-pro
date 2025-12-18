@@ -160,3 +160,17 @@
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+.ai-input .ai-stop {
+  border: 0;
+  background: #ef4444;
+  color: #450a0a;
+  padding: 0 14px;
+  border-radius: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.ai-input .ai-stop:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
