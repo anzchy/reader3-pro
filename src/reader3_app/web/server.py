@@ -139,6 +139,7 @@ async def read_chapter(request: Request, book_id: str, chapter_index: int):
         "chapter_index": chapter_index,
         "book_id": book_id,
         "book_uuid": book_uuid,
+        "ai_default_provider": _ui_default_provider(),
         "prev_idx": prev_idx,
         "next_idx": next_idx
     })
@@ -376,6 +377,14 @@ SUPPORTED_AI_PROVIDERS = {"anthropic", "gemini", "ollama"}
 
 def _provider_requires_api_key(provider_name: str) -> bool:
     return provider_name in {"anthropic", "gemini"}
+
+
+def _ui_default_provider() -> str:
+    settings = load_ai_settings()
+    provider_name = str(settings.get("default_provider") or "anthropic").strip().lower()
+    if provider_name not in SUPPORTED_AI_PROVIDERS:
+        provider_name = "anthropic"
+    return provider_name
 
 
 def _get_provider_runtime(

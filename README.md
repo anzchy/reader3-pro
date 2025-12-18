@@ -56,6 +56,65 @@ This project uses [uv](https://docs.astral.sh/uv/).
 uv sync
 ```
 
+## AI Assistant (Anthropic / Ollama)
+
+The AI panel uses the `default_provider` from `config/ai_settings.json`.
+
+1) Copy the example config:
+
+```bash
+cp config/ai_settings.example.json config/ai_settings.json
+```
+
+2) Make sure the book is indexed for semantic retrieval (required for RAG summary/Q&A citations):
+
+```bash
+uv run reader3 --index dracula_data
+```
+
+3) Start the server:
+
+```bash
+uv run reader3-server
+```
+
+Open a book, click the **AI** button on the right toolbar, and use quick actions or chat.
+
+### Use Anthropic (Claude)
+
+Edit `config/ai_settings.json`:
+
+- Set `default_provider` to `"anthropic"`
+- Set `providers.anthropic.enabled` to `true`
+- Fill `providers.anthropic.api_key`
+- Optionally change `providers.anthropic.model_name`
+
+Restart `reader3-server` after changing the config.
+
+### Use Ollama (offline / local)
+
+1) Install and start Ollama:
+
+- macOS: `brew install ollama`
+- Start: `ollama serve`
+
+2) Download a model into this repo’s `models/` directory (recommended):
+
+```bash
+mkdir -p models/ollama
+export OLLAMA_MODELS="$PWD/models/ollama"
+ollama pull qwen3:8b
+```
+
+3) Edit `config/ai_settings.json`:
+
+- Set `default_provider` to `"ollama"`
+- Set `providers.ollama.enabled` to `true`
+- Set `providers.ollama.base_url` to `"http://localhost:11434"`
+- Set `providers.ollama.model_name` to the model you pulled (e.g. `"qwen3:8b"`)
+
+Restart `reader3-server`, then use the AI panel normally.
+
 #### Add a New EPUB (from scratch)
 
 Download an EPUB (e.g. [Dracula EPUB3](https://www.gutenberg.org/ebooks/345)) and run:

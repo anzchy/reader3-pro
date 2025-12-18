@@ -26,7 +26,7 @@ This checklist turns `spec.md` + `plan.md` + `data-model.md` + `contracts/*.yaml
 - [x] Implement `POST /api/ai/rag/retrieve` (internal helper endpoint)
   - [x] Load `books/{book_folder}/chroma_db/` and retrieve top-k passages
   - [x] Provide stable chapter references for UI citations
-- [ ] Implement request queueing for conversation flow:
+- [x] Implement request queueing for conversation flow:
   - [x] Queue data structure: In-memory FIFO queue per `{book_uuid}:{provider}` key
   - [x] Max 1 concurrent request per book+provider (subsequent requests wait)
   - [x] Max 10 pending requests in queue (11th request returns 429 Too Many Requests)
