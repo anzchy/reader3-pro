@@ -62,6 +62,18 @@ function setStatus(el, text) {
   el.textContent = text || "";
 }
 
+function downloadText(filename, text, mime = "application/json") {
+  const blob = new Blob([text], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function providerRequiresKey(name) {
   return ["anthropic", "openai", "gemini", "openrouter"].includes(String(name || "").toLowerCase());
 }
@@ -321,6 +333,48 @@ function installDataHandlers() {
   });
 }
 
+function installConfigHandlers() {
+  const exportBtn = $("settings-export-config");
+  const importInput = $("settings-import-config");
+  const statusEl = $("settings-config-status");
+  if (!exportBtn || !importInput) return;
+
+  exportBtn.addEventListener("click", async () => {
+    try {
+      exportBtn.disabled = true;
+      setStatus(statusEl, "");
+      const exported = await jsonFetch("/api/settings/export");
+      downloadText("reader3_ai_settings.export.json", JSON.stringify(exported, null, 2), "application/json");
+      setStatus(statusEl, "Exported.");
+    } catch (err) {
+      setStatus(statusEl, `Error: ${err?.message || String(err)}`);
+    } finally {
+      exportBtn.disabled = false;
+    }
+  });
+
+  importInput.addEventListener("change", async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setStatus(statusEl, "");
+      const text = await file.text();
+      const payload = JSON.parse(text);
+      await jsonFetch("/api/settings/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      setStatus(statusEl, "Imported. Reloading…");
+      setTimeout(() => window.location.reload(), 400);
+    } catch (err) {
+      setStatus(statusEl, `Error: ${err?.message || String(err)}`);
+    } finally {
+      e.target.value = "";
+    }
+  });
+}
+
 async function main() {
   try {
     const { settings, providersMeta, ollamaStatus, ollamaModels } = await loadAll();
@@ -330,6 +384,7 @@ async function main() {
     installProviderHandlers();
     installPreferenceHandlers();
     installDataHandlers();
+    installConfigHandlers();
   } catch (err) {
     const root = $("settings-providers");
     root.innerHTML = `<div class="status">Error loading settings: ${escapeHtml(err?.message || String(err))}</div>`;

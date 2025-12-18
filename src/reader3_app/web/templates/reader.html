@@ -211,6 +211,12 @@
                 <div class="ai-provider" id="reader-ai-provider">anthropic</div>
             </div>
             <div class="ai-header-actions">
+                <select id="reader-ai-export-format" class="ai-select" aria-label="Export format">
+                    <option value="md">MD</option>
+                    <option value="text">TXT</option>
+                    <option value="json">JSON</option>
+                </select>
+                <button type="button" class="ai-btn" id="reader-ai-export">Export</button>
                 <button type="button" class="ai-btn" id="reader-ai-new-chat">New chat</button>
                 <button type="button" class="ai-btn" id="reader-ai-clear">Clear</button>
                 <button type="button" class="ai-btn" id="reader-ai-close">Close</button>

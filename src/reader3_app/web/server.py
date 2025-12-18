@@ -14,7 +14,7 @@ from typing import Any, Optional
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
-from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -42,6 +42,14 @@ from ..ai.providers.openai import openai_chat_completions
 from ..ai.providers.openrouter import openrouter_chat_completions
 from ..ai.queue import AIRequestQueueManager
 from ..ai.rag import retrieve_passages
+from ..ai.routing import (
+    book_token_stats,
+    build_full_book_context,
+    build_multi_chapter_context,
+    choose_routing,
+    provider_context_window,
+    unique_chapter_orders_from_passages,
+)
 from ..reader3 import Book, BookMetadata, ChapterContent, TOCEntry
 from ..search_service import (
     SearchQuery,
@@ -62,6 +70,7 @@ STATIC_DIR = WEB_DIR / "static"
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 logger = logging.getLogger("reader3.search")
+ai_logger = logging.getLogger("reader3.ai")
 
 # Where are the book folders located?
 BOOKS_DIR = os.environ.get("READER3_BOOKS_DIR", "books")
@@ -790,6 +799,67 @@ async def api_get_provider(provider_name: str):
     return _public_provider_config(name, settings=settings)
 
 
+def _settings_export_payload(settings: dict) -> dict:
+    exported: dict = {
+        "default_provider": str(settings.get("default_provider") or "anthropic").strip().lower(),
+        "preferences": settings.get("preferences") if isinstance(settings.get("preferences"), dict) else {},
+        "providers": {},
+    }
+    providers = settings.get("providers") if isinstance(settings.get("providers"), dict) else {}
+    for name, cfg in providers.items():
+        if not isinstance(cfg, dict):
+            continue
+        safe_cfg = dict(cfg)
+        safe_cfg.pop("api_key", None)
+        exported["providers"][str(name).strip().lower()] = safe_cfg
+    return exported
+
+
+@app.get("/api/settings/export")
+async def api_settings_export():
+    settings = load_ai_settings()
+    return _settings_export_payload(settings)
+
+
+@app.post("/api/settings/import")
+async def api_settings_import(body: dict):
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Invalid payload")
+
+    existing = load_ai_settings()
+    updated = dict(existing or {})
+
+    if "default_provider" in body:
+        dp = str(body.get("default_provider") or "").strip().lower()
+        if dp and dp in SUPPORTED_AI_PROVIDERS:
+            updated["default_provider"] = dp
+
+    if isinstance(body.get("preferences"), dict):
+        prefs_default = (default_settings_dict().get("preferences") or {}).copy()
+        prefs_default.update(existing.get("preferences") if isinstance(existing.get("preferences"), dict) else {})
+        prefs_default.update({k: v for k, v in body.get("preferences").items() if v is not None})
+        updated["preferences"] = prefs_default
+
+    existing_providers = existing.get("providers") if isinstance(existing.get("providers"), dict) else {}
+    merged_providers = dict(existing_providers)
+    incoming_providers = body.get("providers") if isinstance(body.get("providers"), dict) else {}
+    for name, patch in incoming_providers.items():
+        pname = str(name or "").strip().lower()
+        if pname not in SUPPORTED_AI_PROVIDERS:
+            continue
+        base = dict(merged_providers.get(pname) or {})
+        if isinstance(patch, dict):
+            for key in ("enabled", "model_name", "base_url", "timeout", "timeout_s", "max_retries"):
+                if key in patch:
+                    base[key] = patch.get(key)
+        # API keys are never imported.
+        merged_providers[pname] = base
+    updated["providers"] = merged_providers
+
+    save_ai_settings(updated)
+    return _public_settings_response(load_ai_settings())
+
+
 class UpdateProviderRequest(BaseModel):
     api_key: Optional[str] = None
     base_url: Optional[str] = None
@@ -1051,6 +1121,94 @@ async def api_ai_delete_conversation(book_uuid: str, conversation_id: str):
     return None
 
 
+def _conversation_to_text(thread: dict) -> str:
+    lines = []
+    msgs = thread.get("messages") if isinstance(thread.get("messages"), list) else []
+    for m in msgs:
+        if not isinstance(m, dict):
+            continue
+        role = str(m.get("role") or "").strip().lower()
+        if role not in ("user", "assistant"):
+            continue
+        label = "User" if role == "user" else "Assistant"
+        content = str(m.get("content") or "").rstrip()
+        lines.append(f"{label}: {content}")
+        lines.append("")
+    return "\n".join(lines).strip() + "\n"
+
+
+def _conversation_to_markdown(thread: dict) -> str:
+    book_uuid = str(thread.get("book_uuid") or "").strip()
+    provider = str(thread.get("provider") or "").strip()
+    model = str(thread.get("model") or "").strip()
+    conv_id = str(thread.get("conversation_id") or "").strip()
+    created_at = str(thread.get("created_at") or "").strip()
+    last_updated = str(thread.get("last_updated") or "").strip()
+
+    out = [
+        "# AI Conversation",
+        "",
+        f"- book_uuid: `{book_uuid}`",
+        f"- conversation_id: `{conv_id}`",
+        f"- provider: `{provider}`",
+        f"- model: `{model}`",
+        f"- created_at: `{created_at}`",
+        f"- last_updated: `{last_updated}`",
+        "",
+        "---",
+        "",
+    ]
+    msgs = thread.get("messages") if isinstance(thread.get("messages"), list) else []
+    for m in msgs:
+        if not isinstance(m, dict):
+            continue
+        role = str(m.get("role") or "").strip().lower()
+        if role not in ("user", "assistant"):
+            continue
+        title = "User" if role == "user" else "Assistant"
+        ts = str(m.get("timestamp") or "").strip()
+        content = str(m.get("content") or "").rstrip()
+        out.append(f"## {title}")
+        if ts:
+            out.append(f"- time: `{ts}`")
+            out.append("")
+        out.append(content or "")
+        out.append("")
+    return "\n".join(out).strip() + "\n"
+
+
+@app.get("/api/ai/conversations/{book_uuid}/{conversation_id}/export")
+async def api_ai_export_conversation(book_uuid: str, conversation_id: str, format: str = "json"):
+    try:
+        book_folder = book_uuid_resolver.folder_for_book_uuid(book_uuid)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Book not found")
+    try:
+        settings = load_ai_settings()
+        thread = load_disk_conversation_combined(
+            BOOKS_DIR,
+            book_folder=book_folder,
+            book_uuid=str(book_uuid),
+            conversation_id=conversation_id,
+            project_conversations_root=_project_conversations_root(settings),
+        ).to_dict()
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    fmt = str(format or "json").strip().lower()
+    if fmt == "json":
+        return thread
+    if fmt in ("text", "txt"):
+        body = _conversation_to_text(thread)
+        return Response(content=body, media_type="text/plain; charset=utf-8")
+    if fmt in ("md", "markdown"):
+        body = _conversation_to_markdown(thread)
+        return Response(content=body, media_type="text/markdown; charset=utf-8")
+    raise HTTPException(status_code=400, detail="Invalid format (use json|text|md)")
+
+
 def _summary_prompt(summary_type: str) -> str:
     st = (summary_type or "full").strip().lower()
     if st not in {"overview", "highlights", "background", "full"}:
@@ -1125,6 +1283,27 @@ async def api_ai_summary(
     queue_key = f"{book_uuid}:{provider_name}"
 
     async def _do() -> dict:
+        book = load_book_cached(book_folder)
+        if not book:
+            raise HTTPException(status_code=404, detail="Book not found")
+
+        ctx_window = provider_context_window(provider_name, model)
+        book_tokens, max_chapter_tokens = book_token_stats(book)
+        decision = choose_routing(
+            provider_ctx_window=ctx_window,
+            book_tokens=book_tokens,
+            max_chapter_tokens=max_chapter_tokens,
+        )
+        ai_logger.debug(
+            "summary routing book_uuid=%s provider=%s model=%s mode=%s book_tokens=%s ctx_window=%s",
+            str(book_uuid),
+            provider_name,
+            model,
+            decision.mode,
+            int(book_tokens),
+            int(ctx_window),
+        )
+
         try:
             passages, retrieval_time_ms = retrieve_passages(
                 book_folder,
@@ -1135,15 +1314,18 @@ async def api_ai_summary(
             )
         except RuntimeError as e:
             raise HTTPException(status_code=400, detail=str(e))
-        context = "\n\n".join(
-            [
-                f"[{p['chapter_order'] + 1}] {p['chapter_title']}\n{p['text']}"
-                for p in passages
-            ]
-        )
+        routing_meta: dict[str, Any] = {"mode": decision.mode, "provider_context_window": int(ctx_window)}
+        if decision.mode == "full_book":
+            context = build_full_book_context(book, budget_tokens=decision.budget_tokens)
+        elif decision.mode == "multi_chapter":
+            orders = unique_chapter_orders_from_passages(passages, limit=8)
+            context, used_orders = build_multi_chapter_context(book, chapter_orders=orders, budget_tokens=decision.budget_tokens)
+            routing_meta["chapters"] = used_orders
+        else:
+            context = "\n\n".join([f"[{p['chapter_order'] + 1}] {p['chapter_title']}\n{p['text']}" for p in passages])
         system = (
             "你是 Reader3 的 AI 阅读助手。默认用中文回答（如果用户明确用英文提问，则用英文）。"
-            "请基于提供的书籍片段生成总结。"
+            "请基于提供的书籍内容生成总结。"
             "严格输出 JSON，且仅输出 JSON。"
             "JSON 格式：{"
             '"overview": string, '
@@ -1152,18 +1334,43 @@ async def api_ai_summary(
             "}。"
             + _summary_prompt(summary_type)
         )
-        user = f"书籍片段（用于总结）：\n{context}\n"
-        resp = await run_in_threadpool(
-            _call_provider,
-            provider_name,
-            api_key=api_key,
-            base_url=base_url,
-            model=model,
-            system=system,
-            messages=[{"role": "user", "content": user}],
-            max_tokens=body.max_tokens,
-            timeout_s=timeout_s,
-        )
+        user = f"书籍内容（用于总结）：\n{context}\n"
+        try:
+            resp = await run_in_threadpool(
+                _call_provider,
+                provider_name,
+                api_key=api_key,
+                base_url=base_url,
+                model=model,
+                system=system,
+                messages=[{"role": "user", "content": user}],
+                max_tokens=body.max_tokens,
+                timeout_s=timeout_s,
+            )
+        except Exception as e:
+            if decision.mode in ("full_book", "multi_chapter"):
+                ai_logger.debug(
+                    "summary fallback to rag book_uuid=%s provider=%s error=%s",
+                    str(book_uuid),
+                    provider_name,
+                    str(e),
+                )
+                rag_context = "\n\n".join([f"[{p['chapter_order'] + 1}] {p['chapter_title']}\n{p['text']}" for p in passages])
+                rag_user = f"书籍片段（用于总结）：\n{rag_context}\n"
+                resp = await run_in_threadpool(
+                    _call_provider,
+                    provider_name,
+                    api_key=api_key,
+                    base_url=base_url,
+                    model=model,
+                    system=system,
+                    messages=[{"role": "user", "content": rag_user}],
+                    max_tokens=body.max_tokens,
+                    timeout_s=timeout_s,
+                )
+                routing_meta["mode"] = "rag_fallback"
+            else:
+                raise
         payload = _parse_summary_payload(resp.text, summary_type=summary_type)
         return {
             "book_uuid": str(book_uuid),
@@ -1176,6 +1383,7 @@ async def api_ai_summary(
             "metadata": {
                 "retrieval_time_ms": retrieval_time_ms,
                 "finish_reason": resp.finish_reason,
+                "routing": routing_meta,
             },
         }
 
@@ -1212,6 +1420,11 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
             request_label="question",
         )
 
+        book = load_book_cached(book_folder)
+        if not book:
+            await ai_queue.release(lease)
+            raise HTTPException(status_code=404, detail="Book not found")
+
         try:
             passages, retrieval_time_ms = retrieve_passages(
                 book_folder,
@@ -1224,7 +1437,29 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
             await ai_queue.release(lease)
             raise HTTPException(status_code=400, detail=str(e))
 
-        context = "\n\n".join([f"[{p['chapter_order'] + 1}] {p['chapter_title']}\n{p['text']}" for p in passages])
+        ctx_window = provider_context_window(provider_name, model)
+        book_tokens, max_chapter_tokens = book_token_stats(book)
+        decision = choose_routing(
+            provider_ctx_window=ctx_window,
+            book_tokens=book_tokens,
+            max_chapter_tokens=max_chapter_tokens,
+        )
+        ai_logger.debug(
+            "question routing book_uuid=%s provider=%s model=%s mode=%s book_tokens=%s ctx_window=%s stream=1",
+            str(book_uuid),
+            provider_name,
+            model,
+            decision.mode,
+            int(book_tokens),
+            int(ctx_window),
+        )
+        if decision.mode == "full_book":
+            context = build_full_book_context(book, budget_tokens=decision.budget_tokens)
+        elif decision.mode == "multi_chapter":
+            orders = unique_chapter_orders_from_passages(passages, limit=8)
+            context, _used = build_multi_chapter_context(book, chapter_orders=orders, budget_tokens=decision.budget_tokens)
+        else:
+            context = "\n\n".join([f"[{p['chapter_order'] + 1}] {p['chapter_title']}\n{p['text']}" for p in passages])
         history = (body.conversation_history or [])[-50:]
         chat_history = []
         for m in history:
@@ -1238,10 +1473,10 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
 
         system = (
             "你是 Reader3 的 AI 阅读助手。"
-            "只基于提供的书籍片段回答与书相关的问题；如果片段不足以回答，请明确说明需要更多上下文。"
+            "只基于提供的书籍内容回答与书相关的问题；如果内容不足以回答，请明确说明需要更多上下文。"
             "回答要清晰、简洁。"
         )
-        user = f"书籍片段（用于回答）：\n{context}\n\n问题：{question}\n"
+        user = f"书籍内容（用于回答）：\n{context}\n\n问题：{question}\n"
 
         message_id = str(__import__("uuid").uuid4())
         started = time.perf_counter()
@@ -1404,6 +1639,10 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
         return StreamingResponse(event_gen(), media_type="text/event-stream")
 
     async def _do() -> dict:
+        book = load_book_cached(book_folder)
+        if not book:
+            raise HTTPException(status_code=404, detail="Book not found")
+
         try:
             passages, retrieval_time_ms = retrieve_passages(
                 book_folder,
@@ -1414,12 +1653,32 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
             )
         except RuntimeError as e:
             raise HTTPException(status_code=400, detail=str(e))
-        context = "\n\n".join(
-            [
-                f"[{p['chapter_order'] + 1}] {p['chapter_title']}\n{p['text']}"
-                for p in passages
-            ]
+        ctx_window = provider_context_window(provider_name, model)
+        book_tokens, max_chapter_tokens = book_token_stats(book)
+        decision = choose_routing(
+            provider_ctx_window=ctx_window,
+            book_tokens=book_tokens,
+            max_chapter_tokens=max_chapter_tokens,
         )
+        ai_logger.debug(
+            "question routing book_uuid=%s provider=%s model=%s mode=%s book_tokens=%s ctx_window=%s stream=0",
+            str(book_uuid),
+            provider_name,
+            model,
+            decision.mode,
+            int(book_tokens),
+            int(ctx_window),
+        )
+
+        routing_meta: dict[str, Any] = {"mode": decision.mode, "provider_context_window": int(ctx_window)}
+        if decision.mode == "full_book":
+            context = build_full_book_context(book, budget_tokens=decision.budget_tokens)
+        elif decision.mode == "multi_chapter":
+            orders = unique_chapter_orders_from_passages(passages, limit=8)
+            context, used_orders = build_multi_chapter_context(book, chapter_orders=orders, budget_tokens=decision.budget_tokens)
+            routing_meta["chapters"] = used_orders
+        else:
+            context = "\n\n".join([f"[{p['chapter_order'] + 1}] {p['chapter_title']}\n{p['text']}" for p in passages])
 
         history = (body.conversation_history or [])[-50:]
         anthropic_history = []
@@ -1434,23 +1693,48 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
 
         system = (
             "你是 Reader3 的 AI 阅读助手。"
-            "只基于提供的书籍片段回答与书相关的问题；如果片段不足以回答，请明确说明需要更多上下文。"
+            "只基于提供的书籍内容回答与书相关的问题；如果内容不足以回答，请明确说明需要更多上下文。"
             "回答要清晰、简洁。"
         )
-        user = f"书籍片段（用于回答）：\n{context}\n\n问题：{question}\n"
+        user = f"书籍内容（用于回答）：\n{context}\n\n问题：{question}\n"
 
         started = time.perf_counter()
-        resp = await run_in_threadpool(
-            _call_provider,
-            provider_name,
-            api_key=api_key,
-            base_url=base_url,
-            model=model,
-            system=system,
-            messages=[*anthropic_history, {"role": "user", "content": user}],
-            max_tokens=body.max_tokens,
-            timeout_s=timeout_s,
-        )
+        try:
+            resp = await run_in_threadpool(
+                _call_provider,
+                provider_name,
+                api_key=api_key,
+                base_url=base_url,
+                model=model,
+                system=system,
+                messages=[*anthropic_history, {"role": "user", "content": user}],
+                max_tokens=body.max_tokens,
+                timeout_s=timeout_s,
+            )
+        except Exception as e:
+            if decision.mode in ("full_book", "multi_chapter"):
+                ai_logger.debug(
+                    "question fallback to rag book_uuid=%s provider=%s error=%s",
+                    str(book_uuid),
+                    provider_name,
+                    str(e),
+                )
+                rag_context = "\n\n".join([f"[{p['chapter_order'] + 1}] {p['chapter_title']}\n{p['text']}" for p in passages])
+                rag_user = f"书籍片段（用于回答）：\n{rag_context}\n\n问题：{question}\n"
+                resp = await run_in_threadpool(
+                    _call_provider,
+                    provider_name,
+                    api_key=api_key,
+                    base_url=base_url,
+                    model=model,
+                    system=system,
+                    messages=[*anthropic_history, {"role": "user", "content": rag_user}],
+                    max_tokens=body.max_tokens,
+                    timeout_s=timeout_s,
+                )
+                routing_meta["mode"] = "rag_fallback"
+            else:
+                raise
         generation_time_ms = int((time.perf_counter() - started) * 1000)
 
         msg_id = str(__import__("uuid").uuid4())
@@ -1487,6 +1771,7 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
                 "retrieval_time_ms": retrieval_time_ms,
                 "generation_time_ms": generation_time_ms,
                 "provider": provider_name,
+                "routing": routing_meta,
             },
         }
 

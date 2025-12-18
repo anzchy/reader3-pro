@@ -11,6 +11,18 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function downloadText(filename, text, mime = "text/plain") {
+  const blob = new Blob([text], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function parseSseBlock(block) {
   const lines = String(block || "").split(/\r?\n/);
   let event = "message";
@@ -143,6 +155,8 @@ class ReaderAIUI {
     this.closeBtn = document.getElementById("reader-ai-close");
     this.clearBtn = document.getElementById("reader-ai-clear");
     this.newChatBtn = document.getElementById("reader-ai-new-chat");
+    this.exportBtn = document.getElementById("reader-ai-export");
+    this.exportFmtEl = document.getElementById("reader-ai-export-format");
     this.providerEl = document.getElementById("reader-ai-provider");
     this.threadsEl = document.getElementById("reader-ai-threads");
     this.messagesEl = document.getElementById("reader-ai-messages");
@@ -164,6 +178,7 @@ class ReaderAIUI {
     this.closeBtn?.addEventListener("click", () => this.close());
     this.clearBtn?.addEventListener("click", () => this.clearConversation());
     this.newChatBtn?.addEventListener("click", () => this.newChat());
+    this.exportBtn?.addEventListener("click", () => this.exportConversation());
 
     this.quickBtns.forEach((btn) => {
       btn.addEventListener("click", () => this.runSummary(btn.getAttribute("data-ai-summary-type")));
@@ -491,6 +506,51 @@ class ReaderAIUI {
     this.conversation.messages = [];
     await this.persistConversation();
     this.renderAll();
+  }
+
+  async exportConversation() {
+    if (this.isBusy) return;
+    if (!this.conversation?.id) {
+      alert("No active conversation to export. Start a new chat first.");
+      return;
+    }
+    const fmt = String(this.exportFmtEl?.value || "md").trim().toLowerCase();
+    const cid = String(this.conversation.id || "");
+    const url = `/api/ai/conversations/${encodeURIComponent(this.ctx.bookUuid)}/${encodeURIComponent(cid)}/export?format=${encodeURIComponent(fmt)}`;
+
+    try {
+      if (this.exportBtn) this.exportBtn.disabled = true;
+      const resp = await fetch(url);
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        throw new Error(data?.detail || `${resp.status} ${resp.statusText}`);
+      }
+
+      let text = "";
+      let mime = "text/plain";
+      let ext = "txt";
+      if (fmt === "json") {
+        const data = await resp.json();
+        text = JSON.stringify(data, null, 2);
+        mime = "application/json";
+        ext = "json";
+      } else if (fmt === "md" || fmt === "markdown") {
+        text = await resp.text();
+        mime = "text/markdown";
+        ext = "md";
+      } else {
+        text = await resp.text();
+        mime = "text/plain";
+        ext = "txt";
+      }
+
+      const fname = `${String(this.ctx.bookId || "book")}_${cid}.${ext}`;
+      downloadText(fname, text, mime);
+    } catch (err) {
+      alert(`Export failed: ${err?.message || String(err)}`);
+    } finally {
+      if (this.exportBtn) this.exportBtn.disabled = false;
+    }
   }
 
   async sendQuestion() {

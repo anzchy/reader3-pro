@@ -8,6 +8,7 @@ This directory collects implementation notes and “where things live” referen
 - AI providers & privacy (what gets sent to cloud APIs): `docs/technical-detail/ai-providers-and-privacy.md`
 - AI response speed tuning (Ollama/local): `docs/technical-detail/ai-speed-optimization.md`
 - Models & caches (HuggingFace / Ollama / offline notes): `docs/technical-detail/models-and-caches.md`
+- Export / import (settings, conversation export formats): `docs/technical-detail/export-import.md`
 
 ## Update Rule (project convention)
 

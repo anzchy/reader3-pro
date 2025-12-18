@@ -57,6 +57,11 @@ Valid values for `conversation_disk_storage`:
 
 `conversations/` is ignored by git via `.gitignore`.
 
+## Server-side settings file
+
+- AI settings (including provider API keys): `config/ai_settings.json` (gitignored)
+- Example template: `config/ai_settings.example.json`
+
 ## RAG index (ChromaDB)
 
 - **Per book**: `books/{book_id}/chroma_db/`
