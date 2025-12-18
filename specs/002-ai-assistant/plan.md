@@ -436,7 +436,7 @@ class OllamaProvider:
 - API endpoints: 1h (`/api/ollama/models`, `/api/ollama/status`)
 - Error handling: 1h (server not running, model missing)
 - Testing: 2h (offline operation, model switching)
-- Documentation: 1h (CLAUDE.md setup guide)
+- Documentation: 1h (`README.md` setup guide)
 
 **Recommended Models**:
 1. **qwen3:32b** (Primary) - 19.8GB
@@ -557,7 +557,7 @@ class OllamaProvider:
 - [ ] All edge cases documented with implemented behaviors
 - [ ] Constitution check passes post-implementation
 - [ ] Code reviewed against constitution principles
-- [ ] CLAUDE.md updated with AI feature + Ollama setup documentation
+- [ ] `README.md` updated with AI feature + Ollama setup documentation
 
 ## Next Steps
 
@@ -570,7 +570,6 @@ class OllamaProvider:
    - Generate `data-model.md` with detailed entity schemas
    - Generate `contracts/ai-api.yaml` and `contracts/settings-api.yaml`
    - Generate `quickstart.md` for developers
-   - Update agent context via `.specify/scripts/bash/update-agent-context.sh`
 
 3. **Run Phase 2 Tasks** (separate command: `/speckit.tasks`)
    - Generate dependency-ordered task list

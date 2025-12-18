@@ -276,7 +276,7 @@ Users shall switch providers without losing conversation:
 - Provider selector dropdown in chat panel header
 - **Smooth transition from cloud to Ollama (or vice versa)**
 - Warning if switching mid-conversation
-- Conversation history preserved
+- Conversation history preserved (each provider keeps its own thread; switching shows that provider’s history)
 
 ### FR-010: Quick Action Buttons (P1)
 Three quick action buttons shall appear above chat input:
@@ -380,7 +380,8 @@ Advanced users shall configure RAG settings:
 - **Ollama fallback: Automatic retry or switch to cloud provider**
 
 ### NFR-004: Security
-- API keys encrypted with AES-256-GCM
+- API keys stored **server-side** in `config/ai_settings.json` (gitignored) with restrictive permissions (e.g. `chmod 600`)
+- API keys are never returned to the browser (only `api_key_configured: true/false`)
 - HTTPS-only for cloud API calls
 - **Ollama: Local HTTP acceptable (localhost)**
 - No API keys in logs or console
@@ -537,7 +538,7 @@ curl http://localhost:11434/api/tags
 
 **Frontend**:
 - `ai-panel.js`: Chat UI, message rendering, streaming display
-- `indexeddb-manager.js`: Persistent storage, encryption/decryption
+- `indexeddb-manager.js`: Persistent storage wrapper (conversations + summary cache)
 - `settings.js`: Provider configuration, **Ollama connection testing**
 
 **Backend**:

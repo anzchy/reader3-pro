@@ -459,9 +459,6 @@ components:
           enum: [anthropic, openai, gemini, ollama, openrouter]
         model:
           type: string
-        api_key:
-          type: string
-          format: password
         conversation_history:
           type: array
           items:

@@ -9,6 +9,9 @@ wheels/
 # Virtual environments
 .venv
 
+# macOS
+.DS_Store
+
 # Custom
 *_data/
 *.epub
@@ -16,4 +19,3 @@ wheels/
 /.cache
 /.ipynb_checkpoints
 /.jupyter
-specs/.DS_Store
