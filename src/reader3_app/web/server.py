@@ -15,7 +15,10 @@ from fastapi.templating import Jinja2Templates
 
 from ..ai.books import BookUuidResolver
 from ..ai.config import get_provider_api_key, get_provider_settings, load_ai_settings
+from ..ai.config import get_provider_base_url
 from ..ai.providers.anthropic import anthropic_messages
+from ..ai.providers.gemini import gemini_generate_content
+from ..ai.providers.ollama import ollama_chat_completions
 from ..ai.queue import AIRequestQueueManager
 from ..ai.rag import retrieve_passages
 from ..reader3 import Book, BookMetadata, ChapterContent, TOCEntry
@@ -368,25 +371,82 @@ class AIRagRequest(BaseModel):
     min_similarity: float = 0.5
 
 
-def _require_anthropic(provider_name: str) -> None:
-    if (provider_name or "").strip().lower() != "anthropic":
-        raise HTTPException(status_code=400, detail="P1 supports provider=anthropic only")
+SUPPORTED_AI_PROVIDERS = {"anthropic", "gemini", "ollama"}
 
 
-def _get_anthropic_runtime(provider_from_request: str, model_from_request: Optional[str]) -> tuple[str, str, int]:
+def _provider_requires_api_key(provider_name: str) -> bool:
+    return provider_name in {"anthropic", "gemini"}
+
+
+def _get_provider_runtime(
+    provider_from_request: str,
+    model_from_request: Optional[str],
+) -> tuple[str, Optional[str], str, str, int]:
     settings = load_ai_settings()
-    _require_anthropic(provider_from_request)
-    provider = get_provider_settings("anthropic", settings=settings)
+    provider_name = (provider_from_request or settings.get("default_provider") or "anthropic").strip().lower()
+    if provider_name not in SUPPORTED_AI_PROVIDERS:
+        raise HTTPException(status_code=400, detail=f"Unsupported provider: {provider_name}")
+
+    provider = get_provider_settings(provider_name, settings=settings)
     if not provider.enabled:
         raise HTTPException(status_code=503, detail="AI provider is disabled in settings")
-    api_key = get_provider_api_key("anthropic", settings=settings)
-    if not api_key:
-        raise HTTPException(
-            status_code=503,
-            detail="Anthropic API key not configured. Create config/ai_settings.json (see config/ai_settings.example.json).",
-        )
+
+    api_key: Optional[str] = None
+    if _provider_requires_api_key(provider_name):
+        api_key = get_provider_api_key(provider_name, settings=settings)
+        if not api_key:
+            raise HTTPException(
+                status_code=503,
+                detail=f"{provider_name} API key not configured. Create config/ai_settings.json (see config/ai_settings.example.json).",
+            )
+
+    base_url = get_provider_base_url(provider_name, settings=settings) or provider.base_url or ""
     model = (model_from_request or provider.model_name).strip()
-    return api_key, model, provider.timeout_s
+    return provider_name, api_key, base_url, model, provider.timeout_s
+
+
+def _call_provider(
+    provider_name: str,
+    *,
+    api_key: Optional[str],
+    base_url: str,
+    model: str,
+    system: str,
+    messages: list[dict],
+    max_tokens: int,
+    timeout_s: int,
+):
+    if provider_name == "anthropic":
+        assert api_key is not None
+        return anthropic_messages(
+            api_key=api_key,
+            model=model,
+            system=system,
+            messages=messages,
+            max_tokens=max_tokens,
+            timeout_s=timeout_s,
+        )
+    if provider_name == "gemini":
+        assert api_key is not None
+        return gemini_generate_content(
+            api_key=api_key,
+            base_url=base_url or "https://generativelanguage.googleapis.com",
+            model=model,
+            system=system,
+            messages=messages,
+            max_tokens=max_tokens,
+            timeout_s=timeout_s,
+        )
+    if provider_name == "ollama":
+        return ollama_chat_completions(
+            base_url=base_url or "http://localhost:11434",
+            model=model,
+            system=system,
+            messages=messages,
+            max_tokens=max_tokens,
+            timeout_s=timeout_s,
+        )
+    raise HTTPException(status_code=400, detail=f"Unsupported provider: {provider_name}")
 
 
 def _summary_prompt(summary_type: str) -> str:
@@ -459,8 +519,8 @@ async def api_ai_summary(
     except Exception:
         raise HTTPException(status_code=404, detail="Book not found")
 
-    api_key, model, timeout_s = _get_anthropic_runtime(body.provider, body.model)
-    queue_key = f"{book_uuid}:anthropic"
+    provider_name, api_key, base_url, model, timeout_s = _get_provider_runtime(body.provider, body.model)
+    queue_key = f"{book_uuid}:{provider_name}"
 
     async def _do() -> dict:
         try:
@@ -492,8 +552,10 @@ async def api_ai_summary(
         )
         user = f"书籍片段（用于总结）：\n{context}\n"
         resp = await run_in_threadpool(
-            anthropic_messages,
+            _call_provider,
+            provider_name,
             api_key=api_key,
+            base_url=base_url,
             model=model,
             system=system,
             messages=[{"role": "user", "content": user}],
@@ -504,7 +566,7 @@ async def api_ai_summary(
         return {
             "book_uuid": str(book_uuid),
             "content": payload,
-            "provider": "anthropic",
+            "provider": provider_name,
             "model": resp.model,
             "generated_at": __import__("datetime").datetime.utcnow().isoformat() + "Z",
             "token_count": resp.token_count,
@@ -537,8 +599,8 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
     if len(question) > 1000:
         raise HTTPException(status_code=400, detail="question too long (max 1000 chars)")
 
-    api_key, model, timeout_s = _get_anthropic_runtime(body.provider, body.model)
-    queue_key = f"{book_uuid}:anthropic"
+    provider_name, api_key, base_url, model, timeout_s = _get_provider_runtime(body.provider, body.model)
+    queue_key = f"{book_uuid}:{provider_name}"
 
     async def _do() -> dict:
         try:
@@ -578,8 +640,10 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
 
         started = time.perf_counter()
         resp = await run_in_threadpool(
-            anthropic_messages,
+            _call_provider,
+            provider_name,
             api_key=api_key,
+            base_url=base_url,
             model=model,
             system=system,
             messages=[*anthropic_history, {"role": "user", "content": user}],
@@ -599,6 +663,7 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
                 "finish_reason": resp.finish_reason,
                 "retrieval_time_ms": retrieval_time_ms,
                 "generation_time_ms": generation_time_ms,
+                "provider": provider_name,
             },
         }
 

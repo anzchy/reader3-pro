@@ -122,17 +122,31 @@ class AIRequestQueueManager:
         except TimeoutError as e:
             logger.warning("queue wait timeout key=%s label=%s", key, request_label)
             raise HTTPException(status_code=504, detail="AI request timed out") from e
-        started = time.monotonic()
+
+        deadline = item.enqueued_at + max(0.1, float(timeout_s))
+        task = asyncio.create_task(fn())
         try:
-            remaining = max(0.1, timeout_s - (started - item.enqueued_at))
-            return await asyncio.wait_for(fn(), timeout=remaining)
-        except asyncio.TimeoutError as e:
-            logger.warning("timeout key=%s label=%s", key, request_label)
-            raise HTTPException(status_code=504, detail="AI request timed out") from e
+            while True:
+                now = time.monotonic()
+                if now >= deadline:
+                    task.cancel()
+                    logger.warning("timeout key=%s label=%s", key, request_label)
+                    raise HTTPException(status_code=504, detail="AI request timed out")
+
+                if request is not None and await request.is_disconnected():
+                    task.cancel()
+                    logger.info("client disconnected key=%s label=%s", key, request_label)
+                    raise asyncio.CancelledError("Client disconnected")
+
+                done, _pending = await asyncio.wait({task}, timeout=min(0.25, max(0.0, deadline - now)))
+                if task in done:
+                    return task.result()
         except asyncio.CancelledError:
             logger.info("cancelled key=%s label=%s", key, request_label)
             raise
         finally:
+            if not task.done():
+                task.cancel()
             await q.exit(item)
 
     async def _get_queue(self, key: str) -> _PerKeyQueue:

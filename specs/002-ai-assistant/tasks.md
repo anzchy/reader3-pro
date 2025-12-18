@@ -6,41 +6,41 @@ This checklist turns `spec.md` + `plan.md` + `data-model.md` + `contracts/*.yaml
 
 **Note**: This phase handles repository setup before MVP implementation. See plan.md Phase 0 for research outputs (research.md, contracts/).
 
-- [ ] Add `config/ai_settings.json` to `.gitignore` (repo-local, secrets not committed)
-- [ ] Add `config/ai_settings.example.json` (safe example, no keys)
-- [ ] Implement config loader/saver for `config/ai_settings.json` (defaults when missing)
-- [ ] Add `book_uuid` mapping support:
-  - [ ] Read/write `books/{book_folder}/ai_meta.json` with stable `book_uuid`
-  - [ ] Create `book_uuid → book_folder` resolver (scan `books/*_data/` on startup or lazy-cache)
+- [x] Add `config/ai_settings.json` to `.gitignore` (repo-local, secrets not committed)
+- [x] Add `config/ai_settings.example.json` (safe example, no keys)
+- [x] Implement config loader/saver for `config/ai_settings.json` (defaults when missing)
+- [x] Add `book_uuid` mapping support:
+  - [x] Read/write `books/{book_folder}/ai_meta.json` with stable `book_uuid`
+  - [x] Create `book_uuid → book_folder` resolver (scan `books/*_data/` on startup or lazy-cache)
 
 ## Phase 1 (P1) — MVP: RAG Q&A + Summary (Single Provider)
 
 ### Backend API (FastAPI)
 
-- [ ] Implement `POST /api/ai/summary/{book_uuid}` (contracts: `contracts/ai-api.yaml`)
-  - [ ] Support `summary_type` (`overview|highlights|background|full`) + `force_regenerate`
-  - [ ] Return provider/model metadata + `from_cache` flag (cache can be frontend-side for v1)
-- [ ] Implement `POST /api/ai/question/{book_uuid}` (non-streaming first)
-  - [ ] Accept `conversation_history` (max 50) from client
-  - [ ] Return `retrieval_sources` with chapter/title/order for citations
-- [ ] Implement `POST /api/ai/rag/retrieve` (internal helper endpoint)
-  - [ ] Load `books/{book_folder}/chroma_db/` and retrieve top-k passages
-  - [ ] Provide stable chapter references for UI citations
+- [x] Implement `POST /api/ai/summary/{book_uuid}` (contracts: `contracts/ai-api.yaml`)
+  - [x] Support `summary_type` (`overview|highlights|background|full`) + `force_regenerate`
+  - [x] Return provider/model metadata + `from_cache` flag (cache can be frontend-side for v1)
+- [x] Implement `POST /api/ai/question/{book_uuid}` (non-streaming first)
+  - [x] Accept `conversation_history` (max 50) from client
+  - [x] Return `retrieval_sources` with chapter/title/order for citations
+- [x] Implement `POST /api/ai/rag/retrieve` (internal helper endpoint)
+  - [x] Load `books/{book_folder}/chroma_db/` and retrieve top-k passages
+  - [x] Provide stable chapter references for UI citations
 - [ ] Implement request queueing for conversation flow:
-  - [ ] Queue data structure: In-memory FIFO queue per `{book_uuid}:{provider}` key
-  - [ ] Max 1 concurrent request per book+provider (subsequent requests wait)
-  - [ ] Max 10 pending requests in queue (11th request returns 429 Too Many Requests)
-  - [ ] Request timeout: 30s for cloud providers, 60s for Ollama
-  - [ ] Queue cleanup: Remove stale requests after timeout (log + return 504 Gateway Timeout)
-  - [ ] Response handling: Dequeue on completion/error, process next queued request
-  - [ ] Edge case: Client disconnect cancels request and dequeues
+  - [x] Queue data structure: In-memory FIFO queue per `{book_uuid}:{provider}` key
+  - [x] Max 1 concurrent request per book+provider (subsequent requests wait)
+  - [x] Max 10 pending requests in queue (11th request returns 429 Too Many Requests)
+  - [x] Request timeout: 30s for cloud providers, 60s for Ollama
+  - [x] Queue cleanup: Remove stale requests after timeout (log + return 504 Gateway Timeout)
+  - [x] Response handling: Dequeue on completion/error, process next queued request
+  - [x] Edge case: Client disconnect cancels request and dequeues
 
 ### RAG Retrieval
 
-- [ ] Reuse existing ChromaDB index from `001-search-features` (`books/{book_folder}/chroma_db/`)
-- [ ] Define chunk → chapter mapping strategy (store/recover `chapter_order` + `chapter_title`)
-- [ ] Add fallback behavior when index missing:
-  - [ ] Clear error message prompting user to index the book
+- [x] Reuse existing ChromaDB index from `001-search-features` (`books/{book_folder}/chroma_db/`)
+- [x] Define chunk → chapter mapping strategy (store/recover `chapter_order` + `chapter_title`)
+- [x] Add fallback behavior when index missing:
+  - [x] Clear error message prompting user to index the book
   - [ ] Optional: basic keyword fallback (no embeddings) if desired
 
 ### Provider (P1 default)
@@ -48,26 +48,26 @@ This checklist turns `spec.md` + `plan.md` + `data-model.md` + `contracts/*.yaml
 - [ ] Implement one provider end-to-end (recommend: Anthropic) behind a small interface:
   - [ ] `generate_summary(...)`
   - [ ] `answer_question(...)`
-- [ ] Enforce: API keys are backend-held; never returned to browser
+- [x] Enforce: API keys are backend-held; never returned to browser
 
 ### Reader UI (templates + static JS)
 
-- [ ] Add "AI" button to `templates/reader.html` header toolbar
-- [ ] Add floating AI panel (right side) matching `spec.md` layout:
-  - [ ] Quick actions: `全书总结`, `书籍亮点`, `背景解读`
-  - [ ] Message list + input (Enter to send)
-  - [ ] Provider indicator (provider + model)
-- [ ] Provide `book_uuid` to the page (data attribute or inline JSON) so JS calls `/api/ai/*/{book_uuid}`
-- [ ] Implement minimal frontend state (in-memory) + "Clear conversation"
+- [x] Add "AI" button to `templates/reader.html` header toolbar
+- [x] Add floating AI panel (right side) matching `spec.md` layout:
+  - [x] Quick actions: `全书总结`, `书籍亮点`, `背景解读`
+  - [x] Message list + input (Enter to send)
+  - [x] Provider indicator (provider + model)
+- [x] Provide `book_uuid` to the page (data attribute or inline JSON) so JS calls `/api/ai/*/{book_uuid}`
+- [x] Implement minimal frontend state (in-memory) + "Clear conversation"
 
 ### IndexedDB Persistence (P1)
 
-- [ ] Implement IndexedDB schema (per `data-model.md`):
-  - [ ] `conversations` store (keyed by conversation UUID; indexed by `book_uuid` + `provider`)
-  - [ ] `summaries` store (cache key: `{book_uuid}:{provider}:{model}`)
-- [ ] Persist/restore:
-  - [ ] Per-book + per-provider conversation thread
-  - [ ] Cached summary per provider/model
+- [x] Implement IndexedDB schema (per `data-model.md`):
+  - [x] `conversations` store (keyed by conversation UUID; indexed by `book_uuid` + `provider`)
+  - [x] `summaries` store (cache key: `{book_uuid}:{provider}:{model}`)
+- [x] Persist/restore:
+  - [x] Per-book + per-provider conversation thread
+  - [x] Cached summary per provider/model
 
 ### Manual Acceptance (P1)
 
