@@ -1,0 +1,587 @@
+openapi: 3.0.3
+info:
+  title: Reader3 Pro - Settings API
+  description: |
+    API endpoints for managing AI assistant settings including provider configurations,
+    user preferences, and API key validation.
+  version: 1.0.0
+  contact:
+    name: Reader3 Pro
+    url: https://github.com/yourusername/reader3-pro
+
+servers:
+  - url: http://127.0.0.1:8123/api/settings
+    description: Local development server
+
+tags:
+  - name: Settings
+    description: Global settings management
+  - name: Providers
+    description: AI provider configuration
+
+paths:
+  /:
+    get:
+      tags:
+        - Settings
+      summary: Get all settings
+      description: |
+        Retrieve global AI assistant settings including preferences and provider list.
+        The server persists settings for this self-hosted, single-user instance and returns defaults if not yet configured.
+      operationId: getSettings
+      responses:
+        '200':
+          description: Settings retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettingsResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    put:
+      tags:
+        - Settings
+      summary: Update settings
+      description: |
+        Update global preferences and server-stored AI settings (self-hosted, single-user).
+      operationId: updateSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSettingsRequest'
+      responses:
+        '200':
+          description: Settings updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettingsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /providers:
+    get:
+      tags:
+        - Providers
+      summary: List available AI providers
+      description: |
+        Get list of all supported AI providers with default configurations.
+        Returns provider metadata without API keys.
+      operationId: listProviders
+      responses:
+        '200':
+          description: Providers listed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - providers
+                properties:
+                  providers:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProviderMetadata'
+
+  /providers/{provider_name}:
+    get:
+      tags:
+        - Providers
+      summary: Get provider configuration
+      description: |
+        Get configuration for a specific provider.
+        Returns default configuration if not yet configured. API keys are never returned.
+      operationId: getProvider
+      parameters:
+        - $ref: '#/components/parameters/ProviderName'
+      responses:
+        '200':
+          description: Provider configuration retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderConfig'
+        '404':
+          $ref: '#/components/responses/ProviderNotFound'
+
+    put:
+      tags:
+        - Providers
+      summary: Update provider configuration
+      description: |
+        Update provider settings including API key, model, and timeout.
+        The server stores API keys locally and never returns them.
+      operationId: updateProvider
+      parameters:
+        - $ref: '#/components/parameters/ProviderName'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProviderRequest'
+      responses:
+        '200':
+          description: Provider updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderConfig'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/ProviderNotFound'
+
+    delete:
+      tags:
+        - Providers
+      summary: Delete provider configuration
+      description: |
+        Reset provider configuration on the server (clears stored API key).
+      operationId: deleteProvider
+      parameters:
+        - $ref: '#/components/parameters/ProviderName'
+      responses:
+        '204':
+          description: Provider configuration deleted
+        '404':
+          $ref: '#/components/responses/ProviderNotFound'
+
+  /providers/{provider_name}/test:
+    post:
+      tags:
+        - Providers
+      summary: Test provider connection
+      description: |
+        Validate API key and test connection to provider.
+        Makes a minimal API request to verify credentials and connectivity.
+      operationId: testProvider
+      parameters:
+        - $ref: '#/components/parameters/ProviderName'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestProviderRequest'
+      responses:
+        '200':
+          description: Connection test successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TestProviderResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/InvalidApiKey'
+        '404':
+          $ref: '#/components/responses/ProviderNotFound'
+        '503':
+          $ref: '#/components/responses/ProviderUnavailable'
+
+  /export:
+    get:
+      tags:
+        - Settings
+      summary: Export all settings
+      description: |
+        Export all settings and configurations as JSON for backup.
+        API keys are NOT included in export for security.
+      operationId: exportSettings
+      responses:
+        '200':
+          description: Settings exported successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportResponse'
+
+  /import:
+    post:
+      tags:
+        - Settings
+      summary: Import settings
+      description: |
+        Import settings from backup JSON file.
+        API keys must be re-entered manually after import.
+      operationId: importSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportRequest'
+      responses:
+        '200':
+          description: Settings imported successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettingsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+components:
+  parameters:
+    ProviderName:
+      name: provider_name
+      in: path
+      description: AI provider identifier
+      required: true
+      schema:
+        type: string
+        enum: [anthropic, openai, gemini, ollama, openrouter]
+        example: anthropic
+
+  schemas:
+    SettingsResponse:
+      type: object
+      required:
+        - default_provider
+        - providers
+        - preferences
+      properties:
+        default_provider:
+          type: string
+          enum: [anthropic, openai, gemini, ollama, openrouter]
+          description: Default provider for new conversations
+          example: anthropic
+        providers:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProviderConfig'
+          description: All configured providers
+        preferences:
+          $ref: '#/components/schemas/Preferences'
+
+    UpdateSettingsRequest:
+      type: object
+      properties:
+        default_provider:
+          type: string
+          enum: [anthropic, openai, gemini, ollama, openrouter]
+        preferences:
+          $ref: '#/components/schemas/Preferences'
+
+    Preferences:
+      type: object
+      properties:
+        show_timestamps:
+          type: boolean
+          default: true
+          description: Display message timestamps in chat UI
+        auto_suggest_questions:
+          type: boolean
+          default: true
+          description: Auto-generate suggested follow-up questions
+        streaming_enabled:
+          type: boolean
+          default: true
+          description: Enable streaming AI responses
+        max_conversation_length:
+          type: integer
+          minimum: 50
+          maximum: 1000
+          default: 500
+          description: Maximum messages to keep in conversation
+        theme:
+          type: string
+          enum: [light, dark, auto]
+          default: auto
+          description: UI theme preference
+
+    ProviderMetadata:
+      type: object
+      required:
+        - name
+        - display_name
+        - default_base_url
+        - default_model
+        - supported_features
+      properties:
+        name:
+          type: string
+          enum: [anthropic, openai, gemini, ollama, openrouter]
+        display_name:
+          type: string
+          example: Anthropic Claude
+        description:
+          type: string
+          example: Claude AI models by Anthropic
+        default_base_url:
+          type: string
+          format: uri
+          example: https://api.anthropic.com
+        default_model:
+          type: string
+          example: claude-sonnet-4
+        supported_models:
+          type: array
+          items:
+            type: string
+          example: [claude-sonnet-4, claude-opus-4, claude-haiku-4]
+        supported_features:
+          type: object
+          properties:
+            streaming:
+              type: boolean
+            function_calling:
+              type: boolean
+            vision:
+              type: boolean
+        documentation_url:
+          type: string
+          format: uri
+          example: https://docs.anthropic.com
+        pricing_url:
+          type: string
+          format: uri
+
+    ProviderConfig:
+      type: object
+      required:
+        - name
+        - base_url
+        - model_name
+        - enabled
+      properties:
+        name:
+          type: string
+          enum: [anthropic, openai, gemini, ollama, openrouter]
+        api_key_configured:
+          type: boolean
+          description: Whether API key has been set (never returns actual key)
+        base_url:
+          type: string
+          format: uri
+          description: API endpoint URL
+        model_name:
+          type: string
+          description: Default model to use
+        enabled:
+          type: boolean
+          description: Whether provider is active
+        timeout:
+          type: integer
+          minimum: 5
+          maximum: 120
+          default: 30
+          description: Request timeout in seconds
+        max_retries:
+          type: integer
+          minimum: 0
+          maximum: 10
+          default: 3
+          description: Number of retry attempts
+
+    UpdateProviderRequest:
+      type: object
+      properties:
+        api_key:
+          type: string
+          format: password
+          description: Plaintext API key (stored server-side; never returned)
+        base_url:
+          type: string
+          format: uri
+        model_name:
+          type: string
+        enabled:
+          type: boolean
+        timeout:
+          type: integer
+          minimum: 5
+          maximum: 120
+        max_retries:
+          type: integer
+          minimum: 0
+          maximum: 10
+
+    TestProviderRequest:
+      type: object
+      properties:
+        api_key:
+          type: string
+          format: password
+          description: Optional API key to test without saving; if omitted, uses the stored key
+        base_url:
+          type: string
+          format: uri
+          description: Optional custom base URL to test
+        model_name:
+          type: string
+          description: Optional specific model to test
+
+    TestProviderResponse:
+      type: object
+      required:
+        - success
+        - provider
+      properties:
+        success:
+          type: boolean
+          description: Whether connection test passed
+        provider:
+          type: string
+        message:
+          type: string
+          description: Success or error message
+          example: Successfully connected to Anthropic API
+        details:
+          type: object
+          properties:
+            model:
+              type: string
+              description: Model used for test
+            latency_ms:
+              type: integer
+              description: API response latency
+            available_models:
+              type: array
+              items:
+                type: string
+              description: Models available with this API key (if supported)
+
+    ExportResponse:
+      type: object
+      required:
+        - version
+        - exported_at
+        - data
+      properties:
+        version:
+          type: string
+          example: "1.0.0"
+          description: Export format version
+        exported_at:
+          type: string
+          format: date-time
+        data:
+          type: object
+          properties:
+            default_provider:
+              type: string
+            providers:
+              type: array
+              items:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  base_url:
+                    type: string
+                  model_name:
+                    type: string
+                  enabled:
+                    type: boolean
+                  timeout:
+                    type: integer
+                  max_retries:
+                    type: integer
+                description: Provider configs WITHOUT api_keys
+            preferences:
+              $ref: '#/components/schemas/Preferences'
+
+    ImportRequest:
+      type: object
+      required:
+        - version
+        - data
+      properties:
+        version:
+          type: string
+        data:
+          type: object
+          properties:
+            default_provider:
+              type: string
+            providers:
+              type: array
+              items:
+                type: object
+            preferences:
+              $ref: '#/components/schemas/Preferences'
+
+    Error:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+
+  responses:
+    BadRequest:
+      description: Invalid request parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: INVALID_PARAMETER
+            message: Invalid timeout value
+            details:
+              parameter: timeout
+              value: 999
+              allowed_range: [5, 120]
+
+    ProviderNotFound:
+      description: Provider not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: PROVIDER_NOT_FOUND
+            message: Provider 'invalid' not supported
+            details:
+              provider: invalid
+              supported_providers: [anthropic, openai, gemini, ollama, openrouter]
+
+    InvalidApiKey:
+      description: Invalid API key
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: INVALID_API_KEY
+            message: API key authentication failed
+            details:
+              provider: anthropic
+              suggestion: Verify your API key in provider settings
+
+    ProviderUnavailable:
+      description: Provider service unavailable
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: PROVIDER_UNAVAILABLE
+            message: OpenAI API is temporarily unavailable
+            details:
+              provider: openai
+              status_code: 503
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: INTERNAL_ERROR
+            message: Failed to process request
+
+security: []  # No authentication required (localhost self-hosted)

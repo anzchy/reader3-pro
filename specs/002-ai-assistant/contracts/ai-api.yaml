@@ -1,0 +1,577 @@
+openapi: 3.0.3
+info:
+  title: Reader3 Pro - AI Assistant API
+  description: |
+    API endpoints for AI-powered reading assistant functionality including
+    book summarization, Q&A, and RAG-based retrieval.
+  version: 1.0.0
+  contact:
+    name: Reader3 Pro
+    url: https://github.com/yourusername/reader3-pro
+
+servers:
+  - url: http://127.0.0.1:8123/api/ai
+    description: Local development server
+
+tags:
+  - name: Summary
+    description: Book summarization endpoints
+  - name: Q&A
+    description: Question answering endpoints
+  - name: RAG
+    description: Internal RAG retrieval endpoints
+
+paths:
+  /summary/{book_uuid}:
+    post:
+      tags:
+        - Summary
+      summary: Generate book summary
+      description: |
+        Generate AI summary of entire book using RAG to retrieve relevant context.
+        Supports three types: overview (全书总结), highlights (书籍亮点), and background (背景解读).
+        Returns cached summary if available and not expired.
+      operationId: generateSummary
+      parameters:
+        - $ref: '#/components/parameters/BookUuid'
+        - name: summary_type
+          in: query
+          description: Type of summary to generate
+          required: false
+          schema:
+            type: string
+            enum: [overview, highlights, background, full]
+            default: full
+        - name: force_regenerate
+          in: query
+          description: Force regenerate even if cached summary exists
+          required: false
+          schema:
+            type: boolean
+            default: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SummaryRequest'
+      responses:
+        '200':
+          description: Summary generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SummaryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/BookNotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/ProviderUnavailable'
+
+  /question/{book_uuid}:
+    post:
+      tags:
+        - Q&A
+      summary: Ask question about book
+      description: |
+        Answer user question using RAG to retrieve relevant passages from book.
+        Maintains conversation context for follow-up questions.
+        Supports streaming responses for real-time UI updates.
+      operationId: askQuestion
+      parameters:
+        - $ref: '#/components/parameters/BookUuid'
+        - name: stream
+          in: query
+          description: Enable streaming response (Server-Sent Events)
+          required: false
+          schema:
+            type: boolean
+            default: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuestionRequest'
+      responses:
+        '200':
+          description: Question answered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuestionResponse'
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/StreamingResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/BookNotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /rag/retrieve:
+    post:
+      tags:
+        - RAG
+      summary: Retrieve relevant passages
+      description: |
+        Internal endpoint for RAG-based semantic search.
+        Retrieves top-k most relevant text chunks for a query.
+        Uses existing ChromaDB embeddings from 001-search-features.
+      operationId: retrievePassages
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RAGRequest'
+      responses:
+        '200':
+          description: Passages retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RAGResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/BookNotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /suggested-questions/{book_uuid}:
+    post:
+      tags:
+        - Q&A
+      summary: Generate suggested questions
+      description: |
+        Generate AI-suggested follow-up questions based on current conversation context.
+        Returns 3-5 contextually relevant questions.
+      operationId: suggestQuestions
+      parameters:
+        - $ref: '#/components/parameters/BookUuid'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SuggestedQuestionsRequest'
+      responses:
+        '200':
+          description: Questions suggested successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuggestedQuestionsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/BookNotFound'
+
+components:
+  parameters:
+    BookUuid:
+      name: book_uuid
+      in: path
+      description: Stable UUID for a book (independent of folder name)
+      required: true
+      schema:
+        type: string
+        format: uuid
+        example: "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+
+  schemas:
+    SummaryRequest:
+      type: object
+      required:
+        - provider
+      properties:
+        provider:
+          type: string
+          enum: [anthropic, openai, gemini, ollama, openrouter]
+          description: AI provider to use for summary generation
+          example: anthropic
+        model:
+          type: string
+          description: Specific model to use (provider-dependent)
+          example: claude-sonnet-4
+        max_tokens:
+          type: integer
+          minimum: 100
+          maximum: 4000
+          default: 2000
+          description: Maximum tokens in response
+
+    SummaryResponse:
+      type: object
+      required:
+        - book_uuid
+        - content
+        - provider
+        - model
+        - generated_at
+      properties:
+        book_uuid:
+          type: string
+          format: uuid
+        content:
+          type: object
+          required:
+            - overview
+            - highlights
+            - background
+          properties:
+            overview:
+              type: string
+              description: 2-3 paragraph high-level summary
+            highlights:
+              type: array
+              items:
+                type: string
+              minItems: 5
+              maxItems: 10
+              description: Key insights and takeaways
+            background:
+              type: string
+              description: Author context and significance
+            themes:
+              type: array
+              items:
+                type: string
+              description: Major themes (optional)
+            key_concepts:
+              type: array
+              items:
+                type: string
+              description: Important concepts (optional)
+        provider:
+          type: string
+        model:
+          type: string
+        generated_at:
+          type: string
+          format: date-time
+        token_count:
+          type: integer
+          description: Estimated tokens in response
+        from_cache:
+          type: boolean
+          description: Whether summary was retrieved from cache
+
+    QuestionRequest:
+      type: object
+      required:
+        - question
+        - provider
+      properties:
+        question:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          description: User's question about the book
+          example: What is the main theme of this book?
+        provider:
+          type: string
+          enum: [anthropic, openai, gemini, ollama, openrouter]
+        model:
+          type: string
+        conversation_history:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+          maxItems: 50
+          description: Recent conversation context (last 50 messages)
+        rag_k:
+          type: integer
+          minimum: 1
+          maximum: 20
+          default: 5
+          description: Number of passages to retrieve for context
+        max_tokens:
+          type: integer
+          minimum: 100
+          maximum: 4000
+          default: 1000
+
+    QuestionResponse:
+      type: object
+      required:
+        - answer
+        - message_id
+      properties:
+        answer:
+          type: string
+          description: AI-generated answer
+        message_id:
+          type: string
+          format: uuid
+          description: Unique identifier for this message
+        retrieval_sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/RetrievalSource'
+          description: RAG passages used to generate answer
+        metadata:
+          type: object
+          properties:
+            token_count:
+              type: integer
+            model:
+              type: string
+            finish_reason:
+              type: string
+              enum: [stop, length, error]
+            retrieval_time_ms:
+              type: integer
+            generation_time_ms:
+              type: integer
+
+    StreamingResponse:
+      type: object
+      description: Server-Sent Events (SSE) stream format
+      properties:
+        event:
+          type: string
+          enum: [chunk, done, error]
+        data:
+          oneOf:
+            - type: object
+              properties:
+                delta:
+                  type: string
+                  description: Incremental text chunk
+            - type: object
+              properties:
+                message_id:
+                  type: string
+                  format: uuid
+                retrieval_sources:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/RetrievalSource'
+            - type: object
+              properties:
+                error:
+                  type: string
+
+    Message:
+      type: object
+      required:
+        - id
+        - role
+        - content
+        - timestamp
+      properties:
+        id:
+          type: string
+          format: uuid
+        conversation_id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        metadata:
+          type: object
+          additionalProperties: true
+
+    RAGRequest:
+      type: object
+      required:
+        - book_uuid
+        - query
+      properties:
+        book_uuid:
+          type: string
+          format: uuid
+        query:
+          type: string
+          description: Search query for semantic retrieval
+        k:
+          type: integer
+          minimum: 1
+          maximum: 20
+          default: 5
+          description: Number of passages to retrieve
+        min_similarity:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          default: 0.5
+          description: Minimum similarity threshold
+
+    RAGResponse:
+      type: object
+      required:
+        - passages
+        - retrieval_time_ms
+      properties:
+        passages:
+          type: array
+          items:
+            $ref: '#/components/schemas/RetrievalSource'
+        retrieval_time_ms:
+          type: integer
+
+    RetrievalSource:
+      type: object
+      required:
+        - chapter_id
+        - chapter_title
+        - text
+        - similarity
+      properties:
+        chapter_id:
+          type: string
+        chapter_title:
+          type: string
+        chapter_order:
+          type: integer
+        text:
+          type: string
+          description: Retrieved text passage
+        similarity:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          description: Cosine similarity score
+
+    SuggestedQuestionsRequest:
+      type: object
+      required:
+        - provider
+      properties:
+        provider:
+          type: string
+          enum: [anthropic, openai, gemini, ollama, openrouter]
+        model:
+          type: string
+        api_key:
+          type: string
+          format: password
+        conversation_history:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+          maxItems: 10
+          description: Recent conversation context
+
+    SuggestedQuestionsResponse:
+      type: object
+      required:
+        - questions
+      properties:
+        questions:
+          type: array
+          items:
+            type: string
+          minItems: 3
+          maxItems: 5
+          description: Suggested follow-up questions
+
+    Error:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: Error type identifier
+        message:
+          type: string
+          description: Human-readable error message
+        details:
+          type: object
+          additionalProperties: true
+          description: Additional error context
+
+  responses:
+    BadRequest:
+      description: Invalid request parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: INVALID_PARAMETER
+            message: Invalid book_uuid format
+            details:
+              parameter: book_uuid
+              value: ../etc/passwd
+
+    BookNotFound:
+      description: Book not found in library
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: BOOK_NOT_FOUND
+            message: Book not found in library
+            details:
+              book_uuid: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+
+    ProviderUnavailable:
+      description: AI provider unavailable or API error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: PROVIDER_ERROR
+            message: Anthropic API returned 503 Service Unavailable
+            details:
+              provider: anthropic
+              status_code: 503
+              suggestion: Try a different provider or retry later
+
+    RateLimited:
+      description: Too many requests to AI provider
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: RATE_LIMITED
+            message: OpenAI API rate limit exceeded
+            details:
+              provider: openai
+              retry_after: 60
+              suggestion: Wait 60 seconds before retrying
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: INTERNAL_ERROR
+            message: Failed to process request
+            details:
+              trace_id: abc-123-def
+
+  securitySchemes:
+    ApiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: |
+        Decrypted API key sent from frontend (encrypted in IndexedDB).
+        Not used for authentication (localhost deployment), only passed through to AI providers.
+
+security: []  # No authentication required (localhost self-hosted)

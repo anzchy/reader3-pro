@@ -1,190 +1,844 @@
 # Feature Specification: AI Reading Assistant
 
-**Feature Branch**: `002-ai-assistant`
+**Feature ID**: 002-ai-assistant
+**Status**: Planning
+**Priority**: P1 (High)
+**Target Version**: 2.0.0
+**Owner**: Jack Cheng
 **Created**: 2025-12-18
-**Status**: Draft
-**Input**: User description: "创建新的 002-add-ai-summary branch，添加功能：我希望在 reader.html，也就是每个书籍打开后，页面右边搜索 button 下方增加一个 ai button，显示`AI`字样，点击后，同样弹出右边悬浮窗，用于调用大模型（可选 Claude, OpenAI, Openrouter,Gemini，Ollama 等模型）对当前的书籍进行 AI summary，并进行提问等总结。如图所示，要求 UI 完整复刻截图。总结，就是实现 Google notebooklm 功能，利用 RAG 技术对全文进行索引，然后总结。要求大模型可选配置多种模型，后续可能需要有单独的 Setting 页面用于配置大模型的 api 等选项。"
-
-## User Scenarios & Testing *(mandatory)*
-
-### User Story 1 - AI Book Summary Generation (Priority: P1)
-
-A user opens an EPUB book and wants to get an AI-generated summary of the entire book or specific sections. They click the "AI" button in the sidebar, which opens a chat interface. The AI assistant automatically analyzes the book content using RAG technology and presents a comprehensive summary with key themes, main points, and chapter highlights. The user can then ask follow-up questions about the book content.
-
-**Why this priority**: This is the core value proposition - providing intelligent book summarization and Q&A capabilities similar to Google NotebookLM. This delivers immediate value for users who want to quickly understand book content or find specific information through conversational AI interaction.
-
-**Independent Test**: Can be fully tested by opening any processed book, clicking the "AI" button, verifying the sidebar panel opens with AI summary functionality, and confirming that the assistant generates a coherent summary of the book. Delivers standalone value without requiring other features.
-
-**Acceptance Scenarios**:
-
-1. **Given** a user is reading a book, **When** they click the "AI" button in the sidebar, **Then** a floating panel appears on the right side with AI chat interface showing a welcome message and initial book summary
-2. **Given** the AI panel is open, **When** the system generates the book summary, **Then** the summary displays with organized sections (全书总结/书籍亮点/背景解读) matching the reference UI
-3. **Given** a book summary is displayed, **When** the user types a question in the input field and submits, **Then** the AI responds with a contextually relevant answer based on the book content
-4. **Given** the AI chat interface is active, **When** the user asks questions, **Then** the conversation history is displayed with clear visual distinction between user questions and AI responses
-5. **Given** the AI panel is open, **When** the user clicks outside the panel or a close button, **Then** the panel closes and the conversation state is preserved for re-opening
+**Last Updated**: 2025-12-18
 
 ---
 
-### User Story 2 - Multi-Provider AI Model Selection (Priority: P2)
+## Table of Contents
 
-A user wants to choose which AI model provider to use for book analysis (Claude, OpenAI, Gemini, Ollama, or OpenRouter). They access a model selection dropdown in the AI panel header and can switch between available providers. Each provider offers different capabilities, response styles, and performance characteristics. The system validates API availability and provides clear feedback when a provider is not configured.
-
-**Why this priority**: This enables flexibility and user choice, allowing users to leverage their preferred AI provider or switch based on availability, cost, or quality preferences. It's essential for production use but not required for initial testing of the AI functionality.
-
-**Independent Test**: Can be tested by opening the AI panel, selecting different model providers from the dropdown, sending test questions, and verifying that responses come from the selected provider. Delivers value by enabling user choice and avoiding vendor lock-in.
-
-**Acceptance Scenarios**:
-
-1. **Given** the AI panel is open, **When** the user clicks the model selector dropdown in the header, **Then** all configured AI providers are listed (Claude, OpenAI, Gemini, Ollama, OpenRouter)
-2. **Given** the model selector is open, **When** the user selects a different AI provider, **Then** subsequent AI requests use the selected provider and the UI updates to show the active provider
-3. **Given** a user selects an AI provider, **When** that provider's API is not configured or unavailable, **Then** the system displays a clear error message with instructions to configure the provider in settings
-4. **Given** multiple AI providers are configured, **When** one provider fails or times out, **Then** the system suggests switching to an alternative provider without losing the conversation context
-5. **Given** the user has selected a provider, **When** they close and reopen the AI panel, **Then** the previously selected provider remains active
-
----
-
-### User Story 3 - Settings Page for API Configuration (Priority: P3)
-
-A user wants to configure API keys and settings for different AI model providers. They navigate to a dedicated Settings page where they can enter API keys, set default models, configure timeout values, and test connections for each provider. The settings are securely stored and validated before being saved.
-
-**Why this priority**: This provides the infrastructure for managing multiple AI providers but is not required for users who only use one provider with API keys set via environment variables. It's important for long-term usability but can be deferred initially.
-
-**Independent Test**: Can be tested by navigating to the Settings page, entering API keys for different providers, saving configurations, and verifying that the AI panel successfully uses the configured credentials. Delivers value by eliminating the need for manual configuration files or environment variables.
-
-**Acceptance Scenarios**:
-
-1. **Given** a user accesses the Settings page, **When** the page loads, **Then** a form displays with input fields for each AI provider (API key, base URL, model name, timeout)
-2. **Given** the Settings form is displayed, **When** the user enters an API key and clicks "Test Connection", **Then** the system validates the credentials and displays success or error feedback
-3. **Given** valid API keys are entered, **When** the user clicks "Save", **Then** the settings are securely stored and a confirmation message appears
-4. **Given** settings are saved, **When** the user returns to the reader and opens the AI panel, **Then** the configured providers are available for selection
-5. **Given** the user has configured multiple providers, **When** they set a default provider in settings, **Then** the AI panel opens with that provider pre-selected
+1. [Overview](#overview)
+2. [User Stories](#user-stories)
+3. [Functional Requirements](#functional-requirements)
+4. [Non-Functional Requirements](#non-functional-requirements)
+5. [AI Provider Support](#ai-provider-support)
+6. [Technical Architecture](#technical-architecture)
+7. [UI/UX Design](#uiux-design)
+8. [Data Model](#data-model)
+9. [API Endpoints](#api-endpoints)
+10. [Security Considerations](#security-considerations)
+11. [Success Criteria](#success-criteria)
+12. [Out of Scope](#out-of-scope)
 
 ---
 
-### User Story 4 - Suggested Questions and Quick Actions (Priority: P3)
+## Overview
 
-Based on the reference UI, users see suggested questions or conversation starters at the bottom of the AI chat interface (e.g., "日本案例对中国的教育体系有何借鉴?"). Clicking these suggestions automatically sends the question to the AI. The system also provides quick action buttons for common tasks like "全书总结" (Full Book Summary), "书籍亮点" (Key Highlights), and "背景解读" (Background Analysis).
+### Problem Statement
 
-**Why this priority**: This enhances discoverability and reduces friction for users who are unsure what questions to ask. It's a UX enhancement that can be added after core functionality is working.
+Users reading EPUB books in Reader3 Pro lack intelligent assistance for:
+- Understanding complex book content
+- Getting quick summaries without reading entire chapters
+- Asking questions about characters, themes, and plot points
+- Extracting key insights and highlights
 
-**Independent Test**: Can be tested by opening the AI panel and verifying that suggested questions appear at the bottom, clicking them sends the question, and quick action buttons trigger appropriate AI responses. Delivers value by improving user engagement.
+### Solution
 
-**Acceptance Scenarios**:
+Implement an AI-powered reading assistant that provides:
+- **Book Summarization**: Generate intelligent summaries (overview, highlights, background)
+- **Conversational Q&A**: Ask questions and get context-aware answers using RAG
+- **Multi-Provider Support**: Choose from cloud (Claude, OpenAI, Gemini, OpenRouter) or **local (Ollama)** AI models
+- **Privacy Options**: Use local models (Ollama + QWEN) for 100% offline operation with zero API costs
 
-1. **Given** the AI panel is open, **When** the initial summary is displayed, **Then** 2-3 contextually relevant suggested questions appear as clickable pills at the bottom
-2. **Given** suggested questions are displayed, **When** the user clicks a suggestion, **Then** the question is automatically sent to the AI and a response is generated
-3. **Given** the AI panel header, **When** displayed, **Then** three quick action buttons (全书总结, 书籍亮点, 背景解读) are visible
-4. **Given** a user clicks a quick action button, **When** the action is triggered, **Then** the AI generates a specialized response focused on that specific aspect of the book
-5. **Given** the conversation progresses, **When** the user scrolls through chat history, **Then** new suggested questions appear based on the current conversation context
+### Key Benefits
+
+- 📚 **Deeper Understanding**: AI helps extract insights from complex texts
+- 🚀 **Time Saving**: Get summaries without reading entire books
+- 💬 **Interactive Learning**: Ask questions and get instant answers
+- 🔒 **Privacy Control**: Use local models (Ollama) for complete data privacy
+- 💰 **Cost Flexibility**: Choose between cloud APIs or free local inference
+- 🌐 **Offline Capable**: Ollama provider works without internet connection
 
 ---
 
-### Edge Cases
+## User Stories
 
-- What happens when the AI model API call times out or fails (network error, rate limit, invalid API key)?
-- How does the system handle very large books (1000+ pages) that may exceed context window limits?
-- What happens when a user switches books while the AI panel is open with an active conversation?
-- How does the system handle concurrent AI requests if a user sends multiple questions rapidly?
-- What happens when the book content is not yet indexed for RAG (fresh upload)?
-- How does the AI panel respond when the user's screen resolution is small (mobile/tablet)?
-- What happens if the AI response is excessively long and exceeds display limits?
-- How does the system handle books in non-English languages (Chinese, Japanese, etc.)?
-- What happens when a user tries to use the AI feature but no API keys are configured?
+### US-001: Quick Book Summary (P1)
+**As a** reader
+**I want to** click an "AI" button and see a summary of the current book
+**So that** I can quickly understand the main themes without reading everything
 
-## Requirements *(mandatory)*
+**Acceptance Criteria**:
+- AI button appears in reader interface header
+- Clicking opens floating chat panel with quick action buttons
+- "全书总结" (Full Summary) button generates 2-3 paragraph overview
+- Summary appears within 10 seconds
+- Summary persists across page refreshes
 
-### Functional Requirements
+---
 
-#### UI Requirements
+### US-002: Ask Questions About Book (P1)
+**As a** reader
+**I want to** ask questions about the book content in natural language
+**So that** I can get specific answers without searching manually
 
-- **FR-001**: System MUST display an "AI" button in the reader sidebar, positioned below the search button
-- **FR-002**: AI button MUST be clearly labeled with "AI" text and visually distinct from other sidebar controls
-- **FR-003**: System MUST open a floating panel on the right side of the screen when the AI button is clicked, matching the reference UI design
-- **FR-004**: AI panel MUST display a header with the title "AI 问书" and a model selector dropdown
-- **FR-005**: AI panel MUST include a chat interface with scrollable message history showing user questions and AI responses
-- **FR-006**: System MUST visually distinguish between user messages and AI responses (different styling/alignment)
-- **FR-007**: AI panel MUST include an input field at the bottom with placeholder text "提出问题，获得来自书籍的解答..."
-- **FR-008**: System MUST display quick action buttons (全书总结, 书籍亮点, 背景解读) in the AI panel header
-- **FR-009**: System MUST show suggested questions as clickable pills at the bottom of the chat interface
-- **FR-010**: AI panel MUST be closable via a close button or clicking outside the panel area
-- **FR-011**: System MUST preserve conversation state when the panel is closed and reopened within the same session
+**Acceptance Criteria**:
+- Chat input field accepts questions in Chinese or English
+- AI retrieves relevant passages using RAG
+- Answers cite specific chapters/sections
+- Conversation history maintained across sessions
+- Response time <5 seconds at 95th percentile
 
-#### AI Model Integration
+**Example Questions**:
+- "Who is the main character?"
+- "Summarize chapter 5"
+- "What are the key themes in this book?"
+- "Explain the ending"
 
-- **FR-012**: System MUST support multiple AI model providers: Claude (Anthropic), OpenAI, Google Gemini, Ollama (local), and OpenRouter
-- **FR-013**: System MUST provide a model selector dropdown in the AI panel header allowing users to switch providers
-- **FR-014**: System MUST validate API availability for the selected provider before sending requests
-- **FR-015**: System MUST display clear error messages when an AI provider is unavailable or misconfigured
-- **FR-016**: System MUST handle API request failures gracefully with retry logic and fallback suggestions
-- **FR-017**: System MUST support streaming responses for providers that offer it (display text as it's generated)
-- **FR-018**: System MUST timeout requests after a reasonable duration (30 seconds default) and inform the user
+---
 
-#### RAG and Content Processing
+### US-003: Use Local AI Models (P1) 🆕
+**As a** privacy-conscious reader
+**I want to** use local AI models (Ollama + QWEN) instead of cloud APIs
+**So that** my book content never leaves my computer and I pay zero API costs
 
-- **FR-019**: System MUST use RAG (Retrieval-Augmented Generation) technology to index and query book content
-- **FR-020**: System MUST leverage existing vector embeddings from the search feature (ChromaDB) if available
-- **FR-021**: System MUST extract and index relevant book sections for efficient AI query processing
-- **FR-022**: System MUST provide book context (title, author, chapter information) to the AI model in each request
-- **FR-023**: System MUST limit the amount of book content sent to the AI model based on context window limitations
-- **FR-024**: System MUST retrieve the most relevant book passages for each user question using semantic search
-- **FR-025**: System MUST handle books that are not yet indexed by initiating indexing or using basic text extraction
+**Acceptance Criteria**:
+- Settings page shows "Ollama (Local)" as a provider option
+- User can select from downloaded Ollama models (qwen3:32b, qwen3:8b, etc.)
+- Connection test verifies Ollama server is running
+- All Q&A and summaries work offline using local model
+- Response quality comparable to cloud providers for Chinese/English books
+- Clear UI indication when using local vs. cloud provider
 
-#### Summary Generation
+**Technical Notes**:
+- Requires Ollama installed (`brew install ollama` on macOS)
+- Models downloaded via `ollama pull qwen3:32b` (~20GB)
+- No API key needed for local models
+- Fallback to cloud providers if Ollama unavailable
 
-- **FR-026**: System MUST automatically generate an initial book summary when the AI panel is first opened for a book
-- **FR-027**: AI summary MUST include sections for: full book overview, key highlights, and background/context analysis
-- **FR-028**: System MUST cache generated summaries to avoid regenerating on every panel open
-- **FR-029**: System MUST allow users to request specialized summaries via quick action buttons
-- **FR-030**: Summary generation MUST respect the selected AI model provider and use its capabilities
+---
 
-#### Conversation Management
+### US-004: Switch AI Providers (P2)
+**As a** user
+**I want to** choose which AI provider powers my reading assistant
+**So that** I can use my preferred service or local models based on needs
 
-- **FR-031**: System MUST maintain conversation history for the duration of the reading session
-- **FR-032**: System MUST display conversation history in chronological order with clear timestamps
-- **FR-033**: System MUST allow users to ask follow-up questions that reference previous conversation context
-- **FR-034**: System MUST provide a way to clear conversation history and start fresh
-- **FR-035**: System MUST save conversation history per book (switching books starts a new conversation)
+**Acceptance Criteria**:
+- Settings page lists all 5 providers: Anthropic (Claude), OpenAI (GPT), Google (Gemini), **Ollama (Local)**, OpenRouter
+- Each provider shows configuration options (API key for cloud, model selection for local)
+- Can switch providers mid-conversation without data loss
+- Default provider setting persists
+- **Ollama provider shows "No API key required" label**
 
-#### Settings and Configuration
+---
 
-- **FR-036**: System MUST provide a Settings page accessible from the library or reader interface
-- **FR-037**: Settings page MUST include configuration forms for each AI provider (API key, base URL, model name, timeout)
-- **FR-038**: Settings page MUST provide a "Test Connection" button for each provider to validate credentials
-- **FR-039**: System MUST securely store API keys (encrypted or in secure storage, not plain text in localStorage)
-- **FR-040**: Settings page MUST allow users to set a default AI provider that is pre-selected when opening the AI panel
-- **FR-041**: System MUST validate required settings before allowing AI functionality to be used
-- **FR-042**: Settings page MUST provide clear instructions for obtaining API keys from each provider
+### US-005: Key Highlights Extraction (P1)
+**As a** reader
+**I want to** see 5-10 key highlights or insights from the book
+**So that** I can quickly understand important takeaways
 
-### Key Entities
+**Acceptance Criteria**:
+- "书籍亮点" (Book Highlights) quick action button
+- Returns 5-10 bullet points
+- Each highlight is 1-2 sentences
+- Highlights cached for repeated access
 
-- **AIConversation**: Represents a chat session between the user and AI for a specific book, containing message history, selected model provider, and book context
-- **AIMessage**: Represents a single message in the conversation (user question or AI response), with timestamp, role (user/assistant), content, and optional metadata
-- **AIProvider**: Represents configuration for a specific AI model provider (name, API key, base URL, model name, enabled status, timeout settings)
-- **BookSummary**: Represents a cached AI-generated summary for a book, including overview, highlights, background sections, generation timestamp, and provider used
-- **AISettings**: Represents global AI configuration including default provider, API credentials for all providers, and user preferences
+---
 
-## Success Criteria *(mandatory)*
+### US-006: Background Information (P2)
+**As a** reader
+**I want to** learn about the book's context (author, historical background, significance)
+**So that** I can better appreciate the work
 
-### Measurable Outcomes
+**Acceptance Criteria**:
+- "背景解读" (Background) quick action button
+- Returns author bio, publication context, literary significance
+- Formatted as readable paragraphs
+- Cites external knowledge (not just book content)
 
-- **SC-001**: Users can open the AI panel and receive an initial book summary within 10 seconds of clicking the AI button
-- **SC-002**: Users can ask questions about book content and receive relevant AI responses within 5 seconds (95th percentile)
-- **SC-003**: AI responses accurately reference book content with at least 85% relevance as measured by user feedback or spot-checking
-- **SC-004**: Users can switch between AI providers and receive responses from the selected provider without errors
-- **SC-005**: 90% of AI panel UI elements match the reference design screenshot (spacing, layout, colors, typography)
-- **SC-006**: Conversation history is preserved when closing and reopening the AI panel during the same reading session
-- **SC-007**: Settings page successfully validates and saves API credentials for all supported providers
-- **SC-008**: System gracefully handles AI provider failures with clear error messages and recovery suggestions
-- **SC-009**: Users can complete the entire workflow (open panel, get summary, ask questions) without needing technical documentation
-- **SC-010**: AI feature works correctly for books in multiple languages (English and Chinese minimum)
+---
 
-## Assumptions
+### US-007: Conversation Persistence (P1)
+**As a** user
+**I want to** my conversation history saved automatically
+**So that** I can continue where I left off after closing the browser
 
-- **Assumption 1**: Users have basic familiarity with AI chat interfaces (ChatGPT, Claude, etc.)
-- **Assumption 2**: Vector embeddings for books are already generated by the existing search feature (Phase 5 from 001-search-features)
-- **Assumption 3**: Users are willing to provide their own AI provider API keys (no built-in free tier)
-- **Assumption 4**: The existing ChromaDB vector storage can be reused for RAG queries without re-indexing
-- **Assumption 5**: Average book size is under 500 pages, fitting within typical AI model context windows with summarization
-- **Assumption 6**: Self-hosted deployment means API keys can be stored locally without complex encryption requirements (user responsibility)
-- **Assumption 7**: Streaming responses are a nice-to-have; initial implementation can use non-streaming APIs
-- **Assumption 8**: Users will primarily use one or two AI providers, not frequently switching between all five
+**Acceptance Criteria**:
+- All messages stored in browser IndexedDB
+- Conversation restored on panel reopen
+- Can manually clear conversation
+- Separate conversations per book
+- **Works offline for Ollama conversations**
+
+---
+
+### US-008: Suggested Questions (P2)
+**As a** reader
+**I want to** see AI-generated suggested follow-up questions
+**So that** I can explore the book more deeply
+
+**Acceptance Criteria**:
+- 3-5 suggested questions appear after each AI response
+- Questions contextually relevant to conversation
+- Clicking suggested question sends it automatically
+- Can be disabled in settings
+
+---
+
+## Functional Requirements
+
+### FR-001: AI Button in Reader Interface (P1)
+The reader interface shall display an "AI" button (🤖 icon) in the header toolbar.
+
+### FR-002: Floating Chat Panel (P1)
+Clicking the AI button shall open a floating chat panel overlaying the reader content.
+
+**Panel Components**:
+- Header with title "AI Reading Assistant" and close button
+- Quick action buttons (全书总结, 书籍亮点, 背景解读)
+- Message history area with scrolling
+- Text input field with send button
+- **Provider indicator showing current AI model (e.g., "🤖 Ollama: QWEN 3 32B" or "☁️ Claude Sonnet 4")**
+
+### FR-003: Book Summarization (P1)
+The system shall generate AI summaries with three components:
+- **Overview**: 2-3 paragraph high-level summary
+- **Highlights**: 5-10 key insights as bullet points
+- **Background**: Author context and literary significance
+
+### FR-004: RAG-Based Q&A (P1)
+The system shall answer questions using Retrieval-Augmented Generation:
+1. Retrieve top 3-5 most relevant text chunks using semantic search (ChromaDB)
+2. Send retrieved context + question to AI provider
+3. Return answer with source citations (chapter numbers)
+
+### FR-005: Conversation History (P1)
+The system shall maintain conversation state:
+- Store all messages (user + assistant) in IndexedDB
+- Load conversation on panel open
+- Preserve history across browser sessions
+- **Separate storage for cloud vs. local (Ollama) conversations**
+
+### FR-006: Multi-Provider Support (P1)
+The system shall support 5 AI providers:
+
+1. **Anthropic Claude** (Cloud)
+   - Models: claude-sonnet-4, claude-opus-4
+   - API Key required
+   - 1M token context window
+
+2. **OpenAI GPT** (Cloud)
+   - Models: gpt-4-turbo-preview, gpt-4o
+   - API Key required
+   - 128K token context window
+
+3. **Google Gemini** (Cloud)
+   - Models: gemini-pro, gemini-ultra
+   - API Key required
+   - 1-2M token context window
+
+4. **Ollama (Local)** 🆕 (P1)
+   - Models: qwen3:32b, qwen3:8b, qwen2.5-1m:14b, qwen2.5-coder:32b
+   - **No API Key required**
+   - Runs 100% offline
+   - Context window: 128K-1M tokens (model dependent)
+   - Base URL: `http://localhost:11434` (configurable)
+   - Requires Ollama installed locally
+
+5. **OpenRouter** (Cloud)
+   - Proxy to multiple providers
+   - API Key required
+   - Variable context windows
+
+### FR-007: Ollama Provider Configuration (P1) 🆕
+The Settings page shall provide Ollama-specific options:
+
+**Configuration Fields**:
+- **Base URL**: Default `http://localhost:11434`, allow custom ports
+- **Model Selection**: Dropdown populated from `/api/tags` endpoint
+  - qwen3:32b (Recommended - Best quality, 19.8GB)
+  - qwen3:8b (Fast - Quick responses, 4.5GB)
+  - qwen3:4b (Lightweight - Low memory, 2.2GB)
+  - qwen2.5-1m:14b (Long context - 1M tokens, 8.2GB)
+  - Custom models shown if user downloaded others
+- **Enable/Disable**: Toggle Ollama provider
+- **Connection Test**: Button to verify Ollama server running
+- **Model Download Guide**: Link to Ollama installation instructions
+
+**UI Indicators**:
+- Green dot: Ollama server reachable
+- Red dot: Ollama not running (show setup instructions)
+- Model size displayed next to each model option
+
+### FR-008: API Key Management (P2)
+The system shall securely manage API keys (backend-held):
+- Store provider API keys on the **server** for this self-hosted, single-user instance (never return keys to the browser)
+- Support environment variables as an alternative for development/deployment
+- **Ollama provider: No API key field shown (local authentication not needed)**
+
+### FR-009: Provider Switching (P2)
+Users shall switch providers without losing conversation:
+- Provider selector dropdown in chat panel header
+- **Smooth transition from cloud to Ollama (or vice versa)**
+- Warning if switching mid-conversation
+- Conversation history preserved
+
+### FR-010: Quick Action Buttons (P1)
+Three quick action buttons shall appear above chat input:
+- **全书总结** (Full Summary): Generate complete summary
+- **书籍亮点** (Highlights): Extract key insights
+- **背景解读** (Background): Provide context
+
+### FR-011: Streaming Responses (P2)
+AI responses shall stream incrementally:
+- Display text as it's generated (token by token)
+- Show typing indicator during generation
+- Stop button to cancel generation
+- **Works for both cloud and Ollama providers**
+
+### FR-012: Suggested Questions (P2)
+After each AI response, display 3-5 suggested follow-up questions:
+- Generated based on conversation context
+- Clickable to auto-send
+- Refreshable with "More suggestions" button
+
+### FR-013: Summary Caching (P1)
+Generated summaries shall be cached:
+- Store in IndexedDB by `book_uuid`
+- Reuse cached summary if available
+- Force regenerate option
+- **Cache separately for each provider (Ollama vs. cloud may differ)**
+
+### FR-014: Error Handling (P1)
+The system shall gracefully handle errors:
+
+**Cloud Provider Errors**:
+- Invalid API key → Show setup instructions
+- Rate limit → Display wait time, suggest retry
+- Network timeout → Retry with exponential backoff
+- Service unavailable → Suggest alternative provider
+
+**Ollama Errors** 🆕:
+- Server not running → Show installation guide with `brew install ollama` command
+- Model not found → Show download command (`ollama pull qwen3:32b`)
+- Insufficient memory → Suggest smaller model (qwen3:8b)
+- Connection refused → Check if server running on correct port
+
+### FR-015: Mobile Responsiveness (P3)
+Chat panel shall adapt to screen sizes:
+- Desktop: Floating panel (400px width)
+- Tablet: Slide-in panel (50% width)
+- Mobile: Full-screen overlay
+
+### FR-016: Multilingual Support (P1)
+The system shall support Chinese and English:
+- UI labels in Chinese with English fallbacks
+- AI understands and responds in both languages
+- **Ollama QWEN models optimized for Chinese/English bilingual tasks**
+
+### FR-017: Conversation Management (P2)
+Users shall manage conversation history:
+- Clear conversation button
+- Export conversation to text/JSON
+- Search within conversation
+- **Separate management for cloud vs. Ollama conversations**
+
+### FR-018: Performance Optimizations (P2)
+The system shall optimize performance:
+- Lazy load AI panel resources
+- Debounce user input (300ms)
+- Request queue (max 1 concurrent AI call)
+- Cancel pending requests on new input
+
+### FR-019: Settings Page (P2)
+A dedicated Settings page shall provide:
+- Provider configuration (API keys, model selection)
+- Default provider selection
+- UI preferences (theme, timestamps, suggestions)
+- **Ollama setup guide and status dashboard**
+- Export/import settings backup
+
+### FR-020: RAG Retrieval Configuration (P3)
+Advanced users shall configure RAG settings:
+- Number of chunks to retrieve (default: 5)
+- Similarity threshold (default: 0.5)
+- Chunk size (default: 1000 tokens)
+- **Works identically for cloud and local providers**
+
+---
+
+## Non-Functional Requirements
+
+### NFR-001: Response Time (SC-002)
+- 95th percentile Q&A response time: <5 seconds (cloud providers)
+- **Ollama response time: <10 seconds (acceptable for local inference)**
+- Summary generation: <10 seconds (cloud), <20 seconds (Ollama)
+
+### NFR-002: Accuracy (SC-003)
+- RAG retrieval relevance: ≥85% (manual spot-checking)
+- Answer accuracy: ≥85% correct based on book content
+- **Ollama accuracy: ≥80% (slightly lower acceptable for local models)**
+
+### NFR-003: Availability
+- Client-side chat panel: 100% (offline capable for Ollama)
+- Cloud API dependency: Accept provider outages
+- **Ollama fallback: Automatic retry or switch to cloud provider**
+
+### NFR-004: Security
+- API keys encrypted with AES-256-GCM
+- HTTPS-only for cloud API calls
+- **Ollama: Local HTTP acceptable (localhost)**
+- No API keys in logs or console
+
+### NFR-005: Browser Compatibility
+- Chrome 88+
+- Firefox 87+
+- Safari 14+
+- No IE support
+
+### NFR-006: Storage Efficiency
+- IndexedDB quota usage <50MB typical
+- Warn at 80% quota
+- Auto-cleanup old conversations (>30 days)
+
+### NFR-007: Accessibility
+- Keyboard navigation (Tab, Enter, Esc)
+- Screen reader support (ARIA labels)
+- Focus management
+
+### NFR-008: Internationalization
+- UI supports zh-CN and en-US
+- Date/time formatting based on locale
+- **Model selection shows sizes in GB (universal)**
+
+---
+
+## AI Provider Support
+
+### Provider Comparison Matrix
+
+| Feature | Anthropic Claude | OpenAI GPT | Google Gemini | **Ollama (Local)** 🆕 | OpenRouter |
+|---------|-----------------|------------|---------------|---------------------|------------|
+| **API Key Required** | ✅ Yes | ✅ Yes | ✅ Yes | **❌ No** | ✅ Yes |
+| **Internet Required** | ✅ Yes | ✅ Yes | ✅ Yes | **❌ No (Offline)** | ✅ Yes |
+| **Cost** | $0.015/1k tokens | $0.01/1k tokens | $0.0005/1k tokens | **Free** | Variable |
+| **Context Window** | 1M tokens | 128K tokens | 1-2M tokens | **128K-1M tokens** | Variable |
+| **Chinese Support** | Good | Good | Good | **Excellent (QWEN)** | Variable |
+| **Response Speed** | ~5s | ~4s | ~6s | **~10s (32B model)** | Variable |
+| **Streaming** | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes |
+| **Privacy** | Cloud | Cloud | Cloud | **100% Local** | Cloud |
+| **Setup Complexity** | API Key | API Key | API Key | **Install Ollama** | API Key |
+
+### Ollama Provider Details 🆕
+
+**Recommended Models**:
+1. **qwen3:32b** (Primary) - 19.8GB
+   - Best quality for general Q&A
+   - Chinese/English bilingual
+   - 128K context window
+   - ~20-25 tokens/sec on RTX 3090
+
+2. **qwen3:8b** (Fast) - 4.5GB
+   - 2-3x faster responses
+   - Good quality for simple questions
+   - Lower memory requirements
+   - ~50-60 tokens/sec on M2
+
+3. **qwen2.5-1m:14b** (Long Context) - 8.2GB
+   - 1M token context (entire book)
+   - Best for full-book summaries
+   - No chunking needed
+   - ~30-40 tokens/sec
+
+**Hardware Requirements**:
+- **Minimum**: 32GB RAM, 20GB disk space (CPU inference slow)
+- **Recommended**: 64GB RAM, 24GB VRAM GPU, 50GB SSD
+- **Optimal**: RTX 4090 or Apple M2/M3 with 32GB+ unified memory
+
+**Installation**:
+```bash
+# macOS
+brew install ollama
+
+# Download model
+ollama pull qwen3:32b
+
+# Verify
+curl http://localhost:11434/api/tags
+```
+
+**Performance Expectations**:
+- First token latency: 150-400ms (model dependent)
+- Throughput: 18-60 tokens/sec (hardware dependent)
+- Total response time (200 tokens): 4-10 seconds
+- Memory usage: 20-65GB (model + quantization dependent)
+
+---
+
+## Technical Architecture
+
+### High-Level Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      Browser (Frontend)                      │
+│                                                               │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
+│  │ Reader UI    │  │ AI Panel UI  │  │ Settings UI  │      │
+│  │ (reader.html)│  │ (ai-panel.js)│  │(settings.html)│      │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘      │
+│         │                  │                  │              │
+│         └──────────────────┼──────────────────┘              │
+│                            │                                 │
+│                   ┌────────▼────────┐                        │
+│                   │  IndexedDB      │                        │
+│                   │  - Conversations│                        │
+│                   │  - Summaries    │                        │
+│                   └─────────────────┘                        │
+└───────────────────────────┬─────────────────────────────────┘
+                            │ HTTPS/HTTP
+                            │
+┌───────────────────────────▼─────────────────────────────────┐
+│                   FastAPI Server (Backend)                   │
+│                                                               │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
+│  │ ai_service.py│  │ rag_service  │  │ server.py    │      │
+│  │ (Providers)  │  │ (ChromaDB)   │  │ (API Routes) │      │
+│  └──────┬───────┘  └──────┬───────┘  └──────────────┘      │
+│         │                  │                                 │
+│         │         ┌────────▼────────┐                        │
+│         │         │  Local Config   │                        │
+│         │         │  - Provider keys│                        │
+│         │         │  - Provider cfg │                        │
+│         │         └─────────────────┘                        │
+│         │         ┌────────▼────────┐                        │
+│         │         │  ChromaDB       │                        │
+│         │         │  (Vector Store) │                        │
+│         │         │  + Embeddings   │                        │
+│         │         └─────────────────┘                        │
+│         │                                                     │
+│         │                                                     │
+│  ┌──────▼────────────────────────────────────────────┐      │
+│  │         AI Provider Abstraction Layer             │      │
+│  │                                                    │      │
+│  │  ┌────────┐ ┌────────┐ ┌────────┐ ┌──────────┐  │      │
+│  │  │Anthropic│ │ OpenAI │ │ Gemini │ │ **Ollama**│  │      │
+│  │  │ Client │ │ Client │ │ Client │ │ **Client**│  │      │
+│  │  └───┬────┘ └───┬────┘ └───┬────┘ └────┬─────┘  │      │
+│  └──────┼──────────┼──────────┼────────────┼────────┘      │
+└─────────┼──────────┼──────────┼────────────┼───────────────┘
+          │ HTTPS    │ HTTPS    │ HTTPS      │ HTTP (Local)
+          │          │          │            │
+┌─────────▼──────┐ ┌─▼────────┐ ┌─▼────────┐ ┌▼──────────────┐
+│ Anthropic API  │ │OpenAI API│ │Gemini API│ │**Ollama Server**│
+│ (Cloud)        │ │ (Cloud)  │ │ (Cloud)  │ │**(localhost)** │
+│ $0.015/1k tok  │ │$0.01/1k │ │$0.0005/1k│ │  **FREE**      │
+└────────────────┘ └──────────┘ └──────────┘ │  **Offline**   │
+                                              │qwen3:32b/8b/... │
+                                              └─────────────────┘
+```
+
+### Component Responsibilities
+
+**Frontend**:
+- `ai-panel.js`: Chat UI, message rendering, streaming display
+- `indexeddb-manager.js`: Persistent storage, encryption/decryption
+- `settings.js`: Provider configuration, **Ollama connection testing**
+
+**Backend**:
+- `ai_service.py`: Multi-provider abstraction, request routing, **Ollama client**
+- `rag_service.py`: Semantic search, chunk retrieval
+- `server.py`: API endpoints, request validation
+
+**External**:
+- ChromaDB: Vector storage (existing from 001-search-features)
+- AI Providers: Claude, OpenAI, Gemini, **Ollama (local)**, OpenRouter
+
+---
+
+## UI/UX Design
+
+### AI Button
+
+**Location**: Reader header, right side (next to search icon)
+**Icon**: 🤖 emoji or robot SVG
+**Behavior**:
+- Default state: Gray
+- Active (panel open): Blue highlight
+- **Processing**: Pulsing animation
+- **Ollama active**: Green dot indicator (offline capable)
+
+### Chat Panel Layout
+
+```
+┌─────────────────────────────────────────┐
+│ AI Reading Assistant              [×]   │  ← Header
+│ ☁️ Claude Sonnet 4  [▼]                 │  ← Provider selector
+├─────────────────────────────────────────┤
+│ [全书总结] [书籍亮点] [背景解读]          │  ← Quick actions
+├─────────────────────────────────────────┤
+│                                         │
+│  💬 User: What is this book about?     │  ← Message history
+│                                         │
+│  🤖 AI: This book explores...          │
+│     (Source: Chapter 1, 3)             │
+│                                         │
+│  💬 User: Tell me more...              │
+│                                         │
+│  🤖 AI: [Streaming response...]        │
+│                                         │
+│  ┌─ Suggested Questions ──────────┐   │
+│  │ • What are the main themes?    │   │
+│  │ • Who is the antagonist?       │   │
+│  └────────────────────────────────┘   │
+│                                         │
+├─────────────────────────────────────────┤
+│ [Type your question...]          [🔍]  │  ← Input
+└─────────────────────────────────────────┘
+```
+
+**Panel Dimensions**:
+- Desktop: 400px width, 600px height
+- Mobile: Full screen
+- Position: Fixed right, top 64px
+
+**Ollama UI Enhancements** 🆕:
+- Provider selector shows "🤖 Ollama: QWEN 3 32B" with offline badge
+- Green dot next to provider name when connected
+- Model name clickable to show details (context window, size)
+- Connection status: "✅ Running locally" or "⚠️ Not connected"
+
+### Settings Page
+
+**Tabs**:
+1. **Providers**: Configure AI services
+2. **Preferences**: UI settings
+3. **Data**: Export/import, clear cache
+
+**Ollama Provider Section** 🆕:
+```
+┌─────────────────────────────────────────────────┐
+│ Ollama (Local AI)                          [ON] │
+├─────────────────────────────────────────────────┤
+│                                                 │
+│ Status: ✅ Connected (http://localhost:11434)  │
+│                                                 │
+│ Model:  [qwen3:32b ▼]                          │
+│         Size: 19.8GB | Context: 128K tokens    │
+│                                                 │
+│ Base URL: [http://localhost:11434          ]  │
+│                                                 │
+│ [Test Connection] [Refresh Models]             │
+│                                                 │
+│ Available Models:                               │
+│ • qwen3:32b (19.8GB) - Recommended             │
+│ • qwen3:8b (4.5GB) - Faster                    │
+│ • qwen2.5-1m:14b (8.2GB) - Long context        │
+│                                                 │
+│ Don't have Ollama?                              │
+│ [📥 Installation Guide] [🔗 Download]          │
+│                                                 │
+└─────────────────────────────────────────────────┘
+```
+
+---
+
+## Data Model
+
+See [data-model.md](./data-model.md) for complete schemas.
+
+**Key Entities**:
+1. `AIConversation`: Chat session per book
+2. `AIMessage`: Single message (user/assistant)
+3. `AIProviderConfig`: Provider config (API keys stored server-side)
+4. `BookSummary`: Cached summary
+5. `AISettings`: Global preferences
+
+**Book Identity (UUID)**:
+- This feature uses a stable `book_uuid` (UUID) for all AI endpoints and persistence.
+- The reader route may still use the existing folder-based id; the server MUST provide `book_uuid` to the reader UI for API calls.
+- Recommended storage: `books/{book_folder}/ai_meta.json` containing `{ "book_uuid": "..." }`.
+- If the file is missing, the server SHOULD generate a new UUID once and persist it, so future sessions remain stable.
+
+---
+
+## API Endpoints
+
+See OpenAPI specs:
+- [contracts/ai-api.yaml](./contracts/ai-api.yaml)
+- [contracts/settings-api.yaml](./contracts/settings-api.yaml)
+- [contracts/ollama-api.yaml](./contracts/ollama-api.yaml)
+
+**Core Endpoints**:
+
+```
+POST /api/ai/summary/{book_uuid}
+  - Generate book summary
+  - Provider: Specified in request body
+
+POST /api/ai/question/{book_uuid}
+  - Answer question with RAG
+  - Supports streaming (SSE)
+
+POST /api/ai/rag/retrieve
+  - Internal RAG retrieval
+
+GET /api/settings/providers
+  - List available providers
+
+POST /api/settings/providers/ollama/test 🆕
+  - Test Ollama connection
+  - Returns available models
+  - Response: {status: "ok", models: ["qwen3:32b", ...]}
+```
+
+**Ollama-Specific Endpoints** 🆕:
+```
+GET /api/ollama/models   - List downloaded Ollama models (proxy /api/tags)
+GET /api/ollama/status   - Check if Ollama server is running
+```
+
+---
+
+## Security Considerations
+
+### API Key Storage (Backend-held)
+- API keys are stored on the server for this self-hosted, single-user instance.
+- The browser never receives API keys; APIs only return `api_key_configured: true/false`.
+- Keys SHOULD be stored in `config/ai_settings.json` (gitignored) with restricted permissions (e.g. chmod 600), or via environment variables.
+
+### Data Privacy
+- **Cloud Providers**: Book content sent to third-party APIs
+- **Ollama**: 100% local processing, content never leaves machine
+- User informed of privacy implications in Settings
+- Clear labeling: "☁️ Cloud" vs "🤖 Local" badges
+
+### Network Security
+- HTTPS is used between the server and cloud providers.
+- **Ollama**: HTTP acceptable for localhost communication
+- CORS headers properly configured
+- No API keys in URL parameters
+
+### Input Validation
+- Sanitize user questions (XSS prevention)
+- Validate `book_uuid` exists in the local library mapping
+- Rate limiting: 1 request per 2 seconds per user
+- **Ollama**: Validate model names against `/api/tags` response
+
+---
+
+## Success Criteria
+
+### SC-001: Summary Performance
+**Target**: Initial summary generation <10 seconds (cloud), <20 seconds (Ollama)
+**Measurement**: Time from button click to full summary display
+**Threshold**: 90% of requests meet target
+
+### SC-002: Q&A Response Time
+**Target**: <5 seconds at 95th percentile (cloud), <10 seconds (Ollama)
+**Measurement**: Time from Enter press to answer completion
+**Threshold**: 95th percentile under target
+
+### SC-003: Answer Relevance
+**Target**: ≥85% accuracy (cloud), ≥80% (Ollama)
+**Measurement**: Manual review of 20 Q&A pairs per book
+**Threshold**: 17/20 (cloud), 16/20 (Ollama) deemed relevant
+
+### SC-004: Provider Switching
+**Target**: Zero errors when switching providers mid-conversation
+**Measurement**: Test switching between all 5 providers
+**Threshold**: All combinations work without data loss
+
+### SC-005: UI Fidelity
+**Target**: 90% visual match to reference design
+**Measurement**: Side-by-side comparison of 10 UI elements
+**Threshold**: 9/10 elements match spacing, colors, typography
+
+### SC-006: Conversation Persistence
+**Target**: 100% conversation restored after page refresh
+**Measurement**: Close panel, refresh, reopen
+**Threshold**: All messages restored correctly
+
+### SC-007: Settings Validation
+**Target**: API credentials saved and validated for all 5 providers
+**Measurement**: Save/load test for each provider
+**Threshold**: All 5 providers persist correctly
+
+### SC-008: Error Handling
+**Target**: Clear error messages with recovery suggestions
+**Measurement**: Trigger errors (wrong key, timeout, network down, **Ollama not running**)
+**Threshold**: User can resolve issue from error message alone
+
+### SC-009: Usability
+**Target**: New user completes workflow without documentation
+**Measurement**: User testing with 5 new users
+**Threshold**: 90% task completion rate
+
+### SC-010: Multilingual Support
+**Target**: Works for English and Chinese books
+**Measurement**: Test with 5 EN + 5 CN books
+**Threshold**: Summaries and Q&A work for both languages
+
+### SC-011: Ollama Setup 🆕
+**Target**: User can set up Ollama and run first query in <10 minutes
+**Measurement**: Timed setup from installation guide
+**Threshold**: 80% of users complete setup successfully
+
+### SC-012: Offline Operation 🆕
+**Target**: Ollama provider works 100% offline
+**Measurement**: Disconnect internet, run Q&A with Ollama
+**Threshold**: All features work without network
+
+---
+
+## Out of Scope
+
+The following features are explicitly excluded from v1.0:
+
+### ❌ Not Included
+- **Multi-user support**: Single-user self-hosted only
+- **Real-time collaboration**: No shared conversations
+- **Custom model fine-tuning**: Use pre-trained models only
+- **Voice input/output**: Text-only interface
+- **Image analysis**: Text content only (no OCR on book images)
+- **Cross-book comparison**: Single book context per conversation
+- **Annotation integration**: Separate from existing highlight feature
+- **Mobile apps**: Web browser only
+- **Backend conversation storage**: Client-side only (IndexedDB)
+- **AI model training**: No usage data collection for training
+
+### 🔮 Future Considerations (v2.0+)
+- Plugin system for custom AI providers
+- Export conversation as PDF/EPUB
+- Voice-to-text question input
+- Multi-book semantic search
+- Reading progress tracking with AI insights
+- Personalized reading recommendations
+
+---
+
+## Appendix
+
+### A. Reference Design
+**Source**: Google NotebookLM (https://notebooklm.google.com)
+**Key UI Elements**:
+- Floating chat panel (right side)
+- Quick action buttons (top of panel)
+- Suggested questions (after responses)
+- Clean, minimal design with focus on content
+
+### B. Glossary
+- **RAG**: Retrieval-Augmented Generation (semantic search + LLM)
+- **ChromaDB**: Vector database for embeddings
+- **Ollama**: Local LLM runtime (like Docker for AI models)
+- **QWEN**: Alibaba's open-source multilingual LLM family
+- **IndexedDB**: Browser-native key-value storage
+- **SSE**: Server-Sent Events (streaming protocol)
+
+### C. Related Documents
+- [plan.md](./plan.md): Implementation roadmap
+- [research.md](./research.md): Technical research findings
+- [data-model.md](./data-model.md): Detailed data schemas
+- [extension-evaluation.md](./extension-evaluation.md): Ollama integration evaluation
+- [quickstart.md](./quickstart.md): Developer setup guide
+
+---
+
+**Document Version**: 1.0
+**Last Updated**: 2025-12-18
+**Status**: ✅ Approved for Implementation
