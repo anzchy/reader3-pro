@@ -5,10 +5,14 @@ import pickle
 import re
 import time
 import unicodedata
+import html
+import logging
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import lru_cache
-from typing import Optional, List, Tuple, Dict
+from typing import Optional, List, Tuple, Dict, Union
+
+logger = logging.getLogger("reader3.search")
 
 
 class SearchMode(str, Enum):
@@ -52,6 +56,8 @@ class SearchResult:
     context_after: str
     position: int
     relevance_score: float = 0.0
+    match_explanation: Optional[str] = None
+    mode: Optional[str] = None
 
 
 @dataclass
@@ -61,19 +67,45 @@ class SearchResultSet:
     total_matches: int = 0
     searched_books: int = 0
     failed_books: List[str] = field(default_factory=list)
+    unindexed_books: List[str] = field(default_factory=list)
     is_truncated: bool = False
     execution_time_ms: float = 0.0
     grouped_by_book: Dict[str, List[SearchResult]] = field(default_factory=dict)
+    index_status_by_book: Dict[str, str] = field(default_factory=dict)
+    status_override: Optional[str] = None
 
     def status_message(self) -> str:
+        if self.status_override:
+            return self.status_override
         if not self.query.term.strip():
             return "Cleared"
         if self.failed_books:
             ok = max(0, self.searched_books - len(self.failed_books))
             return f"Results from {ok} of {self.searched_books} books ({len(self.failed_books)} failed)"
+        if self.query.scope == SearchScope.ALL_BOOKS and self.unindexed_books and self.query.mode != SearchMode.KEYWORD:
+            indexed = max(0, self.searched_books - len(self.unindexed_books))
+            return f"Results from {indexed} indexed books ({len(self.unindexed_books)} not indexed)"
         if self.query.scope == SearchScope.CURRENT_BOOK:
             return f"Found {self.total_matches} results"
         return f"Found {self.total_matches} results across {self.searched_books} books"
+
+
+def escape_for_highlighting(term: str) -> str:
+    return html.escape(term or "", quote=True)
+
+
+def validate_search_term(term: str) -> str:
+    trimmed = (term or "").strip()
+    if len(trimmed) > 500:
+        raise ValueError("Search term too long (max 500 characters)")
+    return trimmed
+
+
+def truncate_context(text: str, max_len: int = 150) -> str:
+    if len(text) <= max_len:
+        return text
+    half = max_len // 2
+    return f"{text[:half]}…{text[-half:]}"
 
 
 def _is_latin_base_char(ch: str) -> bool:
@@ -154,11 +186,11 @@ def extract_context(text: str, start: int, end: int) -> Tuple[str, str]:
 
         ctx_start = word_spans[start_word][0]
         ctx_end = word_spans[end_word_excl - 1][1]
-        return text[ctx_start:start].strip(), text[end:ctx_end].strip()
+        return truncate_context(text[ctx_start:start].strip()), truncate_context(text[end:ctx_end].strip())
 
     ctx_start = max(0, start - 40)
     ctx_end = min(len(text), end + 40)
-    return text[ctx_start:start].strip(), text[end:ctx_end].strip()
+    return truncate_context(text[ctx_start:start].strip()), truncate_context(text[end:ctx_end].strip())
 
 
 def search_text(
@@ -168,7 +200,7 @@ def search_text(
     case_sensitive: bool,
     max_results: int,
 ) -> List[Tuple[int, int]]:
-    trimmed = (term or "").strip()
+    trimmed = validate_search_term(term)
     if not trimmed:
         return []
 
@@ -201,7 +233,30 @@ def _book_pkl_path(book_id: str, books_dir: str) -> str:
 def load_book_cached(book_id: str, books_dir: str) -> object:
     path = _book_pkl_path(book_id, books_dir)
     with open(path, "rb") as f:
-        return pickle.load(f)
+        try:
+            return _Reader3Unpickler(f).load()
+        except Exception:
+            # Fallback: try the default loader (works when pickles were created
+            # with stable module paths).
+            f.seek(0)
+            return pickle.load(f)
+
+
+class _Reader3Unpickler(pickle.Unpickler):
+    """
+    Backwards-compatible unpickler.
+
+    Some `book.pkl` files may have been created while running `reader3.py` as a
+    script, resulting in references like `__main__.Book`. Map those back to the
+    importable `reader3` module.
+    """
+
+    _REMAP = {"Book", "BookMetadata", "ChapterContent", "TOCEntry"}
+
+    def find_class(self, module: str, name: str):  # type: ignore[override]
+        if module == "__main__" and name in self._REMAP:
+            module = "reader3"
+        return super().find_class(module, name)
 
 
 def list_book_ids(books_dir: str) -> List[str]:
@@ -219,9 +274,90 @@ def list_book_ids(books_dir: str) -> List[str]:
     return sorted(result)
 
 
+def _find_spans_with_map(
+    normalized_text: str,
+    index_map: List[int],
+    normalized_term: str,
+    *,
+    max_spans: int,
+) -> Tuple[List[Tuple[int, int]], int]:
+    pattern = re.escape(normalized_term)
+    spans: List[Tuple[int, int]] = []
+    total = 0
+    for m in re.finditer(pattern, normalized_text):
+        total += 1
+        if len(spans) >= max_spans:
+            continue
+        start_n, end_n = m.span()
+        if start_n >= len(index_map) or end_n - 1 >= len(index_map):
+            continue
+        start_o = index_map[start_n]
+        end_o = index_map[end_n - 1] + 1
+        spans.append((start_o, end_o))
+    return spans, total
+
+
+@lru_cache(maxsize=4)
+def load_book_index(book_id: str, books_dir: str, *, case_sensitive: bool) -> "BookIndex":
+    book = load_book_cached(book_id, books_dir)
+    author = ", ".join(getattr(getattr(book, "metadata", None), "authors", []) or [])
+    title = getattr(getattr(book, "metadata", None), "title", book_id)
+
+    chapters: List[ChapterIndex] = []
+    for chapter_order, chapter in enumerate(getattr(book, "spine", []) or []):
+        original_text = getattr(chapter, "text", "") or ""
+        normalized_text, index_map = _normalize_with_map(original_text, case_sensitive=case_sensitive)
+        chapters.append(
+            ChapterIndex(
+                chapter_title=getattr(chapter, "title", f"Section {chapter_order + 1}"),
+                chapter_order=chapter_order,
+                normalized_text=normalized_text,
+                index_map=index_map,
+            )
+        )
+    return BookIndex(book_id=book_id, book_title=title, book_author=author, chapters=chapters)
+
+
+def _semantic_results_for_book(
+    book_id: str,
+    *,
+    title: str,
+    author: str,
+    term: str,
+    books_dir: str,
+    n_results: int,
+) -> List[SearchResult]:
+    from vector_search import BookVectorIndex
+
+    idx = BookVectorIndex(book_id, books_dir=books_dir)
+    semantic_hits = idx.semantic_search(term, n_results=n_results)
+
+    out: List[SearchResult] = []
+    for s in semantic_hits:
+        snippet = truncate_context((s.text or "").strip(), max_len=150)
+        out.append(
+            SearchResult(
+                book_id=book_id,
+                book_title=title,
+                book_author=author,
+                chapter_title=s.chapter_title or f"Section {s.chapter_order + 1}",
+                chapter_order=s.chapter_order,
+                occurrence_index=0,
+                match_text=snippet,
+                context_before="",
+                context_after="",
+                position=s.chunk_start,
+                relevance_score=s.similarity_score,
+                match_explanation=f"Semantic match (similarity {s.similarity_score:.2f})",
+                mode=SearchMode.SEMANTIC.value,
+            )
+        )
+    return out
+
+
 def search_book(book_id: str, query: SearchQuery, *, books_dir: str) -> SearchResultSet:
-    start_time = time.time()
-    trimmed = query.term.strip()
+    start_time = time.perf_counter()
+    trimmed = validate_search_term(query.term)
     if not trimmed:
         return SearchResultSet(query=query, searched_books=1, execution_time_ms=0.0)
 
@@ -229,22 +365,61 @@ def search_book(book_id: str, query: SearchQuery, *, books_dir: str) -> SearchRe
     author = ", ".join(getattr(getattr(book, "metadata", None), "authors", []) or [])
     title = getattr(getattr(book, "metadata", None), "title", book_id)
 
+    spine = getattr(book, "spine", []) or []
+    if spine and all(not (getattr(ch, "text", "") or "").strip() for ch in spine):
+        elapsed = (time.perf_counter() - start_time) * 1000
+        return SearchResultSet(
+            query=query,
+            results=[],
+            total_matches=0,
+            searched_books=1,
+            failed_books=[],
+            unindexed_books=[],
+            is_truncated=False,
+            execution_time_ms=elapsed,
+            grouped_by_book={},
+            status_override="No searchable content in this book",
+        )
+
+    if query.mode == SearchMode.SEMANTIC:
+        results = _semantic_results_for_book(
+            book_id,
+            title=title,
+            author=author,
+            term=trimmed,
+            books_dir=books_dir,
+            n_results=min(50, query.max_results),
+        )
+        elapsed = (time.perf_counter() - start_time) * 1000
+        return SearchResultSet(
+            query=query,
+            results=results,
+            total_matches=len(results),
+            searched_books=1,
+            failed_books=[],
+            unindexed_books=[],
+            is_truncated=len(results) >= query.max_results,
+            execution_time_ms=elapsed,
+            grouped_by_book={},
+        )
+
+    index = load_book_index(book_id, books_dir, case_sensitive=query.case_sensitive)
+    normalized_term = _normalize_query(trimmed, case_sensitive=query.case_sensitive)
+
     results: List[SearchResult] = []
     total_matches = 0
-
-    for chapter_order, chapter in enumerate(getattr(book, "spine", [])):
-        matches = search_text(
-            getattr(chapter, "text", "") or "",
-            trimmed,
-            case_sensitive=query.case_sensitive,
-            max_results=query.max_results,
+    for chapter_info in index.chapters:
+        chapter = spine[chapter_info.chapter_order]
+        chapter_text = getattr(chapter, "text", "") or ""
+        spans, count = _find_spans_with_map(
+            chapter_info.normalized_text,
+            chapter_info.index_map,
+            normalized_term,
+            max_spans=max(0, query.max_results - len(results)),
         )
-        total_matches += len(matches)
+        total_matches += count
 
-        for occurrence_index, (start, end) in enumerate(matches):
-            if len(results) >= query.max_results:
-                break
-            chapter_text = getattr(chapter, "text", "") or ""
+        for occurrence_index, (start, end) in enumerate(spans):
             match_text = chapter_text[start:end]
             context_before, context_after = extract_context(chapter_text, start, end)
             results.append(
@@ -252,27 +427,46 @@ def search_book(book_id: str, query: SearchQuery, *, books_dir: str) -> SearchRe
                     book_id=book_id,
                     book_title=title,
                     book_author=author,
-                    chapter_title=getattr(chapter, "title", f"Section {chapter_order + 1}"),
-                    chapter_order=chapter_order,
+                    chapter_title=chapter_info.chapter_title,
+                    chapter_order=chapter_info.chapter_order,
                     occurrence_index=occurrence_index,
                     match_text=match_text,
                     context_before=context_before,
                     context_after=context_after,
                     position=start,
                     relevance_score=0.0,
+                    mode=SearchMode.KEYWORD.value,
                 )
             )
+            if len(results) >= query.max_results:
+                break
 
-        if len(results) >= query.max_results:
-            break
+    if query.mode == SearchMode.HYBRID and query.term.strip():
+        try:
+            semantic = _semantic_results_for_book(
+                book_id,
+                title=title,
+                author=author,
+                term=trimmed,
+                books_dir=books_dir,
+                n_results=10,
+            )
+            for r in semantic:
+                if len(results) >= query.max_results:
+                    break
+                results.append(r)
+            total_matches += len(semantic)
+        except Exception as e:
+            logger.info("hybrid semantic unavailable for %s: %s", book_id, e)
 
-    elapsed = (time.time() - start_time) * 1000
+    elapsed = (time.perf_counter() - start_time) * 1000
     return SearchResultSet(
         query=query,
         results=results,
         total_matches=total_matches,
         searched_books=1,
         failed_books=[],
+        unindexed_books=[],
         is_truncated=(total_matches > len(results)),
         execution_time_ms=elapsed,
         grouped_by_book={},
@@ -301,8 +495,8 @@ def search_library(
     """
     Returns (result_set, book_order).
     """
-    start_time = time.time()
-    trimmed = query.term.strip()
+    start_time = time.perf_counter()
+    trimmed = validate_search_term(query.term)
     if not trimmed:
         return SearchResultSet(query=query, searched_books=0, execution_time_ms=0.0), []
 
@@ -312,7 +506,20 @@ def search_library(
     grouped: Dict[str, List[SearchResult]] = {}
     book_meta: Dict[str, Tuple[str, str]] = {}
     book_stats: Dict[str, Tuple[int, int]] = {}  # book_id -> (total_hits, earliest_key)
+    book_semantic_top: Dict[str, float] = {}
     failed: List[str] = []
+    unindexed: List[str] = []
+    index_status_by_book: Dict[str, str] = {}
+
+    if query.mode != SearchMode.KEYWORD:
+        from vector_search import BookVectorIndex
+
+        for bid in book_ids:
+            try:
+                status = BookVectorIndex(bid, books_dir=books_dir).status().get("status", "unknown")
+            except Exception:
+                status = "unknown"
+            index_status_by_book[bid] = str(status)
 
     for book_id in book_ids:
         try:
@@ -321,28 +528,52 @@ def search_library(
             title = getattr(getattr(book, "metadata", None), "title", book_id)
             book_meta[book_id] = (title, author)
 
+            if query.mode == SearchMode.SEMANTIC:
+                try:
+                    semantic = _semantic_results_for_book(
+                        book_id,
+                        title=title,
+                        author=author,
+                        term=trimmed,
+                        books_dir=books_dir,
+                        n_results=max_results_per_book,
+                    )
+                except RuntimeError as e:
+                    msg = str(e)
+                    if "dependencies are not installed" in msg:
+                        raise
+                    unindexed.append(book_id)
+                    continue
+                if not semantic:
+                    continue
+                grouped[book_id] = semantic
+                book_semantic_top[book_id] = max((r.relevance_score for r in semantic), default=0.0)
+                book_stats[book_id] = (len(semantic), 0)
+                continue
+
+            # keyword (and hybrid keyword base)
+            index = load_book_index(book_id, books_dir, case_sensitive=query.case_sensitive)
+            normalized_term = _normalize_query(trimmed, case_sensitive=query.case_sensitive)
             total_hits = 0
             earliest_key: Optional[int] = None
             results_for_book: List[SearchResult] = []
 
-            for chapter_order, chapter in enumerate(getattr(book, "spine", [])):
+            for chapter_info in index.chapters:
+                chapter = getattr(book, "spine", [])[chapter_info.chapter_order]
                 chapter_text = getattr(chapter, "text", "") or ""
-                matches = search_text(
-                    chapter_text,
-                    trimmed,
-                    case_sensitive=query.case_sensitive,
-                    max_results=1000,
+                spans, count = _find_spans_with_map(
+                    chapter_info.normalized_text,
+                    chapter_info.index_map,
+                    normalized_term,
+                    max_spans=max(0, max_results_per_book - len(results_for_book)),
                 )
-                if not matches:
+                if count <= 0:
                     continue
+                total_hits += count
+                if earliest_key is None and spans:
+                    earliest_key = chapter_info.chapter_order * 1_000_000 + spans[0][0]
 
-                total_hits += len(matches)
-                if earliest_key is None:
-                    earliest_key = chapter_order * 1_000_000 + matches[0][0]
-
-                for occurrence_index, (start, end) in enumerate(matches):
-                    if len(results_for_book) >= max_results_per_book:
-                        break
+                for occurrence_index, (start, end) in enumerate(spans):
                     match_text = chapter_text[start:end]
                     context_before, context_after = extract_context(chapter_text, start, end)
                     results_for_book.append(
@@ -350,20 +581,46 @@ def search_library(
                             book_id=book_id,
                             book_title=title,
                             book_author=author,
-                            chapter_title=getattr(chapter, "title", f"Section {chapter_order + 1}"),
-                            chapter_order=chapter_order,
+                            chapter_title=chapter_info.chapter_title,
+                            chapter_order=chapter_info.chapter_order,
                             occurrence_index=occurrence_index,
                             match_text=match_text,
                             context_before=context_before,
                             context_after=context_after,
                             position=start,
                             relevance_score=0.0,
+                            mode=SearchMode.KEYWORD.value,
                         )
                     )
+                    if len(results_for_book) >= max_results_per_book:
+                        break
+
+            if query.mode == SearchMode.HYBRID:
+                try:
+                    semantic = _semantic_results_for_book(
+                        book_id,
+                        title=title,
+                        author=author,
+                        term=trimmed,
+                        books_dir=books_dir,
+                        n_results=max(1, max_results_per_book - len(results_for_book)),
+                    )
+                    for r in semantic:
+                        if len(results_for_book) >= max_results_per_book:
+                            break
+                        results_for_book.append(r)
+                    total_hits += len(semantic)
+                except RuntimeError as e:
+                    msg = str(e)
+                    if "dependencies are not installed" in msg:
+                        logger.info("hybrid deps missing: %s", msg)
+                    else:
+                        unindexed.append(book_id)
+                except Exception as e:
+                    logger.info("hybrid semantic unavailable for %s: %s", book_id, e)
 
             if total_hits <= 0:
                 continue
-
             grouped[book_id] = results_for_book
             book_stats[book_id] = (total_hits, earliest_key or 0)
         except Exception:
@@ -376,9 +633,12 @@ def search_library(
             return (title.lower(),)
         if sort_by == "book_author":
             return (author.lower(), title.lower())
+        if query.mode == SearchMode.SEMANTIC:
+            return (book_semantic_top.get(book_id, 0.0),)
         return _book_sort_key(query_term=trimmed, total_hit_count=total_hits, earliest_position_key=earliest_key)
 
-    book_order = sorted(grouped.keys(), key=sort_key_for_book, reverse=(sort_by == "relevance"))
+    reverse_relevance = sort_by == "relevance"
+    book_order = sorted(grouped.keys(), key=sort_key_for_book, reverse=reverse_relevance)
 
     flat_results: List[SearchResult] = []
     for book_id in book_order:
@@ -389,16 +649,18 @@ def search_library(
         if len(flat_results) >= max_total_results:
             break
 
-    elapsed = (time.time() - start_time) * 1000
+    elapsed = (time.perf_counter() - start_time) * 1000
     result_set = SearchResultSet(
         query=query,
         results=flat_results,
         total_matches=sum(book_stats.get(bid, (0, 0))[0] for bid in grouped.keys()),
         searched_books=searched_books,
         failed_books=failed,
+        unindexed_books=unindexed,
         is_truncated=(len(flat_results) >= max_total_results),
         execution_time_ms=elapsed,
         grouped_by_book={bid: grouped[bid] for bid in book_order},
+        index_status_by_book=index_status_by_book,
     )
     return result_set, book_order
 
@@ -411,8 +673,8 @@ def highlight_ranges_for_chapter(
     occurrence_index: Optional[int],
     case_sensitive: bool,
     books_dir: str,
-) -> Tuple[List[Dict[str, int | str]], int, Optional[int]]:
-    trimmed = (search_term or "").strip()
+) -> Tuple[List[Dict[str, Union[int, str]]], int, Optional[int]]:
+    trimmed = validate_search_term(search_term)
     if not trimmed:
         return [], 0, None
 
@@ -422,15 +684,20 @@ def highlight_ranges_for_chapter(
         raise IndexError("chapter out of range")
 
     chapter = spine[chapter_order]
-    chapter_text = getattr(chapter, "text", "") or ""
-    matches = search_text(
-        chapter_text,
-        trimmed,
-        case_sensitive=case_sensitive,
-        max_results=1000,
-    )
+    index = load_book_index(book_id, books_dir, case_sensitive=case_sensitive)
+    normalized_term = _normalize_query(trimmed, case_sensitive=case_sensitive)
+    chapter_info = next((c for c in index.chapters if c.chapter_order == chapter_order), None)
+    if not chapter_info or not normalized_term:
+        matches = []
+    else:
+        matches, _ = _find_spans_with_map(
+            chapter_info.normalized_text,
+            chapter_info.index_map,
+            normalized_term,
+            max_spans=1000,
+        )
 
-    ranges: List[Dict[str, int | str]] = []
+    ranges: List[Dict[str, Union[int, str]]] = []
     for i, (start, end) in enumerate(matches):
         ranges.append(
             {
@@ -448,3 +715,57 @@ def highlight_ranges_for_chapter(
         selected = 0
     return ranges, len(matches), selected
 
+
+@dataclass
+class ChapterIndex:
+    chapter_title: str
+    chapter_order: int
+    normalized_text: str
+    index_map: List[int]
+
+
+@dataclass
+class BookIndex:
+    book_id: str
+    book_title: str
+    book_author: str
+    chapters: List[ChapterIndex] = field(default_factory=list)
+
+    @classmethod
+    def from_book_pkl(cls, book_id: str, pkl_path: str, *, case_sensitive: bool) -> "BookIndex":
+        with open(pkl_path, "rb") as f:
+            book = pickle.load(f)
+        author = ", ".join(getattr(getattr(book, "metadata", None), "authors", []) or [])
+        title = getattr(getattr(book, "metadata", None), "title", book_id)
+
+        chapters: List[ChapterIndex] = []
+        for chapter_order, chapter in enumerate(getattr(book, "spine", []) or []):
+            original_text = getattr(chapter, "text", "") or ""
+            normalized_text, index_map = _normalize_with_map(original_text, case_sensitive=case_sensitive)
+            chapters.append(
+                ChapterIndex(
+                    chapter_title=getattr(chapter, "title", f"Section {chapter_order + 1}"),
+                    chapter_order=chapter_order,
+                    normalized_text=normalized_text,
+                    index_map=index_map,
+                )
+            )
+        return cls(book_id=book_id, book_title=title, book_author=author, chapters=chapters)
+
+
+@dataclass
+class SearchIndex:
+    books: Dict[str, BookIndex] = field(default_factory=dict)
+    last_updated: Optional[str] = None
+
+    @classmethod
+    def build_from_library(cls, *, books_dir: str, case_sensitive: bool) -> Tuple["SearchIndex", List[str]]:
+        failed: List[str] = []
+        books: Dict[str, BookIndex] = {}
+        for book_id in list_book_ids(books_dir):
+            try:
+                pkl_path = _book_pkl_path(book_id, books_dir)
+                books[book_id] = BookIndex.from_book_pkl(book_id, pkl_path, case_sensitive=case_sensitive)
+            except Exception:
+                failed.append(book_id)
+        return cls(books=books, last_updated=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())), failed

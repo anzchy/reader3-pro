@@ -15,6 +15,7 @@ class LibrarySearchUI {
   constructor() {
     this.input = document.getElementById("library-search-input");
     this.caseBox = document.getElementById("library-search-case");
+    this.modeSelect = document.getElementById("library-search-mode");
     this.sortBy = document.getElementById("library-search-sort");
     this.clearBtn = document.getElementById("library-search-clear");
     this.status = document.getElementById("library-search-status");
@@ -31,6 +32,7 @@ class LibrarySearchUI {
       this.debounceTimer = setTimeout(() => this.performSearch(), 300);
     });
     this.caseBox?.addEventListener("change", () => this.performSearch());
+    this.modeSelect?.addEventListener("change", () => this.performSearch());
     this.sortBy?.addEventListener("change", () => this.performSearch());
     this.clearBtn?.addEventListener("click", () => this.clearSearch(true));
 
@@ -44,6 +46,7 @@ class LibrarySearchUI {
       const data = JSON.parse(raw);
       if (data?.q) this.input.value = data.q;
       if (typeof data?.caseSensitive === "boolean" && this.caseBox) this.caseBox.checked = data.caseSensitive;
+      if (data?.mode && this.modeSelect) this.modeSelect.value = data.mode;
       if (data?.sortBy && this.sortBy) this.sortBy.value = data.sortBy;
       if (data?.payload) this.renderPayload(data.payload);
     } catch {
@@ -53,7 +56,8 @@ class LibrarySearchUI {
 
   persistToSession(payload, q, caseSensitive, sortBy) {
     try {
-      sessionStorage.setItem(sessionKey(), JSON.stringify({ payload, q, caseSensitive, sortBy }));
+      const mode = this.modeSelect?.value || "keyword";
+      sessionStorage.setItem(sessionKey(), JSON.stringify({ payload, q, caseSensitive, sortBy, mode }));
     } catch {
       // ignore
     }
@@ -83,6 +87,7 @@ class LibrarySearchUI {
 
     const caseSensitive = Boolean(this.caseBox?.checked);
     const sortBy = this.sortBy?.value || "relevance";
+    const mode = this.modeSelect?.value || "keyword";
 
     this.panel.style.display = "block";
     this.grid.style.display = "none";
@@ -91,7 +96,7 @@ class LibrarySearchUI {
 
     const url = new URL("/api/search/library", window.location.origin);
     url.searchParams.set("q", q);
-    url.searchParams.set("mode", "keyword");
+    url.searchParams.set("mode", mode);
     url.searchParams.set("max_results_per_book", String(maxResultsPerBook));
     url.searchParams.set("max_total_results", "100");
     url.searchParams.set("sort_by", sortBy);
@@ -99,6 +104,10 @@ class LibrarySearchUI {
 
     const resp = await fetch(url.toString());
     const payload = await resp.json();
+    if (!resp.ok) {
+      this.status.textContent = payload?.detail || "Search failed";
+      return;
+    }
     this.renderPayload(payload);
     this.persistToSession(payload, q, caseSensitive, sortBy);
   }
@@ -112,6 +121,8 @@ class LibrarySearchUI {
     const bookOrder = Array.isArray(payload?.book_order) ? payload.book_order : [];
     const grouped = payload?.grouped_by_book || {};
     const meta = payload?.book_metadata || {};
+    const indexStatus = payload?.index_status_by_book || {};
+    const mode = this.modeSelect?.value || "keyword";
 
     let foundAny = false;
     for (const bookId of bookOrder) {
@@ -136,6 +147,51 @@ class LibrarySearchUI {
       left.appendChild(author);
 
       const right = document.createElement("div");
+      right.style.display = "flex";
+      right.style.alignItems = "center";
+      right.style.gap = "8px";
+
+      if (mode !== "keyword") {
+        const badge = document.createElement("span");
+        badge.className = "library-index-badge";
+        const st = String(indexStatus?.[bookId] || "unknown");
+        badge.dataset.status = st;
+        badge.textContent = st === "indexed" ? "Indexed" : st === "not_indexed" ? "Not indexed" : "Index: unknown";
+        right.appendChild(badge);
+
+        if (st === "not_indexed") {
+          const indexBtn = document.createElement("button");
+          indexBtn.className = "library-index-btn";
+          indexBtn.type = "button";
+          indexBtn.textContent = "Index";
+          indexBtn.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            indexBtn.disabled = true;
+            badge.textContent = "Indexing…";
+            try {
+              const resp = await fetch(`/api/index/${encodeURIComponent(bookId)}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ force_reindex: false }),
+              });
+              const data = await resp.json();
+              if (!resp.ok) {
+                badge.textContent = data?.detail || "Indexing failed";
+                return;
+              }
+              badge.textContent = `Indexed (${data.chunk_count ?? "?"})`;
+              badge.dataset.status = "indexed";
+              indexBtn.remove();
+            } catch {
+              badge.textContent = "Indexing failed";
+            } finally {
+              indexBtn.disabled = false;
+            }
+          });
+          right.appendChild(indexBtn);
+        }
+      }
+
       const showMore = document.createElement("button");
       showMore.className = "library-show-more";
       showMore.type = "button";
@@ -150,6 +206,7 @@ class LibrarySearchUI {
       for (const r of bookResults) {
         const item = document.createElement("div");
         item.className = "search-result-item";
+        if (r.match_explanation) item.title = r.match_explanation;
         const chapter = document.createElement("div");
         chapter.className = "search-result-chapter";
         chapter.textContent = r.chapter_title;
@@ -163,8 +220,20 @@ class LibrarySearchUI {
 
         item.appendChild(chapter);
         item.appendChild(snippet);
+        if (r.match_explanation) {
+          const expl = document.createElement("div");
+          expl.className = "search-status";
+          expl.style.marginTop = "6px";
+          expl.textContent = r.match_explanation;
+          item.appendChild(expl);
+        }
         item.addEventListener("click", () => {
           const occ = Number(r.occurrence_index);
+          const mode = this.modeSelect?.value || "keyword";
+          if (mode === "semantic" && r.mode === "semantic") {
+            window.location.href = `/read/${bookId}/${r.chapter_order}`;
+            return;
+          }
           window.location.href = `/read/${bookId}/${r.chapter_order}?q=${encodeURIComponent(q)}&occurrence=${encodeURIComponent(String(occ))}`;
         });
         group.appendChild(item);
@@ -186,4 +255,3 @@ document.addEventListener("DOMContentLoaded", () => {
   const ui = new LibrarySearchUI();
   ui.init();
 });
-

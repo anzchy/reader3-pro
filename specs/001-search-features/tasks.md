@@ -19,9 +19,9 @@
 
 **Purpose**: Install semantic-search dependencies. Keyword search (US1/US2) does not require this phase.
 
-- [ ] T001 [US3] Install ChromaDB and sentence-transformers dependencies via `uv add chromadb sentence-transformers`
-- [ ] T002 [US3] Download embedding model (paraphrase-multilingual-MiniLM-L12-v2) using `python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')"`
-- [ ] T003 [US3] Verify dependencies are installed correctly with `python -c "import chromadb; import sentence_transformers; print('OK')"`
+- [x] T001 [US3] Install ChromaDB and sentence-transformers dependencies via `uv add chromadb sentence-transformers`
+- [x] T002 [US3] Download embedding model (paraphrase-multilingual-MiniLM-L12-v2) using `python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')"`
+- [x] T003 [US3] Verify dependencies are installed correctly with `python -c "import chromadb; import sentence_transformers; print('OK')"`
 
 ---
 
@@ -115,29 +115,29 @@
 
 ### Backend Implementation (User Story 3)
 
-- [ ] T043 [P] [US3] Create vector_search.py and implement SemanticSearchResult dataclass with chunk_id, chapter metadata, similarity_score fields
-- [ ] T044 [P] [US3] Implement BookVectorIndex class in vector_search.py with __init__ (setup ChromaDB client, paraphrase-multilingual-MiniLM-L12-v2 embedding function, chroma_path in `{book_id}/chroma_db/` where `book_id` is a `*_data` folder)
-- [ ] T045 [US3] Implement is_indexed() method in BookVectorIndex (FR-027: check if chroma_db/ exists and collection count > 0)
-- [ ] T046 [US3] Implement _chunk_text() method in BookVectorIndex (split large chapters into ~1000 char chunks for better retrieval granularity)
-- [ ] T047 [US3] Implement index_book() method in BookVectorIndex (FR-024, FR-028: load book.pkl, chunk chapters, generate embeddings, upsert to ChromaDB collection with force_reindex option)
-- [ ] T048 [US3] Implement semantic_search() method in BookVectorIndex (FR-025: query ChromaDB with user term, return top n_results ranked by similarity, format as SemanticSearchResult objects)
-- [ ] T049 [US3] Implement _format_results() helper in BookVectorIndex (FR-026: convert ChromaDB distances to similarity scores 0-1, populate metadata)
-- [ ] T050 [US3] Add indexing CLI support in reader3.py (add --index <book_id> argument, call BookVectorIndex.index_book() for specified book)
-- [ ] T051 [US3] Add POST /api/index/{book_id} endpoint in server.py (FR-024: trigger indexing for book, accept force_reindex in request body, return 202 for async or 200 for sync completion)
-- [ ] T052 [US3] Add GET /api/index/{book_id}/status endpoint in server.py (FR-027: return IndexStatus with book_id, status enum, chunk_count, model_name, indexed_at timestamp)
-- [ ] T053 [US3] Integrate semantic search into search_book() function (when mode=SEMANTIC, use BookVectorIndex.semantic_search() instead of keyword search_text())
-- [ ] T054 [US3] Integrate semantic search into search_library() function (when mode=SEMANTIC, iterate books and call BookVectorIndex.semantic_search() for each, aggregate results)
+- [x] T043 [P] [US3] Create vector_search.py and implement SemanticSearchResult dataclass with chunk_id, chapter metadata, similarity_score fields
+- [x] T044 [P] [US3] Implement BookVectorIndex class in vector_search.py with __init__ (setup ChromaDB client, paraphrase-multilingual-MiniLM-L12-v2 embedding function, chroma_path in `{book_id}/chroma_db/` where `book_id` is a `*_data` folder)
+- [x] T045 [US3] Implement is_indexed() method in BookVectorIndex (FR-027: check if indexed meta exists)
+- [x] T046 [US3] Implement _chunk_text() method in BookVectorIndex (split large chapters into ~1000 char chunks for better retrieval granularity)
+- [x] T047 [US3] Implement index_book() method in BookVectorIndex (FR-024, FR-028: load book.pkl, chunk chapters, generate embeddings, upsert to ChromaDB collection with force_reindex option)
+- [x] T048 [US3] Implement semantic_search() method in BookVectorIndex (FR-025: query ChromaDB with user term, return top n_results ranked by similarity, format as SemanticSearchResult objects)
+- [x] T049 [US3] Implement _format_results() helper in BookVectorIndex (FR-026: convert ChromaDB distances to similarity scores 0-1, populate metadata)
+- [x] T050 [US3] Add indexing CLI support in reader3.py (add --index <book_id> argument, call BookVectorIndex.index_book() for specified book)
+- [x] T051 [US3] Add POST /api/index/{book_id} endpoint in server.py (FR-024: trigger indexing for book, accept force_reindex in request body)
+- [x] T052 [US3] Add GET /api/index/{book_id}/status endpoint in server.py (FR-027: return IndexStatus with book_id, status enum, chunk_count, model_name, indexed_at timestamp)
+- [x] T053 [US3] Integrate semantic search into search_book() function (when mode=SEMANTIC, use BookVectorIndex.semantic_search() instead of keyword search_text())
+- [x] T054 [US3] Integrate semantic search into search_library() function (when mode=SEMANTIC, iterate books and call BookVectorIndex.semantic_search() for each, aggregate results)
 
 ### Frontend Implementation (User Story 3)
 
-- [ ] T055 [P] [US3] Update templates/reader.html to add search mode toggle (keyword/semantic/hybrid) in sidebar search box (FR-023: radio buttons or dropdown)
-- [ ] T056 [P] [US3] Update templates/library.html to add search mode toggle in library search box (FR-023: consistent with reader.html)
-- [ ] T057 [US3] Add mode parameter to fetch calls in static/search.js performSearch() method (pass selected mode to /api/search/{book_id}?mode={keyword|semantic|hybrid})
-- [ ] T058 [US3] Add mode parameter to fetch calls in static/library-search.js performLibrarySearch() method
-- [ ] T059 [US3] Add indexing status indicator in static/search.js (FR-027: check /api/index/{book_id}/status before semantic search, show "Not indexed - indexing required" message with index button)
-- [ ] T060 [US3] Add indexing status indicator in static/library-search.js for multi-book view (FR-027: show which books are indexed, pending, or failed)
-- [ ] T061 [US3] Implement semantic match explanation display in static/search.js (FR-029: show why passage matched with "Related concept: [term]" on hover or info icon click)
-- [ ] T062 [US3] Implement semantic match explanation display in static/library-search.js
+- [x] T055 [P] [US3] Update templates/reader.html to add search mode toggle (keyword/semantic/hybrid) in sidebar search box (FR-023: radio buttons or dropdown)
+- [x] T056 [P] [US3] Update templates/library.html to add search mode toggle in library search box (FR-023: consistent with reader.html)
+- [x] T057 [US3] Add mode parameter to fetch calls in static/search.js performSearch() method (pass selected mode to /api/search/{book_id}?mode={keyword|semantic|hybrid})
+- [x] T058 [US3] Add mode parameter to fetch calls in static/library-search.js performLibrarySearch() method
+- [x] T059 [US3] Add indexing status indicator in static/search.js (FR-027: check /api/index/{book_id}/status before semantic search, show "Not indexed - indexing required" message with index button)
+- [x] T060 [US3] Add indexing status indicator in static/library-search.js for multi-book view (FR-027: show which books are indexed, pending, or failed)
+- [x] T061 [US3] Implement semantic match explanation display in static/search.js (FR-029: show why passage matched with "Related concept: [term]" on hover or info icon click)
+- [x] T062 [US3] Implement semantic match explanation display in static/library-search.js
 
 **Checkpoint**: User Story 3 (Semantic Cross-Book Search) is fully functional and independently testable. Users can search by meaning/concepts, see semantically related passages, understand why matches were found, and navigate to exact locations.
 
@@ -147,17 +147,17 @@
 
 **Purpose**: Improvements, validation, and documentation that affect multiple user stories
 
-- [ ] T063 [P] Add input validation for search terms in search_service.py (max length, regex injection prevention per constitution security principle)
+- [x] T063 [P] Add input validation for search terms in search_service.py (max length, regex injection prevention per constitution security principle)
 - [x] T064 [P] Add book_id validation against enumerated *_data/ directories in server.py endpoints (FR path security, prevent traversal attacks)
-- [ ] T065 [P] Add performance logging for search operations (execution_time_ms tracking, log slow queries >2s for library search per FR-031)
-- [ ] T066 Add graceful degradation when books have no searchable text (FR-034: return empty results with clear message "No searchable content in this book")
-- [ ] T067 Add UI truncation for very long result contexts (FR-035: limit to 150 chars per SearchResult.get_display_snippet() in data model)
+- [x] T065 [P] Add performance logging for search operations (execution_time_ms tracking, log slow queries >2s for library search per FR-031)
+- [x] T066 Add graceful degradation when books have no searchable text (FR-034: return empty results with clear message "No searchable content in this book")
+- [x] T067 Add UI truncation for very long result contexts (FR-035: limit to 150 chars per SearchResult.get_display_snippet() in data model)
 - [x] T068 Implement search state persistence in sessionStorage (FR-036: save query and results during navigation, restore on back button)
-- [ ] T069 [P] Add CSS responsive design for search UI on mobile/tablet viewports
-- [ ] T070 [P] Update CLAUDE.md with search functionality usage instructions (how to index books, use search modes, performance tips)
+- [x] T069 [P] Add CSS responsive design for search UI on mobile/tablet viewports
+- [x] T070 [P] Update CLAUDE.md with search functionality usage instructions (how to index books, use search modes, performance tips)
 - [ ] T071 Validate against quickstart.md instructions (run all manual test steps from quickstart, verify behavior matches documentation)
-- [ ] T072 Add error messages for common failure scenarios (book not found, indexing failed, ChromaDB not installed, timeout exceeded)
-- [ ] T073 Optimize search performance with @lru_cache for frequently searched terms (FR-030: <500ms in-book, FR-031: <2s library) per constitution caching principle
+- [x] T072 Add error messages for common failure scenarios (book not found, indexing failed, ChromaDB not installed, timeout exceeded)
+- [x] T073 Optimize search performance with @lru_cache for frequently searched terms (FR-030: <500ms in-book, FR-031: <2s library) per constitution caching principle
 
 ---
 

@@ -168,10 +168,22 @@
                 <button type="button" class="drawer-btn" id="reader-search-clear" title="Clear" aria-label="Clear">×</button>
                 <button type="button" class="drawer-btn drawer-cancel" id="reader-search-close">Cancel</button>
             </div>
-            <label class="drawer-case">
-                <input type="checkbox" id="reader-search-case" />
-                Case sensitive
-            </label>
+            <div style="display:flex; gap:10px; align-items:center; margin-top:10px; flex-wrap:wrap;">
+                <label class="drawer-case" style="margin-top:0;">
+                    Mode
+                    <select id="reader-search-mode">
+                        <option value="keyword">keyword</option>
+                        <option value="semantic">semantic</option>
+                        <option value="hybrid">hybrid</option>
+                    </select>
+                </label>
+                <label class="drawer-case" style="margin-top:0;">
+                    <input type="checkbox" id="reader-search-case" />
+                    Case sensitive
+                </label>
+                <button type="button" class="drawer-btn" id="reader-index-btn" style="display:none;">Index for semantic</button>
+                <span id="reader-index-status" style="font-size:12px; color: rgba(255,255,255,0.72);"></span>
+            </div>
         </div>
         <div class="search-results" id="reader-search-panel">
             <div class="search-status" id="reader-search-status"></div>

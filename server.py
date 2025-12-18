@@ -1,5 +1,7 @@
 import os
 import pickle
+import logging
+import time
 from functools import lru_cache
 from typing import Optional
 
@@ -19,12 +21,15 @@ from search_service import (
     search_library,
     highlight_ranges_for_chapter,
 )
+from vector_search import BookVectorIndex
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
+logger = logging.getLogger("reader3.search")
 
 # Where are the book folders located?
-BOOKS_DIR = "."
+BOOKS_DIR = "books"
+os.makedirs(BOOKS_DIR, exist_ok=True)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -40,11 +45,24 @@ def load_book_cached(folder_name: str) -> Optional[Book]:
 
     try:
         with open(file_path, "rb") as f:
-            book = pickle.load(f)
+            try:
+                book = _Reader3Unpickler(f).load()
+            except Exception:
+                f.seek(0)
+                book = pickle.load(f)
         return book
     except Exception as e:
         print(f"Error loading book {folder_name}: {e}")
         return None
+
+
+class _Reader3Unpickler(pickle.Unpickler):
+    _REMAP = {"Book", "BookMetadata", "ChapterContent", "TOCEntry"}
+
+    def find_class(self, module: str, name: str):  # type: ignore[override]
+        if module == "__main__" and name in self._REMAP:
+            module = "reader3"
+        return super().find_class(module, name)
 
 @app.get("/", response_class=HTMLResponse)
 async def library_view(request: Request):
@@ -54,7 +72,7 @@ async def library_view(request: Request):
     # Scan directory for folders ending in '_data' that have a book.pkl
     if os.path.exists(BOOKS_DIR):
         for item in os.listdir(BOOKS_DIR):
-            if item.endswith("_data") and os.path.isdir(item):
+            if item.endswith("_data") and os.path.isdir(os.path.join(BOOKS_DIR, item)):
                 # Try to load it to get the title
                 book = load_book_cached(item)
                 if book:
@@ -107,51 +125,6 @@ def _validate_book_id(book_id: str) -> str:
     return safe
 
 
-@app.get("/api/search/{book_id}")
-async def api_search_book(
-    book_id: str,
-    q: str = "",
-    mode: str = "keyword",
-    case_sensitive: bool = False,
-    max_results: int = 1000,
-):
-    safe_book_id = _validate_book_id(book_id)
-    query = SearchQuery(
-        term=q,
-        mode=SearchMode(mode),
-        scope=SearchScope.CURRENT_BOOK,
-        case_sensitive=case_sensitive,
-        max_results=max_results,
-        book_id=safe_book_id,
-    )
-
-    if query.mode != SearchMode.KEYWORD:
-        raise HTTPException(status_code=400, detail="Only keyword search is implemented in this build")
-
-    try:
-        result_set = search_book(safe_book_id, query, books_dir=BOOKS_DIR)
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Book not found")
-
-    return {
-        "query": {
-            "term": query.term,
-            "mode": query.mode.value,
-            "scope": query.scope.value,
-            "case_sensitive": query.case_sensitive,
-            "max_results": query.max_results,
-            "book_id": query.book_id,
-        },
-        "results": [r.__dict__ for r in result_set.results],
-        "total_matches": result_set.total_matches,
-        "searched_books": result_set.searched_books,
-        "failed_books": result_set.failed_books,
-        "is_truncated": result_set.is_truncated,
-        "execution_time_ms": result_set.execution_time_ms,
-        "status_message": result_set.status_message(),
-    }
-
-
 @app.get("/api/search/library")
 async def api_search_library(
     q: str = "",
@@ -161,29 +134,41 @@ async def api_search_library(
     max_total_results: int = 100,
     sort_by: str = "relevance",
 ):
-    query = SearchQuery(
-        term=q,
-        mode=SearchMode(mode),
-        scope=SearchScope.ALL_BOOKS,
-        case_sensitive=case_sensitive,
-        max_results=1000,
-    )
-
-    if query.mode != SearchMode.KEYWORD:
-        raise HTTPException(status_code=400, detail="Only keyword search is implemented in this build")
+    started = time.perf_counter()
+    try:
+        query_obj = SearchQuery(
+            term=q,
+            mode=SearchMode(mode),
+            scope=SearchScope.ALL_BOOKS,
+            case_sensitive=case_sensitive,
+            max_results=1000,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     max_results_per_book = max(1, min(int(max_results_per_book), 10))
     max_total_results = max(1, min(int(max_total_results), 1000))
     if sort_by not in ("relevance", "book_title", "book_author"):
         raise HTTPException(status_code=400, detail="Invalid sort_by")
 
-    result_set, book_order = search_library(
-        query,
-        books_dir=BOOKS_DIR,
-        max_results_per_book=max_results_per_book,
-        max_total_results=max_total_results,
-        sort_by=sort_by,
-    )
+    try:
+        result_set, book_order = search_library(
+            query_obj,
+            books_dir=BOOKS_DIR,
+            max_results_per_book=max_results_per_book,
+            max_total_results=max_total_results,
+            sort_by=sort_by,
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if result_set.execution_time_ms > 2000:
+        logger.warning(
+            "slow library search (%.1fms) mode=%s books=%s",
+            result_set.execution_time_ms,
+            query_obj.mode.value,
+            result_set.searched_books,
+        )
 
     book_metadata = {}
     for book_id in book_order:
@@ -198,19 +183,76 @@ async def api_search_library(
 
     return {
         "query": {
-            "term": query.term,
-            "mode": query.mode.value,
-            "scope": query.scope.value,
+            "term": query_obj.term,
+            "mode": query_obj.mode.value,
+            "scope": query_obj.scope.value,
         },
         "results": [r.__dict__ for r in result_set.results],
         "grouped_by_book": {bid: [r.__dict__ for r in result_set.grouped_by_book.get(bid, [])] for bid in book_order},
         "book_order": book_order,
         "book_metadata": book_metadata,
+        "index_status_by_book": result_set.index_status_by_book,
         "total_matches": result_set.total_matches,
         "searched_books": result_set.searched_books,
         "failed_books": result_set.failed_books,
+        "unindexed_books": result_set.unindexed_books,
         "is_truncated": result_set.is_truncated,
-        "execution_time_ms": result_set.execution_time_ms,
+        "execution_time_ms": result_set.execution_time_ms or ((time.perf_counter() - started) * 1000),
+        "status_message": result_set.status_message(),
+    }
+
+
+@app.get("/api/search/{book_id}")
+async def api_search_book(
+    book_id: str,
+    q: str = "",
+    mode: str = "keyword",
+    case_sensitive: bool = False,
+    max_results: int = 1000,
+):
+    safe_book_id = _validate_book_id(book_id)
+    started = time.perf_counter()
+    try:
+        query_obj = SearchQuery(
+            term=q,
+            mode=SearchMode(mode),
+            scope=SearchScope.CURRENT_BOOK,
+            case_sensitive=case_sensitive,
+            max_results=max_results,
+            book_id=safe_book_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    try:
+        result_set = search_book(safe_book_id, query_obj, books_dir=BOOKS_DIR)
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if result_set.execution_time_ms > 500:
+        logger.info(
+            "slow in-book search (%.1fms) book=%s mode=%s",
+            result_set.execution_time_ms,
+            safe_book_id,
+            query_obj.mode.value,
+        )
+
+    return {
+        "query": {
+            "term": query_obj.term,
+            "mode": query_obj.mode.value,
+            "scope": query_obj.scope.value,
+            "case_sensitive": query_obj.case_sensitive,
+            "max_results": query_obj.max_results,
+            "book_id": query_obj.book_id,
+        },
+        "results": [r.__dict__ for r in result_set.results],
+        "total_matches": result_set.total_matches,
+        "searched_books": result_set.searched_books,
+        "failed_books": result_set.failed_books,
+        "unindexed_books": result_set.unindexed_books,
+        "is_truncated": result_set.is_truncated,
+        "execution_time_ms": result_set.execution_time_ms or ((time.perf_counter() - started) * 1000),
         "status_message": result_set.status_message(),
     }
 
@@ -241,6 +283,35 @@ async def api_highlight(book_id: str, chapter_order: int, body: HighlightRequest
         "total_matches": total_matches,
         "selected_occurrence_index": selected,
     }
+
+
+class IndexRequest(BaseModel):
+    force_reindex: bool = False
+
+
+@app.post("/api/index/{book_id}")
+async def api_index_book(book_id: str, body: IndexRequest):
+    safe_book_id = _validate_book_id(book_id)
+    try:
+        idx = BookVectorIndex(safe_book_id, books_dir=BOOKS_DIR)
+        status = idx.index_book(force_reindex=body.force_reindex)
+        return status
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/index/{book_id}/status")
+async def api_index_status(book_id: str):
+    safe_book_id = _validate_book_id(book_id)
+    try:
+        idx = BookVectorIndex(safe_book_id, books_dir=BOOKS_DIR)
+        return idx.status()
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/read/{book_id}/images/{image_name}")
 async def serve_image(book_id: str, image_name: str):
