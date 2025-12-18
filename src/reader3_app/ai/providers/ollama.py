@@ -26,7 +26,13 @@ def _post_json(url: str, *, payload: Dict[str, Any], timeout_s: int) -> Tuple[in
     try:
         with urllib.request.urlopen(req, timeout=timeout_s) as resp:
             body = resp.read().decode("utf-8", errors="replace")
-            return int(resp.status), json.loads(body or "{}")
+            if not (body or "").strip():
+                return int(resp.status), {}
+            try:
+                parsed = json.loads(body)
+            except Exception:
+                parsed = {"error": {"message": body}}
+            return int(resp.status), parsed
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace") if getattr(e, "fp", None) else ""
         try:
@@ -104,4 +110,3 @@ def ollama_chat_completions(
         finish_reason=finish_reason,
         token_count=token_count,
     )
-

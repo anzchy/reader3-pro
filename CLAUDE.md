@@ -11,10 +11,10 @@ Reader3 Pro is a lightweight, self-hosted EPUB reader designed for reading books
 ### Processing EPUB Files
 ```bash
 # Process an EPUB file and add it to the library
-uv run reader3.py <file.epub>
+uv run reader3 <file.epub>
 
 # Example: Process Dracula
-uv run reader3.py dracula.epub
+uv run reader3 dracula.epub
 ```
 
 This creates a `{bookname}_data/` directory containing:
@@ -25,7 +25,7 @@ This creates a `{bookname}_data/` directory containing:
 ### Running the Server
 ```bash
 # Start the web server on http://127.0.0.1:8123
-uv run server.py
+uv run reader3-server
 ```
 
 ### Dependency Management
@@ -48,10 +48,28 @@ uv lock --upgrade
 uv add chromadb sentence-transformers
 
 # Download the embedding model (paraphrase-multilingual-MiniLM-L12-v2, ~420MB):
-python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')"
+uv run python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')"
 
 # Model is cached at ~/.cache/huggingface/hub/ (macOS/Linux) or %USERPROFILE%\.cache\huggingface\hub\ (Windows)
 ```
+
+### AI Assistant (Local Ollama / Cloud Providers)
+
+Settings live in `config/ai_settings.json` and can be edited via:
+- Web UI: `http://127.0.0.1:8123/settings`
+- File: `config/ai_settings.json` (server-side only; API keys never returned to browser)
+
+Useful endpoints:
+- `GET /api/settings` and `PUT /api/settings`
+- `GET /api/settings/providers` and `PUT /api/settings/providers/{provider_name}`
+- Ollama helpers: `GET /api/ollama/status`, `GET /api/ollama/models`
+- Q&A streaming: `POST /api/ai/question/{book_uuid}?stream=true` (SSE)
+
+Troubleshooting:
+- `AI provider is disabled in settings`: enable the provider in `/settings` (or `config/ai_settings.json`) and restart `reader3-server`.
+- `API key not configured`: set the provider API key in `/settings` (or `config/ai_settings.json`).
+- `Ollama not running`: start it with `ollama serve`, confirm with `ollama ps`.
+- Semantic index missing: AI endpoints try keyword fallback; for best results run `uv run reader3 --index <book_id>`.
 
 ## Architecture
 

@@ -18,29 +18,56 @@ class ProviderSettings:
     base_url: str
     api_key_configured: bool
     timeout_s: int
+    max_retries: int
 
 
 def default_settings_dict() -> Dict[str, Any]:
     return {
         "default_provider": "anthropic",
+        "preferences": {
+            "show_timestamps": True,
+            "auto_suggest_questions": True,
+            "streaming_enabled": True,
+            "max_conversation_length": 500,
+            "theme": "auto",
+        },
         "providers": {
             "anthropic": {
                 "enabled": True,
                 "model_name": "claude-sonnet-4-20250514",
                 "api_key": "",
                 "timeout_s": 30,
+                "max_retries": 3,
+            },
+            "openai": {
+                "enabled": False,
+                "base_url": "https://api.openai.com/v1",
+                "model_name": "gpt-4o-mini",
+                "api_key": "",
+                "timeout_s": 30,
+                "max_retries": 3,
             },
             "gemini": {
                 "enabled": False,
                 "model_name": "gemini-1.5-pro",
                 "api_key": "",
                 "timeout_s": 30,
+                "max_retries": 3,
             },
             "ollama": {
                 "enabled": False,
                 "base_url": "http://localhost:11434",
                 "model_name": "qwen3:8b",
                 "timeout_s": 60,
+                "max_retries": 0,
+            },
+            "openrouter": {
+                "enabled": False,
+                "base_url": "https://openrouter.ai/api/v1",
+                "model_name": "openai/gpt-4o-mini",
+                "api_key": "",
+                "timeout_s": 30,
+                "max_retries": 3,
             },
         },
     }
@@ -89,7 +116,11 @@ def get_provider_settings(
 
     enabled = bool(provider.get("enabled", True))
     model_name = str(provider.get("model_name") or "").strip()
-    timeout_s = int(provider.get("timeout_s") or (60 if provider_name == "ollama" else 30))
+    timeout_s_raw = provider.get("timeout_s")
+    if timeout_s_raw is None:
+        timeout_s_raw = provider.get("timeout")
+    timeout_s = int(timeout_s_raw or (60 if provider_name == "ollama" else 30))
+    max_retries = int(provider.get("max_retries") or 0)
     base_url = str(provider.get("base_url") or "").strip()
     api_key = provider.get("api_key")
 
@@ -104,6 +135,7 @@ def get_provider_settings(
         base_url=base_url,
         api_key_configured=api_key_configured,
         timeout_s=max(1, min(timeout_s, 300)),
+        max_retries=max(0, min(max_retries, 10)),
     )
 
 

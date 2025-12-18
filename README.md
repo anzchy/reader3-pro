@@ -58,7 +58,7 @@ uv sync
 
 ## AI Assistant (Anthropic / Ollama)
 
-The AI panel uses the `default_provider` from `config/ai_settings.json`.
+The AI panel uses the `default_provider` from `config/ai_settings.json` (editable via the web Settings page at `/settings` or by editing the file directly).
 
 1) Copy the example config:
 
@@ -99,10 +99,10 @@ Restart `reader3-server` after changing the config.
 
  在这个项目里调用流程是这样的（选 anthropic 时）：
 
-1. 浏览器把问题发到本地服务：POST /api/ai/question/{book_uuid}（src/reader3_app/web/server.py:616）
+1. 浏览器把问题发到本地服务：POST /api/ai/question/{book_uuid}（见 `src/reader3_app/web/server.py`）
 2. 服务端先在本地做 RAG 检索：从 books/<book>_data/chroma_db/ 里用向量相似度找 top‑k 段落（见 `src/reader3_app/ai/rag.py:9`、`src/reader3_app/vector_search.py:36`）
 
-3. 把这些段落拼成 context，再加上你的 question 和 conversation_history，组装成 Anthropic 的 messages 请求体（见`src/reader3_app/web/server.py:616`）
+3. 把这些段落拼成 context，再加上你的 question 和 conversation_history，组装成 Anthropic 的 messages 请求体（见 `src/reader3_app/web/server.py`）
 
 4. 通过 HTTPS POST https://api.anthropic.com/v1/messages 发给 Anthropic（见 `src/reader3_app/ai/providers/anthropic.py:51`），拿到生成结果后返回前端
 
@@ -112,7 +112,7 @@ Restart `reader3-server` after changing the config.
 
  \- 问答默认 rag_k=5（最多 20），每个 chunk 默认约 1000 字符左右（见 `src/reader3_app/vector_search.py:100`）
 
- \- “全书总结”会取更多片段：固定取 k=12（见 `src/reader3_app/web/server.py:536`）
+ \- “全书总结”会取更多片段：固定取 k=12（见 `src/reader3_app/web/server.py`）
 
  \- 所以通常是“若干段摘录”，不是整本书；但这些摘录确实会离开本机发送到 Anthropic（再加上你的提问/历史消息）
 
@@ -268,8 +268,8 @@ Update `config/ai_settings.json` → `providers.ollama.model_name`, restart `rea
 
 Ollama supports streaming token output, which improves perceived latency (text appears earlier), but does not necessarily increase tokens/sec.
 
-- The Ollama request payload is built in `src/reader3_app/ai/providers/ollama.py` (currently `stream: False`).
-- Flipping it to `True` requires implementing stream parsing (and ideally a streaming response to the browser). It’s not a “one-line” speed fix in the current codebase.
+- Backend supports SSE streaming for Q&A: `POST /api/ai/question/{book_uuid}?stream=true` (see `src/reader3_app/web/server.py`).
+- Frontend uses streaming when enabled in Settings (see `src/reader3_app/web/static/ai.js`), and shows a **Stop** button to abort the request.
 
 ### macOS GPU acceleration notes (Apple Silicon)
 

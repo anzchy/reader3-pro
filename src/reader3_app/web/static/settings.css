@@ -1,0 +1,164 @@
+.container {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 30px 20px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: #1f2937;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.title {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.link {
+  color: #2563eb;
+  text-decoration: none;
+}
+.link:hover {
+  text-decoration: underline;
+}
+
+.section {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 16px 16px;
+  margin-top: 16px;
+}
+
+.section h2 {
+  margin: 0 0 10px 0;
+  font-size: 16px;
+}
+
+.row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: #374151;
+}
+
+.checkbox {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+  color: #374151;
+}
+
+select,
+input[type="text"],
+input[type="password"],
+input[type="number"] {
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  min-width: 260px;
+}
+
+.btn {
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: #111827;
+  color: #fff;
+  cursor: pointer;
+  font-size: 13px;
+}
+.btn:hover {
+  background: #0b1220;
+}
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-danger {
+  background: #b91c1c;
+  border-color: #b91c1c;
+}
+.btn-danger:hover {
+  background: #991b1b;
+}
+
+.status {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.hint {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.providers {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.provider-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 12px 12px;
+  background: #fafafa;
+}
+
+.provider-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.provider-name {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-weight: 700;
+}
+
+.pill {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.pill.ok {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.pill.bad {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.provider-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  margin-top: 10px;
+}
+

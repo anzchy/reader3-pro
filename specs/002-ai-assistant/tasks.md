@@ -41,7 +41,7 @@ This checklist turns `spec.md` + `plan.md` + `data-model.md` + `contracts/*.yaml
 - [x] Define chunk → chapter mapping strategy (store/recover `chapter_order` + `chapter_title`)
 - [x] Add fallback behavior when index missing:
   - [x] Clear error message prompting user to index the book
-  - [ ] Optional: basic keyword fallback (no embeddings) if desired
+  - [x] Optional: basic keyword fallback (no embeddings) if desired
 
 ### Provider (P1 default)
 
@@ -79,32 +79,32 @@ This checklist turns `spec.md` + `plan.md` + `data-model.md` + `contracts/*.yaml
 
 ### Settings API (FastAPI)
 
-- [ ] Implement Settings endpoints (contracts: `contracts/settings-api.yaml`)
-  - [ ] `GET /api/settings`
-  - [ ] `PUT /api/settings`
-  - [ ] `GET /api/settings/providers`
-  - [ ] `GET/PUT/DELETE /api/settings/providers/{provider_name}`
-  - [ ] `POST /api/settings/providers/{provider_name}/test`
-- [ ] Persist settings + keys server-side in `config/ai_settings.json`
-- [ ] Return `api_key_configured` boolean only (never the key)
+- [x] Implement Settings endpoints (contracts: `contracts/settings-api.yaml`)
+  - [x] `GET /api/settings`
+  - [x] `PUT /api/settings`
+  - [x] `GET /api/settings/providers`
+  - [x] `GET/PUT/DELETE /api/settings/providers/{provider_name}`
+  - [x] `POST /api/settings/providers/{provider_name}/test`
+- [x] Persist settings + keys server-side in `config/ai_settings.json`
+- [x] Return `api_key_configured` boolean only (never the key)
 
 ### Settings UI (Web)
 
-- [ ] Add a Settings page entry point (link/button) and a Settings page UI
-- [ ] Providers tab:
-  - [ ] Provider enable/disable toggle + default provider selection
-  - [ ] Cloud providers: API key input (never displayed after save; show configured state)
-  - [ ] Model selection + timeout/retry settings
-  - [ ] Test connection button (uses `/api/settings/providers/{provider_name}/test`)
-- [ ] Data tab:
-  - [ ] Clear local conversation cache (IndexedDB)
-  - [ ] Clear summary cache (IndexedDB)
+- [x] Add a Settings page entry point (link/button) and a Settings page UI
+- [x] Providers tab:
+  - [x] Provider enable/disable toggle + default provider selection
+  - [x] Cloud providers: API key input (never displayed after save; show configured state)
+  - [x] Model selection + timeout/retry settings
+  - [x] Test connection button (uses `/api/settings/providers/{provider_name}/test`)
+- [x] Data tab:
+  - [x] Clear local conversation cache (IndexedDB)
+  - [x] Clear summary cache (IndexedDB)
 
 ### Ollama Proxy API (FastAPI)
 
-- [ ] Implement:
-  - [ ] `GET /api/ollama/status` (probe configured base_url)
-  - [ ] `GET /api/ollama/models` (proxy to `/api/tags`)
+- [x] Implement:
+  - [x] `GET /api/ollama/status` (probe configured base_url)
+  - [x] `GET /api/ollama/models` (proxy to `/api/tags`)
 
 ### Providers (P2)
 
@@ -131,17 +131,17 @@ This checklist turns `spec.md` + `plan.md` + `data-model.md` + `contracts/*.yaml
 
 ### Streaming (SSE)
 
-- [ ] Backend streaming support:
-  - [ ] Add streaming option for `POST /api/ai/question/{book_uuid}?stream=true`
-  - [ ] Implement SSE response format (data: event chunks)
-  - [ ] Handle stream errors (timeout, provider failure) with proper SSE error events
-- [ ] Frontend streaming UI:
-  - [ ] Implement SSE EventSource parser (chunk/done/error events)
-  - [ ] Token-by-token rendering (append to message bubble incrementally)
-  - [ ] Typing indicator (animated "..." while waiting for first token)
-  - [ ] "Stop" button to cancel generation (abort SSE connection + backend cleanup)
-  - [ ] Streaming state management (disable input during generation)
-  - [ ] Error display for mid-stream failures (show partial response + error message)
+- [x] Backend streaming support:
+  - [x] Add streaming option for `POST /api/ai/question/{book_uuid}?stream=true`
+  - [x] Implement SSE response format (data: event chunks)
+  - [x] Handle stream errors (timeout, provider failure) with proper SSE error events
+- [x] Frontend streaming UI:
+  - [x] Implement SSE EventSource parser (chunk/done/error events)
+  - [x] Token-by-token rendering (append to message bubble incrementally)
+  - [x] Typing indicator (animated "..." while waiting for first token)
+  - [x] "Stop" button to cancel generation (abort SSE connection + backend cleanup)
+  - [x] Streaming state management (disable input during generation)
+  - [x] Error display for mid-stream failures (show partial response + error message)
 
 ### Provider Switching UX
 
@@ -226,11 +226,11 @@ This checklist turns `spec.md` + `plan.md` + `data-model.md` + `contracts/*.yaml
 
 ## Documentation
 
-- [ ] Update `README.md` with:
-  - [ ] How AI works (RAG + citations)
-  - [ ] Ollama setup steps + offline usage
-  - [ ] How to configure providers via `config/ai_settings.json`
-- [ ] Update `CLAUDE.md` with AI feature section:
-  - [ ] AI assistant commands and endpoints
-  - [ ] Provider configuration guide
-  - [ ] Troubleshooting common issues (Ollama not running, API key errors)
+- [x] Update `README.md` with:
+  - [x] How AI works (RAG + citations)
+  - [x] Ollama setup steps + offline usage
+  - [x] How to configure providers via `config/ai_settings.json`
+- [x] Update `CLAUDE.md` with AI feature section:
+  - [x] AI assistant commands and endpoints
+  - [x] Provider configuration guide
+  - [x] Troubleshooting common issues (Ollama not running, API key errors)

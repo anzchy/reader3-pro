@@ -155,7 +155,7 @@
 - [x] T068 Implement search state persistence in sessionStorage (FR-036: save query and results during navigation, restore on back button)
 - [x] T069 [P] Add CSS responsive design for search UI on mobile/tablet viewports
 - [x] T070 [P] Update CLAUDE.md with search functionality usage instructions (how to index books, use search modes, performance tips)
-- [ ] T071 Validate against quickstart.md instructions (run all manual test steps from quickstart, verify behavior matches documentation)
+- [x] T071 Validate against quickstart.md instructions (run all manual test steps from quickstart, verify behavior matches documentation)
 - [x] T072 Add error messages for common failure scenarios (book not found, indexing failed, ChromaDB not installed, timeout exceeded)
 - [x] T073 Optimize search performance with @lru_cache for frequently searched terms (FR-030: <500ms in-book, FR-031: <2s library) per constitution caching principle
 
