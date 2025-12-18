@@ -1,97 +1,321 @@
-# Git Worktree Workflow (This Repo)
+# Git Worktree + Speckit Workflow (This Repo)
 
-`git worktree` lets you work on multiple branches at the same time without repeatedly switching branches (and without cloning the repo multiple times). This repo uses separate branches for different feature tracks (e.g. `001-search-features`, `002-ai-assistant`, `003-add-book-notes`), which makes worktrees especially useful.
+This repo uses Spec Kit (“Speckit”, via `specify-cli` and `/speckit.*`) and a multi-branch workflow where each feature lives in:
 
-## When To Use It
+- a **branch** (e.g. `001-search-features`, `002-ai-assistant`, `003-add-book-notes`)
+- a **spec directory** under `specs/<id>-<slug>/` (e.g. `specs/002-ai-assistant/`)
 
-- You want to implement code on one branch while writing specs/docs on other branches.
-- You want to keep “dirty” working directories isolated (no accidental cross-branch edits).
-- You frequently rebase/merge from `master` and don’t want to interrupt other work.
+`git worktree` lets you work on multiple branches at the same time (multiple working directories, one shared `.git` object database). This is the cleanest way to:
 
-## Recommended Layout
+- implement code in one feature branch while writing specs/plans in another
+- run multiple AI sessions (Claude Code / Codex) in parallel without cross-branch edits
 
-Keep your main repo and worktrees side-by-side:
+---
+
+## 0) One-Time Setup (From Scratch)
+
+### 0.1 Clone and set up worktree base directory
 
 ```bash
-cd /path/to/reader3-pro
+git clone git@github.com:anzchy/reader3-pro.git
+cd reader3-pro
 mkdir -p ../reader3-pro-wt
 ```
 
-Create one worktree per branch:
+### 0.2 Initialize Spec Kit (only once, commit to `master`)
+
+If the repo does not yet have `.specify/` and `specs/`, initialize Spec Kit in `master` so all feature branches inherit the tooling.
+
+```bash
+# install the CLI (recommended)
+uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
+
+# initialize in this repo (choose your primary AI)
+specify init . --ai claude
+```
+
+Commit the scaffolding (`.specify/`, templates, etc.) to `master`.
+
+---
+
+## 1) Recommended Worktree Layout (This Project)
+
+Keep worktrees next to the main repo, one per branch:
 
 ```bash
 git fetch origin
+git worktree add ../reader3-pro-wt/master master
 git worktree add ../reader3-pro-wt/001 001-search-features
 git worktree add ../reader3-pro-wt/002 002-ai-assistant
 git worktree add ../reader3-pro-wt/003 003-add-book-notes
-```
-
-List worktrees:
-
-```bash
 git worktree list
 ```
 
-## Daily Workflow (Professional Routine)
+Suggested mapping:
 
-1. Open 2–3 terminals (or editor windows), one per worktree:
-   - `../reader3-pro-wt/001`: implementation + running the app
-   - `../reader3-pro-wt/002`: specs/plans/contracts for AI assistant
-   - `../reader3-pro-wt/003`: specs for book notes
-2. Start each session with:
+- `../reader3-pro-wt/001`: implementation-heavy work (backend/UI/search)
+- `../reader3-pro-wt/002`: AI assistant specs + later implementation
+- `../reader3-pro-wt/003`: book notes spec + later implementation
 
-```bash
-git fetch origin
-```
+---
 
-3. Sync with `master` (choose one approach):
-   - Rebase (cleaner history): `git rebase origin/master`
-   - Merge (safer/less rewriting): `git merge origin/master`
+## 2) Professional Parallel Workflow (Docs vs Code, Multi-Branch)
 
-4. Commit and push in the worktree you changed:
+The core rule: **one terminal/editor + one AI session per worktree**.
+
+### 2.0 Example setup for this repo (typical)
+
+Common parallel scenario:
+
+- `001-search-features`: you are actively implementing/searching/running the app
+- `002-ai-assistant`: you are drafting specs/plans/tasks (docs-first)
+- `003-add-book-notes`: you are drafting specs (docs-first)
+
+Worktrees keep these changes physically separated so you can commit/push/PR independently.
+
+### 2.1 Start parallel sessions
+
+- Terminal A: `cd ../reader3-pro-wt/001` (Codex for code)
+- Terminal B: `cd ../reader3-pro-wt/002` (Claude Code for spec/plan/tasks)
+- Terminal C: `cd ../reader3-pro-wt/003` (Claude Code for spec/plan/tasks)
+
+### 2.2 Keep branches isolated by file scope
+
+Before committing, always verify you only touched what the branch owns:
 
 ```bash
 git status
-git add -A
-git commit -m "docs: update 002 spec"
+git diff --name-only
+```
+
+Practical rule for this repo:
+
+- spec-only branches should mostly touch `specs/<feature>/**`
+- implementation branches can touch `server.py`, `reader3.py`, `templates/`, `static/`, etc.
+
+---
+
+## 3) Speckit Flow (Per Feature Branch)
+
+Run Speckit inside the **feature branch worktree** so all generated files land on the correct branch.
+
+Example: create the 002 AI Assistant spec set in `../reader3-pro-wt/002`.
+
+### 3.1 Create/update the feature spec (`spec.md`)
+
+In Claude Code or Codex (inside that worktree):
+
+```text
+/speckit.specify  (describe what/why; keep it user-facing)
+```
+
+This should create or update:
+
+- `specs/002-ai-assistant/spec.md`
+
+### 3.2 Produce the implementation plan
+
+```text
+/speckit.plan
+```
+
+Outputs typically include:
+
+- `specs/002-ai-assistant/plan.md`
+- optional: `research.md`, `data-model.md`, `contracts/*.yaml`, `quickstart.md`
+
+### 3.3 Generate task breakdown
+
+```text
+/speckit.tasks
+```
+
+Outputs:
+
+- `specs/002-ai-assistant/tasks.md` (dependency-ordered checklist)
+
+### 3.4 Implement against tasks
+
+```text
+/speckit.implement
+```
+
+Work style:
+
+- implement small slices
+- update `tasks.md` by marking completed items `[x]`
+- keep PRs reviewable
+
+---
+
+## 3.5 From-Zero “Step-by-Step” (New Feature in This Repo)
+
+This is the recommended end-to-end workflow when starting a brand-new feature (example: `004-example-feature`).
+
+### Step 1 — Reserve an ID (avoid conflicts)
+
+On `master`, reserve a new folder name in `specs/` (or use a unique naming scheme).
+
+```bash
+cd ../reader3-pro-wt/master
+git pull --rebase
+mkdir -p specs/004-example-feature
+git add specs/004-example-feature
+git commit -m "chore(spec): reserve 004-example-feature"
 git push
 ```
 
-## Creating A New Branch Worktree
+### Step 2 — Create a feature branch + worktree
 
-Create a new branch from `origin/master` and mount it immediately:
+```bash
+cd /path/to/reader3-pro
+git fetch origin
+git worktree add -b 004-example-feature ../reader3-pro-wt/004 origin/master
+```
+
+### Step 3 — Spec-first in the feature worktree (Claude Code recommended)
+
+```bash
+cd ../reader3-pro-wt/004
+```
+
+In Claude Code:
+
+- `/speckit.specify` → writes/updates `specs/004-example-feature/spec.md`
+- `/speckit.plan` → writes `plan.md` (+ optional `data-model.md`, `contracts/`, `research.md`)
+- `/speckit.tasks` → writes `tasks.md`
+
+Commit the spec set early:
+
+```bash
+git add specs/004-example-feature
+git commit -m "docs(spec): add 004 example feature spec set"
+git push -u origin 004-example-feature
+```
+
+Optional (recommended): open a “spec-only PR” early to get alignment before implementing.
+
+### Step 4 — Implement against `tasks.md` (Codex recommended)
+
+In Codex (same worktree):
+
+- `/speckit.implement` (or implement manually task-by-task)
+- update `specs/004-example-feature/tasks.md` by marking `[x]`
+
+Keep implementation commits small:
+
+```bash
+git add -A
+git commit -m "feat(004): implement <small slice>"
+git push
+```
+
+### Step 5 — Open PR and keep branches synced
+
+- PR: `004-example-feature` → `master`
+- During review: `git fetch origin && git rebase origin/master` (or merge) and force-push only if your repo policy allows it.
+
+### Step 6 — Repeat in parallel (multiple features)
+
+For `005-another-feature`, repeat Steps 1–5 in a new worktree (`../reader3-pro-wt/005`). Parallel work remains isolated.
+---
+
+## 4) Avoiding Specs Directory ID Conflicts
+
+This repo currently uses sequential IDs:
+
+- `specs/001-search-features/`
+- `specs/002-ai-assistant/`
+- `specs/003-add-book-notes/`
+
+If multiple people/branches create new features in parallel, you can collide on `specs/001-*`.
+
+Recommended options:
+
+1. **Reserve IDs in `master` first** (create an empty `specs/004-.../` folder, commit, then branch).
+2. Switch to a unique scheme (e.g. `specs/20251218-<slug>/` or `specs/gh-<issue>-<slug>/`).
+
+---
+
+## 5) Branch Sync + PR Workflow (Keeping `master` Clean)
+
+Daily (per worktree):
+
+```bash
+git fetch origin
+git rebase origin/master   # or: git merge origin/master
+```
+
+When ready:
+
+```bash
+git add -A
+git commit -m "docs: update 002 specs"
+git push
+```
+
+Then open a PR:
+
+- `002-ai-assistant` → `master` (spec-only PR) or keep it long-lived until implementation starts
+- `001-search-features` → `master` (code PR with screenshots/tests)
+
+---
+
+## 6) Claude Code vs Codex: Practical Division of Labor
+
+### Claude Code (best for spec-driven writing + review)
+
+Use in spec worktrees:
+
+- write/iterate `spec.md` with acceptance criteria
+- run `/speckit.plan` and `/speckit.tasks`
+- review “alignment” between spec/plan/contracts
+
+Guardrail prompt (recommended):
+
+> “Only modify `specs/002-ai-assistant/**`. Do not touch implementation code in this session.”
+
+### Codex (best for implementation + refactors + verification)
+
+Use in implementation worktrees:
+
+- execute `/speckit.implement`
+- change Python/HTML/JS code
+- run local checks (server, manual flows)
+- keep commits scoped to tasks
+
+Guardrail prompt (recommended):
+
+> “Follow `specs/002-ai-assistant/tasks.md`. Update tasks by marking `[x]`. Don’t edit other specs.”
+
+---
+
+## 7) Worktree Ops Cheatsheet
+
+Create a new branch + worktree:
 
 ```bash
 git fetch origin
 git worktree add -b 004-my-feature ../reader3-pro-wt/004 origin/master
 ```
 
-Notes:
-- One branch can only be checked out in **one** worktree at a time.
-- If you need a second workspace, create a second branch (e.g. `004-my-feature-wip`).
-
-## Removing Worktrees (Clean Up)
+Remove a worktree:
 
 ```bash
 git worktree remove ../reader3-pro-wt/003
 git worktree prune
 ```
 
-Avoid deleting the folder manually; if you do, run `git worktree prune` afterwards.
+Find which branch a directory is on:
+
+```bash
+git -C ../reader3-pro-wt/002 branch --show-current
+```
+
+---
 
 ## Troubleshooting
 
-- “Branch already checked out”: that branch is mounted in another worktree. Use `git worktree list` to find it.
-- Stale metadata after deleting folders: run `git worktree prune`.
-- Unclear which branch a folder is on:
-  - `git -C ../reader3-pro-wt/002 branch --show-current`
-
-## Using Claude Code / Codex Effectively With Worktrees
-
-Best practice is **one agent session per worktree**:
-
-- In the `001` session: restrict changes to implementation files (`server.py`, `reader3.py`, `templates/`, `static/`).
-- In the `002`/`003` sessions: restrict changes to `specs/002-ai-assistant/**` or `specs/003-add-book-notes/**`.
-
-This keeps diffs reviewable and prevents “spec edits leaking into implementation commits” (and vice versa).
-
+- “Branch already checked out”: that branch is mounted in another worktree. Use `git worktree list`.
+- Deleted a worktree folder manually: run `git worktree prune`.
+- Accidentally edited wrong branch: use `git diff --name-only` and move changes via `git checkout <sha> -- <path>` or cherry-pick commits.
