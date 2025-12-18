@@ -12,25 +12,10 @@ wheels/
 # macOS
 .DS_Store
 
-# Jupyter
-.ipynb_checkpoints/
-.jupyter/
-
-# Local demos/scratch
-demo/
-
-# Local AI provider config (do not commit)
-config/
-
 # Custom
 *_data/
 *.epub
-books/
-.DS_Store
-.tmp_split/
-
-# Local model/cache (semantic search)
-.cache/
-
-# Local offline models (do not commit)
-models/
+/models
+/.cache
+/.ipynb_checkpoints
+/.jupyter

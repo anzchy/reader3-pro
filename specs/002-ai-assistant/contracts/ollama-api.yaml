@@ -1,0 +1,76 @@
+openapi: 3.0.3
+info:
+  title: Reader3 Pro - Ollama Proxy API
+  description: |
+    Backend proxy endpoints for Ollama (local model runtime).
+    The frontend calls these endpoints; the server then talks to Ollama at the configured base_url.
+  version: 1.0.0
+
+servers:
+  - url: http://127.0.0.1:8123/api/ollama
+    description: Local development server
+
+tags:
+  - name: Ollama
+    description: Ollama status and model listing
+
+paths:
+  /status:
+    get:
+      tags: [Ollama]
+      summary: Check Ollama server status
+      operationId: ollamaStatus
+      responses:
+        '200':
+          description: Status retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [running]
+                properties:
+                  running:
+                    type: boolean
+                  base_url:
+                    type: string
+                    example: http://localhost:11434
+                  version:
+                    type: string
+                    example: 0.1.48
+        '503':
+          description: Ollama unavailable
+
+  /models:
+    get:
+      tags: [Ollama]
+      summary: List available Ollama models
+      description: |
+        Proxies to Ollama `/api/tags` and returns a simplified list for the Settings UI.
+      operationId: ollamaModels
+      responses:
+        '200':
+          description: Models listed
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [models]
+                properties:
+                  models:
+                    type: array
+                    items:
+                      type: object
+                      required: [name]
+                      properties:
+                        name:
+                          type: string
+                          example: qwen3:32b
+                        size_bytes:
+                          type: integer
+                          example: 19800000000
+                        modified_at:
+                          type: string
+                          format: date-time
+        '503':
+          description: Ollama unavailable
+
