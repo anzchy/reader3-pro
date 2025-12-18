@@ -22,6 +22,7 @@ Implement an AI-powered reading assistant for EPUB books that provides intellige
 - Filesystem (server): Provider configuration + API keys (local config file, not committed)
 - ChromaDB (existing): Vector embeddings for RAG retrieval
 - Filesystem: book.pkl files (existing)
+- Filesystem (server, optional): mirror conversations under `conversations/{book_uuid}/` for backup/portability
 
 **Testing**: pytest for backend, manual testing for frontend (no JS test framework per Simplicity principle)
 
@@ -222,7 +223,7 @@ tests/
 |----------|-----------------|------------------------|-----------|
 | Retrieval Strategy | Long-context when supported, else RAG | Always RAG / Always full-book | Best quality for long-context models, predictable fallback for others |
 | API Key Storage | Server-side config (no browser keys) | Browser keys / Env-only | Keeps secrets off the browser; simplest for self-hosted single-user |
-| Conversation Persistence | IndexedDB (survives refresh) | In-memory / sessionStorage / Cookies | Long-term conversations needed (Q3) |
+| Conversation Persistence | IndexedDB + on-disk JSON per book | IndexedDB only / Server DB | Portable, debuggable, and keeps filesystem as source of truth |
 | Concurrent Requests | Sequential queue | Block UI / Parallel execution / Debouncing | Maintains conversation flow (Q4) |
 | Summary Caching | IndexedDB keyed by `book_uuid` + provider | In-memory / localStorage / Server files | Persistent, per-provider cache separation |
 
@@ -234,7 +235,7 @@ tests/
 
 1. **AIConversation**
    - Fields: id (UUID), book_uuid (UUID), messages (List[AIMessage]), provider (str), last_updated (datetime)
-   - Storage: IndexedDB table `conversations`, indexed by book_uuid
+   - Storage: IndexedDB table `conversations` (browser cache) + `books/{book_folder}/ai_conversations/{conversation_id}.json` (server-side, portable)
    - Lifecycle: Created on first AI panel open per book, persists indefinitely, manually clearable
 
 2. **AIMessage**

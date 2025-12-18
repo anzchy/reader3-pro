@@ -51,3 +51,9 @@ For PRs: include a clear description, link relevant `specs/` docs/issues, and ad
 
 - `book.pkl` is loaded via `pickle`; only process trusted EPUBs and avoid accepting untrusted uploads without hardening.
 - Don’t commit generated `*_data/` outputs or large binaries unless explicitly intended.
+
+## Documentation Rule (Technical Details)
+
+- When adding/changing any “record-like” behavior (data storage locations, new persisted files/folders, new env vars, new endpoints that persist state), update the technical docs:
+  - `docs/technical-detail/technical-detail.md`
+  - and the relevant page(s) under `docs/technical-detail/`

@@ -57,6 +57,14 @@
         <button id="settings-clear-summaries" class="btn btn-danger">Clear summaries (IndexedDB)</button>
         <span id="settings-data-status" class="status"></span>
       </div>
+      <div class="row">
+        <button id="settings-export-config" class="btn">Export settings (no keys)</button>
+        <label class="btn" style="display:inline-flex; align-items:center; gap:8px;">
+          Import settings
+          <input id="settings-import-config" type="file" accept="application/json" style="display:none;" />
+        </label>
+        <span id="settings-config-status" class="status"></span>
+      </div>
       <div class="hint">
         Clearing data only affects this browser profile. It does not touch your books on disk.
       </div>
@@ -66,4 +74,3 @@
   <script src="/static/settings.js"></script>
 </body>
 </html>
-

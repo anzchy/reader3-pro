@@ -12,7 +12,7 @@
 
 
 
-## library 界面重塑
+## branch 004-library UI 重塑
 
 Library 界面描述：左边侧边栏有按照文档类型来展示 pdf/epub/ all books 的数量。然后下方有 collection，可以按照作者或者一个主题来将多个 epub 电子书选中加入对应 collections 中。
 

@@ -159,11 +159,27 @@ Implement an AI-powered reading assistant that provides:
 **So that** I can continue where I left off after closing the browser
 
 **Acceptance Criteria**:
-- All messages stored in browser IndexedDB
+- All messages stored in browser IndexedDB (per-browser cache)
+- Conversations also saved on disk as JSON files (portable between browsers/machines):
+  - **Default**: per-book under `books/{book_folder}/ai_conversations/{conversation_id}.json`
+  - **Optional mirror**: project-root under `conversations/{book_uuid}/{conversation_id}.json` (configurable via `preferences.conversation_disk_storage`)
 - Conversation restored on panel reopen
 - Can manually clear conversation
 - Separate conversations per book
 - **Works offline for Ollama conversations**
+
+---
+
+### US-009: Multiple Chat Threads per Book (P2)
+**As a** reader
+**I want to** start a new chat thread for the same book
+**So that** each thread stays short and does not bloat context for the model
+
+**Acceptance Criteria**:
+- AI panel shows a list of previous chat threads for the current book + provider
+- A "New chat" button creates a fresh thread without deleting old threads
+- Switching threads preserves each thread’s message history
+- Each thread is stored separately (IndexedDB + on-disk JSON; per-book by default, optional project-root mirror)
 
 ---
 
@@ -332,6 +348,14 @@ The system shall support Chinese and English:
 - **Ollama QWEN models optimized for Chinese/English bilingual tasks**
 
 ### FR-017: Conversation Management (P2)
+The UI shall support multiple conversation threads per book and provider.
+
+**Requirements**:
+- Show conversation thread list in AI panel (most recent first)
+- Provide a "New chat" action that creates a new thread
+- Limit model context usage by only sending the active thread’s recent messages
+- Persist each thread to disk as JSON under the book folder
+
 Users shall manage conversation history:
 - Clear conversation button
 - Export conversation to text/JSON

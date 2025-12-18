@@ -163,29 +163,31 @@ This checklist turns `spec.md` + `plan.md` + `data-model.md` + `contracts/*.yaml
 
 ### Retrieval Routing (Long-Context vs RAG)
 
-- [ ] Implement routing logic in `rag_service.py`:
-  - [ ] Define context window thresholds per provider (Claude: 1M tokens, GPT-4: 128K, Gemini: 2M, Ollama: model-dependent)
-  - [ ] Calculate book/chapter token count (use tiktoken or approximate: chars/4)
-  - [ ] Decision heuristics:
-    - [ ] If book_tokens < (provider_context_window * 0.5): use long-context (send full book)
-    - [ ] If chapter_tokens < (provider_context_window * 0.3): use multi-chapter context
-    - [ ] Else: use RAG retrieval (top-k passages, default k=5)
-  - [ ] Model name pattern matching for long-context detection:
-    - [ ] Claude models with "claude-" → check context_window metadata
-    - [ ] Gemini "gemini-1.5-pro" → 2M tokens
-    - [ ] Ollama "qwen2.5-1m" → 1M tokens (parse from model name)
-  - [ ] Log routing decision (DEBUG level): "Using long-context for book_uuid={uuid}, tokens={count}, provider={name}"
-  - [ ] Fallback to RAG on provider timeout (long-context requests may be slower)
+- [x] Implement routing logic (long-context vs RAG):
+  - [x] Define context window thresholds per provider (Claude: 1M tokens, GPT-4: 128K, Gemini: 2M, Ollama: model-dependent)
+  - [x] Calculate book/chapter token count (use tiktoken or approximate: chars/4)
+  - [x] Decision heuristics:
+    - [x] If book_tokens < (provider_context_window * 0.5): use long-context (send full book)
+    - [x] If chapter_tokens < (provider_context_window * 0.3): use multi-chapter context
+    - [x] Else: use RAG retrieval (top-k passages, default k=5)
+  - [x] Model name pattern matching for long-context detection:
+    - [x] Claude models with "claude-" → check context_window metadata
+    - [x] Gemini "gemini-1.5-pro" → 2M tokens
+    - [x] Ollama "qwen2.5-1m" → 1M tokens (parse from model name)
+  - [x] Log routing decision (DEBUG level): "Using long-context for book_uuid={uuid}, tokens={count}, provider={name}"
+  - [x] Fallback to RAG on provider timeout (long-context requests may be slower)
 
 ### Export / Import
 
-- [ ] Settings export/import:
-  - [ ] `GET /api/settings/export` excludes API keys
-  - [ ] `POST /api/settings/import` merges settings (keys re-entered manually)
-- [ ] Conversation export:
-  - [ ] Frontend: Export current book+provider thread to JSON format (client-side download)
-  - [ ] Frontend: Export current book+provider thread to plain text format (client-side download)
-  - [ ] Backend (optional): `GET /api/ai/conversations/{book_uuid}/export?provider={name}&format=json|text`
+- [x] Settings export/import:
+  - [x] `GET /api/settings/export` excludes API keys
+  - [x] `POST /api/settings/import` merges settings (keys re-entered manually)
+- [x] Conversation export:
+  - [x] **Thread model update**: conversations are multi-thread per book+provider; export targets the active `conversation_id`
+  - [x] Frontend: Export active thread to JSON (client-side download)
+  - [x] Frontend: Export active thread to plain text (client-side download)
+  - [x] Frontend: Export active thread to Markdown (client-side download)
+  - [x] Backend: `GET /api/ai/conversations/{book_uuid}/{conversation_id}/export?format=json|text|md`
 
 ### Manual Acceptance (P2)
 
@@ -234,3 +236,17 @@ This checklist turns `spec.md` + `plan.md` + `data-model.md` + `contracts/*.yaml
   - [x] AI assistant commands and endpoints
   - [x] Provider configuration guide
   - [x] Troubleshooting common issues (Ollama not running, API key errors)
+
+## New Requirements: Multi-Chat + On-Disk Storage
+
+- [x] Add on-disk conversation storage under `books/{book_folder}/ai_conversations/` (JSON per conversation)
+- [x] (Optional) Add project-root conversation mirror under `conversations/{book_uuid}/` (configurable via `preferences.conversation_disk_storage`)
+- [x] Add Conversation APIs:
+  - [x] `GET /api/ai/conversations/{book_uuid}?provider=...` (list threads)
+  - [x] `GET /api/ai/conversations/{book_uuid}/{conversation_id}` (load thread)
+  - [x] `PUT /api/ai/conversations/{book_uuid}/{conversation_id}` (save thread)
+  - [x] `DELETE /api/ai/conversations/{book_uuid}/{conversation_id}` (optional)
+- [x] Update AI panel UI:
+  - [x] Add thread list UI (show history)
+  - [x] Add "New chat" button (creates new thread without deleting history)
+  - [x] Persist thread changes to disk JSON via Conversation APIs

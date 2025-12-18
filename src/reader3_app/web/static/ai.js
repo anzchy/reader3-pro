@@ -11,6 +11,18 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function downloadText(filename, text, mime = "text/plain") {
+  const blob = new Blob([text], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function parseSseBlock(block) {
   const lines = String(block || "").split(/\r?\n/);
   let event = "message";
@@ -122,6 +134,10 @@ function modelStorageKey(bookUuid, provider) {
   return `reader3.ai.model.${bookUuid}.${provider}`;
 }
 
+function activeConversationStorageKey(bookUuid, provider) {
+  return `reader3.ai.activeConversation.${bookUuid}.${provider}`;
+}
+
 function getCtx() {
   const ctx = window.Reader3Ctx || {};
   return {
@@ -138,7 +154,11 @@ class ReaderAIUI {
     this.panel = document.getElementById("reader-ai-panel");
     this.closeBtn = document.getElementById("reader-ai-close");
     this.clearBtn = document.getElementById("reader-ai-clear");
+    this.newChatBtn = document.getElementById("reader-ai-new-chat");
+    this.exportBtn = document.getElementById("reader-ai-export");
+    this.exportFmtEl = document.getElementById("reader-ai-export-format");
     this.providerEl = document.getElementById("reader-ai-provider");
+    this.threadsEl = document.getElementById("reader-ai-threads");
     this.messagesEl = document.getElementById("reader-ai-messages");
     this.inputEl = document.getElementById("reader-ai-input");
     this.sendBtn = document.getElementById("reader-ai-send");
@@ -152,10 +172,13 @@ class ReaderAIUI {
     this.streamingEnabled = true;
     this.abortController = null;
     this.msgElById = new Map();
+    this.diskSyncTimer = null;
 
     this.toggleBtn?.addEventListener("click", () => this.toggle());
     this.closeBtn?.addEventListener("click", () => this.close());
     this.clearBtn?.addEventListener("click", () => this.clearConversation());
+    this.newChatBtn?.addEventListener("click", () => this.newChat());
+    this.exportBtn?.addEventListener("click", () => this.exportConversation());
 
     this.quickBtns.forEach((btn) => {
       btn.addEventListener("click", () => this.runSummary(btn.getAttribute("data-ai-summary-type")));
@@ -172,6 +195,20 @@ class ReaderAIUI {
 
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && this.panel?.classList.contains("is-open")) this.close();
+    });
+
+    const refreshIfOpen = async () => {
+      if (this.isBusy) return;
+      if (!this.panel?.classList.contains("is-open")) return;
+      const changed = await this.loadPreferences();
+      if (changed) await this.restoreConversation();
+    };
+
+    window.addEventListener("focus", () => {
+      refreshIfOpen().catch(() => {});
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") refreshIfOpen().catch(() => {});
     });
   }
 
@@ -216,12 +253,33 @@ class ReaderAIUI {
 
   async loadPreferences() {
     try {
+      const prevProvider = String(this.ctx.provider || "");
+      const prevModel = String(this.currentModel || "");
       const resp = await fetch("/api/settings");
       const data = await resp.json().catch(() => ({}));
       const prefs = data?.preferences || {};
       this.streamingEnabled = !!prefs.streaming_enabled;
+
+      const nextProvider = String(data?.default_provider || this.ctx.provider || "anthropic").trim().toLowerCase();
+      if (nextProvider) {
+        this.ctx.provider = nextProvider;
+      }
+
+      const providers = Array.isArray(data?.providers) ? data.providers : [];
+      const pCfg = providers.find((p) => String(p?.name || "").trim().toLowerCase() === this.ctx.provider) || null;
+      const settingsModel = String(pCfg?.model_name || "").trim();
+      if (settingsModel) {
+        this.currentModel = settingsModel;
+        localStorage.setItem(modelStorageKey(this.ctx.bookUuid, this.ctx.provider), settingsModel);
+      } else {
+        this.currentModel = localStorage.getItem(modelStorageKey(this.ctx.bookUuid, this.ctx.provider)) || this.currentModel || "";
+      }
+
+      this.setProvider(this.ctx.provider, this.currentModel);
+      return prevProvider !== String(this.ctx.provider || "") || prevModel !== String(this.currentModel || "");
     } catch {
       this.streamingEnabled = true;
+      return false;
     }
   }
 
@@ -236,23 +294,152 @@ class ReaderAIUI {
   async restoreConversation() {
     const db = await this.ensureDb();
     const list = await txGetAllByIndex(db, STORE_CONVERSATIONS, "book_uuid_provider", [this.ctx.bookUuid, this.ctx.provider]);
-    if (list.length) {
-      list.sort((a, b) => String(b.last_updated || "").localeCompare(String(a.last_updated || "")));
-      this.conversation = list[0];
-    } else {
-      this.conversation = {
-        id: crypto.randomUUID(),
-        book_uuid: this.ctx.bookUuid,
-        provider: this.ctx.provider,
-        created_at: nowIso(),
-        last_updated: nowIso(),
-        messages: [],
-      };
-      await txPut(db, STORE_CONVERSATIONS, this.conversation);
+    list.sort((a, b) => String(b.last_updated || "").localeCompare(String(a.last_updated || "")));
+
+    const activeId = localStorage.getItem(activeConversationStorageKey(this.ctx.bookUuid, this.ctx.provider)) || "";
+    const active = activeId ? list.find((c) => String(c?.id || "") === activeId) : null;
+    this.conversation = active || list[0] || null;
+
+    // If this browser has no cached conversations, try to load the most recent one from disk.
+    if (!this.conversation) {
+      try {
+        const resp = await fetch(`/api/ai/conversations/${encodeURIComponent(this.ctx.bookUuid)}?provider=${encodeURIComponent(this.ctx.provider)}`);
+        const data = await resp.json().catch(() => ({}));
+        const threads = Array.isArray(data?.conversations) ? data.conversations : [];
+        const cid = String(threads?.[0]?.conversation_id || "");
+        if (cid) {
+          const tResp = await fetch(`/api/ai/conversations/${encodeURIComponent(this.ctx.bookUuid)}/${encodeURIComponent(cid)}`);
+          const tData = await tResp.json().catch(() => ({}));
+          if (tResp.ok && tData?.conversation_id) {
+            const conv = {
+              id: String(tData.conversation_id),
+              book_uuid: this.ctx.bookUuid,
+              provider: this.ctx.provider,
+              created_at: String(tData.created_at || nowIso()),
+              last_updated: String(tData.last_updated || nowIso()),
+              model: String(tData.model || ""),
+              messages: Array.isArray(tData.messages)
+                ? tData.messages.map((m) => ({
+                    id: String(m.id || crypto.randomUUID()),
+                    conversation_id: String(tData.conversation_id),
+                    role: m.role,
+                    content: m.content,
+                    timestamp: m.timestamp,
+                    metadata: m.metadata || {},
+                  }))
+                : [],
+            };
+            this.conversation = conv;
+            await txPut(db, STORE_CONVERSATIONS, conv);
+          }
+        }
+      } catch {
+        // ignore
+      }
     }
 
+    if (!this.conversation) {
+      await this.newChat();
+    } else {
+      localStorage.setItem(activeConversationStorageKey(this.ctx.bookUuid, this.ctx.provider), String(this.conversation.id || ""));
+    }
+
+    await this.renderThreads();
     this.renderAll();
     this.setProvider(this.ctx.provider, this.currentModel);
+  }
+
+  async renderThreads() {
+    if (!this.threadsEl) return;
+    const db = await this.ensureDb();
+    const list = await txGetAllByIndex(db, STORE_CONVERSATIONS, "book_uuid_provider", [this.ctx.bookUuid, this.ctx.provider]);
+    list.sort((a, b) => String(b.last_updated || "").localeCompare(String(a.last_updated || "")));
+    this.threadsEl.innerHTML = "";
+    list.forEach((c) => {
+      const div = document.createElement("div");
+      div.className = "ai-thread";
+      if (this.conversation && String(c.id) === String(this.conversation.id)) div.classList.add("is-active");
+      const title = this._threadTitle(c);
+      const meta = `${new Date(String(c.last_updated || "") || Date.now()).toLocaleString()} · ${(c.messages || []).length} msgs`;
+      div.innerHTML = `<div>${escapeHtml(title || "(empty)")}</div><div class="meta">${escapeHtml(meta)}</div>`;
+      div.addEventListener("click", async () => {
+        if (this.isBusy) return;
+        await this.switchConversation(String(c.id || ""));
+      });
+      this.threadsEl.appendChild(div);
+    });
+  }
+
+  _threadTitle(conv) {
+    const msgs = Array.isArray(conv?.messages) ? conv.messages : [];
+    const firstUser = msgs.find((m) => String(m?.role || "").toLowerCase() === "user" && String(m?.content || "").trim());
+    const txt = String(firstUser?.content || "").trim().replace(/\s+/g, " ");
+    return txt.length > 50 ? txt.slice(0, 50) + "…" : txt;
+  }
+
+  async switchConversation(conversationId) {
+    const id = String(conversationId || "").trim();
+    if (!id) return;
+    const db = await this.ensureDb();
+    const conv = await txGet(db, STORE_CONVERSATIONS, id);
+    if (conv) {
+      this.conversation = conv;
+      localStorage.setItem(activeConversationStorageKey(this.ctx.bookUuid, this.ctx.provider), id);
+      this.renderAll();
+      await this.renderThreads();
+      return;
+    }
+    // fallback to disk
+    try {
+      const resp = await fetch(`/api/ai/conversations/${encodeURIComponent(this.ctx.bookUuid)}/${encodeURIComponent(id)}`);
+      const data = await resp.json().catch(() => ({}));
+      if (resp.ok && data?.conversation_id) {
+        const loaded = {
+          id: String(data.conversation_id),
+          book_uuid: this.ctx.bookUuid,
+          provider: this.ctx.provider,
+          created_at: String(data.created_at || nowIso()),
+          last_updated: String(data.last_updated || nowIso()),
+          model: String(data.model || ""),
+          messages: Array.isArray(data.messages)
+            ? data.messages.map((m) => ({
+                id: String(m.id || crypto.randomUUID()),
+                conversation_id: String(data.conversation_id),
+                role: m.role,
+                content: m.content,
+                timestamp: m.timestamp,
+                metadata: m.metadata || {},
+              }))
+            : [],
+        };
+        this.conversation = loaded;
+        await txPut(db, STORE_CONVERSATIONS, loaded);
+        localStorage.setItem(activeConversationStorageKey(this.ctx.bookUuid, this.ctx.provider), id);
+        this.renderAll();
+        await this.renderThreads();
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  async newChat() {
+    if (this.isBusy) return;
+    const db = await this.ensureDb();
+    this.conversation = {
+      id: crypto.randomUUID(),
+      book_uuid: this.ctx.bookUuid,
+      provider: this.ctx.provider,
+      model: this.currentModel || "",
+      created_at: nowIso(),
+      last_updated: nowIso(),
+      messages: [],
+    };
+    await txPut(db, STORE_CONVERSATIONS, this.conversation);
+    localStorage.setItem(activeConversationStorageKey(this.ctx.bookUuid, this.ctx.provider), String(this.conversation.id || ""));
+    this.renderAll();
+    await this.renderThreads();
+    this.scheduleDiskSync();
   }
 
   renderAll() {
@@ -301,6 +488,35 @@ class ReaderAIUI {
     const db = await this.ensureDb();
     this.conversation.last_updated = nowIso();
     await txPut(db, STORE_CONVERSATIONS, this.conversation);
+    this.scheduleDiskSync();
+    await this.renderThreads();
+  }
+
+  scheduleDiskSync() {
+    if (!this.conversation) return;
+    if (this.diskSyncTimer) clearTimeout(this.diskSyncTimer);
+    this.diskSyncTimer = setTimeout(() => this.syncConversationToDisk(), 600);
+  }
+
+  async syncConversationToDisk() {
+    if (!this.conversation) return;
+    const conv = this.conversation;
+    const body = {
+      provider: this.ctx.provider,
+      model: this.currentModel || conv.model || "",
+      created_at: conv.created_at || "",
+      last_updated: conv.last_updated || "",
+      messages: Array.isArray(conv.messages) ? conv.messages : [],
+    };
+    try {
+      await fetch(`/api/ai/conversations/${encodeURIComponent(this.ctx.bookUuid)}/${encodeURIComponent(conv.id)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    } catch {
+      // ignore
+    }
   }
 
   addMessage(role, content, metadata) {
@@ -321,18 +537,55 @@ class ReaderAIUI {
 
   async clearConversation() {
     if (!confirm("Clear this conversation?")) return;
-    const db = await this.ensureDb();
-    if (this.conversation?.id) await txDelete(db, STORE_CONVERSATIONS, this.conversation.id);
-    this.conversation = {
-      id: crypto.randomUUID(),
-      book_uuid: this.ctx.bookUuid,
-      provider: this.ctx.provider,
-      created_at: nowIso(),
-      last_updated: nowIso(),
-      messages: [],
-    };
-    await txPut(db, STORE_CONVERSATIONS, this.conversation);
+    if (!this.conversation?.id) return;
+    this.conversation.messages = [];
+    await this.persistConversation();
     this.renderAll();
+  }
+
+  async exportConversation() {
+    if (this.isBusy) return;
+    if (!this.conversation?.id) {
+      alert("No active conversation to export. Start a new chat first.");
+      return;
+    }
+    const fmt = String(this.exportFmtEl?.value || "md").trim().toLowerCase();
+    const cid = String(this.conversation.id || "");
+    const url = `/api/ai/conversations/${encodeURIComponent(this.ctx.bookUuid)}/${encodeURIComponent(cid)}/export?format=${encodeURIComponent(fmt)}`;
+
+    try {
+      if (this.exportBtn) this.exportBtn.disabled = true;
+      const resp = await fetch(url);
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        throw new Error(data?.detail || `${resp.status} ${resp.statusText}`);
+      }
+
+      let text = "";
+      let mime = "text/plain";
+      let ext = "txt";
+      if (fmt === "json") {
+        const data = await resp.json();
+        text = JSON.stringify(data, null, 2);
+        mime = "application/json";
+        ext = "json";
+      } else if (fmt === "md" || fmt === "markdown") {
+        text = await resp.text();
+        mime = "text/markdown";
+        ext = "md";
+      } else {
+        text = await resp.text();
+        mime = "text/plain";
+        ext = "txt";
+      }
+
+      const fname = `${String(this.ctx.bookId || "book")}_${cid}.${ext}`;
+      downloadText(fname, text, mime);
+    } catch (err) {
+      alert(`Export failed: ${err?.message || String(err)}`);
+    } finally {
+      if (this.exportBtn) this.exportBtn.disabled = false;
+    }
   }
 
   async sendQuestion() {
@@ -359,7 +612,7 @@ class ReaderAIUI {
         content: m.content,
         timestamp: m.timestamp,
         metadata: m.metadata || {},
-      }));
+      })).filter((m) => m.id !== String(placeholder?.id || ""));
 
       const payload = {
         question: text,

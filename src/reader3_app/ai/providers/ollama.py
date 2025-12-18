@@ -12,9 +12,10 @@ def _normalize_base_url(base_url: str) -> str:
     base = (base_url or "").strip().rstrip("/")
     if not base:
         base = "http://localhost:11434"
+    # Accept either http://host:11434 or http://host:11434/v1 in config.
     if base.endswith("/v1"):
-        return base
-    return base + "/v1"
+        base = base[: -len("/v1")]
+    return base.rstrip("/")
 
 
 def _post_json(url: str, *, payload: Dict[str, Any], timeout_s: int) -> Tuple[int, Dict[str, Any]]:
@@ -52,29 +53,24 @@ def ollama_chat_completions(
     timeout_s: int,
 ) -> ProviderResponse:
     base = _normalize_base_url(base_url)
-    url = base + "/chat/completions"
+    url = base + "/api/chat"
 
-    openai_messages: List[Dict[str, Any]] = []
+    chat_messages: List[Dict[str, Any]] = []
     if system:
-        openai_messages.append({"role": "system", "content": system})
+        chat_messages.append({"role": "system", "content": system})
     for m in messages or []:
         role = str(m.get("role") or "").strip().lower()
         if role not in ("user", "assistant"):
             continue
         content = str(m.get("content") or "")
-        openai_messages.append({"role": role, "content": content})
+        chat_messages.append({"role": role, "content": content})
 
     payload: Dict[str, Any] = {
         "model": model,
-        "messages": openai_messages,
-        "stream": True,
+        "messages": chat_messages,
+        "stream": False,
+        "options": {"num_predict": max(64, min(int(max_tokens), 4096))},
     }
-
-    # Some Ollama models ignore these fields, but they are safe to pass.
-    try:
-        payload["max_tokens"] = max(64, min(int(max_tokens), 4096))
-    except Exception:
-        payload["max_tokens"] = 1024
 
     status, resp = _post_json(url, payload=payload, timeout_s=timeout_s)
     if status >= 400:
@@ -86,21 +82,17 @@ def ollama_chat_completions(
             msg = str(resp.get("message") or "")
         raise RuntimeError(msg or f"Ollama API error ({status})")
 
-    choices = resp.get("choices") or []
-    if isinstance(choices, list) and choices:
-        msg = choices[0].get("message") or {}
-        text = str(msg.get("content") or "")
-        finish_reason = str(choices[0].get("finish_reason") or "stop")
-    else:
-        text = ""
-        finish_reason = "stop"
+    msg = resp.get("message") or {}
+    if not isinstance(msg, dict):
+        msg = {}
+    text = str(msg.get("content") or "")
+    finish_reason = str(resp.get("done_reason") or "stop")
 
     model_out = str(resp.get("model") or model)
     token_count = None
-    usage = resp.get("usage")
-    if isinstance(usage, dict) and usage.get("completion_tokens") is not None:
+    if resp.get("eval_count") is not None:
         try:
-            token_count = int(usage.get("completion_tokens"))
+            token_count = int(resp.get("eval_count"))
         except Exception:
             token_count = None
 
