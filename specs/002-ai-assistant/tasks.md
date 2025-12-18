@@ -2,7 +2,9 @@
 
 This checklist turns `spec.md` + `plan.md` + `data-model.md` + `contracts/*.yaml` into implementation tasks. Keep tasks small, dependency-ordered, and mark completed items with `[x]`.
 
-## Phase 0 — Repo & Config Wiring
+## Phase 0 — Prerequisites & Config Setup
+
+**Note**: This phase handles repository setup before MVP implementation. See plan.md Phase 0 for research outputs (research.md, contracts/).
 
 - [ ] Add `config/ai_settings.json` to `.gitignore` (repo-local, secrets not committed)
 - [ ] Add `config/ai_settings.example.json` (safe example, no keys)
@@ -24,7 +26,14 @@ This checklist turns `spec.md` + `plan.md` + `data-model.md` + `contracts/*.yaml
 - [ ] Implement `POST /api/ai/rag/retrieve` (internal helper endpoint)
   - [ ] Load `books/{book_folder}/chroma_db/` and retrieve top-k passages
   - [ ] Provide stable chapter references for UI citations
-- [ ] Add minimal request queueing (max 1 in-flight per book+provider) to avoid overlapping responses
+- [ ] Implement request queueing for conversation flow:
+  - [ ] Queue data structure: In-memory FIFO queue per `{book_uuid}:{provider}` key
+  - [ ] Max 1 concurrent request per book+provider (subsequent requests wait)
+  - [ ] Max 10 pending requests in queue (11th request returns 429 Too Many Requests)
+  - [ ] Request timeout: 30s for cloud providers, 60s for Ollama
+  - [ ] Queue cleanup: Remove stale requests after timeout (log + return 504 Gateway Timeout)
+  - [ ] Response handling: Dequeue on completion/error, process next queued request
+  - [ ] Edge case: Client disconnect cancels request and dequeues
 
 ### RAG Retrieval
 
@@ -43,13 +52,13 @@ This checklist turns `spec.md` + `plan.md` + `data-model.md` + `contracts/*.yaml
 
 ### Reader UI (templates + static JS)
 
-- [ ] Add “AI” button to `templates/reader.html` header toolbar
+- [ ] Add "AI" button to `templates/reader.html` header toolbar
 - [ ] Add floating AI panel (right side) matching `spec.md` layout:
   - [ ] Quick actions: `全书总结`, `书籍亮点`, `背景解读`
   - [ ] Message list + input (Enter to send)
   - [ ] Provider indicator (provider + model)
 - [ ] Provide `book_uuid` to the page (data attribute or inline JSON) so JS calls `/api/ai/*/{book_uuid}`
-- [ ] Implement minimal frontend state (in-memory) + “Clear conversation”
+- [ ] Implement minimal frontend state (in-memory) + "Clear conversation"
 
 ### IndexedDB Persistence (P1)
 
@@ -62,7 +71,7 @@ This checklist turns `spec.md` + `plan.md` + `data-model.md` + `contracts/*.yaml
 
 ### Manual Acceptance (P1)
 
-- [ ] US-001: AI button opens panel; “全书总结” returns within target time on cloud provider
+- [ ] US-001: AI button opens panel; "全书总结" returns within target time on cloud provider
 - [ ] US-002: Ask question → answer includes citations (`retrieval_sources`)
 - [ ] US-007: Refresh page → conversation restored for the same book/provider
 
@@ -99,23 +108,53 @@ This checklist turns `spec.md` + `plan.md` + `data-model.md` + `contracts/*.yaml
 
 ### Providers (P2)
 
+- [ ] Define abstract provider interface with method signatures in `ai_service.py`:
+  - [ ] `async def generate_summary(book_uuid: str, summary_type: str) -> str`
+  - [ ] `async def answer_question(book_uuid: str, question: str, context: List[str]) -> str`
+  - [ ] `async def stream_answer(book_uuid: str, question: str, context: List[str]) -> AsyncIterator[str]`
+  - [ ] Provider metadata: `name`, `model_name`, `context_window`, `is_local`, `requires_api_key`
 - [ ] Add remaining providers behind the same interface (OpenAI, Gemini, OpenRouter, Ollama)
-- [ ] Ollama:
+- [ ] Ollama provider implementation:
   - [ ] Use OpenAI-compatible API if possible (`base_url=http://localhost:11434/v1/`)
-  - [ ] No API key required; UI should show “No API key required”
-  - [ ] Settings UI: show running status + “Refresh Models” (calls `/api/ollama/status` + `/api/ollama/models`)
+  - [ ] No API key required; UI should show "No API key required"
+  - [ ] Settings UI: show running status + "Refresh Models" (calls `/api/ollama/status` + `/api/ollama/models`)
+  - [ ] Ollama UI indicators:
+    - [ ] Add provider selector badge showing "🤖 Ollama: QWEN 3 32B" with offline icon
+    - [ ] Green/red dot indicator for connection status (running vs not running)
+    - [ ] "No API key required" label in settings provider config
+    - [ ] Model size display (GB) next to each model in dropdown
+  - [ ] Ollama status display:
+    - [ ] "✅ Running locally" when connected to http://localhost:11434
+    - [ ] "⚠️ Not connected" with setup instructions when unreachable
+    - [ ] Installation guide link (brew install ollama + model download commands)
+  - [ ] Offline badge in AI panel header when Ollama provider active
 
 ### Streaming (SSE)
 
-- [ ] Add streaming option for `POST /api/ai/question/{book_uuid}?stream=true`
-- [ ] Implement SSE parsing/rendering in the UI (chunk/done/error events)
-- [ ] Add “Stop” button to cancel generation
+- [ ] Backend streaming support:
+  - [ ] Add streaming option for `POST /api/ai/question/{book_uuid}?stream=true`
+  - [ ] Implement SSE response format (data: event chunks)
+  - [ ] Handle stream errors (timeout, provider failure) with proper SSE error events
+- [ ] Frontend streaming UI:
+  - [ ] Implement SSE EventSource parser (chunk/done/error events)
+  - [ ] Token-by-token rendering (append to message bubble incrementally)
+  - [ ] Typing indicator (animated "..." while waiting for first token)
+  - [ ] "Stop" button to cancel generation (abort SSE connection + backend cleanup)
+  - [ ] Streaming state management (disable input during generation)
+  - [ ] Error display for mid-stream failures (show partial response + error message)
 
 ### Provider Switching UX
 
-- [ ] Provider dropdown in panel header
-- [ ] Switching provider changes the active thread (history persists per provider)
-- [ ] Optional warning if switching mid-response
+- [ ] Provider dropdown in panel header (shows current: "☁️ Claude Sonnet 4" or "🤖 Ollama: QWEN 3 32B")
+- [ ] Implement per-provider conversation thread separation:
+  - [ ] IndexedDB schema: conversation keyed by `{book_uuid}:{provider}:{model}`
+  - [ ] When switching provider: save current thread to IndexedDB, load target provider's thread
+  - [ ] Display thread continuity: "Switching to OpenAI (5 messages) from Claude (12 messages)"
+  - [ ] Empty thread for new provider/model combination starts fresh
+- [ ] Mid-response switching protection:
+  - [ ] Detect if AI response is streaming (generation in progress)
+  - [ ] Show warning modal: "Response in progress. Switch now and lose partial response?"
+  - [ ] Cancel/Confirm buttons (Confirm aborts stream, saves partial response, switches provider)
 
 ### Suggested Questions
 
@@ -124,10 +163,19 @@ This checklist turns `spec.md` + `plan.md` + `data-model.md` + `contracts/*.yaml
 
 ### Retrieval Routing (Long-Context vs RAG)
 
-- [ ] Implement routing per `research.md`:
-  - [ ] Prefer long-context for supported models (heuristic by model name and/or provider metadata)
-  - [ ] Fallback to RAG (top-k passages) for typical context windows
-  - [ ] Enforce max context size and friendly errors/timeouts (esp. Ollama)
+- [ ] Implement routing logic in `rag_service.py`:
+  - [ ] Define context window thresholds per provider (Claude: 1M tokens, GPT-4: 128K, Gemini: 2M, Ollama: model-dependent)
+  - [ ] Calculate book/chapter token count (use tiktoken or approximate: chars/4)
+  - [ ] Decision heuristics:
+    - [ ] If book_tokens < (provider_context_window * 0.5): use long-context (send full book)
+    - [ ] If chapter_tokens < (provider_context_window * 0.3): use multi-chapter context
+    - [ ] Else: use RAG retrieval (top-k passages, default k=5)
+  - [ ] Model name pattern matching for long-context detection:
+    - [ ] Claude models with "claude-" → check context_window metadata
+    - [ ] Gemini "gemini-1.5-pro" → 2M tokens
+    - [ ] Ollama "qwen2.5-1m" → 1M tokens (parse from model name)
+  - [ ] Log routing decision (DEBUG level): "Using long-context for book_uuid={uuid}, tokens={count}, provider={name}"
+  - [ ] Fallback to RAG on provider timeout (long-context requests may be slower)
 
 ### Export / Import
 
@@ -135,7 +183,9 @@ This checklist turns `spec.md` + `plan.md` + `data-model.md` + `contracts/*.yaml
   - [ ] `GET /api/settings/export` excludes API keys
   - [ ] `POST /api/settings/import` merges settings (keys re-entered manually)
 - [ ] Conversation export:
-  - [ ] Export current book+provider thread to JSON/text (client-side)
+  - [ ] Frontend: Export current book+provider thread to JSON format (client-side download)
+  - [ ] Frontend: Export current book+provider thread to plain text format (client-side download)
+  - [ ] Backend (optional): `GET /api/ai/conversations/{book_uuid}/export?provider={name}&format=json|text`
 
 ### Manual Acceptance (P2)
 
@@ -149,10 +199,30 @@ This checklist turns `spec.md` + `plan.md` + `data-model.md` + `contracts/*.yaml
 
 - [ ] Add basic rate limit (spec: ~1 request / 2s per user) + friendly error messages
 - [ ] Add quota/cleanup policy for IndexedDB (warn at ~80%; clear old data)
-- [ ] Improve citations UI (chapter link/scroll-to if feasible)
-- [ ] Accessibility: keyboard navigation, focus trapping, ARIA labels
-- [ ] Mobile layout rules (panel behavior on tablet/mobile)
+- [ ] Improve citations UI:
+  - [ ] Make chapter references clickable links
+  - [ ] Determine behavior: scroll to chapter start or attempt passage-level scroll (acceptance criteria TBD)
+  - [ ] Highlight cited passage if chapter order + position available
+- [ ] Accessibility:
+  - [ ] Keyboard navigation (Tab through panel, Enter to send, Esc to close)
+  - [ ] Focus trapping when panel open (Tab stays within panel)
+  - [ ] ARIA labels for buttons, inputs, status indicators
+  - [ ] Screen reader announcements for AI responses
+- [ ] Mobile layout rules:
+  - [ ] Responsive breakpoints: Desktop (>1024px), Tablet (768-1024px), Mobile (<768px)
+  - [ ] Desktop: Floating panel (400px width, right side)
+  - [ ] Tablet: Slide-in panel (50% width, overlay with backdrop)
+  - [ ] Mobile: Full-screen overlay (100% width/height, slide up animation)
 - [ ] Search within conversation (local-only, basic keyword highlight)
+- [ ] Browser compatibility validation:
+  - [ ] Test on Chrome 88+, Firefox 87+, Safari 14+
+  - [ ] Verify IndexedDB, Fetch API, EventSource support
+  - [ ] Document unsupported browsers (IE, older versions)
+- [ ] IndexedDB storage monitoring:
+  - [ ] Estimate current usage via `navigator.storage.estimate()`
+  - [ ] Show storage usage in Settings → Data tab
+  - [ ] Warning banner at 80% quota
+  - [ ] Auto-cleanup: Conversations older than 30 days (configurable)
 
 ## Documentation
 
@@ -160,3 +230,7 @@ This checklist turns `spec.md` + `plan.md` + `data-model.md` + `contracts/*.yaml
   - [ ] How AI works (RAG + citations)
   - [ ] Ollama setup steps + offline usage
   - [ ] How to configure providers via `config/ai_settings.json`
+- [ ] Update `CLAUDE.md` with AI feature section:
+  - [ ] AI assistant commands and endpoints
+  - [ ] Provider configuration guide
+  - [ ] Troubleshooting common issues (Ollama not running, API key errors)

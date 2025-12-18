@@ -7,10 +7,11 @@ import pickle
 import sys
 from pathlib import Path
 
-# Add parent directory to path to import reader3
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Add repo src/ to path to import reader3_app
+repo_root = Path(__file__).parent.parent
+sys.path.insert(0, str(repo_root / "src"))
 
-from reader3 import Book, BookMetadata, ChapterContent, TOCEntry
+from reader3_app.reader3 import Book, BookMetadata, ChapterContent, TOCEntry
 
 try:
     import chromadb

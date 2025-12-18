@@ -9,11 +9,12 @@ from collections import Counter
 from pathlib import Path
 import sys
 
-# Add parent directory to path to import reader3
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Add repo src/ to path to import reader3_app
+repo_root = Path(__file__).parent.parent
+sys.path.insert(0, str(repo_root / "src"))
 
-# Import Book class from reader3.py so pickle can deserialize
-from reader3 import Book, BookMetadata, ChapterContent, TOCEntry
+# Import Book class so pickle can deserialize
+from reader3_app.reader3 import Book, BookMetadata, ChapterContent, TOCEntry
 
 print("=" * 70)
 print("📚 Book Data Exploration Demo - The Cold Start Problem")

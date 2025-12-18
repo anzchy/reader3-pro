@@ -19,3 +19,6 @@ wheels/
 /.cache
 /.ipynb_checkpoints
 /.jupyter
+
+# AI Assistant (repo-local secrets)
+/config/ai_settings.json

@@ -12,9 +12,9 @@ This project is an enhanced version (thus add `pro` to repo name) of Andrie Karp
 
 #### Reader
 
-1. `reader3.py` parses an `.epub`, cleans HTML, extracts plain text, and writes a `{bookname}_data/` folder.
+1. `src/reader3_app/reader3.py` parses an `.epub`, cleans HTML, extracts plain text, and writes a `books/{bookname}_data/` folder.
 2. The folder contains `book.pkl` (a pickled `Book` dataclass) and `images/` (extracted assets).
-3. `server.py` serves the Library + Reader UI and reads chapters from `book.pkl` one spine item at a time.
+3. `src/reader3_app/web/server.py` serves the Library + Reader UI and reads chapters from `book.pkl` one spine item at a time.
 
 #### Search (Keyword + RAG/Semantic)
 
@@ -27,12 +27,18 @@ This project is an enhanced version (thus add `pro` to repo name) of Andrie Karp
 
 ```text
 .
-├── reader3.py              # EPUB processing + (optional) CLI indexing
-├── server.py               # FastAPI server + API endpoints
-├── search_service.py       # Keyword + library search logic
-├── vector_search.py        # ChromaDB indexing + semantic retrieval
-├── templates/              # Jinja templates (library.html, reader.html)
-├── static/                 # JS/CSS for search UI
+├── src/
+│   └── reader3_app/
+│       ├── reader3.py              # EPUB processing + (optional) CLI indexing
+│       ├── search_service.py       # Keyword + library search logic
+│       ├── vector_search.py        # ChromaDB indexing + semantic retrieval
+│       ├── ai/                     # AI assistant backend modules
+│       └── web/
+│           ├── server.py           # FastAPI app
+│           ├── templates/          # Jinja templates (library.html, reader.html)
+│           └── static/             # JS/CSS for search + AI UI
+├── config/
+│   └── ai_settings.example.json    # Example AI config (copy to ai_settings.json)
 ├── specs/                  # Feature specs + tasks (search lives in specs/001-search-features/)
 └── books/                  # Generated per-book folders (ignored by git)
     └── *_data/             # One folder per book (book.pkl, images/, chroma_db/)
@@ -55,13 +61,13 @@ uv sync
 Download an EPUB (e.g. [Dracula EPUB3](https://www.gutenberg.org/ebooks/345)) and run:
 
 ```bash
-uv run reader3.py ./books/dracula.epub
+uv run reader3 ./books/dracula.epub
 ```
 
 This creates `books/dracula_data/`, which registers the book to your local library. Then start the server:
 
 ```bash
-uv run server.py
+uv run reader3-server
 ```
 
 Visit [localhost:8123](http://localhost:8123/) to see your Library. To remove a book, delete its `books/*_data/` folder.
@@ -126,7 +132,7 @@ export READER3_EMBED_MODEL="$PWD/models/huggingface/hub/models--sentence-transfo
 You can index from the Library UI (the button appears when a book is “Not indexed”), or via CLI:
 
 ```bash
-uv run reader3.py --index dracula_data
+uv run reader3 --index dracula_data
 ```
 
 This writes a per-book vector store to `books/dracula_data/chroma_db/`.

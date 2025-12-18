@@ -255,7 +255,9 @@ class _Reader3Unpickler(pickle.Unpickler):
 
     def find_class(self, module: str, name: str):  # type: ignore[override]
         if module == "__main__" and name in self._REMAP:
-            module = "reader3"
+            module = "reader3_app.reader3"
+        if module == "reader3" and name in self._REMAP:
+            module = "reader3_app.reader3"
         return super().find_class(module, name)
 
 
@@ -327,7 +329,7 @@ def _semantic_results_for_book(
     books_dir: str,
     n_results: int,
 ) -> List[SearchResult]:
-    from vector_search import BookVectorIndex
+    from .vector_search import BookVectorIndex
 
     idx = BookVectorIndex(book_id, books_dir=books_dir)
     semantic_hits = idx.semantic_search(term, n_results=n_results)
@@ -512,7 +514,7 @@ def search_library(
     index_status_by_book: Dict[str, str] = {}
 
     if query.mode != SearchMode.KEYWORD:
-        from vector_search import BookVectorIndex
+        from .vector_search import BookVectorIndex
 
         for bid in book_ids:
             try:
