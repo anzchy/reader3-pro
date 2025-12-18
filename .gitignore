@@ -12,3 +12,8 @@ wheels/
 # Custom
 *_data/
 *.epub
+/models
+/.cache
+/.ipynb_checkpoints
+/.jupyter
+specs/.DS_Store
