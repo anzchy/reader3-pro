@@ -196,6 +196,20 @@ class ReaderAIUI {
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && this.panel?.classList.contains("is-open")) this.close();
     });
+
+    const refreshIfOpen = async () => {
+      if (this.isBusy) return;
+      if (!this.panel?.classList.contains("is-open")) return;
+      const changed = await this.loadPreferences();
+      if (changed) await this.restoreConversation();
+    };
+
+    window.addEventListener("focus", () => {
+      refreshIfOpen().catch(() => {});
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") refreshIfOpen().catch(() => {});
+    });
   }
 
   async ensureDb() {
@@ -239,12 +253,33 @@ class ReaderAIUI {
 
   async loadPreferences() {
     try {
+      const prevProvider = String(this.ctx.provider || "");
+      const prevModel = String(this.currentModel || "");
       const resp = await fetch("/api/settings");
       const data = await resp.json().catch(() => ({}));
       const prefs = data?.preferences || {};
       this.streamingEnabled = !!prefs.streaming_enabled;
+
+      const nextProvider = String(data?.default_provider || this.ctx.provider || "anthropic").trim().toLowerCase();
+      if (nextProvider) {
+        this.ctx.provider = nextProvider;
+      }
+
+      const providers = Array.isArray(data?.providers) ? data.providers : [];
+      const pCfg = providers.find((p) => String(p?.name || "").trim().toLowerCase() === this.ctx.provider) || null;
+      const settingsModel = String(pCfg?.model_name || "").trim();
+      if (settingsModel) {
+        this.currentModel = settingsModel;
+        localStorage.setItem(modelStorageKey(this.ctx.bookUuid, this.ctx.provider), settingsModel);
+      } else {
+        this.currentModel = localStorage.getItem(modelStorageKey(this.ctx.bookUuid, this.ctx.provider)) || this.currentModel || "";
+      }
+
+      this.setProvider(this.ctx.provider, this.currentModel);
+      return prevProvider !== String(this.ctx.provider || "") || prevModel !== String(this.currentModel || "");
     } catch {
       this.streamingEnabled = true;
+      return false;
     }
   }
 
