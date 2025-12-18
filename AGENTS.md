@@ -6,7 +6,7 @@
 - `server.py`: FastAPI app that serves the library + reader UI on `http://127.0.0.1:8123`.
 - `templates/`: Jinja2 HTML templates (`library.html`, `reader.html`).
 - `specs/`: Feature specs and checklists (source of truth for acceptance behavior).
-- Generated/ignored: `*_data/` (processed books), `.venv/`, and typically `*.epub` (see `.gitignore`).
+- Generated/ignored: `books/*_data/` (processed books), `.venv/`, and typically `*.epub` (see `.gitignore`).
 
 ## Build, Test, and Development Commands
 
@@ -50,4 +50,3 @@ For PRs: include a clear description, link relevant `specs/` docs/issues, and ad
 
 - `book.pkl` is loaded via `pickle`; only process trusted EPUBs and avoid accepting untrusted uploads without hardening.
 - Don’t commit generated `*_data/` outputs or large binaries unless explicitly intended.
-
