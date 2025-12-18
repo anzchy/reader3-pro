@@ -122,6 +122,10 @@ function modelStorageKey(bookUuid, provider) {
   return `reader3.ai.model.${bookUuid}.${provider}`;
 }
 
+function activeConversationStorageKey(bookUuid, provider) {
+  return `reader3.ai.activeConversation.${bookUuid}.${provider}`;
+}
+
 function getCtx() {
   const ctx = window.Reader3Ctx || {};
   return {
@@ -138,7 +142,9 @@ class ReaderAIUI {
     this.panel = document.getElementById("reader-ai-panel");
     this.closeBtn = document.getElementById("reader-ai-close");
     this.clearBtn = document.getElementById("reader-ai-clear");
+    this.newChatBtn = document.getElementById("reader-ai-new-chat");
     this.providerEl = document.getElementById("reader-ai-provider");
+    this.threadsEl = document.getElementById("reader-ai-threads");
     this.messagesEl = document.getElementById("reader-ai-messages");
     this.inputEl = document.getElementById("reader-ai-input");
     this.sendBtn = document.getElementById("reader-ai-send");
@@ -152,10 +158,12 @@ class ReaderAIUI {
     this.streamingEnabled = true;
     this.abortController = null;
     this.msgElById = new Map();
+    this.diskSyncTimer = null;
 
     this.toggleBtn?.addEventListener("click", () => this.toggle());
     this.closeBtn?.addEventListener("click", () => this.close());
     this.clearBtn?.addEventListener("click", () => this.clearConversation());
+    this.newChatBtn?.addEventListener("click", () => this.newChat());
 
     this.quickBtns.forEach((btn) => {
       btn.addEventListener("click", () => this.runSummary(btn.getAttribute("data-ai-summary-type")));
@@ -236,23 +244,152 @@ class ReaderAIUI {
   async restoreConversation() {
     const db = await this.ensureDb();
     const list = await txGetAllByIndex(db, STORE_CONVERSATIONS, "book_uuid_provider", [this.ctx.bookUuid, this.ctx.provider]);
-    if (list.length) {
-      list.sort((a, b) => String(b.last_updated || "").localeCompare(String(a.last_updated || "")));
-      this.conversation = list[0];
-    } else {
-      this.conversation = {
-        id: crypto.randomUUID(),
-        book_uuid: this.ctx.bookUuid,
-        provider: this.ctx.provider,
-        created_at: nowIso(),
-        last_updated: nowIso(),
-        messages: [],
-      };
-      await txPut(db, STORE_CONVERSATIONS, this.conversation);
+    list.sort((a, b) => String(b.last_updated || "").localeCompare(String(a.last_updated || "")));
+
+    const activeId = localStorage.getItem(activeConversationStorageKey(this.ctx.bookUuid, this.ctx.provider)) || "";
+    const active = activeId ? list.find((c) => String(c?.id || "") === activeId) : null;
+    this.conversation = active || list[0] || null;
+
+    // If this browser has no cached conversations, try to load the most recent one from disk.
+    if (!this.conversation) {
+      try {
+        const resp = await fetch(`/api/ai/conversations/${encodeURIComponent(this.ctx.bookUuid)}?provider=${encodeURIComponent(this.ctx.provider)}`);
+        const data = await resp.json().catch(() => ({}));
+        const threads = Array.isArray(data?.conversations) ? data.conversations : [];
+        const cid = String(threads?.[0]?.conversation_id || "");
+        if (cid) {
+          const tResp = await fetch(`/api/ai/conversations/${encodeURIComponent(this.ctx.bookUuid)}/${encodeURIComponent(cid)}`);
+          const tData = await tResp.json().catch(() => ({}));
+          if (tResp.ok && tData?.conversation_id) {
+            const conv = {
+              id: String(tData.conversation_id),
+              book_uuid: this.ctx.bookUuid,
+              provider: this.ctx.provider,
+              created_at: String(tData.created_at || nowIso()),
+              last_updated: String(tData.last_updated || nowIso()),
+              model: String(tData.model || ""),
+              messages: Array.isArray(tData.messages)
+                ? tData.messages.map((m) => ({
+                    id: String(m.id || crypto.randomUUID()),
+                    conversation_id: String(tData.conversation_id),
+                    role: m.role,
+                    content: m.content,
+                    timestamp: m.timestamp,
+                    metadata: m.metadata || {},
+                  }))
+                : [],
+            };
+            this.conversation = conv;
+            await txPut(db, STORE_CONVERSATIONS, conv);
+          }
+        }
+      } catch {
+        // ignore
+      }
     }
 
+    if (!this.conversation) {
+      await this.newChat();
+    } else {
+      localStorage.setItem(activeConversationStorageKey(this.ctx.bookUuid, this.ctx.provider), String(this.conversation.id || ""));
+    }
+
+    await this.renderThreads();
     this.renderAll();
     this.setProvider(this.ctx.provider, this.currentModel);
+  }
+
+  async renderThreads() {
+    if (!this.threadsEl) return;
+    const db = await this.ensureDb();
+    const list = await txGetAllByIndex(db, STORE_CONVERSATIONS, "book_uuid_provider", [this.ctx.bookUuid, this.ctx.provider]);
+    list.sort((a, b) => String(b.last_updated || "").localeCompare(String(a.last_updated || "")));
+    this.threadsEl.innerHTML = "";
+    list.forEach((c) => {
+      const div = document.createElement("div");
+      div.className = "ai-thread";
+      if (this.conversation && String(c.id) === String(this.conversation.id)) div.classList.add("is-active");
+      const title = this._threadTitle(c);
+      const meta = `${new Date(String(c.last_updated || "") || Date.now()).toLocaleString()} · ${(c.messages || []).length} msgs`;
+      div.innerHTML = `<div>${escapeHtml(title || "(empty)")}</div><div class="meta">${escapeHtml(meta)}</div>`;
+      div.addEventListener("click", async () => {
+        if (this.isBusy) return;
+        await this.switchConversation(String(c.id || ""));
+      });
+      this.threadsEl.appendChild(div);
+    });
+  }
+
+  _threadTitle(conv) {
+    const msgs = Array.isArray(conv?.messages) ? conv.messages : [];
+    const firstUser = msgs.find((m) => String(m?.role || "").toLowerCase() === "user" && String(m?.content || "").trim());
+    const txt = String(firstUser?.content || "").trim().replace(/\s+/g, " ");
+    return txt.length > 50 ? txt.slice(0, 50) + "…" : txt;
+  }
+
+  async switchConversation(conversationId) {
+    const id = String(conversationId || "").trim();
+    if (!id) return;
+    const db = await this.ensureDb();
+    const conv = await txGet(db, STORE_CONVERSATIONS, id);
+    if (conv) {
+      this.conversation = conv;
+      localStorage.setItem(activeConversationStorageKey(this.ctx.bookUuid, this.ctx.provider), id);
+      this.renderAll();
+      await this.renderThreads();
+      return;
+    }
+    // fallback to disk
+    try {
+      const resp = await fetch(`/api/ai/conversations/${encodeURIComponent(this.ctx.bookUuid)}/${encodeURIComponent(id)}`);
+      const data = await resp.json().catch(() => ({}));
+      if (resp.ok && data?.conversation_id) {
+        const loaded = {
+          id: String(data.conversation_id),
+          book_uuid: this.ctx.bookUuid,
+          provider: this.ctx.provider,
+          created_at: String(data.created_at || nowIso()),
+          last_updated: String(data.last_updated || nowIso()),
+          model: String(data.model || ""),
+          messages: Array.isArray(data.messages)
+            ? data.messages.map((m) => ({
+                id: String(m.id || crypto.randomUUID()),
+                conversation_id: String(data.conversation_id),
+                role: m.role,
+                content: m.content,
+                timestamp: m.timestamp,
+                metadata: m.metadata || {},
+              }))
+            : [],
+        };
+        this.conversation = loaded;
+        await txPut(db, STORE_CONVERSATIONS, loaded);
+        localStorage.setItem(activeConversationStorageKey(this.ctx.bookUuid, this.ctx.provider), id);
+        this.renderAll();
+        await this.renderThreads();
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  async newChat() {
+    if (this.isBusy) return;
+    const db = await this.ensureDb();
+    this.conversation = {
+      id: crypto.randomUUID(),
+      book_uuid: this.ctx.bookUuid,
+      provider: this.ctx.provider,
+      model: this.currentModel || "",
+      created_at: nowIso(),
+      last_updated: nowIso(),
+      messages: [],
+    };
+    await txPut(db, STORE_CONVERSATIONS, this.conversation);
+    localStorage.setItem(activeConversationStorageKey(this.ctx.bookUuid, this.ctx.provider), String(this.conversation.id || ""));
+    this.renderAll();
+    await this.renderThreads();
+    this.scheduleDiskSync();
   }
 
   renderAll() {
@@ -301,6 +438,35 @@ class ReaderAIUI {
     const db = await this.ensureDb();
     this.conversation.last_updated = nowIso();
     await txPut(db, STORE_CONVERSATIONS, this.conversation);
+    this.scheduleDiskSync();
+    await this.renderThreads();
+  }
+
+  scheduleDiskSync() {
+    if (!this.conversation) return;
+    if (this.diskSyncTimer) clearTimeout(this.diskSyncTimer);
+    this.diskSyncTimer = setTimeout(() => this.syncConversationToDisk(), 600);
+  }
+
+  async syncConversationToDisk() {
+    if (!this.conversation) return;
+    const conv = this.conversation;
+    const body = {
+      provider: this.ctx.provider,
+      model: this.currentModel || conv.model || "",
+      created_at: conv.created_at || "",
+      last_updated: conv.last_updated || "",
+      messages: Array.isArray(conv.messages) ? conv.messages : [],
+    };
+    try {
+      await fetch(`/api/ai/conversations/${encodeURIComponent(this.ctx.bookUuid)}/${encodeURIComponent(conv.id)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    } catch {
+      // ignore
+    }
   }
 
   addMessage(role, content, metadata) {
@@ -321,17 +487,9 @@ class ReaderAIUI {
 
   async clearConversation() {
     if (!confirm("Clear this conversation?")) return;
-    const db = await this.ensureDb();
-    if (this.conversation?.id) await txDelete(db, STORE_CONVERSATIONS, this.conversation.id);
-    this.conversation = {
-      id: crypto.randomUUID(),
-      book_uuid: this.ctx.bookUuid,
-      provider: this.ctx.provider,
-      created_at: nowIso(),
-      last_updated: nowIso(),
-      messages: [],
-    };
-    await txPut(db, STORE_CONVERSATIONS, this.conversation);
+    if (!this.conversation?.id) return;
+    this.conversation.messages = [];
+    await this.persistConversation();
     this.renderAll();
   }
 
@@ -359,7 +517,7 @@ class ReaderAIUI {
         content: m.content,
         timestamp: m.timestamp,
         metadata: m.metadata || {},
-      }));
+      })).filter((m) => m.id !== String(placeholder?.id || ""));
 
       const payload = {
         question: text,

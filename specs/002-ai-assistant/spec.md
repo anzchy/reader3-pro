@@ -160,7 +160,9 @@ Implement an AI-powered reading assistant that provides:
 
 **Acceptance Criteria**:
 - All messages stored in browser IndexedDB (per-browser cache)
-- Conversations also saved on disk per book as JSON files under `books/{book_folder}/` (portable between browsers/machines)
+- Conversations also saved on disk as JSON files (portable between browsers/machines):
+  - **Default**: per-book under `books/{book_folder}/ai_conversations/{conversation_id}.json`
+  - **Optional mirror**: project-root under `conversations/{book_uuid}/{conversation_id}.json` (configurable via `preferences.conversation_disk_storage`)
 - Conversation restored on panel reopen
 - Can manually clear conversation
 - Separate conversations per book
@@ -177,7 +179,7 @@ Implement an AI-powered reading assistant that provides:
 - AI panel shows a list of previous chat threads for the current book + provider
 - A "New chat" button creates a fresh thread without deleting old threads
 - Switching threads preserves each thread’s message history
-- Each thread is stored separately (IndexedDB + book folder JSON)
+- Each thread is stored separately (IndexedDB + on-disk JSON; per-book by default, optional project-root mirror)
 
 ---
 

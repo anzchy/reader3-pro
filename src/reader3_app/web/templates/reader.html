@@ -211,20 +211,31 @@
                 <div class="ai-provider" id="reader-ai-provider">anthropic</div>
             </div>
             <div class="ai-header-actions">
+                <button type="button" class="ai-btn" id="reader-ai-new-chat">New chat</button>
                 <button type="button" class="ai-btn" id="reader-ai-clear">Clear</button>
                 <button type="button" class="ai-btn" id="reader-ai-close">Close</button>
             </div>
         </div>
-        <div class="ai-quick-actions">
-            <button type="button" class="ai-btn" data-ai-summary-type="overview">全书总结</button>
-            <button type="button" class="ai-btn" data-ai-summary-type="highlights">书籍亮点</button>
-            <button type="button" class="ai-btn" data-ai-summary-type="background">背景解读</button>
-        </div>
-        <div class="ai-messages" id="reader-ai-messages"></div>
-        <div class="ai-input">
-            <textarea id="reader-ai-input" placeholder="问我关于这本书的问题…（Enter 发送，Shift+Enter 换行）"></textarea>
-            <button type="button" class="ai-send" id="reader-ai-send">Send</button>
-            <button type="button" class="ai-stop" id="reader-ai-stop" style="display:none;">Stop</button>
+        <div class="ai-body">
+            <div class="ai-threads" aria-label="Chat history">
+                <div class="ai-threads-head">
+                    <div class="ai-threads-title">History</div>
+                </div>
+                <div class="ai-threads-list" id="reader-ai-threads"></div>
+            </div>
+            <div class="ai-chat">
+                <div class="ai-quick-actions">
+                    <button type="button" class="ai-btn" data-ai-summary-type="overview">全书总结</button>
+                    <button type="button" class="ai-btn" data-ai-summary-type="highlights">书籍亮点</button>
+                    <button type="button" class="ai-btn" data-ai-summary-type="background">背景解读</button>
+                </div>
+                <div class="ai-messages" id="reader-ai-messages"></div>
+                <div class="ai-input">
+                    <textarea id="reader-ai-input" placeholder="问我关于这本书的问题…（Enter 发送，Shift+Enter 换行）"></textarea>
+                    <button type="button" class="ai-send" id="reader-ai-send">Send</button>
+                    <button type="button" class="ai-stop" id="reader-ai-stop" style="display:none;">Stop</button>
+                </div>
+            </div>
         </div>
     </div>
 

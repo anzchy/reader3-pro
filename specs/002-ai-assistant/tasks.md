@@ -237,13 +237,14 @@ This checklist turns `spec.md` + `plan.md` + `data-model.md` + `contracts/*.yaml
 
 ## New Requirements: Multi-Chat + On-Disk Storage
 
-- [ ] Add on-disk conversation storage under `books/{book_folder}/ai_conversations/` (JSON per conversation)
-- [ ] Add Conversation APIs:
-  - [ ] `GET /api/ai/conversations/{book_uuid}?provider=...` (list threads)
-  - [ ] `GET /api/ai/conversations/{book_uuid}/{conversation_id}` (load thread)
-  - [ ] `PUT /api/ai/conversations/{book_uuid}/{conversation_id}` (save thread)
-  - [ ] `DELETE /api/ai/conversations/{book_uuid}/{conversation_id}` (optional)
-- [ ] Update AI panel UI:
-  - [ ] Add thread list UI (show history)
-  - [ ] Add "New chat" button (creates new thread without deleting history)
-  - [ ] Persist thread changes to disk JSON via Conversation APIs
+- [x] Add on-disk conversation storage under `books/{book_folder}/ai_conversations/` (JSON per conversation)
+- [ ] (Optional) Add project-root conversation mirror under `conversations/{book_uuid}/` (configurable via `preferences.conversation_disk_storage`)
+- [x] Add Conversation APIs:
+  - [x] `GET /api/ai/conversations/{book_uuid}?provider=...` (list threads)
+  - [x] `GET /api/ai/conversations/{book_uuid}/{conversation_id}` (load thread)
+  - [x] `PUT /api/ai/conversations/{book_uuid}/{conversation_id}` (save thread)
+  - [x] `DELETE /api/ai/conversations/{book_uuid}/{conversation_id}` (optional)
+- [x] Update AI panel UI:
+  - [x] Add thread list UI (show history)
+  - [x] Add "New chat" button (creates new thread without deleting history)
+  - [x] Persist thread changes to disk JSON via Conversation APIs

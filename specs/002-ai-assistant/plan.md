@@ -22,6 +22,7 @@ Implement an AI-powered reading assistant for EPUB books that provides intellige
 - Filesystem (server): Provider configuration + API keys (local config file, not committed)
 - ChromaDB (existing): Vector embeddings for RAG retrieval
 - Filesystem: book.pkl files (existing)
+- Filesystem (server, optional): mirror conversations under `conversations/{book_uuid}/` for backup/portability
 
 **Testing**: pytest for backend, manual testing for frontend (no JS test framework per Simplicity principle)
 

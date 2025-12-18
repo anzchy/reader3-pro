@@ -1,5 +1,9 @@
 {
   "default_provider": "anthropic",
+  "preferences": {
+    "conversation_disk_storage": "per_book",
+    "conversation_project_root_dir": "conversations"
+  },
   "providers": {
     "anthropic": {
       "enabled": true,

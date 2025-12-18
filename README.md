@@ -82,6 +82,14 @@ uv run reader3-server
 
 Open a book, click the **AI** button on the right toolbar, and use quick actions or chat.
 
+### Chat History + New Chat
+
+- The AI panel shows a per-book, per-provider chat history list.
+- Use **New chat** to start a fresh thread (keeps older threads for reference).
+- Conversations are stored in two places:
+  - Browser cache: IndexedDB (`reader3_ai_assistant`)
+  - On disk (portable): `books/{book_id}/ai_conversations/{conversation_id}.json`
+
 ### Use Anthropic (Claude)
 
 Edit `config/ai_settings.json`:

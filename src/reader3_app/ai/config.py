@@ -29,6 +29,12 @@ def default_settings_dict() -> Dict[str, Any]:
             "auto_suggest_questions": True,
             "streaming_enabled": True,
             "max_conversation_length": 500,
+            # On-disk chat storage:
+            # - per_book: books/{book_folder}/ai_conversations/{conversation_id}.json
+            # - project_root: {project_root}/conversations/{book_uuid}/{conversation_id}.json
+            # - both: write to both locations
+            "conversation_disk_storage": "per_book",
+            "conversation_project_root_dir": "conversations",
             "theme": "auto",
         },
         "providers": {

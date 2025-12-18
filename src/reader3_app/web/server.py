@@ -19,6 +19,14 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from ..ai.books import BookUuidResolver
+from ..ai.conversations import (
+    ConversationMessage as DiskConversationMessage,
+    ConversationThread as DiskConversationThread,
+    delete_conversation as delete_disk_conversation,
+    list_conversations as list_disk_conversations,
+    load_conversation as load_disk_conversation,
+    save_conversation as save_disk_conversation,
+)
 from ..ai.config import (
     default_settings_dict,
     get_provider_api_key,
@@ -515,6 +523,57 @@ def _call_provider(
     raise HTTPException(status_code=400, detail=f"Unsupported provider: {provider_name}")
 
 
+def _conversation_id_from_history(history: list[AIMessage]) -> Optional[str]:
+    for m in history or []:
+        cid = str(m.conversation_id or "").strip()
+        if cid:
+            return cid
+    return None
+
+
+def _save_conversation_snapshot(
+    *,
+    book_uuid: str,
+    book_folder: str,
+    conversation_id: str,
+    provider: str,
+    model: str,
+    history: list[AIMessage],
+    assistant_message: Optional[DiskConversationMessage] = None,
+) -> None:
+    messages: list[DiskConversationMessage] = []
+    for m in history or []:
+        role = str(m.role or "").strip().lower()
+        if role not in ("user", "assistant"):
+            continue
+        msg_id = str(m.id or "").strip()
+        if not msg_id:
+            continue
+        messages.append(
+            DiskConversationMessage(
+                id=msg_id,
+                role=role,
+                content=str(m.content or ""),
+                timestamp=str(m.timestamp or ""),
+                metadata=dict(m.metadata or {}),
+            )
+        )
+    if assistant_message is not None:
+        messages.append(assistant_message)
+    thread = DiskConversationThread(
+        schema_version=1,
+        book_uuid=str(book_uuid),
+        book_folder=book_folder,
+        conversation_id=conversation_id,
+        provider=provider,
+        model=model,
+        created_at="",
+        last_updated="",
+        messages=messages,
+    )
+    save_disk_conversation(BOOKS_DIR, thread=thread)
+
+
 def _provider_default_base_url(provider_name: str) -> str:
     provider_name = (provider_name or "").strip().lower()
     if provider_name == "anthropic":
@@ -842,6 +901,103 @@ async def api_ollama_models():
         raise HTTPException(status_code=503, detail=str(e))
 
 
+@app.get("/api/ai/conversations/{book_uuid}")
+async def api_ai_list_conversations(book_uuid: str, provider: Optional[str] = None):
+    try:
+        book_folder = book_uuid_resolver.folder_for_book_uuid(book_uuid)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Book not found")
+    threads = list_disk_conversations(BOOKS_DIR, book_folder=book_folder, provider=provider)
+    return {"book_uuid": str(book_uuid), "provider": (provider or "").strip().lower() or None, "conversations": threads}
+
+
+@app.get("/api/ai/conversations/{book_uuid}/{conversation_id}")
+async def api_ai_get_conversation(book_uuid: str, conversation_id: str):
+    try:
+        book_folder = book_uuid_resolver.folder_for_book_uuid(book_uuid)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Book not found")
+    try:
+        thread = load_disk_conversation(
+            BOOKS_DIR,
+            book_folder=book_folder,
+            book_uuid=str(book_uuid),
+            conversation_id=conversation_id,
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return thread.to_dict()
+
+
+class SaveConversationRequest(BaseModel):
+    provider: str
+    model: Optional[str] = None
+    created_at: Optional[str] = None
+    last_updated: Optional[str] = None
+    messages: list[AIMessage] = Field(default_factory=list)
+
+
+@app.put("/api/ai/conversations/{book_uuid}/{conversation_id}")
+async def api_ai_put_conversation(book_uuid: str, conversation_id: str, body: SaveConversationRequest):
+    try:
+        book_folder = book_uuid_resolver.folder_for_book_uuid(book_uuid)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Book not found")
+    provider = (body.provider or "").strip().lower()
+    if provider not in SUPPORTED_AI_PROVIDERS:
+        raise HTTPException(status_code=400, detail="Unsupported provider")
+
+    msgs: list[DiskConversationMessage] = []
+    for m in body.messages or []:
+        role = (m.role or "").strip().lower()
+        if role not in ("user", "assistant"):
+            continue
+        msg_id = str(m.id or "").strip()
+        if not msg_id:
+            continue
+        msgs.append(
+            DiskConversationMessage(
+                id=msg_id,
+                role=role,
+                content=str(m.content or ""),
+                timestamp=str(m.timestamp or ""),
+                metadata=dict(m.metadata or {}),
+            )
+        )
+
+    thread = DiskConversationThread(
+        schema_version=1,
+        book_uuid=str(book_uuid),
+        book_folder=book_folder,
+        conversation_id=str(conversation_id),
+        provider=provider,
+        model=str(body.model or ""),
+        created_at=str(body.created_at or ""),
+        last_updated=str(body.last_updated or ""),
+        messages=msgs,
+    )
+    try:
+        save_disk_conversation(BOOKS_DIR, thread=thread)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True}
+
+
+@app.delete("/api/ai/conversations/{book_uuid}/{conversation_id}", status_code=204)
+async def api_ai_delete_conversation(book_uuid: str, conversation_id: str):
+    try:
+        book_folder = book_uuid_resolver.folder_for_book_uuid(book_uuid)
+    except Exception:
+        raise HTTPException(status_code=404, detail="Book not found")
+    try:
+        delete_disk_conversation(BOOKS_DIR, book_folder=book_folder, conversation_id=conversation_id)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return None
+
+
 def _summary_prompt(summary_type: str) -> str:
     st = (summary_type or "full").strip().lower()
     if st not in {"overview", "highlights", "background", "full"}:
@@ -1036,6 +1192,8 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
 
         message_id = str(__import__("uuid").uuid4())
         started = time.perf_counter()
+        answer_parts: list[str] = []
+        conversation_id = _conversation_id_from_history(history)
 
         async def event_gen():
             q: asyncio.Queue[dict] = asyncio.Queue()
@@ -1048,21 +1206,21 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
                     pass
 
             def worker_ollama() -> None:
-                url = _ollama_openai_base_url(base_url or "http://localhost:11434") + "/chat/completions"
-                openai_messages = []
+                url = _ollama_root_base_url(base_url or "http://localhost:11434") + "/api/chat"
+                chat_messages = []
                 if system:
-                    openai_messages.append({"role": "system", "content": system})
-                openai_messages.extend([*chat_history, {"role": "user", "content": user}])
+                    chat_messages.append({"role": "system", "content": system})
+                chat_messages.extend([*chat_history, {"role": "user", "content": user}])
                 payload = {
                     "model": model,
-                    "messages": openai_messages,
+                    "messages": chat_messages,
                     "stream": True,
-                    "max_tokens": max(64, min(int(body.max_tokens), 4096)),
+                    "options": {"num_predict": max(64, min(int(body.max_tokens), 4096))},
                 }
                 data = json.dumps(payload).encode("utf-8")
                 req = urllib.request.Request(url, data=data, method="POST")
                 req.add_header("Content-Type", "application/json")
-                req.add_header("Accept", "text/event-stream")
+                req.add_header("Accept", "application/json")
 
                 model_out = model
                 finish_reason = "stop"
@@ -1072,40 +1230,26 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
                             line = resp.readline()
                             if not line:
                                 break
-                            if not line.startswith(b"data:"):
-                                continue
-                            raw = line[len(b"data:") :].strip()
+                            raw = line.strip()
                             if not raw:
                                 continue
-                            if raw == b"[DONE]":
-                                break
                             try:
                                 obj = json.loads(raw.decode("utf-8", errors="replace") or "{}")
                             except Exception:
                                 continue
-                            if isinstance(obj, dict):
-                                if obj.get("model"):
-                                    model_out = str(obj.get("model") or model_out)
-                                choices = obj.get("choices") or []
-                                if isinstance(choices, list) and choices:
-                                    c0 = choices[0] or {}
-                                    if isinstance(c0, dict):
-                                        fr = c0.get("finish_reason")
-                                        if fr:
-                                            finish_reason = str(fr)
-                                        delta = c0.get("delta") or {}
-                                        if isinstance(delta, dict):
-                                            content = delta.get("content")
-                                            if content:
-                                                loop.call_soon_threadsafe(push, {"type": "chunk", "delta": str(content)})
-                    loop.call_soon_threadsafe(
-                        push,
-                        {
-                            "type": "done",
-                            "model": model_out,
-                            "finish_reason": finish_reason,
-                        },
-                    )
+                            if not isinstance(obj, dict):
+                                continue
+                            if obj.get("model"):
+                                model_out = str(obj.get("model") or model_out)
+                            msg = obj.get("message")
+                            if isinstance(msg, dict):
+                                delta = msg.get("content")
+                                if delta:
+                                    loop.call_soon_threadsafe(push, {"type": "chunk", "delta": str(delta)})
+                            if obj.get("done") is True:
+                                finish_reason = str(obj.get("done_reason") or finish_reason)
+                                break
+                    loop.call_soon_threadsafe(push, {"type": "done", "model": model_out, "finish_reason": finish_reason})
                 except Exception as e:
                     loop.call_soon_threadsafe(push, {"type": "error", "message": str(e)})
 
@@ -1157,10 +1301,34 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
 
                     et = str(evt.get("type") or "")
                     if et == "chunk":
-                        yield _sse_event("chunk", {"delta": str(evt.get("delta") or "")})
+                        delta = str(evt.get("delta") or "")
+                        answer_parts.append(delta)
+                        yield _sse_event("chunk", {"delta": delta})
                         continue
                     if et == "done":
                         generation_time_ms = int((time.perf_counter() - started) * 1000)
+                        if conversation_id:
+                            ts = __import__("datetime").datetime.utcnow().isoformat() + "Z"
+                            answer_text = "".join(answer_parts)
+                            await run_in_threadpool(
+                                _save_conversation_snapshot,
+                                book_uuid=str(book_uuid),
+                                book_folder=book_folder,
+                                conversation_id=conversation_id,
+                                provider=provider_name,
+                                model=str(evt.get("model") or model),
+                                history=history,
+                                assistant_message=DiskConversationMessage(
+                                    id=message_id,
+                                    role="assistant",
+                                    content=answer_text,
+                                    timestamp=ts,
+                                    metadata={
+                                        "retrieval_sources": passages,
+                                        "provider": provider_name,
+                                    },
+                                ),
+                            )
                         yield _sse_event(
                             "done",
                             {
@@ -1233,6 +1401,28 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
         generation_time_ms = int((time.perf_counter() - started) * 1000)
 
         msg_id = str(__import__("uuid").uuid4())
+        conversation_id = _conversation_id_from_history(body.conversation_history or [])
+        if conversation_id:
+            ts = __import__("datetime").datetime.utcnow().isoformat() + "Z"
+            await run_in_threadpool(
+                _save_conversation_snapshot,
+                book_uuid=str(book_uuid),
+                book_folder=book_folder,
+                conversation_id=conversation_id,
+                provider=provider_name,
+                model=resp.model,
+                history=(body.conversation_history or [])[-50:],
+                assistant_message=DiskConversationMessage(
+                    id=msg_id,
+                    role="assistant",
+                    content=resp.text,
+                    timestamp=ts,
+                    metadata={
+                        "retrieval_sources": passages,
+                        "provider": provider_name,
+                    },
+                ),
+            )
         return {
             "answer": resp.text,
             "message_id": msg_id,
