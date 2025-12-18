@@ -82,75 +82,8 @@ uv run reader3-server
 
 Open a book, click the **AI** button on the right toolbar, and use quick actions or chat.
 
-### Chat History + New Chat
-
-- The AI panel shows a per-book, per-provider chat history list.
-- Use **New chat** to start a fresh thread (keeps older threads for reference).
-- Conversations are stored in two places:
-  - Browser cache: IndexedDB (`reader3_ai_assistant`)
-  - On disk (portable): `books/{book_id}/ai_conversations/{conversation_id}.json`
-
-### Use Anthropic (Claude)
-
-Edit `config/ai_settings.json`:
-
-- Set `default_provider` to `"anthropic"`
-- Set `providers.anthropic.enabled` to `true`
-- Fill `providers.anthropic.api_key`
-- Optionally change `providers.anthropic.model_name`
-
-Restart `reader3-server` after changing the config.
-
-
-
-#### Anthropic进行AI问答的原理：
-
- 在这个项目里调用流程是这样的（选 anthropic 时）：
-
-1. 浏览器把问题发到本地服务：POST /api/ai/question/{book_uuid}（见 `src/reader3_app/web/server.py`）
-2. 服务端先在本地做 RAG 检索：从 books/<book>_data/chroma_db/ 里用向量相似度找 top‑k 段落（见 `src/reader3_app/ai/rag.py:9`、`src/reader3_app/vector_search.py:36`）
-
-3. 把这些段落拼成 context，再加上你的 question 和 conversation_history，组装成 Anthropic 的 messages 请求体（见 `src/reader3_app/web/server.py`）
-
-4. 通过 HTTPS POST https://api.anthropic.com/v1/messages 发给 Anthropic（见 `src/reader3_app/ai/providers/anthropic.py:51`），拿到生成结果后返回前端
-
-
-
- “会发出去多少书的内容”取决于检索参数：
-
- \- 问答默认 rag_k=5（最多 20），每个 chunk 默认约 1000 字符左右（见 `src/reader3_app/vector_search.py:100`）
-
- \- “全书总结”会取更多片段：固定取 k=12（见 `src/reader3_app/web/server.py`）
-
- \- 所以通常是“若干段摘录”，不是整本书；但这些摘录确实会离开本机发送到 Anthropic（再加上你的提问/历史消息）
-
- 如果你不希望任何书籍内容发送到第三方 API，就只用 ollama（本地生成）；不要选 anthropic/gemini。
-
-
-
-### Use Ollama (offline / local)
-
-1) Install and start Ollama:
-
-- macOS: `brew install ollama`
-- Start: `ollama serve`
-
-2) Download a model into this repo’s `models/` directory (recommended):
-
-```bash
-mkdir -p models/ollama
-export OLLAMA_MODELS="$PWD/models/ollama"
-ollama pull qwen3:8b
-```
-
-3) Edit `config/ai_settings.json`:
-
-- Set `default_provider` to `"ollama"`
-- Set `providers.ollama.enabled` to `true`
-- Set `providers.ollama.base_url` to `"http://localhost:11434"`
-- Set `providers.ollama.model_name` to the model you pulled (e.g. `"qwen3:8b"`)
-
-Restart `reader3-server`, then use the AI panel normally.
+Technical details (chat storage locations, IndexedDB paths, provider privacy, speed tuning, model caches):
+- `docs/technical-detail/technical-detail.md`
 
 
 
@@ -187,43 +120,8 @@ uv run python -c "import chromadb, sentence_transformers; print('OK')"
 uv run python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')"
 ```
 
-The model download is large (~420MB) and is cached by HuggingFace after the first run.
-
-默认会下载到 HuggingFace 的缓存目录：
-
- \- macOS / Linux：`~/.cache/huggingface/hub/`
-
- \- Windows：`%USERPROFILE%\.cache\huggingface\hub\`
-
-
-
-#### model可以放在两个地方：
-
-1. **单机开发最省事（默认推荐）**
-
-   放在用户缓存：~/.cache/huggingface/hub/（macOS/Linux）或 %USERPROFILE%\.cache\huggingface\hub\（Windows）。优点是不
-
-   用管路径，所有项目共用。
-
-2. **需要“可搬运/离线部署”更推荐**
-
-   放在项目外的固定目录，比如仓库根目录下的 models/huggingface/（并加入 .gitignore），用环境变量把缓存指过去：
-
-```
-mkdir -p models/huggingface
-HF_HOME="$PWD/models/huggingface" uv run python -c "from sentence_transformers import SentenceTransformer;
-SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')"
-```
-
- 这样模型会落在 models/huggingface/hub/，拷贝整个 models/ 就能离线复用。
-
-如果你希望 **完全离线**（不触发任何 HuggingFace API 调用），建议把模型路径指向本地 snapshot 目录：
-
-```bash
-export HF_HOME="$PWD/models/huggingface"
-export TRANSFORMERS_OFFLINE=1 HF_HUB_OFFLINE=1
-export READER3_EMBED_MODEL="$PWD/models/huggingface/hub/models--sentence-transformers--paraphrase-multilingual-MiniLM-L12-v2/snapshots/86741b4e3f5cb7765a600d3a3d55a0f6a6cb443d"
-```
+The model download is large (~420MB) and is cached by HuggingFace after the first run. For cache locations and offline/portable setup, see:
+- `docs/technical-detail/models-and-caches.md`
 
 #### Index a Book (Semantic Search)
 
@@ -234,55 +132,6 @@ uv run reader3 --index dracula_data
 ```
 
 This writes a per-book vector store to `books/dracula_data/chroma_db/`.
-
-
-
-## How to Optimize AI Response Speed using Ollama
-
-Most “slow” AI responses come from (1) long prompts (RAG context + chat history) and/or (2) long generations (high `max_tokens`) and/or (3) a large/slower model.
-
-### Tune `rag_k` and `max_tokens`
-
-These values are currently hard-coded in the frontend request payloads (so changing backend defaults alone won’t help).
-
-- Q&A request knobs:
-  - `rag_k`: `src/reader3_app/web/static/ai.js` (search for `rag_k: 5`)
-  - `max_tokens`: `src/reader3_app/web/static/ai.js` (search for `max_tokens: 1000`)
-- Summary request knob:
-  - `max_tokens`: `src/reader3_app/web/static/ai.js` (search for `max_tokens: 2000`)
-- Backend fallback defaults (only used if the client doesn’t send values):
-  - `src/reader3_app/web/server.py` (`AIQuestionRequest` / `AISummaryRequest`)
-
-Practical presets (start here):
-- Faster Q&A: `rag_k=3`, `max_tokens=384` or `512`
-- Balanced Q&A: `rag_k=5`, `max_tokens=768`
-- Faster summaries: `max_tokens=800`–`1200` (quality may drop vs `2000`)
-
-### Use a faster local model
-
-On the same machine, smaller models are dramatically faster:
-- Fast: `qwen3:4b`, `llama3.2:3b`
-- Balanced: `qwen2.5:7b` / `qwen3:8b`
-- Higher quality (slower): `qwen2.5:14b`
-
-Update `config/ai_settings.json` → `providers.ollama.model_name`, restart `reader3-server`.
-
-### Reduce prompt size (RAG + history)
-
-- Reduce chat history sent each turn: `src/reader3_app/web/static/ai.js` (search for `slice(-50)`).
-- Reduce chunk size / overlap for indexing (requires re-index): `src/reader3_app/vector_search.py` (`_chunk_text(chunk_size=1000, overlap=120)`).
-
-### About `stream=true` (perceived speed)
-
-Ollama supports streaming token output, which improves perceived latency (text appears earlier), but does not necessarily increase tokens/sec.
-
-- Backend supports SSE streaming for Q&A: `POST /api/ai/question/{book_uuid}?stream=true` (see `src/reader3_app/web/server.py`).
-- Frontend uses streaming when enabled in Settings (see `src/reader3_app/web/static/ai.js`), and shows a **Stop** button to abort the request.
-
-### macOS GPU acceleration notes (Apple Silicon)
-
-Ollama on Apple Silicon typically uses Metal (integrated GPU) automatically when running the native `arm64` build.
-- If Ollama is running under Rosetta (`x86_64`), performance is much worse—install the native arm64 version instead.
 
 
 

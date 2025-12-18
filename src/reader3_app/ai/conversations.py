@@ -30,6 +30,13 @@ def _safe_conversation_id(conversation_id: str) -> str:
         raise ValueError("Invalid conversation_id") from e
 
 
+def _safe_book_uuid(book_uuid: str) -> str:
+    try:
+        return str(UUID(str(book_uuid)))
+    except Exception as e:
+        raise ValueError("Invalid book_uuid") from e
+
+
 def _conversations_dir(books_dir: str, book_folder: str) -> str:
     book_folder = _safe_folder_name(book_folder)
     return os.path.join(books_dir, book_folder, CONVERSATIONS_DIRNAME)
@@ -38,6 +45,18 @@ def _conversations_dir(books_dir: str, book_folder: str) -> str:
 def _conversation_path(books_dir: str, book_folder: str, conversation_id: str) -> str:
     cid = _safe_conversation_id(conversation_id)
     return os.path.join(_conversations_dir(books_dir, book_folder), f"{cid}.json")
+
+
+def _project_conversations_dir(project_conversations_root: str, book_uuid: str) -> str:
+    root = os.path.abspath(project_conversations_root or "")
+    if not root:
+        raise ValueError("Invalid project_conversations_root")
+    return os.path.join(root, _safe_book_uuid(book_uuid))
+
+
+def _project_conversation_path(project_conversations_root: str, book_uuid: str, conversation_id: str) -> str:
+    cid = _safe_conversation_id(conversation_id)
+    return os.path.join(_project_conversations_dir(project_conversations_root, book_uuid), f"{cid}.json")
 
 
 @dataclass
@@ -127,14 +146,7 @@ def _parse_thread(raw: Any, *, book_folder: str, default_book_uuid: str, convers
     )
 
 
-def list_conversations(
-    books_dir: str,
-    *,
-    book_folder: str,
-    provider: Optional[str] = None,
-) -> List[Dict[str, Any]]:
-    book_folder = _safe_folder_name(book_folder)
-    root = _conversations_dir(books_dir, book_folder)
+def _list_conversations_from_dir(root: str, *, provider: Optional[str] = None) -> List[Dict[str, Any]]:
     if not os.path.isdir(root):
         return []
     out: List[Dict[str, Any]] = []
@@ -174,6 +186,25 @@ def list_conversations(
     return out
 
 
+def list_conversations(
+    books_dir: str,
+    *,
+    book_folder: str,
+    provider: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    book_folder = _safe_folder_name(book_folder)
+    return _list_conversations_from_dir(_conversations_dir(books_dir, book_folder), provider=provider)
+
+
+def list_project_conversations(
+    project_conversations_root: str,
+    *,
+    book_uuid: str,
+    provider: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    return _list_conversations_from_dir(_project_conversations_dir(project_conversations_root, book_uuid), provider=provider)
+
+
 def load_conversation(
     books_dir: str,
     *,
@@ -187,6 +218,19 @@ def load_conversation(
         raw = json.load(f)
     return _parse_thread(raw, book_folder=book_folder, default_book_uuid=str(book_uuid), conversation_id=conversation_id)
 
+
+def load_project_conversation(
+    project_conversations_root: str,
+    *,
+    book_uuid: str,
+    book_folder: str,
+    conversation_id: str,
+) -> ConversationThread:
+    book_folder = _safe_folder_name(book_folder)
+    path = _project_conversation_path(project_conversations_root, book_uuid, conversation_id)
+    with open(path, "r", encoding="utf-8") as f:
+        raw = json.load(f)
+    return _parse_thread(raw, book_folder=book_folder, default_book_uuid=str(book_uuid), conversation_id=conversation_id)
 
 def save_conversation(
     books_dir: str,
@@ -207,6 +251,27 @@ def save_conversation(
     os.replace(tmp, path)
 
 
+def save_project_conversation(
+    project_conversations_root: str,
+    *,
+    thread: ConversationThread,
+) -> None:
+    book_uuid = _safe_book_uuid(thread.book_uuid)
+    book_folder = _safe_folder_name(thread.book_folder)
+    os.makedirs(_project_conversations_dir(project_conversations_root, book_uuid), exist_ok=True)
+    path = _project_conversation_path(project_conversations_root, book_uuid, thread.conversation_id)
+    tmp = f"{path}.tmp"
+    payload = thread.to_dict()
+    payload["schema_version"] = SCHEMA_VERSION
+    payload["book_uuid"] = book_uuid
+    payload["book_folder"] = book_folder
+    payload["last_updated"] = _utc_now_iso()
+    if not payload.get("created_at"):
+        payload["created_at"] = payload["last_updated"]
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
+
 def delete_conversation(
     books_dir: str,
     *,
@@ -220,3 +285,105 @@ def delete_conversation(
     except FileNotFoundError:
         return
 
+
+def delete_project_conversation(
+    project_conversations_root: str,
+    *,
+    book_uuid: str,
+    conversation_id: str,
+) -> None:
+    path = _project_conversation_path(project_conversations_root, book_uuid, conversation_id)
+    try:
+        os.remove(path)
+    except FileNotFoundError:
+        return
+
+
+def _dedupe_conversation_list(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    best: Dict[str, Dict[str, Any]] = {}
+    for it in items:
+        cid = str(it.get("conversation_id") or "").strip()
+        if not cid:
+            continue
+        prev = best.get(cid)
+        if not prev:
+            best[cid] = it
+            continue
+        if str(it.get("last_updated") or "") > str(prev.get("last_updated") or ""):
+            best[cid] = it
+    out = list(best.values())
+    out.sort(key=lambda x: str(x.get("last_updated") or ""), reverse=True)
+    return out
+
+
+def list_conversations_combined(
+    books_dir: str,
+    *,
+    book_folder: str,
+    book_uuid: str,
+    provider: Optional[str] = None,
+    project_conversations_root: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    items = list_conversations(books_dir, book_folder=book_folder, provider=provider)
+    if project_conversations_root:
+        try:
+            items.extend(list_project_conversations(project_conversations_root, book_uuid=book_uuid, provider=provider))
+        except Exception:
+            pass
+    return _dedupe_conversation_list(items)
+
+
+def load_conversation_combined(
+    books_dir: str,
+    *,
+    book_folder: str,
+    book_uuid: str,
+    conversation_id: str,
+    project_conversations_root: Optional[str] = None,
+) -> ConversationThread:
+    try:
+        return load_conversation(
+            books_dir,
+            book_folder=book_folder,
+            book_uuid=book_uuid,
+            conversation_id=conversation_id,
+        )
+    except FileNotFoundError:
+        pass
+    if project_conversations_root:
+        return load_project_conversation(
+            project_conversations_root,
+            book_uuid=book_uuid,
+            book_folder=book_folder,
+            conversation_id=conversation_id,
+        )
+    raise FileNotFoundError(conversation_id)
+
+
+def save_conversation_multi(
+    books_dir: str,
+    *,
+    thread: ConversationThread,
+    project_conversations_root: Optional[str] = None,
+    storage_mode: str = "per_book",
+) -> None:
+    mode = str(storage_mode or "per_book").strip().lower()
+    if mode not in ("per_book", "project_root", "both"):
+        mode = "per_book"
+    if mode in ("per_book", "both"):
+        save_conversation(books_dir, thread=thread)
+    if project_conversations_root and mode in ("project_root", "both"):
+        save_project_conversation(project_conversations_root, thread=thread)
+
+
+def delete_conversation_multi(
+    books_dir: str,
+    *,
+    book_folder: str,
+    book_uuid: str,
+    conversation_id: str,
+    project_conversations_root: Optional[str] = None,
+) -> None:
+    delete_conversation(books_dir, book_folder=book_folder, conversation_id=conversation_id)
+    if project_conversations_root:
+        delete_project_conversation(project_conversations_root, book_uuid=book_uuid, conversation_id=conversation_id)

@@ -22,3 +22,6 @@ wheels/
 
 # AI Assistant (repo-local secrets)
 /config/ai_settings.json
+
+# AI Assistant (optional on-disk conversation mirror)
+/conversations/

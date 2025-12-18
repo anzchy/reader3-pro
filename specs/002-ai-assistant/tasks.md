@@ -238,7 +238,7 @@ This checklist turns `spec.md` + `plan.md` + `data-model.md` + `contracts/*.yaml
 ## New Requirements: Multi-Chat + On-Disk Storage
 
 - [x] Add on-disk conversation storage under `books/{book_folder}/ai_conversations/` (JSON per conversation)
-- [ ] (Optional) Add project-root conversation mirror under `conversations/{book_uuid}/` (configurable via `preferences.conversation_disk_storage`)
+- [x] (Optional) Add project-root conversation mirror under `conversations/{book_uuid}/` (configurable via `preferences.conversation_disk_storage`)
 - [x] Add Conversation APIs:
   - [x] `GET /api/ai/conversations/{book_uuid}?provider=...` (list threads)
   - [x] `GET /api/ai/conversations/{book_uuid}/{conversation_id}` (load thread)

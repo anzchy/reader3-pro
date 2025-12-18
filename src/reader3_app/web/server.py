@@ -22,10 +22,10 @@ from ..ai.books import BookUuidResolver
 from ..ai.conversations import (
     ConversationMessage as DiskConversationMessage,
     ConversationThread as DiskConversationThread,
-    delete_conversation as delete_disk_conversation,
-    list_conversations as list_disk_conversations,
-    load_conversation as load_disk_conversation,
-    save_conversation as save_disk_conversation,
+    delete_conversation_multi as delete_disk_conversation_multi,
+    list_conversations_combined as list_disk_conversations_combined,
+    load_conversation_combined as load_disk_conversation_combined,
+    save_conversation_multi as save_disk_conversation_multi,
 )
 from ..ai.config import (
     default_settings_dict,
@@ -71,6 +71,10 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 book_uuid_resolver = BookUuidResolver(BOOKS_DIR)
 ai_queue = AIRequestQueueManager(max_pending=10)
+
+
+def _project_root_dir_from_books_dir() -> str:
+    return os.path.dirname(os.path.abspath(BOOKS_DIR))
 
 @app.on_event("startup")
 async def _startup_scan_books() -> None:
@@ -571,7 +575,13 @@ def _save_conversation_snapshot(
         last_updated="",
         messages=messages,
     )
-    save_disk_conversation(BOOKS_DIR, thread=thread)
+    settings = load_ai_settings()
+    save_disk_conversation_multi(
+        BOOKS_DIR,
+        thread=thread,
+        project_conversations_root=_project_conversations_root(settings),
+        storage_mode=_conversation_disk_storage_mode(settings),
+    )
 
 
 def _provider_default_base_url(provider_name: str) -> str:
@@ -621,6 +631,27 @@ def _public_settings_response(settings: dict) -> dict:
         "providers": provider_list,
         "preferences": prefs_default,
     }
+
+
+def _conversation_disk_storage_mode(settings: dict) -> str:
+    prefs = settings.get("preferences") if isinstance(settings.get("preferences"), dict) else {}
+    mode = str((prefs or {}).get("conversation_disk_storage") or "per_book").strip().lower()
+    if mode not in ("per_book", "project_root", "both"):
+        return "per_book"
+    return mode
+
+
+def _project_conversations_root(settings: dict) -> Optional[str]:
+    prefs = settings.get("preferences") if isinstance(settings.get("preferences"), dict) else {}
+    rel = str((prefs or {}).get("conversation_project_root_dir") or "conversations").strip()
+    if not rel:
+        rel = "conversations"
+    if os.path.isabs(rel):
+        return None
+    rel_norm = os.path.normpath(rel)
+    if rel_norm.startswith(".."):
+        return None
+    return os.path.join(_project_root_dir_from_books_dir(), rel_norm)
 
 
 def _settings_update_provider(
@@ -907,7 +938,14 @@ async def api_ai_list_conversations(book_uuid: str, provider: Optional[str] = No
         book_folder = book_uuid_resolver.folder_for_book_uuid(book_uuid)
     except Exception:
         raise HTTPException(status_code=404, detail="Book not found")
-    threads = list_disk_conversations(BOOKS_DIR, book_folder=book_folder, provider=provider)
+    settings = load_ai_settings()
+    threads = list_disk_conversations_combined(
+        BOOKS_DIR,
+        book_folder=book_folder,
+        book_uuid=str(book_uuid),
+        provider=provider,
+        project_conversations_root=_project_conversations_root(settings),
+    )
     return {"book_uuid": str(book_uuid), "provider": (provider or "").strip().lower() or None, "conversations": threads}
 
 
@@ -918,11 +956,13 @@ async def api_ai_get_conversation(book_uuid: str, conversation_id: str):
     except Exception:
         raise HTTPException(status_code=404, detail="Book not found")
     try:
-        thread = load_disk_conversation(
+        settings = load_ai_settings()
+        thread = load_disk_conversation_combined(
             BOOKS_DIR,
             book_folder=book_folder,
             book_uuid=str(book_uuid),
             conversation_id=conversation_id,
+            project_conversations_root=_project_conversations_root(settings),
         )
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -979,7 +1019,13 @@ async def api_ai_put_conversation(book_uuid: str, conversation_id: str, body: Sa
         messages=msgs,
     )
     try:
-        save_disk_conversation(BOOKS_DIR, thread=thread)
+        settings = load_ai_settings()
+        save_disk_conversation_multi(
+            BOOKS_DIR,
+            thread=thread,
+            project_conversations_root=_project_conversations_root(settings),
+            storage_mode=_conversation_disk_storage_mode(settings),
+        )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"ok": True}
@@ -992,7 +1038,14 @@ async def api_ai_delete_conversation(book_uuid: str, conversation_id: str):
     except Exception:
         raise HTTPException(status_code=404, detail="Book not found")
     try:
-        delete_disk_conversation(BOOKS_DIR, book_folder=book_folder, conversation_id=conversation_id)
+        settings = load_ai_settings()
+        delete_disk_conversation_multi(
+            BOOKS_DIR,
+            book_folder=book_folder,
+            book_uuid=str(book_uuid),
+            conversation_id=conversation_id,
+            project_conversations_root=_project_conversations_root(settings),
+        )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
     return None
