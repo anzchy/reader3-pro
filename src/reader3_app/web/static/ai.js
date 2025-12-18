@@ -297,7 +297,7 @@ class ReaderAIUI {
           model: this.currentModel || undefined,
           conversation_history: history,
           rag_k: 5,
-          max_tokens: 1000,
+          max_tokens: 768,
         }),
       });
       const data = await resp.json().catch(() => ({}));

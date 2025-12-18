@@ -61,7 +61,7 @@ def ollama_chat_completions(
     payload: Dict[str, Any] = {
         "model": model,
         "messages": openai_messages,
-        "stream": False,
+        "stream": True,
     }
 
     # Some Ollama models ignore these fields, but they are safe to pass.

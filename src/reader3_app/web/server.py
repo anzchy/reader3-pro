@@ -381,10 +381,28 @@ def _provider_requires_api_key(provider_name: str) -> bool:
 
 def _ui_default_provider() -> str:
     settings = load_ai_settings()
-    provider_name = str(settings.get("default_provider") or "anthropic").strip().lower()
-    if provider_name not in SUPPORTED_AI_PROVIDERS:
-        provider_name = "anthropic"
-    return provider_name
+    configured = str(settings.get("default_provider") or "").strip().lower()
+
+    def provider_is_usable(name: str) -> bool:
+        if name not in SUPPORTED_AI_PROVIDERS:
+            return False
+        provider = get_provider_settings(name, settings=settings)
+        if not provider.enabled:
+            return False
+        if _provider_requires_api_key(name) and not get_provider_api_key(name, settings=settings):
+            return False
+        return True
+
+    if configured and provider_is_usable(configured):
+        return configured
+
+    # Prefer a local/offline provider when available so the UI works out-of-the-box.
+    for candidate in ("ollama", "anthropic", "gemini"):
+        if provider_is_usable(candidate):
+            return candidate
+
+    # Fallback: return a supported provider even if it isn't usable, so the UI can still render.
+    return configured if configured in SUPPORTED_AI_PROVIDERS else "anthropic"
 
 
 def _get_provider_runtime(
