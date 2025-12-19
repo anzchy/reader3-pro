@@ -138,7 +138,35 @@
             <div class="right-panel">
                 <section class="right-tab is-active" id="dashboard-tab" aria-label="Dashboard">
                     <div class="right-title">Dashboard</div>
-                    <div class="right-placeholder">Dashboard stats will appear here.</div>
+                    <div class="stats-grid" aria-label="Library Stats">
+                        <div class="stats-card">
+                            <div class="stats-label">Books</div>
+                            <div class="stats-value" id="stats-books-total">—</div>
+                        </div>
+                        <div class="stats-card">
+                            <div class="stats-label">Indexed</div>
+                            <div class="stats-value" id="stats-books-indexed">—</div>
+                            <div class="stats-sub" id="stats-indexed-percent">—</div>
+                        </div>
+                        <div class="stats-card">
+                            <div class="stats-label">Sections</div>
+                            <div class="stats-value" id="stats-sections-total">—</div>
+                        </div>
+                        <div class="stats-card">
+                            <div class="stats-label">Chunks</div>
+                            <div class="stats-value" id="stats-chunks-total">—</div>
+                        </div>
+                    </div>
+                    <div class="stats-progress" aria-label="Index progress">
+                        <div class="stats-bar">
+                            <div class="stats-bar-fill" id="stats-bar-fill" style="width:0%;"></div>
+                        </div>
+                        <div class="stats-bar-label" id="stats-bar-label">—</div>
+                    </div>
+                    <div class="stats-actions">
+                        <button type="button" class="toolbar-btn" id="refresh-stats-btn">Refresh stats</button>
+                    </div>
+                    <div class="stats-state" id="stats-state" aria-live="polite"></div>
                 </section>
                 <section class="right-tab" id="chat-tab" aria-label="Chat">
                     <div class="right-title">Chat</div>

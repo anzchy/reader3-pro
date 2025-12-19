@@ -535,6 +535,77 @@ body.select-mode .select-checkbox {
   line-height: 1.3;
 }
 
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.stats-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: rgba(15, 23, 42, 0.02);
+}
+
+.stats-label {
+  font-size: 0.78rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.stats-value {
+  margin-top: 8px;
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+
+.stats-sub {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.stats-progress {
+  margin-top: 12px;
+}
+
+.stats-bar {
+  height: 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(100, 116, 139, 0.12);
+  overflow: hidden;
+}
+
+.stats-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, rgba(37, 99, 235, 0.35), rgba(37, 99, 235, 0.9));
+  width: 0%;
+  transition: width 180ms ease;
+}
+
+.stats-bar-label {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.stats-actions {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.stats-state {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.3;
+}
+
 .right-tab-switcher {
   position: fixed;
   right: 20px;

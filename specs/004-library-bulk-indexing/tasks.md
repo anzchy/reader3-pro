@@ -191,19 +191,19 @@ Notes:
 
 ### Stats API
 
-- [ ] T080 [P2] [US4] Create LibraryStats dataclass (scope, books_total, books_indexed, indexed_percent, sections_total, chunks_total, computed_at) (src/reader3_app/web/server.py)
-- [ ] T081 [P2] [US4] Implement `GET /api/library/stats?scope=...&fresh=true` endpoint (src/reader3_app/web/server.py)
-- [ ] T082 [P2] [US4] Implement scope validation (all, format:epub, format:pdf, collection:<uuid>) (src/reader3_app/web/server.py)
-- [ ] T083 [P2] [US4] Implement stats computation logic (filter books by scope, aggregate counts) (src/reader3_app/web/server.py)
-- [ ] T084 [P2] [US4] Add optional TTL cache (<=5s) per scope with `fresh=true` bypass (src/reader3_app/web/server.py)
+- [x] T080 [P2] [US4] Create LibraryStats dataclass (scope, books_total, books_indexed, indexed_percent, sections_total, chunks_total, computed_at) (src/reader3_app/web/server.py)
+- [x] T081 [P2] [US4] Implement `GET /api/library/stats?scope=...&fresh=true` endpoint (src/reader3_app/web/server.py)
+- [x] T082 [P2] [US4] Implement scope validation (all, format:epub, format:pdf, collection:<uuid>) (src/reader3_app/web/server.py)
+- [x] T083 [P2] [US4] Implement stats computation logic (filter books by scope, aggregate counts) (src/reader3_app/web/server.py)
+- [x] T084 [P2] [US4] Add optional TTL cache (<=5s) per scope with `fresh=true` bypass (src/reader3_app/web/server.py)
 
 ### Dashboard UI
 
-- [ ] T085 [P2] [US4] Implement Dashboard tab panel rendering stats cards (src/reader3_app/web/templates/library.html)
-- [ ] T086 [P2] [US4] Fetch stats on tab switch and scope change (src/reader3_app/web/static/library.js)
-- [ ] T087 [P2] [US4] Add "Refresh stats" button using `fresh=true` parameter (src/reader3_app/web/static/library.js)
-- [ ] T088 [P2] [US4] Implement empty state display (0 books, "No books in this scope") (src/reader3_app/web/static/library.js)
-- [ ] T089 [P2] [US4] Implement error state display with retry action (src/reader3_app/web/static/library.js)
+- [x] T085 [P2] [US4] Implement Dashboard tab panel rendering stats cards (src/reader3_app/web/templates/library.html)
+- [x] T086 [P2] [US4] Fetch stats on tab switch and scope change (src/reader3_app/web/static/library.js)
+- [x] T087 [P2] [US4] Add "Refresh stats" button using `fresh=true` parameter (src/reader3_app/web/static/library.js)
+- [x] T088 [P2] [US4] Implement empty state display (0 books, "No books in this scope") (src/reader3_app/web/static/library.js)
+- [x] T089 [P2] [US4] Implement error state display with retry action (src/reader3_app/web/static/library.js)
 
 ---
 

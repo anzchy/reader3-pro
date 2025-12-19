@@ -11,6 +11,8 @@ import html
 import uuid
 from pathlib import Path
 from functools import lru_cache
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from fastapi import FastAPI, Request, HTTPException
@@ -91,6 +93,8 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 book_uuid_resolver = BookUuidResolver(BOOKS_DIR)
 ai_queue = AIRequestQueueManager(max_pending=10)
+
+_stats_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 
 
 def _project_root_dir_from_books_dir() -> str:
@@ -332,6 +336,127 @@ async def api_collections_delete(collection_id: str):
         raise HTTPException(status_code=404, detail="Collection not found")
     except collections_service.CollectionsFileError as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@dataclass(frozen=True)
+class LibraryStats:
+    scope: str
+    books_total: int
+    books_indexed: int
+    indexed_percent: int
+    sections_total: int
+    chunks_total: int
+    computed_at: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "scope": self.scope,
+            "books_total": self.books_total,
+            "books_indexed": self.books_indexed,
+            "indexed_percent": self.indexed_percent,
+            "sections_total": self.sections_total,
+            "chunks_total": self.chunks_total,
+            "computed_at": self.computed_at,
+        }
+
+
+def _validate_stats_scope(scope: str) -> tuple[str, Optional[str], Optional[str]]:
+    scope = (scope or "all").strip()
+    if scope == "all":
+        return ("all", None, None)
+    if scope.startswith("format:"):
+        fmt = scope.split(":", 1)[1].strip().lower()
+        if fmt in {"epub", "pdf"}:
+            return (f"format:{fmt}", fmt, None)
+        raise HTTPException(status_code=400, detail="Invalid scope")
+    if scope.startswith("collection:"):
+        raw = scope.split(":", 1)[1].strip()
+        try:
+            cid = str(uuid.UUID(raw))
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid scope")
+        return (f"collection:{cid}", None, cid)
+    raise HTTPException(status_code=400, detail="Invalid scope")
+
+
+def _compute_stats_for_scope(scope: str) -> LibraryStats:
+    validated_scope, fmt, collection_id = _validate_stats_scope(scope)
+
+    all_book_ids = list(list_book_ids(BOOKS_DIR))
+    book_ids: list[str] = []
+    if validated_scope == "all":
+        book_ids = all_book_ids
+    elif fmt:
+        # PDF is a placeholder in 004; treat as no-op unless PDFs are supported later.
+        if fmt == "pdf":
+            book_ids = []
+        else:
+            book_ids = all_book_ids
+    elif collection_id:
+        col = collections_service.get_collection(_collections_file_path(), collection_id)
+        if not col:
+            raise HTTPException(status_code=404, detail="Collection not found")
+        allowed = set(col.book_ids or [])
+        book_ids = [bid for bid in all_book_ids if bid in allowed]
+
+    books_total = len(book_ids)
+    books_indexed = 0
+    sections_total = 0
+    chunks_total = 0
+
+    for bid in book_ids:
+        book = load_book_cached(bid)
+        if book:
+            sections_total += len(book.spine)
+
+        try:
+            idx = BookVectorIndex(bid, books_dir=BOOKS_DIR)
+            if idx.is_indexed():
+                books_indexed += 1
+                status = idx.status()
+                cc = status.get("chunk_count")
+                if isinstance(cc, int):
+                    chunks_total += cc
+        except Exception:
+            continue
+
+    indexed_percent = 0
+    if books_total > 0:
+        indexed_percent = int(round((books_indexed / books_total) * 100))
+
+    computed_at = datetime.now(timezone.utc).isoformat()
+    return LibraryStats(
+        scope=validated_scope,
+        books_total=books_total,
+        books_indexed=books_indexed,
+        indexed_percent=indexed_percent,
+        sections_total=sections_total,
+        chunks_total=chunks_total,
+        computed_at=computed_at,
+    )
+
+
+@app.get("/api/library/stats")
+async def api_library_stats(scope: str = "all", fresh: bool = False):
+    validated_scope, _, _ = _validate_stats_scope(scope)
+    cache_key = validated_scope
+    now = time.monotonic()
+    if not fresh:
+        cached = _stats_cache.get(cache_key)
+        if cached:
+            ts, payload = cached
+            if now - ts <= 5.0:
+                return payload
+
+    try:
+        stats = _compute_stats_for_scope(validated_scope).to_dict()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    _stats_cache[cache_key] = (now, stats)
+    return stats
 
 @app.get("/read/{book_id}", response_class=HTMLResponse)
 async def redirect_to_first_chapter(book_id: str):

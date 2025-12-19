@@ -5,6 +5,7 @@
 
   const state = {
     scope: "all",
+    activeRightTab: "dashboard",
     selectMode: false,
     selectedBookIds: new Set(),
     titleFilter: "",
@@ -83,6 +84,9 @@
     setActiveScopeButton();
     applyFilters();
     clearSelection();
+    if (state.activeRightTab === "dashboard") {
+      void refreshStats(false);
+    }
   }
 
   function setSelectMode(enabled) {
@@ -385,6 +389,8 @@
       const name = btn.getAttribute("data-tab");
       qsa(".right-tab").forEach((el) => el.classList.toggle("is-active", el.id === `${name}-tab`));
       qsa(".tab-btn").forEach((el) => el.classList.toggle("is-active", el === btn));
+      state.activeRightTab = name || "dashboard";
+      if (state.activeRightTab === "dashboard") void refreshStats(false);
     });
   }
 
@@ -581,6 +587,67 @@
     return res.json();
   }
 
+  function setStatsUiLoading(loading) {
+    const btn = qs("#refresh-stats-btn");
+    if (btn) btn.disabled = loading;
+    const stateEl = qs("#stats-state");
+    if (stateEl && loading) stateEl.textContent = "Loading…";
+  }
+
+  function renderStats(stats) {
+    const booksTotal = Number(stats?.books_total ?? 0);
+    const booksIndexed = Number(stats?.books_indexed ?? 0);
+    const indexedPercent = Number(stats?.indexed_percent ?? 0);
+    const sectionsTotal = Number(stats?.sections_total ?? 0);
+    const chunksTotal = Number(stats?.chunks_total ?? 0);
+
+    const setText = (id, text) => {
+      const el = qs(id);
+      if (el) el.textContent = text;
+    };
+
+    setText("#stats-books-total", String(booksTotal));
+    setText("#stats-books-indexed", String(booksIndexed));
+    setText("#stats-indexed-percent", booksTotal ? `${indexedPercent}% indexed` : "—");
+    setText("#stats-sections-total", String(sectionsTotal));
+    setText("#stats-chunks-total", String(chunksTotal));
+
+    const fill = qs("#stats-bar-fill");
+    if (fill) fill.style.width = `${Math.max(0, Math.min(100, indexedPercent))}%`;
+
+    const barLabel = qs("#stats-bar-label");
+    if (barLabel) {
+      if (booksTotal === 0) {
+        barLabel.textContent = "No books in this scope.";
+      } else if (indexedPercent >= 100) {
+        barLabel.textContent = "All books in this scope are indexed.";
+      } else {
+        barLabel.textContent = `Indexed ${booksIndexed}/${booksTotal} (${indexedPercent}%)`;
+      }
+    }
+
+    const stateEl = qs("#stats-state");
+    if (stateEl) {
+      if (booksTotal === 0) stateEl.textContent = "No books in this scope.";
+      else stateEl.textContent = "";
+    }
+  }
+
+  async function refreshStats(fresh) {
+    if (state.activeRightTab !== "dashboard") return;
+    setStatsUiLoading(true);
+    try {
+      const url = `/api/library/stats?scope=${encodeURIComponent(state.scope)}${fresh ? "&fresh=true" : ""}`;
+      const data = await apiJson(url, {});
+      renderStats(data);
+    } catch (e) {
+      const stateEl = qs("#stats-state");
+      if (stateEl) stateEl.textContent = String(e?.message || "Failed to load stats.");
+    } finally {
+      setStatsUiLoading(false);
+    }
+  }
+
   async function loadCollections() {
     const errEl = qs("#collections-error");
     const emptyEl = qs("#collections-empty-message");
@@ -757,6 +824,10 @@
 
     const createBtn = qs("#collections-create");
     if (createBtn) createBtn.addEventListener("click", () => openCreateCollectionModal());
+
+    const refreshBtn = qs("#refresh-stats-btn");
+    if (refreshBtn) refreshBtn.addEventListener("click", () => refreshStats(true));
+    void refreshStats(false);
   }
 
   if (document.readyState === "loading") {
