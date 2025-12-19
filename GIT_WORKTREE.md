@@ -218,7 +218,6 @@ git push
 ### Step 6 — Repeat in parallel (multiple features)
 
 For `005-another-feature`, repeat Steps 1–5 in a new worktree (`../reader3-pro-wt/005`). Parallel work remains isolated.
----
 
 ## 4) Avoiding Specs Directory ID Conflicts
 
@@ -313,6 +312,20 @@ git -C ../reader3-pro-wt/002 branch --show-current
 ```
 
 ---
+
+
+
+## 对之前的 branch 的修改有 bug，需要 hot fix 怎么办？
+
+不要在原来的 branch 上面做修改。
+
+确保之前的 branch 代码已经 Pull Request 到 master。
+
+新建 branch 譬如 007-hot-fix，新建 worktree-007，把 master 代码下载到 worktree。
+
+然后继续写 spec，写 plan，写代码。把代码 push 到 branch 007-hot-fix。
+
+
 
 ## Troubleshooting
 
