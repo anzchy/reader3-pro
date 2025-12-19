@@ -66,3 +66,17 @@ Valid values for `conversation_disk_storage`:
 
 - **Per book**: `books/{book_id}/chroma_db/`
 - This is created by indexing (Library UI or `uv run reader3 --index {book_id}`).
+
+## Book notes & annotations (003)
+
+Persistent highlights/underlines/notes are stored per book as JSON.
+
+- **File**: `books/{book_id}/notes.json`
+- **Schema**: `{ schema_version: 1, book_id, annotations: [...] }`
+
+### Related API endpoints
+
+- `GET /api/notes/{book_id}` (all notes for a book, grouped by chapter)
+- `GET /api/notes/{book_id}/{chapter_index}` (notes for one chapter)
+- `POST /api/notes/{book_id}/{chapter_index}` (create annotation)
+- `DELETE /api/notes/{book_id}/{chapter_index}/{note_id}` (delete annotation; optional in v1)

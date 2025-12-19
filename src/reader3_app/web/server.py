@@ -7,6 +7,7 @@ import asyncio
 import threading
 import urllib.request
 import urllib.error
+import html
 from pathlib import Path
 from functools import lru_cache
 from typing import Any, Optional
@@ -61,6 +62,14 @@ from ..search_service import (
     highlight_ranges_for_chapter,
 )
 from ..vector_search import BookVectorIndex
+from ..models.annotations import Annotation
+from ..notes_service import (
+    NOTES_SCHEMA_VERSION,
+    add_annotation as add_note_annotation,
+    delete_annotation as delete_note_annotation,
+    load_annotations as load_note_annotations,
+    save_annotations as save_note_annotations,
+)
 
 app = FastAPI()
 
@@ -170,6 +179,18 @@ async def read_chapter(request: Request, book_id: str, chapter_index: int):
     next_idx = chapter_index + 1 if chapter_index < len(book.spine) - 1 else None
 
     book_uuid = book_uuid_resolver.book_uuid_for_folder(book_id)
+    cover_image = None
+    try:
+        images_dir = os.path.join(BOOKS_DIR, book_id, "images")
+        if os.path.isdir(images_dir):
+            candidates = [f for f in os.listdir(images_dir) if os.path.isfile(os.path.join(images_dir, f))]
+            preferred = [f for f in candidates if "cover" in f.lower() or "title" in f.lower()]
+            pick_from = preferred or candidates
+            if pick_from:
+                cover_image = sorted(pick_from, key=lambda x: (len(x), x.lower()))[0]
+    except Exception:
+        cover_image = None
+    cover_url = f"/read/{book_id}/images/{cover_image}" if cover_image else None
     return templates.TemplateResponse("reader.html", {
         "request": request,
         "book": book,
@@ -177,6 +198,7 @@ async def read_chapter(request: Request, book_id: str, chapter_index: int):
         "chapter_index": chapter_index,
         "book_id": book_id,
         "book_uuid": book_uuid,
+        "cover_url": cover_url,
         "ai_default_provider": _ui_default_provider(),
         "prev_idx": prev_idx,
         "next_idx": next_idx
@@ -189,6 +211,228 @@ def _validate_book_id(book_id: str) -> str:
     if safe not in set(list_book_ids(BOOKS_DIR)):
         raise HTTPException(status_code=404, detail="Book not found")
     return safe
+
+
+def _collapse_ws(text: str) -> str:
+    return " ".join(str(text or "").split())
+
+
+def _annotation_matches_chapter_text(chapter_text: str, ann: Annotation) -> bool:
+    hay = _collapse_ws(chapter_text)
+    if not hay:
+        return False
+
+    quote = _collapse_ws(ann.quote)
+    if not quote:
+        return False
+
+    combo = _collapse_ws(f"{ann.prefix}{ann.quote}{ann.suffix}")
+    if combo and combo in hay:
+        return True
+    return quote in hay
+
+
+def _refresh_orphaned_annotations(book_id: str, book: Book, annotations: list[Annotation]) -> list[Annotation]:
+    changed = False
+    chapter_text_by_index: dict[int, str] = {}
+
+    for ann in annotations:
+        if ann.orphaned:
+            continue
+        if ann.chapter_index < 0 or ann.chapter_index >= len(book.spine):
+            ann.orphaned = True
+            changed = True
+            continue
+        if ann.chapter_index not in chapter_text_by_index:
+            chapter_text_by_index[ann.chapter_index] = book.spine[ann.chapter_index].text or ""
+        if not _annotation_matches_chapter_text(chapter_text_by_index[ann.chapter_index], ann):
+            ann.orphaned = True
+            changed = True
+
+    if changed:
+        save_note_annotations(BOOKS_DIR, book_id, annotations)
+
+    return [a for a in annotations if not a.orphaned]
+
+
+class CreateAnnotationRequest(BaseModel):
+    type: str = Field(..., description="marker|wavy|underline|note")
+    color: Optional[str] = Field(default=None, description="yellow|green|pink|blue (marker/note only)")
+    quote: str
+    prefix: str = ""
+    suffix: str = ""
+    position: Optional[int] = None
+    note_text: Optional[str] = None
+
+
+@app.get("/api/notes/{book_id}")
+async def api_get_book_notes(book_id: str):
+    safe_book_id = _validate_book_id(book_id)
+    book = load_book_cached(safe_book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    annotations = load_note_annotations(BOOKS_DIR, safe_book_id)
+    active = _refresh_orphaned_annotations(safe_book_id, book, annotations)
+
+    by_chapter: dict[int, list[Annotation]] = {}
+    for ann in active:
+        by_chapter.setdefault(ann.chapter_index, []).append(ann)
+
+    def _sort_key(a: Annotation):
+        return (a.position is None, a.position or 0, a.created_at, a.id)
+
+    annotations_by_chapter = []
+    total_count = 0
+    for chapter_index in sorted(by_chapter.keys()):
+        items = sorted(by_chapter[chapter_index], key=_sort_key)
+        chapter_title = book.spine[chapter_index].title if 0 <= chapter_index < len(book.spine) else ""
+
+        summaries = []
+        for a in items:
+            quote = a.quote if len(a.quote) <= 200 else a.quote[:197] + "..."
+            note_text = html.unescape(a.note_text) if a.note_text is not None else None
+            if note_text is not None and len(note_text) > 200:
+                note_text = note_text[:197] + "..."
+            summaries.append(
+                {
+                    "id": a.id,
+                    "type": a.type,
+                    "color": a.color,
+                    "quote": quote,
+                    "note_text": note_text,
+                    "position": a.position,
+                    "created_at": a.created_at,
+                }
+            )
+
+        annotations_by_chapter.append(
+            {
+                "chapter_index": chapter_index,
+                "chapter_title": chapter_title,
+                "count": len(items),
+                "annotations": summaries,
+            }
+        )
+        total_count += len(items)
+
+    return {
+        "schema_version": NOTES_SCHEMA_VERSION,
+        "book_id": safe_book_id,
+        "total_count": total_count,
+        "annotations_by_chapter": annotations_by_chapter,
+    }
+
+
+@app.get("/api/notes/{book_id}/{chapter_index}")
+async def api_get_chapter_notes(book_id: str, chapter_index: int):
+    safe_book_id = _validate_book_id(book_id)
+    book = load_book_cached(safe_book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+    if chapter_index < 0 or chapter_index >= len(book.spine):
+        raise HTTPException(status_code=400, detail="Invalid chapter_index")
+
+    annotations = load_note_annotations(BOOKS_DIR, safe_book_id)
+    active = _refresh_orphaned_annotations(safe_book_id, book, annotations)
+    items = [a for a in active if a.chapter_index == chapter_index]
+    items.sort(key=lambda a: (a.position is None, a.position or 0, a.created_at, a.id))
+
+    out = []
+    for a in items:
+        d = a.to_dict()
+        if d.get("note_text") is not None:
+            d["note_text"] = html.unescape(str(d["note_text"]))
+        out.append(d)
+
+    return {
+        "book_id": safe_book_id,
+        "chapter_index": chapter_index,
+        "count": len(items),
+        "annotations": out,
+    }
+
+
+@app.post("/api/notes/{book_id}/{chapter_index}", status_code=201)
+async def api_create_annotation(book_id: str, chapter_index: int, payload: CreateAnnotationRequest):
+    safe_book_id = _validate_book_id(book_id)
+    book = load_book_cached(safe_book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+    if chapter_index < 0 or chapter_index >= len(book.spine):
+        raise HTTPException(status_code=400, detail="Invalid chapter_index")
+
+    ann_type = str(payload.type or "").strip().lower()
+    if ann_type not in ("marker", "wavy", "underline", "note"):
+        raise HTTPException(status_code=400, detail="Invalid type")
+
+    color = payload.color
+    if ann_type in ("wavy", "underline"):
+        color = None
+    else:
+        if not color:
+            color = "yellow"
+        if color not in ("yellow", "green", "pink", "blue"):
+            raise HTTPException(status_code=400, detail="Invalid color")
+
+    note_text = payload.note_text
+    if ann_type == "note":
+        if note_text is None or not str(note_text).strip():
+            raise HTTPException(status_code=400, detail="note_text is required for type=note")
+        note_text = html.escape(str(note_text))
+    else:
+        note_text = None
+
+    quote = str(payload.quote or "")
+    if not quote.strip():
+        raise HTTPException(status_code=400, detail="quote is required")
+
+    prefix = str(payload.prefix or "")
+    suffix = str(payload.suffix or "")
+    if len(prefix) > 50:
+        prefix = prefix[-50:]
+    if len(suffix) > 50:
+        suffix = suffix[:50]
+
+    position = payload.position
+    if position is not None:
+        try:
+            position = int(position)
+        except Exception:
+            position = None
+    if position is not None and position < 0:
+        position = 0
+
+    annotation = Annotation(
+        book_id=safe_book_id,
+        chapter_index=chapter_index,
+        type=ann_type,  # type: ignore[arg-type]
+        color=color,  # type: ignore[arg-type]
+        quote=quote,
+        prefix=prefix,
+        suffix=suffix,
+        position=position,
+        note_text=note_text,
+        orphaned=False,
+    )
+
+    saved = add_note_annotation(BOOKS_DIR, annotation)
+    return {"id": saved.id, "created_at": saved.created_at, "message": "Annotation created successfully"}
+
+
+@app.delete("/api/notes/{book_id}/{chapter_index}/{note_id}", status_code=204)
+async def api_delete_annotation(book_id: str, chapter_index: int, note_id: str):
+    safe_book_id = _validate_book_id(book_id)
+    book = load_book_cached(safe_book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+    if chapter_index < 0 or chapter_index >= len(book.spine):
+        raise HTTPException(status_code=400, detail="Invalid chapter_index")
+
+    ok = delete_note_annotation(BOOKS_DIR, safe_book_id, note_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Annotation not found")
+    return Response(status_code=204)
 
 
 @app.get("/api/search/library")

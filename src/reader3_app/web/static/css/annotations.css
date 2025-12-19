@@ -1,0 +1,169 @@
+#annotation-toolbar {
+  position: fixed;
+  display: none;
+  z-index: 1300;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(0, 0, 0, 0.10);
+  border-radius: 14px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.18);
+  padding: 8px;
+  font-family: -apple-system, system-ui, sans-serif;
+}
+
+#annotation-toolbar.is-open {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.anno-btn {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(17, 24, 39, 0.04);
+  padding: 8px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 12px;
+  color: rgba(17, 24, 39, 0.82);
+}
+
+.anno-btn:hover {
+  background: rgba(17, 24, 39, 0.08);
+}
+
+.anno-color-row {
+  display: none;
+  gap: 6px;
+  margin-left: 6px;
+}
+
+.anno-color-row.is-open {
+  display: flex;
+}
+
+.anno-color {
+  width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  cursor: pointer;
+}
+
+.anno-color[data-color="yellow"] {
+  background: #ffe58f;
+}
+.anno-color[data-color="green"] {
+  background: #b7eb8f;
+}
+.anno-color[data-color="pink"] {
+  background: #ffadd2;
+}
+.anno-color[data-color="blue"] {
+  background: #91d5ff;
+}
+
+#note-editor {
+  position: fixed;
+  display: none;
+  z-index: 1350;
+  width: min(360px, calc(100vw - 40px));
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(0, 0, 0, 0.10);
+  border-radius: 14px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.18);
+  padding: 10px;
+  font-family: -apple-system, system-ui, sans-serif;
+}
+
+#note-editor.is-open {
+  display: block;
+}
+
+#note-editor textarea {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  padding: 10px 10px;
+  font-size: 13px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.note-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.note-editor-actions button {
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: rgba(17, 24, 39, 0.04);
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.note-editor-actions button.primary {
+  background: rgba(37, 99, 235, 0.12);
+  border-color: rgba(37, 99, 235, 0.25);
+}
+
+#note-tooltip {
+  position: fixed;
+  display: none;
+  z-index: 1400;
+  max-width: min(360px, calc(100vw - 40px));
+  background: rgba(17, 24, 39, 0.92);
+  color: rgba(255, 255, 255, 0.92);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-family: -apple-system, system-ui, sans-serif;
+  font-size: 12px;
+  line-height: 1.35;
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.24);
+  pointer-events: none;
+}
+
+#note-tooltip.is-open {
+  display: block;
+}
+
+mark.annotation {
+  padding: 0 2px;
+  border-radius: 3px;
+}
+
+mark.annotation.annotation--marker.annotation--yellow {
+  background: rgba(255, 229, 143, 0.75);
+}
+mark.annotation.annotation--marker.annotation--green {
+  background: rgba(183, 235, 143, 0.75);
+}
+mark.annotation.annotation--marker.annotation--pink {
+  background: rgba(255, 173, 210, 0.75);
+}
+mark.annotation.annotation--marker.annotation--blue {
+  background: rgba(145, 213, 255, 0.75);
+}
+
+mark.annotation.annotation--underline {
+  text-decoration: underline;
+  text-decoration-thickness: 1.5px;
+}
+
+mark.annotation.annotation--wavy {
+  text-decoration: underline wavy;
+  text-decoration-thickness: 1.5px;
+}
+
+mark.annotation.annotation--note {
+  cursor: pointer;
+}
+
+mark.annotation.is-jump-target {
+  outline: 2px solid rgba(37, 99, 235, 0.6);
+}
+
