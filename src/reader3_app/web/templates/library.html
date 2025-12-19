@@ -112,7 +112,7 @@
                 </div>
             {% endif %}
 
-            <section class="library-shelf" id="library-shelf" aria-label="Books">
+            <section class="library-shelf" id="library-grid-view" aria-label="Books">
                 {% for book in books %}
                     <article class="book-card" data-book-id="{{ book.id }}" data-format="{{ book.format }}" data-title="{{ book.title|lower }}" data-author="{{ book.author|lower }}">
                         <input type="checkbox" class="select-checkbox" aria-label="Select {{ book.title }}" />
@@ -131,6 +131,40 @@
                         </a>
                     </article>
                 {% endfor %}
+            </section>
+
+            <section class="library-list-view" id="library-list-view" aria-label="Books List" hidden>
+                <table class="books-table">
+                    <thead>
+                        <tr>
+                            <th class="col-title">Title</th>
+                            <th class="col-author">Author</th>
+                            <th class="col-chunks">Chunks</th>
+                            <th class="col-sections">Sections</th>
+                            <th class="col-status">Status</th>
+                            <th class="col-read">Read</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for book in books %}
+                            <tr class="book-row" data-book-id="{{ book.id }}" data-format="{{ book.format }}" data-title="{{ book.title|lower }}" data-author="{{ book.author|lower }}">
+                                <td class="cell-title">
+                                    <input type="checkbox" class="select-checkbox" aria-label="Select {{ book.title }}" />
+                                    <div class="list-title">{{ book.title }}</div>
+                                </td>
+                                <td class="cell-author">{{ book.author }}</td>
+                                <td class="cell-chunks" data-role="chunk-count">—</td>
+                                <td class="cell-sections">{{ book.section_count }}</td>
+                                <td class="cell-status">
+                                    <span class="status-pill is-loading" data-status="loading">Loading…</span>
+                                </td>
+                                <td class="cell-read">
+                                    <a class="mini-link" href="/read/{{ book.id }}/0">Read</a>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </section>
         </main>
 

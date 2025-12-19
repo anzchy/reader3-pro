@@ -2,10 +2,12 @@
   "use strict";
 
   const BULK_INDEX_STORAGE_KEY = "reader3.library.bulkIndexingActive";
+  const VIEW_MODE_STORAGE_KEY = "reader3.library.viewMode";
 
   const state = {
     scope: "all",
     activeRightTab: "dashboard",
+    viewMode: "grid",
     selectMode: false,
     selectedBookIds: new Set(),
     titleFilter: "",
@@ -28,14 +30,44 @@
     return qsa(".book-card");
   }
 
-  function getBookIdFromCard(card) {
-    return card?.getAttribute("data-book-id") || "";
+  function getAllBookRows() {
+    return qsa(".book-row");
+  }
+
+  function getAllBookElements() {
+    return qsa(".book-card, .book-row");
+  }
+
+  function getBookIdFromElement(el) {
+    return el?.getAttribute("data-book-id") || "";
   }
 
   function setHidden(el, hidden) {
     if (!el) return;
     if (hidden) el.setAttribute("hidden", "");
     else el.removeAttribute("hidden");
+  }
+
+  function applyViewMode() {
+    const grid = qs("#library-grid-view");
+    const list = qs("#library-list-view");
+    const isList = state.viewMode === "list";
+    setHidden(grid, isList);
+    setHidden(list, !isList);
+    document.body.classList.toggle("view-list", isList);
+  }
+
+  function setViewMode(mode, persist) {
+    const next = mode === "list" ? "list" : "grid";
+    state.viewMode = next;
+    applyViewMode();
+    if (persist) {
+      try {
+        localStorage.setItem(VIEW_MODE_STORAGE_KEY, next);
+      } catch {
+        // ignore
+      }
+    }
   }
 
   function safeLower(s) {
@@ -52,7 +84,7 @@
       const id = state.scope.slice("collection:".length);
       const allowed = state.collectionBookIdsById.get(id);
       if (!allowed) return false;
-      const bookId = getBookIdFromCard(card);
+      const bookId = getBookIdFromElement(card);
       return allowed.has(bookId);
     }
     return true;
@@ -66,9 +98,9 @@
   }
 
   function applyFilters() {
-    for (const card of getAllBookCards()) {
-      const visible = matchesScope(card) && matchesTitleFilter(card);
-      setHidden(card, !visible);
+    for (const el of getAllBookElements()) {
+      const visible = matchesScope(el) && matchesTitleFilter(el);
+      setHidden(el, !visible);
     }
   }
 
@@ -99,10 +131,19 @@
     }
   }
 
-  function setBookSelected(card, selected) {
-    const checkbox = qs(".select-checkbox", card);
-    if (checkbox) checkbox.checked = selected;
-    card.classList.toggle("is-selected", selected);
+  function getAllBookIds() {
+    return Array.from(
+      new Set(getAllBookElements().map(getBookIdFromElement).filter(Boolean)),
+    );
+  }
+
+  function syncSelectionForBookId(bookId) {
+    const selected = state.selectedBookIds.has(bookId);
+    for (const el of qsa(`[data-book-id="${CSS.escape(bookId)}"]`)) {
+      const checkbox = qs(".select-checkbox", el);
+      if (checkbox) checkbox.checked = selected;
+      el.classList.toggle("is-selected", selected);
+    }
   }
 
   function updateSelectionUi() {
@@ -132,78 +173,90 @@
 
   function clearSelection() {
     state.selectedBookIds.clear();
-    for (const card of getAllBookCards()) {
-      setBookSelected(card, false);
-    }
+    for (const id of getAllBookIds()) syncSelectionForBookId(id);
     updateSelectionUi();
   }
 
   function selectAllVisible() {
-    for (const card of getAllBookCards()) {
-      if (card.hasAttribute("hidden")) continue;
-      const id = getBookIdFromCard(card);
+    const elements = state.viewMode === "list" ? getAllBookRows() : getAllBookCards();
+    for (const el of elements) {
+      if (el.hasAttribute("hidden")) continue;
+      const id = getBookIdFromElement(el);
       if (!id) continue;
       state.selectedBookIds.add(id);
-      setBookSelected(card, true);
+      syncSelectionForBookId(id);
     }
     updateSelectionUi();
   }
 
   function setStatusForBook(bookId, status) {
     state.statuses.set(bookId, status);
-    const card = qs(`.book-card[data-book-id="${CSS.escape(bookId)}"]`);
-    if (!card) return;
-    const pill = qs(".status-pill", card);
-    const chunkPill = qs(".chunk-pill", card);
-
     const normalized = String(status?.status || "unknown");
-    if (pill) {
-      pill.classList.remove(
-        "is-loading",
-        "is-indexed",
-        "is-not-indexed",
-        "is-indexing",
-        "is-unknown",
-        "is-error",
-      );
-      if (normalized === "indexed") {
-        pill.classList.add("is-indexed");
-        pill.textContent = "Indexed";
-      } else if (normalized === "not_indexed") {
-        pill.classList.add("is-not-indexed");
-        pill.textContent = "Not indexed";
-      } else if (normalized === "indexing") {
-        pill.classList.add("is-indexing");
-        pill.textContent = "Indexing…";
-      } else if (normalized === "error") {
-        pill.classList.add("is-error");
-        pill.textContent = "Error";
-      } else {
-        pill.classList.add("is-unknown");
-        pill.textContent = "Unknown";
-      }
-    }
+    const targets = [
+      qs(`.book-card[data-book-id="${CSS.escape(bookId)}"]`),
+      qs(`.book-row[data-book-id="${CSS.escape(bookId)}"]`),
+    ].filter(Boolean);
 
-    if (chunkPill) {
+    for (const target of targets) {
+      const pill = qs(".status-pill", target);
+      if (pill) {
+        pill.classList.remove(
+          "is-loading",
+          "is-indexed",
+          "is-not-indexed",
+          "is-indexing",
+          "is-unknown",
+          "is-error",
+        );
+        if (normalized === "indexed") {
+          pill.classList.add("is-indexed");
+          pill.textContent = "Indexed";
+        } else if (normalized === "not_indexed") {
+          pill.classList.add("is-not-indexed");
+          pill.textContent = "Not indexed";
+        } else if (normalized === "indexing") {
+          pill.classList.add("is-indexing");
+          pill.textContent = "Indexing…";
+        } else if (normalized === "error") {
+          pill.classList.add("is-error");
+          pill.textContent = "Error";
+        } else {
+          pill.classList.add("is-unknown");
+          pill.textContent = "Unknown";
+        }
+      }
+
       const cc = status?.chunk_count;
-      if (normalized === "indexed" && typeof cc === "number") {
-        chunkPill.textContent = `${cc} chunks`;
-        setHidden(chunkPill, false);
-      } else {
-        setHidden(chunkPill, true);
+      const chunkPill = qs(".chunk-pill", target);
+      if (chunkPill) {
+        if (normalized === "indexed" && typeof cc === "number") {
+          chunkPill.textContent = `${cc} chunks`;
+          setHidden(chunkPill, false);
+        } else {
+          setHidden(chunkPill, true);
+        }
+      }
+      const chunkCell = qs('[data-role="chunk-count"]', target);
+      if (chunkCell) {
+        if (normalized === "indexed" && typeof cc === "number") chunkCell.textContent = String(cc);
+        else if (normalized === "not_indexed") chunkCell.textContent = "—";
+        else chunkCell.textContent = "—";
       }
     }
   }
 
   function setLoadingStatus(bookId) {
     setStatusForBook(bookId, { book_id: bookId, status: "unknown", chunk_count: null });
-    const card = qs(`.book-card[data-book-id="${CSS.escape(bookId)}"]`);
-    if (!card) return;
-    const pill = qs(".status-pill", card);
-    if (!pill) return;
-    pill.classList.remove("is-indexed", "is-not-indexed", "is-indexing", "is-unknown", "is-error");
-    pill.classList.add("is-loading");
-    pill.textContent = "Loading…";
+    for (const target of [
+      qs(`.book-card[data-book-id="${CSS.escape(bookId)}"]`),
+      qs(`.book-row[data-book-id="${CSS.escape(bookId)}"]`),
+    ].filter(Boolean)) {
+      const pill = qs(".status-pill", target);
+      if (!pill) continue;
+      pill.classList.remove("is-indexed", "is-not-indexed", "is-indexing", "is-unknown", "is-error");
+      pill.classList.add("is-loading");
+      pill.textContent = "Loading…";
+    }
   }
 
   async function fetchWithTimeout(url, opts = {}, timeoutMs = 5000) {
@@ -256,7 +309,7 @@
   }
 
   async function lazyFetchStatuses() {
-    const ids = getAllBookCards().map(getBookIdFromCard).filter(Boolean);
+    const ids = getAllBookCards().map(getBookIdFromElement).filter(Boolean);
     const batches = chunkArray(ids, 20);
     for (const batch of batches) {
       await runWithConcurrency(batch, 4, (id) => fetchStatus(id));
@@ -431,18 +484,43 @@
     });
   }
 
+  function initViewToggle() {
+    let stored = null;
+    try {
+      stored = localStorage.getItem(VIEW_MODE_STORAGE_KEY);
+    } catch {
+      stored = null;
+    }
+    if (stored === "list" || stored === "grid") {
+      setViewMode(stored, false);
+    } else {
+      applyViewMode();
+    }
+
+    const btn = qs("#view-toggle-btn");
+    if (!btn) return;
+    btn.addEventListener("click", () => {
+      setViewMode(state.viewMode === "grid" ? "list" : "grid", true);
+    });
+  }
+
   function initSort() {
     const btn = qs("#sort-btn");
-    const shelf = qs("#library-shelf");
-    if (!btn || !shelf) return;
+    const shelf = qs("#library-grid-view");
+    const tbody = qs("#library-list-view tbody");
+    if (!btn || !shelf || !tbody) return;
     btn.addEventListener("click", () => {
-      const cards = getAllBookCards();
-      cards.sort((a, b) => {
-        const ta = a.getAttribute("data-title") || "";
-        const tb = b.getAttribute("data-title") || "";
-        return ta.localeCompare(tb);
-      });
-      for (const card of cards) shelf.appendChild(card);
+      const ids = getAllBookCards()
+        .map((c) => ({ id: getBookIdFromElement(c), title: c.getAttribute("data-title") || "" }))
+        .filter((x) => x.id);
+      ids.sort((a, b) => a.title.localeCompare(b.title));
+
+      for (const { id } of ids) {
+        const card = qs(`.book-card[data-book-id="${CSS.escape(id)}"]`);
+        if (card) shelf.appendChild(card);
+        const row = qs(`.book-row[data-book-id="${CSS.escape(id)}"]`);
+        if (row) tbody.appendChild(row);
+      }
     });
   }
 
@@ -462,22 +540,20 @@
     const addToCollectionBtn = qs("#add-to-collection-btn");
     if (addToCollectionBtn) addToCollectionBtn.addEventListener("click", () => openAddToCollectionModal());
 
-    for (const card of getAllBookCards()) {
-      const checkbox = qs(".select-checkbox", card);
-      const bookId = getBookIdFromCard(card);
+    for (const el of getAllBookElements()) {
+      const checkbox = qs(".select-checkbox", el);
+      const bookId = getBookIdFromElement(el);
       if (!checkbox || !bookId) continue;
 
-      checkbox.addEventListener("click", (e) => {
-        e.stopPropagation();
-      });
+      checkbox.addEventListener("click", (e) => e.stopPropagation());
       checkbox.addEventListener("change", () => {
         if (checkbox.checked) state.selectedBookIds.add(bookId);
         else state.selectedBookIds.delete(bookId);
-        setBookSelected(card, checkbox.checked);
+        syncSelectionForBookId(bookId);
         updateSelectionUi();
       });
 
-      card.addEventListener("click", (e) => {
+      el.addEventListener("click", (e) => {
         if (!state.selectMode) return;
         e.preventDefault();
         checkbox.checked = !checkbox.checked;
@@ -489,7 +565,7 @@
   }
 
   function existingBookIdSet() {
-    return new Set(getAllBookCards().map(getBookIdFromCard).filter(Boolean));
+    return new Set(getAllBookCards().map(getBookIdFromElement).filter(Boolean));
   }
 
   function updateCollectionMaps() {
@@ -813,6 +889,7 @@
     initAddBooksModal();
     initFilters();
     initTitleFilter();
+    initViewToggle();
     initSort();
     initSelection();
     initCollectionsActions();

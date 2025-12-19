@@ -211,11 +211,11 @@ Notes:
 
 **Goal**: Switch between image grid and list view with persistence. (**User Story 2**)
 
-- [ ] T090 [P1] [US2] Implement list view HTML structure (table with columns: Title, Author, Chunks, Sections, Status, Read) (src/reader3_app/web/templates/library.html)
-- [ ] T091 [P1] [US2] Add view mode toggle handler in `library.js` (src/reader3_app/web/static/library.js)
-- [ ] T092 [P1] [US2] Implement localStorage persistence for `reader3.library.viewMode` (grid|list) (src/reader3_app/web/static/library.js)
-- [ ] T093 [P1] [US2] Restore view mode on page load with fallback to grid (src/reader3_app/web/static/library.js)
-- [ ] T094 [P1] [US2] Test view toggle persists after refresh and selection remains unchanged (manual test)
+- [x] T090 [P1] [US2] Implement list view HTML structure (table with columns: Title, Author, Chunks, Sections, Status, Read) (src/reader3_app/web/templates/library.html)
+- [x] T091 [P1] [US2] Add view mode toggle handler in `library.js` (src/reader3_app/web/static/library.js)
+- [x] T092 [P1] [US2] Implement localStorage persistence for `reader3.library.viewMode` (grid|list) (src/reader3_app/web/static/library.js)
+- [x] T093 [P1] [US2] Restore view mode on page load with fallback to grid (src/reader3_app/web/static/library.js)
+- [x] T094 [P1] [US2] Test view toggle persists after refresh and selection remains unchanged (manual test)
 
 ---
 

@@ -382,7 +382,7 @@ pre {
   box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.16), var(--shadow);
 }
 
-.select-checkbox {
+.book-card > .select-checkbox {
   position: absolute;
   top: 10px;
   left: 10px;
@@ -392,8 +392,19 @@ pre {
   z-index: 2;
 }
 
-body.select-mode .select-checkbox {
+body.select-mode .book-card > .select-checkbox {
   display: block;
+}
+
+.book-row .select-checkbox {
+  display: none;
+  width: 16px;
+  height: 16px;
+  margin-right: 10px;
+}
+
+body.select-mode .book-row .select-checkbox {
+  display: inline-block;
 }
 
 .book-badges {
@@ -487,6 +498,86 @@ body.select-mode .select-checkbox {
   font-size: 0.82rem;
   color: var(--muted);
   margin-top: 4px;
+}
+
+.library-list-view {
+  padding: 16px;
+  overflow: auto;
+}
+
+.books-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+
+.books-table th,
+.books-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+  font-size: 0.92rem;
+}
+
+.books-table thead th {
+  position: sticky;
+  top: 0;
+  background: rgba(246, 247, 251, 0.96);
+  backdrop-filter: blur(10px);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.75rem;
+  z-index: 1;
+}
+
+.books-table tbody tr:hover {
+  background: rgba(15, 23, 42, 0.03);
+}
+
+.books-table tbody tr.is-selected {
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.cell-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 240px;
+}
+
+.list-title {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cell-author {
+  min-width: 160px;
+  max-width: 220px;
+  color: var(--muted);
+}
+
+.cell-chunks,
+.cell-sections,
+.cell-status,
+.cell-read {
+  white-space: nowrap;
+}
+
+.mini-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.mini-link:hover {
+  text-decoration: underline;
 }
 
 .empty-state {
