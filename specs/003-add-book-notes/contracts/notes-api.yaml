@@ -1,0 +1,552 @@
+openapi: 3.0.3
+info:
+  title: Reader3 Pro - Book Notes API
+  description: |
+    REST API for managing book annotations (highlights, underlines, notes) in Reader3 Pro.
+
+    This API follows the existing Reader3 Pro architecture:
+    - File-based storage: books/{book_id}/notes.json
+    - Path security: book_id validated against enumerated directories
+    - XSS prevention: note_text HTML-escaped before storage
+
+    Part of feature 003-add-book-notes (WeRead-style annotations).
+  version: 1.0.0
+  contact:
+    name: Reader3 Pro
+    url: https://github.com/anzchy/reader3-pro
+
+servers:
+  - url: http://127.0.0.1:8123/api
+    description: Local development server
+
+paths:
+  /notes/{book_id}:
+    get:
+      summary: Get all annotations for a book
+      description: |
+        Returns all annotations for the specified book, grouped by chapter.
+        Useful for rendering the Notes panel (all-book view).
+
+        Performance: ~5-10ms for typical books (<200 annotations).
+      operationId: getAllBookAnnotations
+      tags:
+        - Annotations
+      parameters:
+        - $ref: '#/components/parameters/BookIdPath'
+      responses:
+        '200':
+          description: Successfully retrieved annotations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookAnnotationsResponse'
+              example:
+                schema_version: 1
+                book_id: dracula_data
+                total_count: 3
+                annotations_by_chapter:
+                  - chapter_index: 0
+                    chapter_title: "Chapter I"
+                    count: 2
+                    annotations:
+                      - id: 550e8400-e29b-41d4-a716-446655440000
+                        type: marker
+                        color: yellow
+                        quote: "the castle was hidden in darkness"
+                        position: 150
+                        created_at: "2025-12-19T10:30:00Z"
+                      - id: 7c9e6679-7425-40de-944b-e07fc1f90ae7
+                        type: note
+                        color: yellow
+                        quote: "Jonathan Harker"
+                        note_text: "Protagonist"
+                        position: 50
+                        created_at: "2025-12-19T10:35:00Z"
+                  - chapter_index: 1
+                    chapter_title: "Chapter II"
+                    count: 1
+                    annotations:
+                      - id: a3d5e8f9-1234-5678-9abc-def012345678
+                        type: wavy
+                        quote: "uncanny atmosphere"
+                        position: 200
+                        created_at: "2025-12-19T11:00:00Z"
+        '404':
+          $ref: '#/components/responses/BookNotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /notes/{book_id}/{chapter_index}:
+    get:
+      summary: Get annotations for a specific chapter
+      description: |
+        Returns annotations for a single chapter only.
+        Optimized endpoint for chapter loading (faster than fetching all annotations).
+
+        Performance: ~5-10ms (filters in-memory after loading notes.json).
+      operationId: getChapterAnnotations
+      tags:
+        - Annotations
+      parameters:
+        - $ref: '#/components/parameters/BookIdPath'
+        - $ref: '#/components/parameters/ChapterIndexPath'
+      responses:
+        '200':
+          description: Successfully retrieved chapter annotations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChapterAnnotationsResponse'
+              example:
+                book_id: dracula_data
+                chapter_index: 0
+                count: 2
+                annotations:
+                  - id: 550e8400-e29b-41d4-a716-446655440000
+                    book_id: dracula_data
+                    chapter_index: 0
+                    type: marker
+                    color: yellow
+                    quote: "the castle was hidden in darkness"
+                    prefix: "As we climbed higher, "
+                    suffix: " and I could see nothing..."
+                    position: 150
+                    note_text: null
+                    created_at: "2025-12-19T10:30:00Z"
+                    orphaned: false
+        '400':
+          $ref: '#/components/responses/InvalidChapterIndex'
+        '404':
+          $ref: '#/components/responses/BookNotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      summary: Create a new annotation
+      description: |
+        Creates a new annotation for the specified chapter.
+        Server auto-generates UUID, validates inputs, and escapes note_text.
+
+        Atomic write: Uses temp file + rename for crash safety.
+      operationId: createAnnotation
+      tags:
+        - Annotations
+      parameters:
+        - $ref: '#/components/parameters/BookIdPath'
+        - $ref: '#/components/parameters/ChapterIndexPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAnnotationRequest'
+            examples:
+              marker:
+                summary: Highlight with yellow marker
+                value:
+                  type: marker
+                  color: yellow
+                  quote: "It was a lovely sight"
+                  prefix: "moonlight. "
+                  suffix: ", even to me"
+                  position: 1234
+              note:
+                summary: Note with text
+                value:
+                  type: note
+                  color: yellow
+                  quote: "the Count's power"
+                  prefix: "I understood "
+                  suffix: " over wolves"
+                  position: 2456
+                  note_text: "Key theme: supernatural control"
+              wavy:
+                summary: Wavy underline
+                value:
+                  type: wavy
+                  quote: "strange and uncanny"
+                  prefix: "atmosphere was "
+                  suffix: " as we approached"
+                  position: 567
+      responses:
+        '201':
+          description: Annotation created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnnotationCreatedResponse'
+              example:
+                id: 550e8400-e29b-41d4-a716-446655440000
+                created_at: "2025-12-19T10:30:00Z"
+                message: "Annotation created successfully"
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '404':
+          $ref: '#/components/responses/BookNotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /notes/{book_id}/{chapter_index}/{note_id}:
+    delete:
+      summary: Delete an annotation
+      description: |
+        Deletes a single annotation by ID.
+        Optional for v1 (UI may defer delete functionality to v2).
+
+        Atomic write: Loads notes.json, filters out target annotation, saves.
+      operationId: deleteAnnotation
+      tags:
+        - Annotations
+      parameters:
+        - $ref: '#/components/parameters/BookIdPath'
+        - $ref: '#/components/parameters/ChapterIndexPath'
+        - $ref: '#/components/parameters/NoteIdPath'
+      responses:
+        '204':
+          description: Annotation deleted successfully (no content)
+        '404':
+          description: Annotation not found or book not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Annotation not found"
+                detail: "No annotation with id 550e8400-e29b-41d4-a716-446655440000 in chapter 0"
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  parameters:
+    BookIdPath:
+      name: book_id
+      in: path
+      required: true
+      description: |
+        Book folder name (e.g., 'dracula_data').
+        Must end with '_data' and exist in books/ directory.
+        Validated against enumerated books to prevent path traversal.
+      schema:
+        type: string
+        pattern: '^[a-zA-Z0-9_-]+_data$'
+        example: dracula_data
+
+    ChapterIndexPath:
+      name: chapter_index
+      in: path
+      required: true
+      description: |
+        0-based spine index (maps to ChapterContent.order in book.pkl).
+        Must be >= 0 and < len(book.spine).
+      schema:
+        type: integer
+        minimum: 0
+        example: 0
+
+    NoteIdPath:
+      name: note_id
+      in: path
+      required: true
+      description: UUID of the annotation to delete
+      schema:
+        type: string
+        format: uuid
+        example: 550e8400-e29b-41d4-a716-446655440000
+
+  schemas:
+    Annotation:
+      type: object
+      required:
+        - id
+        - book_id
+        - chapter_index
+        - type
+        - quote
+        - prefix
+        - suffix
+        - created_at
+        - orphaned
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique annotation identifier (UUID v4)
+          example: 550e8400-e29b-41d4-a716-446655440000
+        book_id:
+          type: string
+          description: Book folder name (e.g., 'dracula_data')
+          example: dracula_data
+        chapter_index:
+          type: integer
+          minimum: 0
+          description: 0-based spine index
+          example: 0
+        type:
+          type: string
+          enum: [marker, wavy, underline, note]
+          description: Annotation visual style
+          example: marker
+        color:
+          type: string
+          enum: [yellow, green, pink, blue]
+          nullable: true
+          description: Background color (marker/note only, null for wavy/underline)
+          example: yellow
+        quote:
+          type: string
+          minLength: 1
+          maxLength: 10000
+          description: Selected text (exact match for re-anchoring)
+          example: "It was a lovely sight"
+        prefix:
+          type: string
+          maxLength: 50
+          description: Up to 50 chars before selection
+          example: "moonlight. "
+        suffix:
+          type: string
+          maxLength: 50
+          description: Up to 50 chars after selection
+          example: ", even to me"
+        position:
+          type: integer
+          nullable: true
+          minimum: 0
+          description: Character offset in chapter plain text (hint for ordering)
+          example: 1234
+        note_text:
+          type: string
+          nullable: true
+          maxLength: 10000
+          description: User's note content (HTML-escaped, type='note' only)
+          example: "Important passage about themes"
+        created_at:
+          type: string
+          format: date-time
+          description: ISO 8601 UTC timestamp
+          example: "2025-12-19T10:30:00Z"
+        orphaned:
+          type: boolean
+          description: True if re-anchoring failed (quote not found in chapter)
+          example: false
+
+    CreateAnnotationRequest:
+      type: object
+      required:
+        - type
+        - quote
+        - prefix
+        - suffix
+      properties:
+        type:
+          type: string
+          enum: [marker, wavy, underline, note]
+        color:
+          type: string
+          enum: [yellow, green, pink, blue]
+          nullable: true
+          description: Required for marker/note, ignored for wavy/underline
+        quote:
+          type: string
+          minLength: 1
+          maxLength: 10000
+        prefix:
+          type: string
+          maxLength: 50
+        suffix:
+          type: string
+          maxLength: 50
+        position:
+          type: integer
+          nullable: true
+          minimum: 0
+        note_text:
+          type: string
+          nullable: true
+          maxLength: 10000
+          description: Required when type='note', ignored otherwise
+
+    BookAnnotationsResponse:
+      type: object
+      required:
+        - schema_version
+        - book_id
+        - total_count
+        - annotations_by_chapter
+      properties:
+        schema_version:
+          type: integer
+          description: Storage schema version (for future migrations)
+          example: 1
+        book_id:
+          type: string
+          example: dracula_data
+        total_count:
+          type: integer
+          description: Total annotations across all chapters (excludes orphaned)
+          example: 3
+        annotations_by_chapter:
+          type: array
+          description: Annotations grouped by chapter, sorted by chapter_index
+          items:
+            type: object
+            required:
+              - chapter_index
+              - chapter_title
+              - count
+              - annotations
+            properties:
+              chapter_index:
+                type: integer
+                example: 0
+              chapter_title:
+                type: string
+                description: Chapter title from book.pkl spine
+                example: "Chapter I"
+              count:
+                type: integer
+                description: Annotations in this chapter (excludes orphaned)
+                example: 2
+              annotations:
+                type: array
+                description: Annotations sorted by position (ascending)
+                items:
+                  $ref: '#/components/schemas/AnnotationSummary'
+
+    AnnotationSummary:
+      type: object
+      description: Simplified annotation for Notes panel list (omits prefix/suffix)
+      required:
+        - id
+        - type
+        - quote
+        - position
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [marker, wavy, underline, note]
+        color:
+          type: string
+          enum: [yellow, green, pink, blue]
+          nullable: true
+        quote:
+          type: string
+          description: Truncated to 200 chars for display
+        note_text:
+          type: string
+          nullable: true
+          description: Truncated to 200 chars for display
+        position:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    ChapterAnnotationsResponse:
+      type: object
+      required:
+        - book_id
+        - chapter_index
+        - count
+        - annotations
+      properties:
+        book_id:
+          type: string
+          example: dracula_data
+        chapter_index:
+          type: integer
+          example: 0
+        count:
+          type: integer
+          description: Number of annotations in this chapter (excludes orphaned)
+          example: 2
+        annotations:
+          type: array
+          description: Full annotation objects with all fields
+          items:
+            $ref: '#/components/schemas/Annotation'
+
+    AnnotationCreatedResponse:
+      type: object
+      required:
+        - id
+        - created_at
+        - message
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Generated annotation ID
+          example: 550e8400-e29b-41d4-a716-446655440000
+        created_at:
+          type: string
+          format: date-time
+          description: Server-generated timestamp
+          example: "2025-12-19T10:30:00Z"
+        message:
+          type: string
+          example: "Annotation created successfully"
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Human-readable error message
+          example: "Book not found"
+        detail:
+          type: string
+          description: Additional error context
+          example: "Book 'nonexistent_data' does not exist in books/ directory"
+
+  responses:
+    BookNotFound:
+      description: Book not found (invalid book_id or not in books/ directory)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Book not found"
+            detail: "Book 'dracula_data' does not exist in books/ directory"
+
+    InvalidChapterIndex:
+      description: Chapter index out of range
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Invalid chapter_index"
+            detail: "Chapter index 99 is out of range (book has 20 chapters)"
+
+    InvalidRequest:
+      description: Invalid request body or parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Invalid request"
+            detail: "Field 'quote' is required and cannot be empty"
+
+    InternalError:
+      description: Internal server error (file I/O failure, JSON parsing error)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Internal server error"
+            detail: "Failed to write notes.json: Permission denied"
+
+tags:
+  - name: Annotations
+    description: Operations for managing book annotations (highlights, underlines, notes)
