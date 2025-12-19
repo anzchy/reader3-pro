@@ -243,6 +243,8 @@ def _validate_book_id_path_safe(book_id: str) -> str:
     safe = os.path.basename(str(book_id or ""))
     if safe != book_id:
         raise HTTPException(status_code=400, detail="Invalid book_id")
+    if not safe.endswith("_data"):
+        raise HTTPException(status_code=400, detail="Invalid book_id")
     return safe
 
 
@@ -309,8 +311,14 @@ async def api_collections_rename(collection_id: str, body: CollectionRenameReque
 async def api_collections_update_books(collection_id: str, body: CollectionBooksUpdateRequest):
     cid = _validate_collection_id(collection_id)
     try:
+        col = collections_service.get_collection(_collections_file_path(), cid)
+        if not col:
+            raise HTTPException(status_code=404, detail="Collection not found")
+
         add_ids = [_validate_book_id(x) for x in (body.add or [])]
         remove_ids = [_validate_book_id_path_safe(x) for x in (body.remove or [])]
+        remove_allowed = set(col.book_ids or [])
+        remove_ids = [x for x in remove_ids if x in remove_allowed]
         updated = collections_service.update_collection_books(
             _collections_file_path(),
             cid,

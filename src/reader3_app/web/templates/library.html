@@ -206,8 +206,8 @@
                 <section class="right-tab" id="chat-tab" aria-label="Chat">
                     <div class="right-title">Chat</div>
                     <div class="chat-modes" role="group" aria-label="Chat scope">
-                        <button type="button" class="mini-btn" disabled title="Coming soon">All books</button>
-                        <button type="button" class="mini-btn mini-btn--danger" disabled title="Coming soon">Collection</button>
+                        <button type="button" class="mini-btn" disabled title="Coming soon" aria-label="All books (Coming soon)">All books</button>
+                        <button type="button" class="mini-btn mini-btn--danger" disabled title="Coming soon" aria-label="Collection (Coming soon)">Collection</button>
                         <button type="button" class="mini-btn is-active" aria-current="true">Single book</button>
                     </div>
                     <div class="chat-controls">
@@ -326,6 +326,8 @@
             <button type="button" class="toolbar-btn" id="add-to-collection-cancel">Cancel</button>
         </div>
     </dialog>
+
+    <div class="sr-only" id="aria-live" aria-live="polite" aria-atomic="true"></div>
 
     <script src="/static/library.js" defer></script>
     <script src="/static/library-search.js" defer></script>

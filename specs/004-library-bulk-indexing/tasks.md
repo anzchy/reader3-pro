@@ -250,17 +250,17 @@ Notes:
 
 ### Security (XSS + Path Safety)
 
-- [ ] T103 [P1] [SEC] Ensure collection names are HTML-escaped at render time and validated server-side (length/allowed chars/uniqueness) (src/reader3_app/web/templates/library.html, src/reader3_app/web/server.py, src/reader3_app/collections_service.py)
-- [ ] T104 [P1] [SEC] Validate `book_id` inputs for collection membership operations using the same path-safety constraints as other book routes (reject separators; allow only known `*_data` folders) (src/reader3_app/web/server.py, src/reader3_app/collections_service.py)
-- [ ] T105 [P2] [SEC] Standardize new API error responses to FastAPI `{"detail": "..."}` across collections + stats endpoints (src/reader3_app/web/server.py)
+- [x] T103 [P1] [SEC] Ensure collection names are HTML-escaped at render time and validated server-side (length/allowed chars/uniqueness) (src/reader3_app/web/templates/library.html, src/reader3_app/web/server.py, src/reader3_app/collections_service.py)
+- [x] T104 [P1] [SEC] Validate `book_id` inputs for collection membership operations using the same path-safety constraints as other book routes (reject separators; allow only known `*_data` folders) (src/reader3_app/web/server.py, src/reader3_app/collections_service.py)
+- [x] T105 [P2] [SEC] Standardize new API error responses to FastAPI `{"detail": "..."}` across collections + stats endpoints (src/reader3_app/web/server.py)
 
 ### Accessibility (Keyboard + Focus + Announcements)
 
-- [ ] T106 [P1] [A11Y] Ensure all interactive controls are keyboard reachable and not implemented as click-only `<div>`/`<span>` (src/reader3_app/web/templates/library.html)
-- [ ] T107 [P1] [A11Y] Implement modal focus management: trap focus while open, restore focus on close, and `Esc` closes the active modal (src/reader3_app/web/static/library.js)
-- [ ] T108 [P1] [A11Y] Add an `aria-live` region for bulk indexing progress and ensure status changes are announced non-intrusively (src/reader3_app/web/templates/library.html, src/reader3_app/web/static/library.js)
-- [ ] T109 [P2] [A11Y] Ensure disabled “Coming soon” chat options are not focusable and have accessible tooltip text (src/reader3_app/web/templates/library.html)
-- [ ] T110 [P2] [A11Y] Ensure icon-only buttons have accessible labels (ARIA) (src/reader3_app/web/templates/library.html)
+- [x] T106 [P1] [A11Y] Ensure all interactive controls are keyboard reachable and not implemented as click-only `<div>`/`<span>` (src/reader3_app/web/templates/library.html)
+- [x] T107 [P1] [A11Y] Implement modal focus management: trap focus while open, restore focus on close, and `Esc` closes the active modal (src/reader3_app/web/static/library.js)
+- [x] T108 [P1] [A11Y] Add an `aria-live` region for bulk indexing progress and ensure status changes are announced non-intrusively (src/reader3_app/web/templates/library.html, src/reader3_app/web/static/library.js)
+- [x] T109 [P2] [A11Y] Ensure disabled “Coming soon” chat options are not focusable and have accessible tooltip text (src/reader3_app/web/templates/library.html)
+- [x] T110 [P2] [A11Y] Ensure icon-only buttons have accessible labels (ARIA) (src/reader3_app/web/templates/library.html)
 
 ---
 

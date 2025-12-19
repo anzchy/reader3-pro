@@ -18,6 +18,8 @@
     collectionBookIdsById: new Map(),
   };
 
+  const _lastFocusByDialog = new WeakMap();
+
   function qs(sel, root = document) {
     return root.querySelector(sel);
   }
@@ -46,6 +48,71 @@
     if (!el) return;
     if (hidden) el.setAttribute("hidden", "");
     else el.removeAttribute("hidden");
+  }
+
+  function announce(message) {
+    const el = qs("#aria-live");
+    if (!el) return;
+    const text = String(message || "").trim();
+    if (!text) return;
+    el.textContent = "";
+    window.setTimeout(() => {
+      el.textContent = text;
+    }, 10);
+  }
+
+  function _focusableElements(root) {
+    const selectors = [
+      'a[href]',
+      "button:not([disabled])",
+      "input:not([disabled])",
+      "select:not([disabled])",
+      "textarea:not([disabled])",
+      '[tabindex]:not([tabindex="-1"])',
+    ];
+    return qsa(selectors.join(","), root).filter((el) => el.offsetParent !== null);
+  }
+
+  function setupDialog(dialog) {
+    if (!dialog || dialog.dataset.dialogSetup === "true") return;
+    dialog.dataset.dialogSetup = "true";
+
+    dialog.addEventListener("cancel", (e) => {
+      e.preventDefault();
+      dialog.close();
+    });
+
+    dialog.addEventListener("keydown", (e) => {
+      if (e.key !== "Tab") return;
+      const focusables = _focusableElements(dialog);
+      if (!focusables.length) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    });
+
+    dialog.addEventListener("close", () => {
+      const prev = _lastFocusByDialog.get(dialog);
+      if (prev && typeof prev.focus === "function") prev.focus();
+      _lastFocusByDialog.delete(dialog);
+    });
+  }
+
+  function openDialog(dialog, initialFocusSelector) {
+    if (!dialog || typeof dialog.showModal !== "function") return;
+    setupDialog(dialog);
+    _lastFocusByDialog.set(dialog, document.activeElement);
+    dialog.showModal();
+    const focusTarget =
+      (initialFocusSelector && qs(initialFocusSelector, dialog)) || _focusableElements(dialog)[0];
+    if (focusTarget && typeof focusTarget.focus === "function") focusTarget.focus();
   }
 
   function applyViewMode() {
@@ -329,6 +396,7 @@
   function setInterruptedNoticeVisible(visible) {
     const el = qs("#indexing-interrupted");
     setHidden(el, !visible);
+    if (visible) announce("Indexing was interrupted.");
   }
 
   function attachBeforeUnload() {
@@ -353,7 +421,7 @@
       list.appendChild(li);
     }
     summary.appendChild(list);
-    modal.showModal();
+    openDialog(modal, "#index-errors-ok");
     closeEls.forEach((el) =>
       el.addEventListener(
         "click",
@@ -402,11 +470,13 @@
       // ignore
     }
     setInterruptedNoticeVisible(false);
+    announce(`Indexing ${selected.length} book(s).`);
 
     const errors = [];
     for (let i = 0; i < selected.length; i++) {
       const bookId = selected[i];
       setIndexProgress(`Indexing ${i + 1}/${selected.length}…`);
+      announce(`Indexing book ${i + 1} of ${selected.length}.`);
       setStatusForBook(bookId, { book_id: bookId, status: "indexing", chunk_count: null });
       try {
         const result = await indexBook(bookId);
@@ -431,6 +501,7 @@
     setIndexProgress("");
     updateSelectionUi();
     if (errors.length) showErrorsModal(errors);
+    announce(errors.length ? "Indexing finished with errors." : "Indexing finished.");
   }
 
   function initTabSwitcher() {
@@ -452,7 +523,8 @@
     const modal = qs("#add-books-modal");
     const closeEls = [qs("#add-books-close"), qs("#add-books-ok")].filter(Boolean);
     if (!addBtn || !modal || typeof modal.showModal !== "function") return;
-    addBtn.addEventListener("click", () => modal.showModal());
+    setupDialog(modal);
+    addBtn.addEventListener("click", () => openDialog(modal, "#add-books-ok"));
     closeEls.forEach((el) => el.addEventListener("click", () => modal.close()));
   }
 
@@ -811,8 +883,7 @@
     nameInput.value = "";
     setHidden(errEl, true);
     submit.disabled = false;
-    modal.showModal();
-    nameInput.focus();
+    openDialog(modal, "#create-collection-name");
 
     closeEls.forEach((el) => el.addEventListener("click", () => modal.close(), { once: true }));
 
@@ -870,7 +941,7 @@
       picker.appendChild(btn);
     }
 
-    modal.showModal();
+    openDialog(modal, "button");
     closeEls.forEach((el) => el.addEventListener("click", () => modal.close(), { once: true }));
   }
 
