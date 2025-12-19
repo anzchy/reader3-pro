@@ -10,7 +10,7 @@ Reader3 Pro is a lightweight, self-hosted EPUB reader designed for reading books
 
 ### Processing EPUB Files
 ```bash
-# Process an EPUB file and add it to the library
+# Process an EPUB file and add it to the library, put epub files at the /books folder
 uv run reader3 <file.epub>
 
 # Example: Process Dracula
@@ -53,27 +53,45 @@ uv run python -c "from sentence_transformers import SentenceTransformer; Sentenc
 # Model is cached at ~/.cache/huggingface/hub/ (macOS/Linux) or %USERPROFILE%\.cache\huggingface\hub\ (Windows)
 ```
 
-### AI Assistant (Local Ollama / Cloud Providers)
+### AI Assistant
 
+#### Setup
+```bash
+# Copy example config
+cp config/ai_settings.example.json config/ai_settings.json
+
+# Index book for RAG (semantic retrieval)
+uv run reader3 --index dracula_data
+```
+
+#### Configuration
 Settings live in `config/ai_settings.json` and can be edited via:
 - Web UI: `http://127.0.0.1:8123/settings`
 - File: `config/ai_settings.json` (server-side only; API keys never returned to browser)
 
-Useful endpoints:
-- `GET /api/settings` and `PUT /api/settings`
-- `GET /api/settings/providers` and `PUT /api/settings/providers/{provider_name}`
-- Ollama helpers: `GET /api/ollama/status`, `GET /api/ollama/models`
-- Q&A streaming: `POST /api/ai/question/{book_uuid}?stream=true` (SSE)
+**Supported providers**:
+- `anthropic` - Claude models (cloud)
+- `openai` - GPT models (cloud)
+- `gemini` - Google Gemini (cloud)
+- `openrouter` - OpenRouter (cloud aggregator)
+- `ollama` - Local models (free, private, offline)
 
-Troubleshooting:
-- `AI provider is disabled in settings`: enable the provider in `/settings` (or `config/ai_settings.json`) and restart `reader3-server`.
-- `API key not configured`: set the provider API key in `/settings` (or `config/ai_settings.json`).
-- `Ollama not running`: start it with `ollama serve`, confirm with `ollama ps`.
-- Semantic index missing: AI endpoints try keyword fallback; for best results run `uv run reader3 --index <book_id>`.
+#### Key endpoints
+- `GET/PUT /api/settings` - Global settings
+- `GET/PUT /api/settings/providers/{provider_name}` - Provider config
+- `GET /api/ollama/status`, `GET /api/ollama/models` - Ollama helpers
+- `POST /api/ai/question/{book_uuid}?stream=true` - Q&A streaming (SSE)
+- `GET/POST/DELETE /api/ai/conversations/{book_uuid}` - Conversation management
+
+#### Troubleshooting
+- `AI provider is disabled in settings`: Enable in `/settings` and restart server
+- `API key not configured`: Set provider API key in `/settings`
+- `Ollama not running`: Start with `ollama serve`, verify with `ollama ps`
+- Semantic index missing: Run `uv run reader3 --index <book_folder>`
 
 ## Architecture
 
-### Three-Layer Architecture
+### Four-Layer Architecture
 
 **Layer 1: EPUB Processing (`reader3.py`)**
 - Parses EPUB files using `ebooklib`
@@ -84,20 +102,35 @@ Troubleshooting:
 - Extracts images and rewrites paths
 - Serializes everything into `book.pkl` using pickle
 
-**Layer 2: Search Service (`search_service.py`)**
-- Provides keyword search across books with diacritic normalization
-- Implements SearchQuery, SearchResult, SearchResultSet dataclasses
-- Functions: `search_text()`, `search_book()`, `search_library()`
-- Normalizes Latin scripts (café→cafe) while preserving non-Latin (Chinese, Japanese)
-- XSS-safe HTML escaping via `escape_for_highlighting()`
-- Performance: <500ms in-book search, <2s library-wide (up to 50 books)
+**Layer 2: Search & Vector Services**
+- `search_service.py` - Keyword search with diacritic normalization
+  - Functions: `search_text()`, `search_book()`, `search_library()`
+  - Normalizes Latin scripts (café→cafe) while preserving non-Latin
+  - XSS-safe HTML escaping via `escape_for_highlighting()`
+  - Performance: <500ms in-book, <2s library-wide (up to 50 books)
+- `vector_search.py` - Semantic search using ChromaDB
+  - Chunks chapters into ~1000-char passages with overlap
+  - Embeddings: `paraphrase-multilingual-MiniLM-L12-v2` (384-dim)
+  - Per-book vector storage in `{book_folder}/chroma_db/`
+  - Performance: <1s single book, <3s library-wide
 
-**Layer 3: Web Server (`server.py`)**
+**Layer 3: AI Assistant (`ai/`)**
+- `config.py` - Settings management for multi-provider AI
+- `providers/` - Provider implementations (anthropic, openai, gemini, ollama, openrouter)
+- `rag.py` - RAG pipeline (retrieval + context injection)
+- `books.py` - Book UUID resolution for cross-storage conversation tracking
+- `conversations.py` - Conversation storage with dual-location support
+  - Per-book: `books/{book_folder}/ai_conversations/{conversation_id}.json`
+  - Project-root: `{project_root}/conversations/{book_uuid}/{conversation_id}.json`
+- `queue.py` - Request queueing for rate limiting
+- `routing.py` - FastAPI endpoints for AI features
+
+**Layer 4: Web Server (`web/server.py`)**
 - FastAPI application serving the reader interface
 - Loads `book.pkl` files from `*_data/` directories
 - Uses Jinja2 templates for rendering
 - Caches loaded books with `lru_cache` (maxsize=10)
-- Search endpoints: `/api/search/{book_id}`, `/api/search/library`, `/api/highlight/{book_id}/{chapter_order}`
+- Key endpoint groups: `/api/search/*`, `/api/ai/*`, `/api/settings/*`
 
 ### Key Data Structures
 
@@ -157,6 +190,29 @@ class SearchResultSet:
     grouped_by_book: Dict[str, List[SearchResult]]  # For library search
 ```
 
+**AI Conversations (`ai/conversations.py`):**
+```python
+@dataclass
+class ConversationMessage:
+    id: str                                      # UUID
+    role: str                                    # "user" or "assistant"
+    content: str                                 # Message text
+    timestamp: str                               # ISO 8601 UTC
+    metadata: Dict[str, Any]                     # Citations, etc.
+
+@dataclass
+class ConversationThread:
+    schema_version: int                          # 1 (current)
+    book_uuid: str                               # Stable book identifier
+    book_folder: str                             # e.g., "dracula_data"
+    conversation_id: str                         # UUID
+    provider: str                                # "anthropic", "ollama", etc.
+    model: str                                   # Model name
+    created_at: str                              # ISO 8601 UTC
+    last_updated: str                            # ISO 8601 UTC
+    messages: List[ConversationMessage]
+```
+
 ### Spine vs TOC
 
 **Critical distinction:**
@@ -189,6 +245,14 @@ Images are served via `/read/{book_id}/images/{image_name}` with path sanitizati
 ## Library Management
 
 Books are added by processing EPUBs and removed by deleting the `{bookname}_data/` directory. There is no database - the filesystem is the source of truth.
+
+### Book Identity System
+
+Each book has two identifiers:
+- **book_folder**: Filesystem name (e.g., `dracula_data`) - used for file paths
+- **book_uuid**: Stable UUID stored in `{book_folder}/ai_meta.json` - used for cross-storage tracking
+
+The UUID system enables conversation mirroring across storage locations (per-book vs project-root) while maintaining referential integrity when books are moved or renamed.
 
 ## Constitution Principles
 
@@ -256,11 +320,38 @@ Reader3 Pro uses a spec-driven development process with numbered feature branche
 - `checklists/` - Quality validation checklists
 
 **Current features**:
-- `001-search-features`: Keyword + semantic search (completed: P1-P2, pending: P3)
-- `002-ai-assistant`: AI-powered book summarization and Q&A (spec complete, planning phase)
+- `001-search-features`: Keyword + semantic search (✅ Completed)
+- `002-ai-assistant`: Multi-provider AI assistant with RAG (✅ Completed)
+- `003-add-book-notes`: Book annotation system (📋 Spec phase)
 
 **Commands**:
 - `/speckit.specify` - Create feature specification
 - `/speckit.clarify` - Resolve ambiguous requirements
 - `/speckit.plan` - Generate technical implementation plan
 - `/speckit.tasks` - Generate implementation task breakdown
+
+## AI Assistant Features
+
+The AI assistant (feature 002) provides:
+- **Book Summarization**: Quick overviews, highlights, and background context
+- **Conversational Q&A**: Ask questions and get RAG-powered answers with citations
+- **Multi-Provider Support**: Choose from Anthropic, OpenAI, Gemini, OpenRouter, or Ollama
+- **Conversation Persistence**: Dual-storage support (per-book and/or project-root)
+- **Streaming Responses**: SSE-based streaming for real-time answers
+- **Privacy Mode**: Use Ollama for 100% offline, free, private operation
+
+### Conversation Storage
+
+Controlled by `config/ai_settings.json` → `preferences.conversation_disk_storage`:
+- `per_book` (default): `books/{book_folder}/ai_conversations/{conversation_id}.json`
+- `project_root`: `{project_root}/conversations/{book_uuid}/{conversation_id}.json`
+- `both`: Write to both locations (enables mirroring for backup/sync)
+
+The `book_uuid` (stored in `{book_folder}/ai_meta.json`) ensures conversations remain linked to the correct book even if the folder is renamed or moved.
+
+## Active Technologies
+- Python 3.10+ (backend), Vanilla JavaScript ES6+ (frontend) + FastAPI 0.121.2+, Jinja2 3.1.6+ (existing stack) (003-add-book-notes)
+- Filesystem JSON (`books/{book_id}/notes.json` per book) (003-add-book-notes)
+
+## Recent Changes
+- 003-add-book-notes: Added Python 3.10+ (backend), Vanilla JavaScript ES6+ (frontend) + FastAPI 0.121.2+, Jinja2 3.1.6+ (existing stack)
