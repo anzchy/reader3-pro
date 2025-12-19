@@ -79,29 +79,29 @@ Notes:
 
 ### Left Sidebar (Filters + Collections Placeholder)
 
-- [ ] T016 [P1] Add 3-pane CSS Grid layout to `library.css` (left: 240px, right: 320px, center: flex) (src/reader3_app/web/static/library.css)
-- [ ] T017 [P1] Implement left sidebar structure in `library.html` with filters section (src/reader3_app/web/templates/library.html)
-- [ ] T018 [P1] Add "All Books" filter with count badge (src/reader3_app/web/templates/library.html)
-- [ ] T019 [P1] Add "EPUB" filter with count badge (src/reader3_app/web/templates/library.html)
-- [ ] T020 [P1] Add "PDF" filter disabled with count=0 and tooltip "PDF not supported yet" (src/reader3_app/web/templates/library.html)
-- [ ] T021 [P1] Add Collections section placeholder with "+" create button (src/reader3_app/web/templates/library.html)
-- [ ] T022 [P1] Extend library view context to include `counts: {all, epub, pdf}` (src/reader3_app/web/server.py)
+- [x] T016 [P1] Add 3-pane CSS Grid layout to `library.css` (left: 240px, right: 320px, center: flex) (src/reader3_app/web/static/library.css)
+- [x] T017 [P1] Implement left sidebar structure in `library.html` with filters section (src/reader3_app/web/templates/library.html)
+- [x] T018 [P1] Add "All Books" filter with count badge (src/reader3_app/web/templates/library.html)
+- [x] T019 [P1] Add "EPUB" filter with count badge (src/reader3_app/web/templates/library.html)
+- [x] T020 [P1] Add "PDF" filter disabled with count=0 and tooltip "PDF not supported yet" (src/reader3_app/web/templates/library.html)
+- [x] T021 [P1] Add Collections section placeholder with "+" create button (src/reader3_app/web/templates/library.html)
+- [x] T022 [P1] Extend library view context to include `counts: {all, epub, pdf}` (src/reader3_app/web/server.py)
 
 ### Center Toolbar + Grid
 
-- [ ] T023 [P1] Add center toolbar structure with search box "Find books…" (src/reader3_app/web/templates/library.html)
-- [ ] T024 [P1] Add "Add books" button opening modal with CLI instructions (src/reader3_app/web/templates/library.html)
-- [ ] T025 [P1] Add Sort (A→Z) button (src/reader3_app/web/templates/library.html)
-- [ ] T026 [P1] Add Grid/List toggle button (src/reader3_app/web/templates/library.html)
-- [ ] T027 [P1] Add "Select" mode toggle button (src/reader3_app/web/templates/library.html)
-- [ ] T028 [P1] Move existing book grid into center pane (src/reader3_app/web/templates/library.html)
-- [ ] T029 [P1] Extend book context to include `section_count`, `cover_url`, `format` (src/reader3_app/web/server.py)
+- [x] T023 [P1] Add center toolbar structure with search box "Find books…" (src/reader3_app/web/templates/library.html)
+- [x] T024 [P1] Add "Add books" button opening modal with CLI instructions (src/reader3_app/web/templates/library.html)
+- [x] T025 [P1] Add Sort (A→Z) button (src/reader3_app/web/templates/library.html)
+- [x] T026 [P1] Add Grid/List toggle button (src/reader3_app/web/templates/library.html)
+- [x] T027 [P1] Add "Select" mode toggle button (src/reader3_app/web/templates/library.html)
+- [x] T028 [P1] Move existing book grid into center pane (src/reader3_app/web/templates/library.html)
+- [x] T029 [P1] Extend book context to include `section_count`, `cover_url`, `format` (src/reader3_app/web/server.py)
 
 ### Right Panel Container
 
-- [ ] T030 [P1] Add right panel container structure (src/reader3_app/web/templates/library.html)
-- [ ] T031 [P1] Add bottom-right tab switcher with Dashboard/Chat/Search tabs (src/reader3_app/web/templates/library.html)
-- [ ] T032 [P1] Style tab switcher with fixed position (right: 20px, bottom: 20px, z-index: 900) (src/reader3_app/web/static/library.css)
+- [x] T030 [P1] Add right panel container structure (src/reader3_app/web/templates/library.html)
+- [x] T031 [P1] Add bottom-right tab switcher with Dashboard/Chat/Search tabs (src/reader3_app/web/templates/library.html)
+- [x] T032 [P1] Style tab switcher with fixed position (right: 20px, bottom: 20px, z-index: 900) (src/reader3_app/web/static/library.css)
 
 ---
 

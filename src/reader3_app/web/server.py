@@ -155,16 +155,45 @@ async def library_view(request: Request):
                 # Try to load it to get the title
                 book = load_book_cached(item)
                 if book:
+                    cover_image = None
+                    try:
+                        images_dir = os.path.join(BOOKS_DIR, item, "images")
+                        if os.path.isdir(images_dir):
+                            candidates = [
+                                f
+                                for f in os.listdir(images_dir)
+                                if os.path.isfile(os.path.join(images_dir, f)) and not f.startswith(".")
+                            ]
+                            preferred = [f for f in candidates if "cover" in f.lower() or "title" in f.lower()]
+                            pick_from = preferred or candidates
+                            if pick_from:
+                                cover_image = sorted(pick_from, key=lambda x: (len(x), x.lower()))[0]
+                    except Exception:
+                        cover_image = None
+
+                    cover_url = f"/read/{item}/images/{cover_image}" if cover_image else None
                     books.append({
                         "id": item,
                         "title": book.metadata.title,
                         "author": ", ".join(book.metadata.authors),
-                        "chapters": len(book.spine)
+                        "chapters": len(book.spine),
+                        "section_count": len(book.spine),
+                        "cover_url": cover_url,
+                        "format": "epub",
                     })
 
     return templates.TemplateResponse(
         _library_template_name(),
-        {"request": request, "books": books, "library_ui_mode": _library_ui_mode()},
+        {
+            "request": request,
+            "books": books,
+            "counts": {
+                "all": len(books),
+                "epub": sum(1 for b in books if b.get("format") == "epub"),
+                "pdf": sum(1 for b in books if b.get("format") == "pdf"),
+            },
+            "library_ui_mode": _library_ui_mode(),
+        },
     )
 
 @app.get("/settings", response_class=HTMLResponse)

@@ -3,66 +3,153 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Library</title>
-    <link rel="stylesheet" href="/static/search.css">
+    <title>Library</title>
     <link rel="stylesheet" href="/static/library.css">
 </head>
 <body>
-    <div class="container">
-        <h1>Library</h1>
-        <div style="margin-top: 8px; margin-bottom: 10px;">
-            <a href="/settings" class="btn" style="background:#6b7280;">Settings</a>
-        </div>
-
-        <div class="search-box">
-            <input type="text" id="library-search-input" placeholder="Search across your library…" autocomplete="off" />
-            <div class="search-actions">
-                <button type="button" class="search-btn" id="library-search-clear">Clear</button>
-                <label>
-                    <input type="checkbox" id="library-search-case" />
-                    Case
-                </label>
-                <label>
-                    Mode
-                    <select id="library-search-mode">
-                        <option value="keyword">keyword</option>
-                        <option value="semantic">semantic</option>
-                        <option value="hybrid">hybrid</option>
-                    </select>
-                </label>
-                <label>
-                    Sort
-                    <select id="library-search-sort">
-                        <option value="relevance">relevance</option>
-                        <option value="book_title">title</option>
-                        <option value="book_author">author</option>
-                    </select>
-                </label>
+    <div class="library-layout">
+        <aside class="library-sidebar" aria-label="Library Sidebar">
+            <div class="sidebar-header">
+                <div class="app-title">Library</div>
+                <a class="settings-link" href="/settings">Settings</a>
             </div>
-        </div>
 
-        <div class="library-search-panel" id="library-search-panel" style="display:none;">
-            <div class="search-status" id="library-search-status"></div>
-            <div id="library-search-results"></div>
-        </div>
-
-        {% if not books %}
-            <p>No processed books found. Run <code>reader3.py</code> on an epub first.</p>
-        {% endif %}
-
-        <div class="book-grid" id="library-book-grid">
-            {% for book in books %}
-            <div class="book-card">
-                <div class="book-title">{{ book.title }}</div>
-                <div class="book-meta">
-                    {{ book.author }}<br>
-                    {{ book.chapters }} sections
+            <div class="sidebar-section">
+                <div class="sidebar-section-title">Types</div>
+                <div class="filter-list" role="list">
+                    <button type="button" class="filter-btn is-active" data-scope="all" role="listitem">
+                        <span class="filter-label">All Books</span>
+                        <span class="badge" id="count-all">{{ counts.all }}</span>
+                    </button>
+                    <button type="button" class="filter-btn" data-scope="format:epub" role="listitem">
+                        <span class="filter-label">EPUB</span>
+                        <span class="badge" id="count-epub">{{ counts.epub }}</span>
+                    </button>
+                    <button
+                        type="button"
+                        class="filter-btn"
+                        data-scope="format:pdf"
+                        role="listitem"
+                        disabled
+                        title="PDF not supported yet"
+                    >
+                        <span class="filter-label">PDF</span>
+                        <span class="badge" id="count-pdf">{{ counts.pdf }}</span>
+                    </button>
                 </div>
-                <a href="/read/{{ book.id }}/0" class="btn">Read Book</a>
             </div>
-            {% endfor %}
-        </div>
+
+            <div class="sidebar-section">
+                <div class="sidebar-section-row">
+                    <div class="sidebar-section-title">Collections</div>
+                    <button type="button" class="icon-btn" id="collections-create" aria-label="Create collection">+</button>
+                </div>
+                <div class="collections-empty">Create collections to group books by author or theme.</div>
+                <div class="collections-list" id="collections-list" aria-label="Collections List"></div>
+            </div>
+        </aside>
+
+        <main class="library-main" aria-label="Library">
+            <div class="library-toolbar" role="region" aria-label="Library Toolbar">
+                <div class="toolbar-left">
+                    <label class="search-input" aria-label="Filter books by title">
+                        <span class="search-icon" aria-hidden="true">⌕</span>
+                        <input type="text" id="title-filter" placeholder="Find books…" autocomplete="off" />
+                    </label>
+                </div>
+
+                <div class="toolbar-right" role="group" aria-label="Library Actions">
+                    <button type="button" class="toolbar-btn" id="add-books-btn">Add books</button>
+                    <button type="button" class="icon-btn" id="sort-btn" aria-label="Sort A to Z">A→Z</button>
+                    <button type="button" class="icon-btn" id="view-toggle-btn" aria-label="Toggle grid and list view">▦</button>
+                    <button type="button" class="icon-btn" id="select-toggle-btn" aria-label="Toggle selection mode">✓</button>
+                </div>
+            </div>
+
+            {% if not books %}
+                <div class="empty-state">
+                    <div class="empty-title">No processed books found</div>
+                    <div class="empty-subtitle">Run <code>uv run reader3 path/to/book.epub</code> and refresh.</div>
+                </div>
+            {% endif %}
+
+            <section class="library-shelf" id="library-shelf" aria-label="Books">
+                {% for book in books %}
+                    <article class="book-card" data-book-id="{{ book.id }}" data-format="{{ book.format }}">
+                        <a class="book-link" href="/read/{{ book.id }}/0" aria-label="Read {{ book.title }}">
+                            {% if book.cover_url %}
+                                <img class="book-cover" src="{{ book.cover_url }}" alt="Cover for {{ book.title }}" loading="lazy" />
+                            {% else %}
+                                <div class="book-cover book-cover--placeholder" aria-hidden="true"></div>
+                            {% endif %}
+                            <div class="book-title">{{ book.title }}</div>
+                            <div class="book-author">{{ book.author }}</div>
+                        </a>
+                    </article>
+                {% endfor %}
+            </section>
+        </main>
+
+        <aside class="library-right" aria-label="Right Panel">
+            <div class="right-panel">
+                <section class="right-tab is-active" id="dashboard-tab" aria-label="Dashboard">
+                    <div class="right-title">Dashboard</div>
+                    <div class="right-placeholder">Dashboard stats will appear here.</div>
+                </section>
+                <section class="right-tab" id="chat-tab" aria-label="Chat">
+                    <div class="right-title">Chat</div>
+                    <div class="right-placeholder">Chat will appear here.</div>
+                </section>
+                <section class="right-tab" id="search-tab" aria-label="Search">
+                    <div class="right-title">Search</div>
+                    <div class="right-placeholder">Cross-book search will appear here.</div>
+                </section>
+            </div>
+
+            <div class="right-tab-switcher" role="group" aria-label="Right Panel Tabs">
+                <button type="button" class="tab-btn is-active" data-tab="dashboard" aria-label="Dashboard">▣</button>
+                <button type="button" class="tab-btn" data-tab="chat" aria-label="Chat">💬</button>
+                <button type="button" class="tab-btn" data-tab="search" aria-label="Search">⌕</button>
+            </div>
+        </aside>
     </div>
-    <script src="/static/library-search.js"></script>
+
+    <dialog class="modal" id="add-books-modal" aria-label="Add books">
+        <div class="modal-header">
+            <div class="modal-title">Add books</div>
+            <button type="button" class="icon-btn" id="add-books-close" aria-label="Close">✕</button>
+        </div>
+        <div class="modal-body">
+            <p>Process EPUBs into <code>books/*_data/</code> using:</p>
+            <pre><code>uv run reader3 path/to/book.epub</code></pre>
+            <p>Then refresh this page.</p>
+        </div>
+        <div class="modal-actions">
+            <button type="button" class="toolbar-btn" id="add-books-ok">OK</button>
+        </div>
+    </dialog>
+
+    <script>
+        (function () {
+            const switcher = document.querySelector(".right-tab-switcher");
+            if (switcher) {
+                switcher.addEventListener("click", (e) => {
+                    const btn = e.target.closest("button[data-tab]");
+                    if (!btn) return;
+                    const name = btn.getAttribute("data-tab");
+                    document.querySelectorAll(".right-tab").forEach((el) => el.classList.toggle("is-active", el.id === `${name}-tab`));
+                    document.querySelectorAll(".tab-btn").forEach((el) => el.classList.toggle("is-active", el === btn));
+                });
+            }
+
+            const addBtn = document.getElementById("add-books-btn");
+            const modal = document.getElementById("add-books-modal");
+            const closeEls = [document.getElementById("add-books-close"), document.getElementById("add-books-ok")].filter(Boolean);
+            if (addBtn && modal && typeof modal.showModal === "function") {
+                addBtn.addEventListener("click", () => modal.showModal());
+                closeEls.forEach((el) => el.addEventListener("click", () => modal.close()));
+            }
+        })();
+    </script>
 </body>
 </html>
