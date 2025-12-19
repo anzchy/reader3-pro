@@ -1,0 +1,40 @@
+#right-toolbar {
+  position: fixed;
+  right: 22px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  z-index: 1200;
+}
+
+.rt-btn {
+  width: 46px;
+  height: 46px;
+  border-radius: 23px;
+  border: 1px solid var(--wr-border);
+  background: rgba(255, 255, 255, 0.96);
+  color: rgba(17, 24, 39, 0.86);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.10);
+}
+
+.rt-btn:hover {
+  background: rgba(255, 255, 255, 1);
+}
+
+.rt-btn.is-active {
+  outline: 2px solid rgba(37, 99, 235, 0.55);
+}
+
+.rt-btn img {
+  display: block;
+}
+
+.rt-btn img.rt-icon-invert {
+  filter: invert(1);
+}
+

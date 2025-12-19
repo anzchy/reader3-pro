@@ -1,0 +1,82 @@
+#toc-mode {
+  position: fixed;
+  inset: 0;
+  display: none;
+  background: var(--wr-bg);
+  z-index: 1100;
+}
+
+#toc-mode.is-open {
+  display: block;
+}
+
+.toc-shell {
+  max-width: 920px;
+  margin: 24px auto;
+  padding: 0 18px 24px;
+}
+
+.toc-card {
+  background: var(--wr-card);
+  border-radius: var(--wr-radius);
+  box-shadow: var(--wr-shadow);
+  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+.toc-search {
+  padding: 16px 18px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.toc-search input {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  outline: none;
+  font-size: 14px;
+  background: rgba(243, 244, 246, 0.8);
+}
+
+.toc-body {
+  padding: 12px 18px 18px;
+  max-height: calc(100vh - 140px);
+  overflow: auto;
+}
+
+#toc-mode ul.toc-list {
+  list-style: none;
+  padding-left: 0;
+  margin: 0;
+}
+
+#toc-mode ul.toc-list ul {
+  padding-left: 18px;
+}
+
+#toc-mode li.toc-item {
+  margin: 6px 0;
+}
+
+#toc-mode a.toc-link {
+  display: inline-block;
+  text-decoration: none;
+  color: rgba(17, 24, 39, 0.86);
+  font-family: -apple-system, system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.4;
+  padding: 6px 8px;
+  border-radius: 10px;
+}
+
+#toc-mode a.toc-link:hover {
+  background: rgba(17, 24, 39, 0.06);
+}
+
+#toc-mode a.toc-link.active {
+  background: rgba(37, 99, 235, 0.12);
+  color: rgba(37, 99, 235, 0.95);
+  font-weight: 700;
+}
+

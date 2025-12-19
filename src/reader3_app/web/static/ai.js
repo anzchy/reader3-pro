@@ -197,6 +197,15 @@ class ReaderAIUI {
       if (e.key === "Escape" && this.panel?.classList.contains("is-open")) this.close();
     });
 
+    window.Reader3AIAskEnabled = true;
+    window.addEventListener("reader3:ai:ask", (evt) => {
+      const detail = evt?.detail || {};
+      const quote = String(detail.quote || "").trim();
+      const context = String(detail.context || "").trim();
+      if (!quote) return;
+      this.handleAskEvent(quote, context).catch(() => {});
+    });
+
     const refreshIfOpen = async () => {
       if (this.isBusy) return;
       if (!this.panel?.classList.contains("is-open")) return;
@@ -765,6 +774,21 @@ class ReaderAIUI {
       await this.persistConversation();
     } finally {
       this.setBusy(false);
+    }
+  }
+
+  async handleAskEvent(quote, context) {
+    if (!this.panel) return;
+    const wasOpen = this.panel.classList.contains("is-open");
+    if (!wasOpen) {
+      this.open();
+      await this.loadPreferences();
+      await this.restoreConversation();
+    }
+    if (this.inputEl) {
+      const ctxBlock = context ? `\n\n上下文（节选）:\n${context}` : "";
+      this.inputEl.value = `引用:\n${quote}${ctxBlock}\n\n问题: `;
+      this.inputEl.focus();
     }
   }
 }
