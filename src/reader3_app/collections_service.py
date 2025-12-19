@@ -1,0 +1,192 @@
+from __future__ import annotations
+
+import json
+import os
+import re
+import uuid
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Iterable, Optional
+
+
+COLLECTIONS_SCHEMA_VERSION = 1
+COLLECTIONS_FILENAME = "library_collections.json"
+
+_NAME_RE = re.compile(r"^[A-Za-z0-9 _\\-\\.&()]+$")
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+@dataclass(frozen=True)
+class Collection:
+    id: str
+    name: str
+    created_at: str
+    book_ids: list[str]
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "created_at": self.created_at,
+            "book_ids": list(self.book_ids),
+        }
+
+    @staticmethod
+    def from_dict(d: dict) -> "Collection":
+        return Collection(
+            id=str(d.get("id") or ""),
+            name=str(d.get("name") or ""),
+            created_at=str(d.get("created_at") or ""),
+            book_ids=[str(x) for x in (d.get("book_ids") or [])],
+        )
+
+
+class CollectionsFileError(RuntimeError):
+    pass
+
+
+def collections_path(project_root_dir: str) -> Path:
+    return Path(project_root_dir) / "config" / COLLECTIONS_FILENAME
+
+
+def validate_collection_name(name: str, *, existing_names: Iterable[str] = ()) -> str:
+    trimmed = str(name or "").strip()
+    if not (1 <= len(trimmed) <= 60):
+        raise ValueError("Collection name must be 1–60 characters.")
+    if not _NAME_RE.match(trimmed):
+        raise ValueError("Collection name contains invalid characters.")
+    existing_ci = {str(n).strip().lower() for n in existing_names}
+    if trimmed.lower() in existing_ci:
+        raise ValueError("A collection with this name already exists.")
+    return trimmed
+
+
+def _ensure_config_dir(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+
+def _atomic_write_json(path: Path, data: dict) -> None:
+    _ensure_config_dir(path)
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+    os.replace(tmp_path, path)
+
+
+def load_collections(path: Path) -> list[Collection]:
+    if not path.exists():
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+    except json.JSONDecodeError as e:
+        raise CollectionsFileError("Collections file contains invalid JSON.") from e
+    except Exception as e:
+        raise CollectionsFileError("Failed to read collections file.") from e
+
+    if not isinstance(raw, dict) or raw.get("schema_version") != COLLECTIONS_SCHEMA_VERSION:
+        raise CollectionsFileError("Collections file schema is invalid or unsupported.")
+
+    items = raw.get("collections") or []
+    if not isinstance(items, list):
+        raise CollectionsFileError("Collections file is malformed.")
+    out: list[Collection] = []
+    for item in items:
+        if isinstance(item, dict):
+            out.append(Collection.from_dict(item))
+    return out
+
+
+def save_collections(path: Path, collections: list[Collection]) -> None:
+    payload = {
+        "schema_version": COLLECTIONS_SCHEMA_VERSION,
+        "collections": [c.to_dict() for c in collections],
+    }
+    _atomic_write_json(path, payload)
+
+
+def _normalize_book_id(book_id: str) -> str:
+    safe = os.path.basename(str(book_id or ""))
+    if safe != book_id:
+        raise ValueError("Invalid book_id")
+    return safe
+
+
+def create_collection(path: Path, *, name: str) -> Collection:
+    collections = load_collections(path)
+    validated = validate_collection_name(name, existing_names=[c.name for c in collections])
+    new = Collection(id=str(uuid.uuid4()), name=validated, created_at=_utc_now_iso(), book_ids=[])
+    collections.append(new)
+    save_collections(path, collections)
+    return new
+
+
+def get_collection(path: Path, collection_id: str) -> Optional[Collection]:
+    collections = load_collections(path)
+    for c in collections:
+        if c.id == collection_id:
+            return c
+    return None
+
+
+def rename_collection(path: Path, collection_id: str, *, name: str) -> Collection:
+    collections = load_collections(path)
+    existing_names = [c.name for c in collections if c.id != collection_id]
+    validated = validate_collection_name(name, existing_names=existing_names)
+    updated: Optional[Collection] = None
+    for i, c in enumerate(collections):
+        if c.id == collection_id:
+            updated = Collection(id=c.id, name=validated, created_at=c.created_at, book_ids=list(c.book_ids))
+            collections[i] = updated
+            break
+    if not updated:
+        raise KeyError("Collection not found")
+    save_collections(path, collections)
+    return updated
+
+
+def delete_collection(path: Path, collection_id: str) -> None:
+    collections = load_collections(path)
+    next_collections = [c for c in collections if c.id != collection_id]
+    if len(next_collections) == len(collections):
+        raise KeyError("Collection not found")
+    save_collections(path, next_collections)
+
+
+def update_collection_books(
+    path: Path,
+    collection_id: str,
+    *,
+    add: Iterable[str] = (),
+    remove: Iterable[str] = (),
+) -> Collection:
+    collections = load_collections(path)
+    updated: Optional[Collection] = None
+    for i, c in enumerate(collections):
+        if c.id != collection_id:
+            continue
+        book_ids = list(c.book_ids)
+        book_id_set = {x for x in book_ids}
+        for bid in add:
+            safe = _normalize_book_id(str(bid))
+            if safe not in book_id_set:
+                book_ids.append(safe)
+                book_id_set.add(safe)
+        for bid in remove:
+            safe = _normalize_book_id(str(bid))
+            if safe in book_id_set:
+                book_id_set.remove(safe)
+        book_ids = [x for x in book_ids if x in book_id_set]
+        updated = Collection(id=c.id, name=c.name, created_at=c.created_at, book_ids=book_ids)
+        collections[i] = updated
+        break
+    if not updated:
+        raise KeyError("Collection not found")
+    save_collections(path, collections)
+    return updated
+

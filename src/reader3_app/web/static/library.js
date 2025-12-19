@@ -11,6 +11,8 @@
     isIndexing: false,
     statuses: new Map(),
     inFlightStatus: new Set(),
+    collections: [],
+    collectionBookIdsById: new Map(),
   };
 
   function qs(sel, root = document) {
@@ -45,6 +47,13 @@
     if (state.scope.startsWith("format:")) {
       return fmt === state.scope.slice("format:".length);
     }
+    if (state.scope.startsWith("collection:")) {
+      const id = state.scope.slice("collection:".length);
+      const allowed = state.collectionBookIdsById.get(id);
+      if (!allowed) return false;
+      const bookId = getBookIdFromCard(card);
+      return allowed.has(bookId);
+    }
     return true;
   }
 
@@ -63,9 +72,17 @@
   }
 
   function setActiveScopeButton() {
-    for (const btn of qsa(".filter-btn[data-scope]")) {
+    for (const btn of qsa(".filter-btn[data-scope], .collection-btn[data-scope]")) {
       btn.classList.toggle("is-active", btn.getAttribute("data-scope") === state.scope);
     }
+  }
+
+  function setScope(nextScope) {
+    if (!nextScope || nextScope === state.scope) return;
+    state.scope = nextScope;
+    setActiveScopeButton();
+    applyFilters();
+    clearSelection();
   }
 
   function setSelectMode(enabled) {
@@ -100,6 +117,12 @@
     const clearBtn = qs("#clear-selection-btn");
     if (clearBtn) {
       clearBtn.disabled = state.isIndexing;
+    }
+
+    const addToCollectionBtn = qs("#add-to-collection-btn");
+    if (addToCollectionBtn) {
+      addToCollectionBtn.disabled =
+        state.isIndexing || state.selectedBookIds.size === 0 || state.collections.length === 0;
     }
   }
 
@@ -378,11 +401,17 @@
     for (const btn of qsa(".filter-btn[data-scope]")) {
       btn.addEventListener("click", () => {
         const nextScope = btn.getAttribute("data-scope") || "all";
-        if (nextScope === state.scope) return;
-        state.scope = nextScope;
-        setActiveScopeButton();
-        applyFilters();
-        clearSelection();
+        setScope(nextScope);
+      });
+    }
+
+    const collectionsList = qs("#collections-list");
+    if (collectionsList) {
+      collectionsList.addEventListener("click", (e) => {
+        const actionBtn = e.target.closest("button[data-action]");
+        if (actionBtn) return;
+        const scopeBtn = e.target.closest("button[data-scope]");
+        if (scopeBtn) setScope(scopeBtn.getAttribute("data-scope") || "all");
       });
     }
   }
@@ -424,6 +453,9 @@
     const indexBtn = qs("#index-selected-btn");
     if (indexBtn) indexBtn.addEventListener("click", () => bulkIndexSelected());
 
+    const addToCollectionBtn = qs("#add-to-collection-btn");
+    if (addToCollectionBtn) addToCollectionBtn.addEventListener("click", () => openAddToCollectionModal());
+
     for (const card of getAllBookCards()) {
       const checkbox = qs(".select-checkbox", card);
       const bookId = getBookIdFromCard(card);
@@ -450,6 +482,255 @@
     updateSelectionUi();
   }
 
+  function existingBookIdSet() {
+    return new Set(getAllBookCards().map(getBookIdFromCard).filter(Boolean));
+  }
+
+  function updateCollectionMaps() {
+    const existingIds = existingBookIdSet();
+    state.collectionBookIdsById = new Map();
+    for (const c of state.collections) {
+      const allowed = new Set();
+      for (const bid of c.book_ids || []) {
+        if (existingIds.has(bid)) allowed.add(bid);
+      }
+      state.collectionBookIdsById.set(c.id, allowed);
+    }
+  }
+
+  function renderCollections() {
+    const container = qs("#collections-list");
+    if (!container) return;
+    container.innerHTML = "";
+
+    const existingIds = existingBookIdSet();
+    const collections = Array.from(state.collections).sort((a, b) =>
+      String(a.name || "").localeCompare(String(b.name || ""), undefined, { sensitivity: "base" }),
+    );
+
+    for (const c of collections) {
+      const row = document.createElement("div");
+      row.className = "collection-row";
+      row.dataset.collectionId = c.id;
+
+      const present = [];
+      const missing = [];
+      for (const bid of c.book_ids || []) {
+        if (existingIds.has(bid)) present.push(bid);
+        else missing.push(bid);
+      }
+
+      const mainBtn = document.createElement("button");
+      mainBtn.type = "button";
+      mainBtn.className = "collection-btn";
+      mainBtn.dataset.scope = `collection:${c.id}`;
+      if (state.scope === mainBtn.dataset.scope) mainBtn.classList.add("is-active");
+
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "collection-name";
+      nameSpan.textContent = String(c.name || "");
+
+      const badge = document.createElement("span");
+      badge.className = "badge";
+      badge.textContent = String(present.length);
+
+      mainBtn.appendChild(nameSpan);
+      mainBtn.appendChild(badge);
+
+      const actions = document.createElement("div");
+      actions.className = "collection-actions";
+
+      if (missing.length) {
+        const cleanBtn = document.createElement("button");
+        cleanBtn.type = "button";
+        cleanBtn.className = "mini-btn";
+        cleanBtn.dataset.action = "cleanup";
+        cleanBtn.textContent = `Clean (${missing.length})`;
+        cleanBtn.title = "Remove missing books from this collection";
+        actions.appendChild(cleanBtn);
+      }
+
+      const delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.className = "mini-btn mini-btn--danger";
+      delBtn.dataset.action = "delete";
+      delBtn.textContent = "Delete";
+      actions.appendChild(delBtn);
+
+      row.appendChild(mainBtn);
+      row.appendChild(actions);
+      container.appendChild(row);
+    }
+  }
+
+  async function apiJson(url, opts) {
+    const res = await fetch(url, opts);
+    if (!res.ok) {
+      let detail = `HTTP ${res.status}`;
+      try {
+        const data = await res.json();
+        if (data?.detail) detail = String(data.detail);
+      } catch {
+        // ignore
+      }
+      const err = new Error(detail);
+      err.status = res.status;
+      throw err;
+    }
+    if (res.status === 204) return null;
+    return res.json();
+  }
+
+  async function loadCollections() {
+    const errEl = qs("#collections-error");
+    const emptyEl = qs("#collections-empty-message");
+    try {
+      const data = await apiJson("/api/collections", {});
+      state.collections = Array.isArray(data?.collections) ? data.collections : [];
+      if (errEl) {
+        errEl.textContent = "";
+        setHidden(errEl, true);
+      }
+    } catch (e) {
+      state.collections = [];
+      if (errEl) {
+        errEl.textContent = String(e?.message || "Failed to load collections.");
+        setHidden(errEl, false);
+      }
+    }
+    if (emptyEl) setHidden(emptyEl, state.collections.length !== 0);
+    updateCollectionMaps();
+    renderCollections();
+    updateSelectionUi();
+    setActiveScopeButton();
+  }
+
+  async function createCollection(name) {
+    const created = await apiJson("/api/collections", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    await loadCollections();
+    return created;
+  }
+
+  async function deleteCollection(collectionId) {
+    await apiJson(`/api/collections/${encodeURIComponent(collectionId)}`, { method: "DELETE" });
+    if (state.scope === `collection:${collectionId}`) setScope("all");
+    await loadCollections();
+  }
+
+  async function updateCollectionBooks(collectionId, body) {
+    await apiJson(`/api/collections/${encodeURIComponent(collectionId)}/books`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    await loadCollections();
+  }
+
+  function initCollectionsActions() {
+    const container = qs("#collections-list");
+    if (!container) return;
+    container.addEventListener("click", async (e) => {
+      const actionBtn = e.target.closest("button[data-action]");
+      if (!actionBtn) return;
+      const rowEl = actionBtn.closest(".collection-row");
+      const collectionId = rowEl?.dataset?.collectionId;
+      if (!collectionId) return;
+
+      if (actionBtn.dataset.action === "delete") {
+        if (!confirm("Delete this collection?")) return;
+        await deleteCollection(collectionId);
+        return;
+      }
+
+      if (actionBtn.dataset.action === "cleanup") {
+        const c = state.collections.find((x) => x.id === collectionId);
+        if (!c) return;
+        const existingIds = existingBookIdSet();
+        const missing = (c.book_ids || []).filter((bid) => !existingIds.has(bid));
+        if (!missing.length) return;
+        await updateCollectionBooks(collectionId, { remove: missing });
+      }
+    });
+  }
+
+  function openCreateCollectionModal() {
+    const modal = qs("#create-collection-modal");
+    const nameInput = qs("#create-collection-name");
+    const errEl = qs("#create-collection-error");
+    const closeEls = [qs("#create-collection-close"), qs("#create-collection-cancel")].filter(Boolean);
+    const submit = qs("#create-collection-submit");
+    if (!modal || !nameInput || !submit || typeof modal.showModal !== "function") return;
+
+    nameInput.value = "";
+    setHidden(errEl, true);
+    submit.disabled = false;
+    modal.showModal();
+    nameInput.focus();
+
+    closeEls.forEach((el) => el.addEventListener("click", () => modal.close(), { once: true }));
+
+    const onSubmit = async () => {
+      const name = nameInput.value || "";
+      submit.disabled = true;
+      setHidden(errEl, true);
+      try {
+        await createCollection(name);
+        modal.close();
+      } catch (e) {
+        submit.disabled = false;
+        if (errEl) {
+          errEl.textContent = String(e?.message || "Failed to create collection.");
+          setHidden(errEl, false);
+        }
+      }
+    };
+    submit.addEventListener("click", onSubmit);
+    modal.addEventListener(
+      "close",
+      () => {
+        submit.removeEventListener("click", onSubmit);
+      },
+      { once: true },
+    );
+  }
+
+  function openAddToCollectionModal() {
+    const modal = qs("#add-to-collection-modal");
+    const picker = qs("#collections-picker");
+    const errEl = qs("#add-to-collection-error");
+    const closeEls = [qs("#add-to-collection-close"), qs("#add-to-collection-cancel")].filter(Boolean);
+    if (!modal || !picker || typeof modal.showModal !== "function") return;
+
+    picker.innerHTML = "";
+    setHidden(errEl, true);
+    for (const c of state.collections) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "toolbar-btn";
+      btn.textContent = String(c.name || "");
+      btn.addEventListener("click", async () => {
+        try {
+          const add = Array.from(state.selectedBookIds);
+          await updateCollectionBooks(c.id, { add });
+          modal.close();
+        } catch (e) {
+          if (errEl) {
+            errEl.textContent = String(e?.message || "Failed to update collection.");
+            setHidden(errEl, false);
+          }
+        }
+      });
+      picker.appendChild(btn);
+    }
+
+    modal.showModal();
+    closeEls.forEach((el) => el.addEventListener("click", () => modal.close(), { once: true }));
+  }
+
   function initInterruptedHint() {
     let wasIndexing = false;
     try {
@@ -467,10 +748,15 @@
     initTitleFilter();
     initSort();
     initSelection();
+    initCollectionsActions();
     initInterruptedHint();
     attachBeforeUnload();
     applyFilters();
+    void loadCollections();
     void lazyFetchStatuses();
+
+    const createBtn = qs("#collections-create");
+    if (createBtn) createBtn.addEventListener("click", () => openCreateCollectionModal());
   }
 
   if (document.readyState === "loading") {

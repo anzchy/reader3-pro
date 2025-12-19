@@ -8,6 +8,7 @@ import threading
 import urllib.request
 import urllib.error
 import html
+import uuid
 from pathlib import Path
 from functools import lru_cache
 from typing import Any, Optional
@@ -70,6 +71,7 @@ from ..notes_service import (
     load_annotations as load_note_annotations,
     save_annotations as save_note_annotations,
 )
+from .. import collections_service
 
 app = FastAPI()
 
@@ -94,6 +96,9 @@ ai_queue = AIRequestQueueManager(max_pending=10)
 def _project_root_dir_from_books_dir() -> str:
     return os.path.dirname(os.path.abspath(BOOKS_DIR))
 
+def _collections_file_path() -> Path:
+    return collections_service.collections_path(_project_root_dir_from_books_dir())
+
 def _library_ui_mode() -> str:
     mode = (os.environ.get("READER3_LIBRARY_UI") or "modern").strip().lower()
     return mode if mode in {"modern", "classic"} else "modern"
@@ -104,6 +109,12 @@ def _library_template_name() -> str:
         if classic.exists():
             return "library_classic.html"
     return "library.html"
+
+def _validate_collection_id(collection_id: str) -> str:
+    try:
+        return str(uuid.UUID(str(collection_id)))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid collection_id")
 
 @app.on_event("startup")
 async def _startup_scan_books() -> None:
@@ -182,6 +193,28 @@ async def library_view(request: Request):
                         "format": "epub",
                     })
 
+    existing_book_ids = {b.get("id") for b in books if b.get("id")}
+    collections = []
+    collections_error: Optional[str] = None
+    try:
+        for c in collections_service.load_collections(_collections_file_path()):
+            present = [bid for bid in (c.book_ids or []) if bid in existing_book_ids]
+            missing = [bid for bid in (c.book_ids or []) if bid not in existing_book_ids]
+            collections.append(
+                {
+                    "id": c.id,
+                    "name": c.name,
+                    "created_at": c.created_at,
+                    "book_ids": list(c.book_ids),
+                    "book_count": len(present),
+                    "missing_book_ids": missing,
+                    "missing_count": len(missing),
+                }
+            )
+        collections.sort(key=lambda x: str(x.get("name") or "").lower())
+    except collections_service.CollectionsFileError as e:
+        collections_error = str(e)
+
     return templates.TemplateResponse(
         _library_template_name(),
         {
@@ -192,6 +225,8 @@ async def library_view(request: Request):
                 "epub": sum(1 for b in books if b.get("format") == "epub"),
                 "pdf": sum(1 for b in books if b.get("format") == "pdf"),
             },
+            "collections": collections,
+            "collections_error": collections_error,
             "library_ui_mode": _library_ui_mode(),
         },
     )
@@ -199,6 +234,104 @@ async def library_view(request: Request):
 @app.get("/settings", response_class=HTMLResponse)
 async def settings_view(request: Request):
     return templates.TemplateResponse("settings.html", {"request": request})
+
+def _validate_book_id_path_safe(book_id: str) -> str:
+    safe = os.path.basename(str(book_id or ""))
+    if safe != book_id:
+        raise HTTPException(status_code=400, detail="Invalid book_id")
+    return safe
+
+
+class CollectionCreateRequest(BaseModel):
+    name: str
+
+
+class CollectionRenameRequest(BaseModel):
+    name: str
+
+
+class CollectionBooksUpdateRequest(BaseModel):
+    add: list[str] = Field(default_factory=list)
+    remove: list[str] = Field(default_factory=list)
+
+
+@app.get("/api/collections")
+async def api_collections_list():
+    try:
+        cols = collections_service.load_collections(_collections_file_path())
+        return {"collections": [c.to_dict() for c in cols]}
+    except collections_service.CollectionsFileError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/collections", status_code=201)
+async def api_collections_create(body: CollectionCreateRequest):
+    try:
+        created = collections_service.create_collection(_collections_file_path(), name=body.name)
+        return created.to_dict()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except collections_service.CollectionsFileError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/collections/{collection_id}")
+async def api_collections_get(collection_id: str):
+    cid = _validate_collection_id(collection_id)
+    try:
+        col = collections_service.get_collection(_collections_file_path(), cid)
+        if not col:
+            raise HTTPException(status_code=404, detail="Collection not found")
+        return col.to_dict()
+    except collections_service.CollectionsFileError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/collections/{collection_id}")
+async def api_collections_rename(collection_id: str, body: CollectionRenameRequest):
+    cid = _validate_collection_id(collection_id)
+    try:
+        updated = collections_service.rename_collection(_collections_file_path(), cid, name=body.name)
+        return updated.to_dict()
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Collection not found")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except collections_service.CollectionsFileError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/collections/{collection_id}/books")
+async def api_collections_update_books(collection_id: str, body: CollectionBooksUpdateRequest):
+    cid = _validate_collection_id(collection_id)
+    try:
+        add_ids = [_validate_book_id(x) for x in (body.add or [])]
+        remove_ids = [_validate_book_id_path_safe(x) for x in (body.remove or [])]
+        updated = collections_service.update_collection_books(
+            _collections_file_path(),
+            cid,
+            add=add_ids,
+            remove=remove_ids,
+        )
+        return updated.to_dict()
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Collection not found")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except collections_service.CollectionsFileError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/collections/{collection_id}", status_code=204)
+async def api_collections_delete(collection_id: str):
+    cid = _validate_collection_id(collection_id)
+    try:
+        collections_service.delete_collection(_collections_file_path(), cid)
+        return Response(status_code=204)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Collection not found")
+    except collections_service.CollectionsFileError as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/read/{book_id}", response_class=HTMLResponse)
 async def redirect_to_first_chapter(book_id: str):

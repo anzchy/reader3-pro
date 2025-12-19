@@ -156,32 +156,32 @@ Notes:
 
 ### Collections Service Module
 
-- [ ] T060 [P1] [US3] Create `src/reader3_app/collections_service.py` module (src/reader3_app/collections_service.py)
-- [ ] T061 [P1] [US3] Implement Collection dataclass (id: UUID, name: str, created_at: str, book_ids: List[str]) (src/reader3_app/collections_service.py)
-- [ ] T062 [P1] [US3] Implement atomic write-to-temp + rename for `config/library_collections.json` (src/reader3_app/collections_service.py)
-- [ ] T063 [P1] [US3] Implement collection name validation (1-60 chars, allowed chars, case-insensitive uniqueness) (src/reader3_app/collections_service.py)
-- [ ] T064 [P1] [US3] Implement missing/invalid file handling (treat missing as empty; error on invalid JSON) (src/reader3_app/collections_service.py)
+- [x] T060 [P1] [US3] Create `src/reader3_app/collections_service.py` module (src/reader3_app/collections_service.py)
+- [x] T061 [P1] [US3] Implement Collection dataclass (id: UUID, name: str, created_at: str, book_ids: List[str]) (src/reader3_app/collections_service.py)
+- [x] T062 [P1] [US3] Implement atomic write-to-temp + rename for `config/library_collections.json` (src/reader3_app/collections_service.py)
+- [x] T063 [P1] [US3] Implement collection name validation (1-60 chars, allowed chars, case-insensitive uniqueness) (src/reader3_app/collections_service.py)
+- [x] T064 [P1] [US3] Implement missing/invalid file handling (treat missing as empty; error on invalid JSON) (src/reader3_app/collections_service.py)
 
 ### Collections API Endpoints
 
-- [ ] T065 [P1] [US3] Implement `GET /api/collections` (list all) (src/reader3_app/web/server.py)
-- [ ] T066 [P1] [US3] Implement `POST /api/collections` (create with name validation) (src/reader3_app/web/server.py)
-- [ ] T067 [P1] [US3] Implement `GET /api/collections/{collection_id}` (get single collection) (src/reader3_app/web/server.py)
-- [ ] T068 [P1] [US3] Implement `PUT /api/collections/{collection_id}` (rename) (src/reader3_app/web/server.py)
-- [ ] T069 [P1] [US3] Implement `POST /api/collections/{collection_id}/books` (add/remove books) (src/reader3_app/web/server.py)
-- [ ] T070 [P1] [US3] Implement `DELETE /api/collections/{collection_id}` (src/reader3_app/web/server.py)
-- [ ] T071 [P1] [US3] Add collections to library view context (src/reader3_app/web/server.py)
+- [x] T065 [P1] [US3] Implement `GET /api/collections` (list all) (src/reader3_app/web/server.py)
+- [x] T066 [P1] [US3] Implement `POST /api/collections` (create with name validation) (src/reader3_app/web/server.py)
+- [x] T067 [P1] [US3] Implement `GET /api/collections/{collection_id}` (get single collection) (src/reader3_app/web/server.py)
+- [x] T068 [P1] [US3] Implement `PUT /api/collections/{collection_id}` (rename) (src/reader3_app/web/server.py)
+- [x] T069 [P1] [US3] Implement `POST /api/collections/{collection_id}/books` (add/remove books) (src/reader3_app/web/server.py)
+- [x] T070 [P1] [US3] Implement `DELETE /api/collections/{collection_id}` (src/reader3_app/web/server.py)
+- [x] T071 [P1] [US3] Add collections to library view context (src/reader3_app/web/server.py)
 
 ### Collections UI
 
-- [ ] T072 [P1] [US3] Render collections list in left sidebar sorted A→Z with counts (src/reader3_app/web/templates/library.html)
-- [ ] T073 [P1] [US3] Implement "Create collection" modal with name input and validation (src/reader3_app/web/static/library.js)
-- [ ] T074 [P1] [US3] Implement "Add to collection" button in selection mode (src/reader3_app/web/static/library.js)
-- [ ] T075 [P1] [US3] Implement collection scope switching (filter center grid to show only collection books) (src/reader3_app/web/static/library.js)
-- [ ] T076 [P1] [US3] Implement delete collection with confirmation dialog (src/reader3_app/web/static/library.js)
-- [ ] T077 [P1] [US3] Add orphaned book cleanup UI (show "1 missing" indicator and cleanup button) (src/reader3_app/web/static/library.js)
-- [ ] T078 [P1] [US3] Implement active collection scope resets to "all" when deleted (src/reader3_app/web/static/library.js)
-- [ ] T079 [P1] [US3] Test creating collection, adding books, switching scope, and deleting (manual test)
+- [x] T072 [P1] [US3] Render collections list in left sidebar sorted A→Z with counts (src/reader3_app/web/templates/library.html)
+- [x] T073 [P1] [US3] Implement "Create collection" modal with name input and validation (src/reader3_app/web/static/library.js)
+- [x] T074 [P1] [US3] Implement "Add to collection" button in selection mode (src/reader3_app/web/static/library.js)
+- [x] T075 [P1] [US3] Implement collection scope switching (filter center grid to show only collection books) (src/reader3_app/web/static/library.js)
+- [x] T076 [P1] [US3] Implement delete collection with confirmation dialog (src/reader3_app/web/static/library.js)
+- [x] T077 [P1] [US3] Add orphaned book cleanup UI (show "1 missing" indicator and cleanup button) (src/reader3_app/web/static/library.js)
+- [x] T078 [P1] [US3] Implement active collection scope resets to "all" when deleted (src/reader3_app/web/static/library.js)
+- [x] T079 [P1] [US3] Test creating collection, adding books, switching scope, and deleting (manual test)
 
 ---
 

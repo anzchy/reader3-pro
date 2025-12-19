@@ -197,11 +197,90 @@ pre {
   margin-top: 8px;
 }
 
+.collections-error {
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(220, 38, 38, 0.25);
+  background: rgba(220, 38, 38, 0.06);
+  color: #991b1b;
+  font-size: 0.9rem;
+  line-height: 1.3;
+}
+
 .collections-list {
   margin-top: 10px;
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.collection-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(15, 23, 42, 0.02);
+}
+
+.collection-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.collection-btn:hover {
+  background: rgba(15, 23, 42, 0.04);
+}
+
+.collection-btn.is-active {
+  background: var(--accent-weak);
+  border-color: rgba(37, 99, 235, 0.25);
+}
+
+.collection-name {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collection-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mini-btn {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 6px 8px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  line-height: 1;
+}
+
+.mini-btn:hover {
+  border-color: rgba(15, 23, 42, 0.2);
+}
+
+.mini-btn--danger {
+  border-color: rgba(220, 38, 38, 0.3);
+  color: #991b1b;
 }
 
 .library-main {
@@ -529,6 +608,48 @@ body.select-mode .select-checkbox {
   background: rgba(15, 23, 42, 0.04);
   border: 1px solid var(--border);
   overflow: auto;
+}
+
+.form-field {
+  display: block;
+  margin-top: 8px;
+}
+
+.form-label {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.form-field input[type="text"] {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  font-size: 0.95rem;
+  outline: none;
+}
+
+.form-error {
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(220, 38, 38, 0.25);
+  background: rgba(220, 38, 38, 0.06);
+  color: #991b1b;
+  font-size: 0.9rem;
+  line-height: 1.3;
+}
+
+.collections-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.collections-picker button {
+  text-align: left;
 }
 
 @media (max-width: 980px) {
