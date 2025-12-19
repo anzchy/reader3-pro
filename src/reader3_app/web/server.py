@@ -94,6 +94,17 @@ ai_queue = AIRequestQueueManager(max_pending=10)
 def _project_root_dir_from_books_dir() -> str:
     return os.path.dirname(os.path.abspath(BOOKS_DIR))
 
+def _library_ui_mode() -> str:
+    mode = (os.environ.get("READER3_LIBRARY_UI") or "modern").strip().lower()
+    return mode if mode in {"modern", "classic"} else "modern"
+
+def _library_template_name() -> str:
+    if _library_ui_mode() == "classic":
+        classic = TEMPLATES_DIR / "library_classic.html"
+        if classic.exists():
+            return "library_classic.html"
+    return "library.html"
+
 @app.on_event("startup")
 async def _startup_scan_books() -> None:
     # Ensure stable UUID mapping exists for all processed books.
@@ -151,7 +162,10 @@ async def library_view(request: Request):
                         "chapters": len(book.spine)
                     })
 
-    return templates.TemplateResponse("library.html", {"request": request, "books": books})
+    return templates.TemplateResponse(
+        _library_template_name(),
+        {"request": request, "books": books, "library_ui_mode": _library_ui_mode()},
+    )
 
 @app.get("/settings", response_class=HTMLResponse)
 async def settings_view(request: Request):

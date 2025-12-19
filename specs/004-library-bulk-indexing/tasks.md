@@ -48,12 +48,12 @@ Notes:
 
 **Goal**: Prepare filesystem and configuration for collections and UI mode switching.
 
-- [ ] T001 [P1] Create repo-root `config/` directory if it doesn't exist (config/)
-- [ ] T002 [P1] Add `config/library_collections.json` to `.gitignore` (.gitignore)
-- [ ] T003 [P1] Read `READER3_LIBRARY_UI=modern|classic` (default `modern`) in the library route and switch templates accordingly (src/reader3_app/web/server.py)
-- [ ] T004 [P1] Verify existing `/api/index/{book_id}` and `/api/index/{book_id}/status` endpoints work correctly (manual test)
-- [ ] T005 [P1] Verify `section_count` is derived from `len(book.spine)` (src/reader3_app/reader3.py)
-- [ ] T006 [P1] Verify cover images are served via `/read/{book_id}/images/{image_name}` (manual test)
+- [x] T001 [P1] Create repo-root `config/` directory if it doesn't exist (config/)
+- [x] T002 [P1] Add `config/library_collections.json` to `.gitignore` (.gitignore)
+- [x] T003 [P1] Read `READER3_LIBRARY_UI=modern|classic` (default `modern`) in the library route and switch templates accordingly (src/reader3_app/web/server.py)
+- [x] T004 [P1] Verify existing `/api/index/{book_id}` and `/api/index/{book_id}/status` endpoints work correctly (manual test)
+- [x] T005 [P1] Verify `section_count` is derived from `len(book.spine)` (src/reader3_app/reader3.py)
+- [x] T006 [P1] Verify cover images are served via `/read/{book_id}/images/{image_name}` (manual test)
 
 ---
 
