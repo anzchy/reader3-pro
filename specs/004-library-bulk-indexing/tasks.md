@@ -111,42 +111,42 @@ Notes:
 
 ### Client State Management
 
-- [ ] T033 [P1] [US1] Create `static/library.js` with module structure (src/reader3_app/web/static/library.js)
-- [ ] T034 [P1] [US1] Implement client state object (scope, viewMode, selectMode, selectedBookIds, titleFilter) (src/reader3_app/web/static/library.js)
-- [ ] T035 [P1] [US1] Implement selection mode toggle (show/hide checkboxes, update UI) (src/reader3_app/web/static/library.js)
-- [ ] T036 [P1] [US1] Implement "Select all" and "Clear selection" actions (src/reader3_app/web/static/library.js)
-- [ ] T037 [P1] [US1] Implement selected count display in toolbar (src/reader3_app/web/static/library.js)
-- [ ] T038 [P1] [US1] Add selection persistence across grid/list toggle (src/reader3_app/web/static/library.js)
-- [ ] T039 [P1] [US1] Implement scope switching clears selection logic (src/reader3_app/web/static/library.js)
+- [x] T033 [P1] [US1] Create `static/library.js` with module structure (src/reader3_app/web/static/library.js)
+- [x] T034 [P1] [US1] Implement client state object (scope, viewMode, selectMode, selectedBookIds, titleFilter) (src/reader3_app/web/static/library.js)
+- [x] T035 [P1] [US1] Implement selection mode toggle (show/hide checkboxes, update UI) (src/reader3_app/web/static/library.js)
+- [x] T036 [P1] [US1] Implement "Select all" and "Clear selection" actions (src/reader3_app/web/static/library.js)
+- [x] T037 [P1] [US1] Implement selected count display in toolbar (src/reader3_app/web/static/library.js)
+- [x] T038 [P1] [US1] Add selection persistence across grid/list toggle (src/reader3_app/web/static/library.js)
+- [x] T039 [P1] [US1] Implement scope switching clears selection logic (src/reader3_app/web/static/library.js)
 
 ### Lazy Index Status Fetch
 
-- [ ] T040 [P1] [US1] Implement lazy status fetch after initial render (src/reader3_app/web/static/library.js)
-- [ ] T041 [P1] [US1] Batch status requests (<=20 book_ids per batch, max 4 concurrent) (src/reader3_app/web/static/library.js)
-- [ ] T042 [P1] [US1] Add 5s timeout per status request; mark failures as `unknown` (src/reader3_app/web/static/library.js)
-- [ ] T043 [P1] [US1] Render status pills in grid view (not_indexed/indexed/unknown/indexing/error) (src/reader3_app/web/templates/library.html)
-- [ ] T044 [P1] [US1] Render chunk counts in grid view when `status=indexed` (src/reader3_app/web/templates/library.html)
-- [ ] T045 [P1] [US1] Add loading state "Loading…" for status pills before fetch completes (src/reader3_app/web/static/library.js)
+- [x] T040 [P1] [US1] Implement lazy status fetch after initial render (src/reader3_app/web/static/library.js)
+- [x] T041 [P1] [US1] Batch status requests (<=20 book_ids per batch, max 4 concurrent) (src/reader3_app/web/static/library.js)
+- [x] T042 [P1] [US1] Add 5s timeout per status request; mark failures as `unknown` (src/reader3_app/web/static/library.js)
+- [x] T043 [P1] [US1] Render status pills in grid view (not_indexed/indexed/unknown/indexing/error) (src/reader3_app/web/templates/library.html)
+- [x] T044 [P1] [US1] Render chunk counts in grid view when `status=indexed` (src/reader3_app/web/templates/library.html)
+- [x] T045 [P1] [US1] Add loading state "Loading…" for status pills before fetch completes (src/reader3_app/web/static/library.js)
 
 ### Bulk Indexing UI
 
-- [ ] T046 [P1] [US1] Add "Index selected books" button (disabled when no selection) (src/reader3_app/web/templates/library.html)
-- [ ] T047 [P1] [US1] Implement sequential bulk indexing loop (one `POST /api/index/{book_id}` at a time) (src/reader3_app/web/static/library.js)
-- [ ] T048 [P1] [US1] Implement per-book state transitions (not_indexed → indexing → indexed/error) (src/reader3_app/web/static/library.js)
-- [ ] T049 [P1] [US1] Add overall progress indicator "Indexing 2/5…" in toolbar (src/reader3_app/web/static/library.js)
-- [ ] T050 [P1] [US1] Implement continue-on-error for bulk indexing (src/reader3_app/web/static/library.js)
-- [ ] T051 [P1] [US1] Collect indexing errors and show summary modal after batch completes (src/reader3_app/web/static/library.js)
-- [ ] T052 [P1] [US1] Add navigation-away warning during active bulk indexing (beforeunload handler) (src/reader3_app/web/static/library.js)
-- [ ] T053 [P1] [US1] Add "Indexing interrupted" hint when page loads after interrupted indexing (src/reader3_app/web/static/library.js)
-- [ ] T054 [P1] [US1] Update status pills in real-time as indexing progresses (src/reader3_app/web/static/library.js)
+- [x] T046 [P1] [US1] Add "Index selected books" button (disabled when no selection) (src/reader3_app/web/templates/library.html)
+- [x] T047 [P1] [US1] Implement sequential bulk indexing loop (one `POST /api/index/{book_id}` at a time) (src/reader3_app/web/static/library.js)
+- [x] T048 [P1] [US1] Implement per-book state transitions (not_indexed → indexing → indexed/error) (src/reader3_app/web/static/library.js)
+- [x] T049 [P1] [US1] Add overall progress indicator "Indexing 2/5…" in toolbar (src/reader3_app/web/static/library.js)
+- [x] T050 [P1] [US1] Implement continue-on-error for bulk indexing (src/reader3_app/web/static/library.js)
+- [x] T051 [P1] [US1] Collect indexing errors and show summary modal after batch completes (src/reader3_app/web/static/library.js)
+- [x] T052 [P1] [US1] Add navigation-away warning during active bulk indexing (beforeunload handler) (src/reader3_app/web/static/library.js)
+- [x] T053 [P1] [US1] Add "Indexing interrupted" hint when page loads after interrupted indexing (src/reader3_app/web/static/library.js)
+- [x] T054 [P1] [US1] Update status pills in real-time as indexing progresses (src/reader3_app/web/static/library.js)
 
 ### Backend Support
 
-- [ ] T055 [P1] [US1] Verify `POST /api/index/{book_id}` accepts `{"force_reindex": bool}` and returns IndexMeta (src/reader3_app/web/server.py)
-- [ ] T056 [P1] [US1] Verify `GET /api/index/{book_id}/status` returns `{status, chunk_count, model_name, indexed_at?}` (src/reader3_app/web/server.py)
-- [ ] T057 [P1] [US1] Add error handling for missing semantic dependencies (return 400 with guidance) (src/reader3_app/web/server.py)
-- [ ] T058 [P1] [US1] Test bulk indexing with mix of indexed/not-indexed books (manual test)
-- [ ] T059 [P1] [US1] Test error handling when one book fails during bulk indexing (manual test)
+- [x] T055 [P1] [US1] Verify `POST /api/index/{book_id}` accepts `{"force_reindex": bool}` and returns IndexMeta (src/reader3_app/web/server.py)
+- [x] T056 [P1] [US1] Verify `GET /api/index/{book_id}/status` returns `{status, chunk_count, model_name, indexed_at?}` (src/reader3_app/web/server.py)
+- [x] T057 [P1] [US1] Add error handling for missing semantic dependencies (return 400 with guidance) (src/reader3_app/web/server.py)
+- [x] T058 [P1] [US1] Test bulk indexing with mix of indexed/not-indexed books (manual test)
+- [x] T059 [P1] [US1] Test error handling when one book fails during bulk indexing (manual test)
 
 ---
 

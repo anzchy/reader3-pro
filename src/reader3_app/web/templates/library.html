@@ -63,7 +63,17 @@
                     <button type="button" class="icon-btn" id="sort-btn" aria-label="Sort A to Z">A→Z</button>
                     <button type="button" class="icon-btn" id="view-toggle-btn" aria-label="Toggle grid and list view">▦</button>
                     <button type="button" class="icon-btn" id="select-toggle-btn" aria-label="Toggle selection mode">✓</button>
+                    <div class="selection-group" id="selection-group" hidden>
+                        <span class="selected-count" id="selected-count">0 selected</span>
+                        <button type="button" class="toolbar-btn" id="select-all-btn">Select all</button>
+                        <button type="button" class="toolbar-btn" id="clear-selection-btn">Clear</button>
+                        <button type="button" class="toolbar-btn toolbar-btn--primary" id="index-selected-btn" disabled>Index selected</button>
+                    </div>
                 </div>
+            </div>
+
+            <div class="toolbar-notice" id="indexing-interrupted" hidden>
+                Indexing was interrupted. You can select books and index again.
             </div>
 
             {% if not books %}
@@ -75,7 +85,12 @@
 
             <section class="library-shelf" id="library-shelf" aria-label="Books">
                 {% for book in books %}
-                    <article class="book-card" data-book-id="{{ book.id }}" data-format="{{ book.format }}">
+                    <article class="book-card" data-book-id="{{ book.id }}" data-format="{{ book.format }}" data-title="{{ book.title|lower }}" data-author="{{ book.author|lower }}">
+                        <input type="checkbox" class="select-checkbox" aria-label="Select {{ book.title }}" />
+                        <div class="book-badges" aria-hidden="true">
+                            <span class="status-pill is-loading" data-status="loading">Loading…</span>
+                            <span class="chunk-pill" hidden></span>
+                        </div>
                         <a class="book-link" href="/read/{{ book.id }}/0" aria-label="Read {{ book.title }}">
                             {% if book.cover_url %}
                                 <img class="book-cover" src="{{ book.cover_url }}" alt="Cover for {{ book.title }}" loading="lazy" />
@@ -129,27 +144,19 @@
         </div>
     </dialog>
 
-    <script>
-        (function () {
-            const switcher = document.querySelector(".right-tab-switcher");
-            if (switcher) {
-                switcher.addEventListener("click", (e) => {
-                    const btn = e.target.closest("button[data-tab]");
-                    if (!btn) return;
-                    const name = btn.getAttribute("data-tab");
-                    document.querySelectorAll(".right-tab").forEach((el) => el.classList.toggle("is-active", el.id === `${name}-tab`));
-                    document.querySelectorAll(".tab-btn").forEach((el) => el.classList.toggle("is-active", el === btn));
-                });
-            }
+    <dialog class="modal" id="index-errors-modal" aria-label="Indexing errors">
+        <div class="modal-header">
+            <div class="modal-title">Indexing completed with errors</div>
+            <button type="button" class="icon-btn" id="index-errors-close" aria-label="Close">✕</button>
+        </div>
+        <div class="modal-body">
+            <div class="error-summary" id="index-errors-summary"></div>
+        </div>
+        <div class="modal-actions">
+            <button type="button" class="toolbar-btn" id="index-errors-ok">OK</button>
+        </div>
+    </dialog>
 
-            const addBtn = document.getElementById("add-books-btn");
-            const modal = document.getElementById("add-books-modal");
-            const closeEls = [document.getElementById("add-books-close"), document.getElementById("add-books-ok")].filter(Boolean);
-            if (addBtn && modal && typeof modal.showModal === "function") {
-                addBtn.addEventListener("click", () => modal.showModal());
-                closeEls.forEach((el) => el.addEventListener("click", () => modal.close()));
-            }
-        })();
-    </script>
+    <script src="/static/library.js" defer></script>
 </body>
 </html>
