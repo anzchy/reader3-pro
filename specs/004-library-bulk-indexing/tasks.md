@@ -61,15 +61,15 @@ Notes:
 
 **Goal**: Split library UI into modern/classic versions without breaking existing functionality.
 
-- [ ] T007 [P1] Copy current `templates/library.html` to `templates/library_classic.html` (src/reader3_app/web/templates/)
-- [ ] T008 [P1] Update library route to switch templates based on `READER3_LIBRARY_UI` env var (src/reader3_app/web/server.py)
-- [ ] T009 [P1] Create empty `static/library.css` file (src/reader3_app/web/static/)
-- [ ] T010 [P1] Extract inline `<style>` from `library.html` to `library.css` (src/reader3_app/web/static/library.css)
-- [ ] T011 [P1] Link `library.css` in `library.html` `<head>` (src/reader3_app/web/templates/library.html)
-- [ ] T012 [P1] Test rollback: `READER3_LIBRARY_UI=classic` serves classic page correctly (manual test)
-- [ ] T013 [P1] Test modern: `READER3_LIBRARY_UI=modern` serves new page with external CSS (manual test)
-- [ ] T014 [P1] Verify book grid still renders and clicking books navigates to reader (manual test)
-- [ ] T015 [P1] Document rollback toggle in quickstart.md (specs/004-library-bulk-indexing/quickstart.md)
+- [x] T007 [P1] Copy current `templates/library.html` to `templates/library_classic.html` (src/reader3_app/web/templates/)
+- [x] T008 [P1] Update library route to switch templates based on `READER3_LIBRARY_UI` env var (src/reader3_app/web/server.py)
+- [x] T009 [P1] Create empty `static/library.css` file (src/reader3_app/web/static/)
+- [x] T010 [P1] Extract inline `<style>` from `library.html` to `library.css` (src/reader3_app/web/static/library.css)
+- [x] T011 [P1] Link `library.css` in `library.html` `<head>` (src/reader3_app/web/templates/library.html)
+- [x] T012 [P1] Test rollback: `READER3_LIBRARY_UI=classic` serves classic page correctly (manual test)
+- [x] T013 [P1] Test modern: `READER3_LIBRARY_UI=modern` serves new page with external CSS (manual test)
+- [x] T014 [P1] Verify book grid still renders and clicking books navigates to reader (manual test)
+- [x] T015 [P1] Document rollback toggle in quickstart.md (specs/004-library-bulk-indexing/quickstart.md)
 
 ---
 
