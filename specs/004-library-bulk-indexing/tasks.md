@@ -237,10 +237,10 @@ Notes:
 
 ## Documentation Updates
 
-- [ ] T099 [P3] Update `CLAUDE.md` to add 004 to Active Technologies section (CLAUDE.md)
-- [ ] T100 [P3] Update `docs/technical-detail/storage-and-data-locations.md` to document `config/library_collections.json` (docs/technical-detail/storage-and-data-locations.md)
-- [ ] T101 [P3] Update `docs/technical-detail/technical-detail.md` to add Collections architecture overview (docs/technical-detail/technical-detail.md)
-- [ ] T102 [P3] Verify `contracts/library-api.yaml` matches the implemented endpoints, request/response schemas, and status codes (specs/004-library-bulk-indexing/contracts/library-api.yaml)
+- [x] T099 [P3] Update `CLAUDE.md` to add 004 to Active Technologies section (CLAUDE.md)
+- [x] T100 [P3] Update `docs/technical-detail/storage-and-data-locations.md` to document `config/library_collections.json` (docs/technical-detail/storage-and-data-locations.md)
+- [x] T101 [P3] Update `docs/technical-detail/technical-detail.md` to add Collections architecture overview (docs/technical-detail/technical-detail.md)
+- [x] T102 [P3] Verify `contracts/library-api.yaml` matches the implemented endpoints, request/response schemas, and status codes (specs/004-library-bulk-indexing/contracts/library-api.yaml)
 
 ---
 

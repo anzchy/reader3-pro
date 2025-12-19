@@ -203,20 +203,19 @@ paths:
           application/json:
             schema:
               type: object
-              required: [action, book_ids]
               properties:
-                action:
-                  type: string
-                  enum: [add, remove]
-                  description: Whether to add or remove the specified books
-                book_ids:
+                add:
                   type: array
                   items:
                     type: string
-                  description: List of book folder IDs (e.g., ["dracula_data"])
+                  description: Book folder IDs to add (e.g., ["dracula_data"])
+                remove:
+                  type: array
+                  items:
+                    type: string
+                  description: Book folder IDs to remove
             example:
-              action: "add"
-              book_ids: ["dracula_data", "foundation_data"]
+              add: ["dracula_data", "foundation_data"]
       responses:
         '200':
           description: Collection updated

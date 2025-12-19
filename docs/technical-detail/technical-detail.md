@@ -5,6 +5,7 @@ This directory collects implementation notes and “where things live” referen
 ## Contents
 
 - Storage & data locations: `docs/technical-detail/storage-and-data-locations.md`
+- Library collections (004): `docs/technical-detail/library-collections.md`
 - AI providers & privacy (what gets sent to cloud APIs): `docs/technical-detail/ai-providers-and-privacy.md`
 - AI response speed tuning (Ollama/local): `docs/technical-detail/ai-speed-optimization.md`
 - Models & caches (HuggingFace / Ollama / offline notes): `docs/technical-detail/models-and-caches.md`

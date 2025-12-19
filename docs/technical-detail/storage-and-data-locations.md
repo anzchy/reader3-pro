@@ -21,6 +21,12 @@
 - Chrome/Edge/Brave DevTools → **Application** → **IndexedDB** → `reader3_ai_assistant`
 - Safari → Develop menu → Web Inspector → Storage
 
+## Browser storage (localStorage)
+
+The Library UI stores small UI preferences in localStorage:
+
+- `reader3.library.viewMode`: `grid` or `list`
+
 ## Server-side on-disk storage (conversations)
 
 The AI assistant persists chat threads as JSON on disk so they are portable between browsers/machines.
@@ -61,6 +67,14 @@ Valid values for `conversation_disk_storage`:
 
 - AI settings (including provider API keys): `config/ai_settings.json` (gitignored)
 - Example template: `config/ai_settings.example.json`
+
+## Server-side library collections (004)
+
+User-defined Collections are persisted on disk as a gitignored JSON file:
+
+- **File**: `config/library_collections.json` (gitignored)
+- **Owner**: server (FastAPI); written via Collections API endpoints (see spec `004-library-bulk-indexing`)
+- **Schema**: `{ schema_version: 1, collections: [...] }`
 
 ## RAG index (ChromaDB)
 
