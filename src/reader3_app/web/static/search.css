@@ -131,6 +131,14 @@ mark.search-current {
   background: rgba(0, 0, 0, 0.38);
 }
 
+.rt-btn img {
+  display: block;
+}
+
+.rt-btn img.rt-icon-invert {
+  filter: invert(1);
+}
+
 #reader-search-drawer {
   position: fixed;
   top: 0;

@@ -25,3 +25,5 @@ wheels/
 
 # AI Assistant (optional on-disk conversation mirror)
 /conversations/
+.claude/mind.mv2
+.envrc
