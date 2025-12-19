@@ -34,6 +34,7 @@ Top-level shape:
 - `PUT /api/collections/{collection_id}` → rename
 - `POST /api/collections/{collection_id}/books` → add/remove books
 - `DELETE /api/collections/{collection_id}` → delete
+- `GET /api/library/stats?scope=...&fresh=true` → aggregated stats for current scope (optional ≤5s TTL cache unless `fresh=true`)
 
 ## Scope Strings (Library UI)
 
@@ -47,8 +48,11 @@ These scopes are used by:
 - Library UI filtering
 - `GET /api/library/stats?scope=...`
 
+## UI Rollback Toggle
+
+- `READER3_LIBRARY_UI=modern|classic` (default `modern`)
+
 ## Validation & Security
 
 - Collection names are validated server-side (length + allowed characters) and rendered safely.
 - Book IDs are treated as folder names and validated to prevent path traversal.
-

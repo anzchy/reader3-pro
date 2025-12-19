@@ -2,7 +2,7 @@
 
 ![reader3](reader3.png)
 
-A lightweight, self-hosted EPUB reader that lets you read through EPUB books one chapter at a time. This makes it very easy to copy paste the contents of a chapter to an LLM, to read along. Basically - get epub books (e.g. [Project Gutenberg](https://www.gutenberg.org/) has many), open them up in this reader, copy paste text around to your favorite LLM, and read together and along.
+A lightweight, self-hosted EPUB reader that lets you read through EPUB books one chapter at a time. It includes a reorganized 3-pane Library UI with Collections, bulk semantic indexing, Dashboard stats, and cross-book search.
 
 This project is an enhanced version (thus add `pro` to repo name) of Andrie Karpathy's reader3 project.
 
@@ -29,14 +29,15 @@ This project is an enhanced version (thus add `pro` to repo name) of Andrie Karp
 .
 ├── src/
 │   └── reader3_app/
+│       ├── collections_service.py   # Collections storage (config/library_collections.json)
 │       ├── reader3.py              # EPUB processing + (optional) CLI indexing
 │       ├── search_service.py       # Keyword + library search logic
 │       ├── vector_search.py        # ChromaDB indexing + semantic retrieval
 │       ├── ai/                     # AI assistant backend modules
 │       └── web/
 │           ├── server.py           # FastAPI app
-│           ├── templates/          # Jinja templates (library.html, reader.html)
-│           └── static/             # JS/CSS for search + AI UI
+│           ├── templates/          # Jinja templates (library.html, library_classic.html, reader.html)
+│           └── static/             # JS/CSS assets (library.js/css, search.css, library-search.js)
 ├── config/
 │   └── ai_settings.example.json    # Example AI config (copy to ai_settings.json)
 ├── specs/                  # Feature specs + tasks (search lives in specs/001-search-features/)
@@ -103,6 +104,18 @@ uv run reader3-server
 
 Visit [localhost:8123](http://localhost:8123/) to see your Library. To remove a book, delete its `books/*_data/` folder.
 
+### Library UI Mode (modern/classic)
+
+The Library UI supports rollback to the classic page:
+
+```bash
+# Modern (default)
+READER3_LIBRARY_UI=modern uv run reader3-server
+
+# Classic (pre-004)
+READER3_LIBRARY_UI=classic uv run reader3-server
+```
+
 If you already have `*_data/` folders at repo root, move them into `books/`:
 
 ```bash
@@ -125,7 +138,7 @@ The model download is large (~420MB) and is cached by HuggingFace after the firs
 
 #### Index a Book (Semantic Search)
 
-You can index from the Library UI (the button appears when a book is “Not indexed”), or via CLI:
+You can index from the Library UI (Selection mode → **Index selected**), from Library Search results (semantic/hybrid mode), or via CLI:
 
 ```bash
 uv run reader3 --index dracula_data
@@ -153,11 +166,18 @@ Where `book_id` is the processed folder name (e.g. `dracula_data`).
 
 ### Library (cross-book)
 
-On the Library page, use **Search across your library…** to search across all processed books (`*_data/`).
+On the Library page, open the right panel **Search** tab to search across all processed books (`*_data/`).
 
 - Results are grouped by book; click a passage to open the book at the matching chapter/occurrence.
 - Use **Sort** (relevance/title/author), **Case**, and **Mode**.
 - In semantic/hybrid mode, each book shows its index status; click **Index** to build vectors if needed.
+
+### Collections (Library organization)
+
+Collections are user-defined groups of books:
+
+- Create Collections in the left sidebar and add books via Selection mode → **Add to collection**.
+- Collections persist to `config/library_collections.json` (gitignored).
 
 
 
