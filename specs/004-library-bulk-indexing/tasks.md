@@ -225,13 +225,13 @@ Notes:
 
 ### Search Tab
 
-- [ ] T095 [P2] [US4] Refactor `library-search.js` to render results inside right panel `#search-tab` (src/reader3_app/web/static/library-search.js)
-- [ ] T096 [P2] [US4] Remove behavior that hides center grid when showing search results (src/reader3_app/web/static/library-search.js)
+- [x] T095 [P2] [US4] Refactor `library-search.js` to render results inside right panel `#search-tab` (src/reader3_app/web/static/library-search.js)
+- [x] T096 [P2] [US4] Remove behavior that hides center grid when showing search results (src/reader3_app/web/static/library-search.js)
 
 ### Chat Tab
 
-- [ ] T097 [P2] [US4] Implement Chat tab with single-book dropdown selector (src/reader3_app/web/templates/library.html)
-- [ ] T098 [P2] [US4] Disable "All books" and "Collection" options with tooltips "Coming soon" (src/reader3_app/web/templates/library.html)
+- [x] T097 [P2] [US4] Implement Chat tab with single-book dropdown selector (src/reader3_app/web/templates/library.html)
+- [x] T098 [P2] [US4] Disable "All books" and "Collection" options with tooltips "Coming soon" (src/reader3_app/web/templates/library.html)
 
 ---
 

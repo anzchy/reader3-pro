@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Library</title>
     <link rel="stylesheet" href="/static/library.css">
+    <link rel="stylesheet" href="/static/search.css">
 </head>
 <body>
     <div class="library-layout">
@@ -204,11 +205,57 @@
                 </section>
                 <section class="right-tab" id="chat-tab" aria-label="Chat">
                     <div class="right-title">Chat</div>
-                    <div class="right-placeholder">Chat will appear here.</div>
+                    <div class="chat-modes" role="group" aria-label="Chat scope">
+                        <button type="button" class="mini-btn" disabled title="Coming soon">All books</button>
+                        <button type="button" class="mini-btn mini-btn--danger" disabled title="Coming soon">Collection</button>
+                        <button type="button" class="mini-btn is-active" aria-current="true">Single book</button>
+                    </div>
+                    <div class="chat-controls">
+                        <label class="form-field">
+                            <div class="form-label">Book</div>
+                            <select id="chat-book-select">
+                                <option value="" selected disabled>Select a book…</option>
+                                {% for book in books %}
+                                    <option value="{{ book.id }}">{{ book.title }}</option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                    </div>
+                    <div class="right-placeholder">Chat UI will be wired to existing reader AI endpoints in a follow-up.</div>
                 </section>
                 <section class="right-tab" id="search-tab" aria-label="Search">
                     <div class="right-title">Search</div>
-                    <div class="right-placeholder">Cross-book search will appear here.</div>
+                    <div class="search-box">
+                        <input type="text" id="library-panel-search-input" placeholder="Search across your library…" autocomplete="off" />
+                        <div class="search-actions">
+                            <button type="button" class="search-btn" id="library-panel-search-clear">Clear</button>
+                            <label>
+                                <input type="checkbox" id="library-panel-search-case" />
+                                Case
+                            </label>
+                            <label>
+                                Mode
+                                <select id="library-panel-search-mode">
+                                    <option value="keyword">keyword</option>
+                                    <option value="semantic">semantic</option>
+                                    <option value="hybrid">hybrid</option>
+                                </select>
+                            </label>
+                            <label>
+                                Sort
+                                <select id="library-panel-search-sort">
+                                    <option value="relevance">relevance</option>
+                                    <option value="book_title">title</option>
+                                    <option value="book_author">author</option>
+                                </select>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="library-search-panel" id="library-panel-search-panel" style="display:none;">
+                        <div class="search-status" id="library-panel-search-status"></div>
+                        <div id="library-panel-search-results"></div>
+                    </div>
                 </section>
             </div>
 
@@ -281,5 +328,6 @@
     </dialog>
 
     <script src="/static/library.js" defer></script>
+    <script src="/static/library-search.js" defer></script>
 </body>
 </html>
