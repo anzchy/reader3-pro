@@ -27,3 +27,5 @@ wheels/
 /conversations/
 .claude/mind.mv2
 .envrc
+
+.codex/

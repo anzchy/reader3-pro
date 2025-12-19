@@ -74,7 +74,8 @@ Follow-up TODOs: None
 - Directory MUST contain: `book.pkl` (serialized Book object) and `images/` subdirectory
 - Library scanning MUST use glob patterns (`*_data/`) - no manifest files or indices
 - Book deletion MUST be accomplished by deleting the directory
-- No shared state files, global configuration, or cross-book indices
+- Avoid shared **book indices/manifests**: do not introduce a `books.json` / `library.db` that duplicates what can be derived by scanning `*_data/`.
+- Global, gitignored configuration under `config/` is allowed for user preferences/secrets and library-level metadata that is **not** a derived book index (e.g., `config/ai_settings.json`, `config/library_collections.json`).
 - When migrating to databases: maintain this logical isolation (one book = one record set)
 
 **Rationale**: Filesystem state makes the system transparent, debuggable, and resistant to corruption. Users can inspect, backup, or delete books by operating on directories. This matches the project's philosophy of simplicity and makes the system stateless (web server can be restarted without loss).
