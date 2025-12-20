@@ -242,7 +242,7 @@ curl -X POST http://127.0.0.1:8123/api/collections/<uuid>/books \
 2. Compute aggregated stats (books, indexed %, sections, chunks)
 
 **Frontend Tasks**:
-1. Create right-panel tab switcher (bottom-right)
+1. Create right-panel tab bar (full-width bottom)
 2. **Dashboard tab**:
    - Fetch and display stats for current scope
    - Add "Refresh stats" button

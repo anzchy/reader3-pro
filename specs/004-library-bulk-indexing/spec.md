@@ -2,7 +2,7 @@
 
 **Feature Branch**: `004-library-bulk-indexing`  
 **Created**: 2025-12-19  
-**Status**: Draft  
+**Status**: Updated (Right Panel v2)  
 **Input**: User description: “AI chat 中语义检索提示未索引；希望在 Library 界面增加 Index 按钮，可选择特定书籍进行 index；支持多选；支持 list/image 两种视图并展示 author、indexed chunk 数、section 数。”
 
 ## Overview
@@ -186,7 +186,20 @@ As a user, I want a right-panel switcher so I can see stats, run cross-book sear
 
 #### Chat (Library Panel)
 
-- **FR-017**: Library MUST provide a Chat panel that supports single-book chat selection (reusing existing reader AI endpoints).
+- **FR-017**: Library MUST provide a Chat panel that supports single-book chat selection.
+- **FR-017a**: The Library Chat panel MUST include a message list and an input box to send messages.
+- **FR-017b**: Library Chat MUST be independent from the in-book AI panel:
+  - it MUST NOT reuse in-book UI state (open/close state, active thread, input text)
+  - it MUST NOT reuse in-book conversation persistence (browser IndexedDB store `reader3_ai_assistant`) in v1
+  - it MAY reuse shared backend AI endpoints for generation (see `api/ai/*`)
+- **FR-017c**: Library Chat storage (v1):
+  - message history MAY be stored in `sessionStorage` (per-tab) and cleared on browser restart
+  - recommended key prefix: `reader3.library.chat.*`
+- **FR-017d**: Library Chat UX requirements:
+  - Enter sends; Shift+Enter inserts newline
+  - show streaming assistant responses when `stream=true` is supported
+  - show a Stop button during streaming
+  - show a clear error state on failures (non-blocking)
 - **FR-018**: All-books and collection chat MUST be shown as disabled/coming soon in 004 (out of scope for this phase).
 - **FR-038**: The “coming soon” pattern MUST be defined consistently:
   - disabled control (not clickable) with tooltip text: “Coming soon”
@@ -200,7 +213,18 @@ As a user, I want a right-panel switcher so I can see stats, run cross-book sear
   - right panel: 320px
   - center: flexible remaining width
   - max content width: 1400px centered
-- **FR-040**: The right-panel tab switcher MUST be fixed to the bottom-right of the viewport with: `right: 20px`, `bottom: 20px`, and `z-index >= 900`.
+- **FR-040**: Right panel content MUST fill the right sidebar width and MUST NOT be wrapped in an outer “card” frame:
+  - Dashboard/Chat/Search content uses internal padding only
+  - no outer border/box-shadow around the whole tab content
+- **FR-040a**: Right panel MUST support collapsing/expanding:
+  - a toggle control (chevron/arrow) MUST be placed in the middle gutter between center pane and right sidebar
+  - when collapsed, the center pane expands to fill available width
+  - collapsed state MAY be persisted in localStorage key `reader3.library.rightPanelCollapsed` (`true|false`)
+- **FR-040b**: Right panel tab switcher MUST be a bottom tab bar inside the right sidebar:
+  - occupies full sidebar width
+  - has no outer border/frame
+  - contains exactly 3 buttons (Dashboard/Chat/Search), each button width = 1/3 of sidebar width
+  - tab bar MUST be pinned to the bottom of the sidebar (e.g., `position: sticky; bottom: 0;`)
 - **FR-041**: Toolbar controls MUST define consistent UI states (default/hover/active/disabled) with deterministic styling; disabled state MUST use opacity 0.5 and prevent interaction.
 - **FR-042**: Panel transitions MUST be specified: open/close animations use a 160–200ms ease transition (no long animations).
 - **FR-043**: The Library MUST provide clear loading states for async operations:

@@ -114,7 +114,19 @@ This document consolidates research for the Library UI rebuild into a 3-pane lay
 **Implementation**:
 - Chat panel shows dropdown: `Single book` (enabled), `All books` (disabled), `Collection` (disabled)
 - Disabled options show tooltip: "Coming in future update"
-- Single-book chat uses existing `/api/ai/question/{book_uuid}` endpoint
+- Single-book chat uses existing `/api/ai/question/{book_uuid}` endpoint (streaming when `stream=true`).
+- Library Chat must be independent from in-book AI UI state and should not reuse the in-book IndexedDB store (`reader3_ai_assistant`) in v1; prefer `sessionStorage` under `reader3.library.chat.*`.
+
+---
+
+## Right Panel v2 (UX Updates)
+
+**Decision**: Update right panel layout to match the latest UI requirements.
+
+**Requirements summary**:
+- Dashboard/Chat/Search content fills the right sidebar width with no outer “card” wrapper.
+- Replace floating switcher with a full-width bottom tab bar (3 buttons; each 1/3 of sidebar width; no outer border).
+- Add a mid-gutter chevron to collapse/expand the right sidebar; optionally persist `reader3.library.rightPanelCollapsed`.
 
 ---
 

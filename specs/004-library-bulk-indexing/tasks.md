@@ -2,9 +2,9 @@
 
 **Feature Branch**: `004-library-bulk-indexing`
 **Date**: 2025-12-19
-**Status**: Implemented
+**Status**: Implemented (v1) + Pending (Right Panel v2)
 
-**Total Tasks**: 110
+**Total Tasks**: 118
 **Estimated MVP Scope**: Phase 0-3 + Phase 6 + Phase 8 (security/a11y)
 
 ---
@@ -20,6 +20,7 @@
 - [Phase 6: Grid/List View Toggle](#phase-6-gridlist-view-toggle) (5 tasks) - **US2**
 - [Phase 7: Search & Chat Panels](#phase-7-search--chat-panels) (4 tasks) - **US4**
 - [Documentation Updates](#documentation-updates) (3 tasks)
+- [Phase 9: Right Panel v2 + Library Chat](#phase-9-right-panel-v2--library-chat) (8 tasks)
 
 ---
 
@@ -360,6 +361,26 @@ A task is complete when:
 - Phase 7: Search/Chat Panels (T095-T098) - P2
 
 This allows shipping bulk indexing and view toggle (core user pain points) quickly, then iterating on collections and right panel features.
+
+---
+
+## Phase 9: Right Panel v2 + Library Chat
+
+**Goal**: Match the updated right-panel layout requirements and provide a functional Library Chat input that is independent from in-book AI UI.
+
+### Right Panel v2 Layout
+
+- [ ] T111 [P1] Update right panel styling so Dashboard/Chat/Search content fills the sidebar width with no outer frame (src/reader3_app/web/templates/library.html, src/reader3_app/web/static/library.css)
+- [ ] T112 [P1] Replace floating switcher with a full-width bottom tab bar (3 buttons, each 1/3 width; no outer border) (src/reader3_app/web/templates/library.html, src/reader3_app/web/static/library.css)
+- [ ] T113 [P1] Add mid-gutter collapse/expand chevron to hide/show right sidebar; update layout columns accordingly (src/reader3_app/web/templates/library.html, src/reader3_app/web/static/library.css, src/reader3_app/web/static/library.js)
+- [ ] T114 [P1] Persist optional collapsed state in localStorage `reader3.library.rightPanelCollapsed` and restore on load (src/reader3_app/web/static/library.js)
+
+### Library Chat (Functional)
+
+- [ ] T115 [P1] Add Library Chat message list + input box + Send/Stop controls (src/reader3_app/web/templates/library.html, src/reader3_app/web/static/library.css)
+- [ ] T116 [P1] Implement Library Chat client using existing AI generation endpoint (streaming when available), and store history in sessionStorage under `reader3.library.chat.*` (src/reader3_app/web/static/library.js or new `src/reader3_app/web/static/library-chat.js`)
+- [ ] T117 [P1] Ensure Library Chat is independent from in-book AI UI state and does not read/write the in-book IndexedDB store `reader3_ai_assistant` (src/reader3_app/web/static/library.js, src/reader3_app/web/static/ai.js)
+- [ ] T118 [P1] Manual test: collapse/expand, bottom tab bar sizing, Dashboard full-width, and chat send/stream/stop with selected book (manual test)
 
 ---
 

@@ -28,6 +28,7 @@ Add new capabilities required by the spec:
 - Stats: computed server-side via `GET /api/library/stats?scope=...` with optional `fresh=true`; short TTL cache allowed (<=5s).
 - Stats scope encoding: `all`, `format:epub`, `format:pdf`, `collection:<collection_id>`.
 - Chat: single-book only; all-books/collection are disabled/coming soon.
+- Right panel v2: tab bar is full-width at the bottom of the right sidebar; right panel can be collapsed via a mid-gutter chevron; Dashboard has no outer frame.
 - Lazy status fetch definition: after first render, batches <=20, max 4 concurrent, 5s timeout; failures show `unknown`.
 - Rollback: `READER3_LIBRARY_UI=modern|classic` (default: `modern`).
 
@@ -137,8 +138,18 @@ If localStorage is unavailable: fall back to defaults without errors.
   - adjust `library-search.js` so it no longer hides the center grid/list
   - keep semantic/hybrid “Index” affordance consistent with index endpoint response shape
 - Chat:
-  - implement single-book selector only (reusing existing reader AI endpoints)
-  - disabled “All books” and “Collection” options use the “coming soon” pattern
+  - implement single-book selector + a real chat input + message list
+  - reuse the existing backend AI generation endpoints (`/api/ai/question/{book_uuid}?stream=true`) where possible
+  - Library Chat must be independent from in-book AI UI and must not reuse its browser IndexedDB store (`reader3_ai_assistant`) in v1
+
+#### 5a) Right panel v2 layout rules
+
+- Dashboard/Chat/Search content fills the right sidebar width (no outer “card” wrapper around the whole tab).
+- Add a mid-gutter collapse/expand chevron to hide/show the right sidebar; persist optional localStorage key `reader3.library.rightPanelCollapsed`.
+- Replace the floating/fixed switcher with a bottom tab bar inside the right sidebar:
+  - full width; 3 buttons; each button width = 1/3
+  - no outer border/frame
+  - pinned to bottom of sidebar (e.g., `position: sticky; bottom: 0;`)
 
 #### 6) Accessibility baseline
 
@@ -180,7 +191,13 @@ If localStorage is unavailable: fall back to defaults without errors.
 - Add `/api/library/stats` + caching + `fresh=true`.
 - Dashboard UI binds to stats API and handles error/empty/loading states.
 - Search tab uses refactored `library-search.js` (no center hide).
-- Chat tab provides single-book selector; disabled options show tooltips.
+- Chat tab provides single-book selector + input + message list; disabled options show tooltips.
+
+### Phase 5 — Right panel v2 polish (layout + collapse)
+
+- Remove outer frame styling from right panel tab content.
+- Implement full-width bottom tab bar (3 buttons, 1/3 each).
+- Add mid-gutter collapse/expand chevron; persist optional collapsed state.
 
 ## Files to Change (expected)
 

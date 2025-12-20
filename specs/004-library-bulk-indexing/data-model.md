@@ -8,6 +8,8 @@
 
 This document defines all data entities for the redesigned library UI, including Collections, aggregated stats, and extended book metadata for grid/list views.
 
+It also documents client-only UI state keys that are intentionally not persisted server-side.
+
 ---
 
 ## Entities
@@ -426,3 +428,18 @@ def migrate_collections_to_db():
 All entities defined. Ready for contract generation (`contracts/library-api.yaml`).
 
 **Next**: Generate OpenAPI schema for collections + stats endpoints.
+
+---
+
+## Client-Side UI State (Non-persisted server-side)
+
+### localStorage keys
+
+- `reader3.library.viewMode`: `grid` | `list`
+- `reader3.library.rightPanelCollapsed` (optional): `true` | `false`
+
+### sessionStorage keys
+
+Library Chat (v1) may persist per-tab history:
+
+- `reader3.library.chat.*`: implementation-defined JSON payloads (kept separate from the in-book AI IndexedDB store `reader3_ai_assistant`)
