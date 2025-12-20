@@ -440,6 +440,10 @@ All entities defined. Ready for contract generation (`contracts/library-api.yaml
 
 ### sessionStorage keys
 
-Library Chat (v1) may persist per-tab history:
+Library Chat (v1) MUST reuse the existing server-side conversation storage and SHOULD NOT persist message history in `sessionStorage`:
 
-- `reader3.library.chat.*`: implementation-defined JSON payloads (kept separate from the in-book AI IndexedDB store `reader3_ai_assistant`)
+- Shared on-disk thread storage: `books/{book_id}/ai_conversations/{conversation_id}.json`
+- Listing and loading are performed via existing AI endpoints:
+  - `GET /api/ai/conversations/{book_uuid}` (list)
+  - `GET /api/ai/conversations/{book_uuid}/{conversation_id}` (load)
+  - `PUT /api/ai/conversations/{book_uuid}/{conversation_id}` (save)

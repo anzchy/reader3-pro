@@ -4,7 +4,7 @@
 **Date**: 2025-12-19
 **Status**: Implemented (v1) + Pending (Right Panel v2)
 
-**Total Tasks**: 118
+**Total Tasks**: 120
 **Estimated MVP Scope**: Phase 0-3 + Phase 6 + Phase 8 (security/a11y)
 
 ---
@@ -378,9 +378,11 @@ This allows shipping bulk indexing and view toggle (core user pain points) quick
 ### Library Chat (Functional)
 
 - [ ] T115 [P1] Add Library Chat message list + input box + Send/Stop controls (src/reader3_app/web/templates/library.html, src/reader3_app/web/static/library.css)
-- [ ] T116 [P1] Implement Library Chat client using existing AI generation endpoint (streaming when available), and store history in sessionStorage under `reader3.library.chat.*` (src/reader3_app/web/static/library.js or new `src/reader3_app/web/static/library-chat.js`)
-- [ ] T117 [P1] Ensure Library Chat is independent from in-book AI UI state and does not read/write the in-book IndexedDB store `reader3_ai_assistant` (src/reader3_app/web/static/library.js, src/reader3_app/web/static/ai.js)
-- [ ] T118 [P1] Manual test: collapse/expand, bottom tab bar sizing, Dashboard full-width, and chat send/stream/stop with selected book (manual test)
+- [ ] T116 [P1] Implement Library Chat client using existing AI generation endpoint (`/api/ai/question/{book_uuid}?stream=true`) and persist threads via existing conversation endpoints so history is shared with in-book chat (src/reader3_app/web/static/library.js or new `src/reader3_app/web/static/library-chat.js`)
+- [ ] T117 [P1] Implement History dropdown: when a book is selected, list conversations via `GET /api/ai/conversations/{book_uuid}` and show the most recent 5 threads sorted by JSON `created_at` (fallback to `last_updated`); selecting loads via `GET /api/ai/conversations/{book_uuid}/{conversation_id}` (src/reader3_app/web/templates/library.html, src/reader3_app/web/static/library.js)
+- [ ] T118 [P1] Ensure Library Chat is independent from in-book AI UI state and does not read/write the in-book browser IndexedDB store `reader3_ai_assistant` (src/reader3_app/web/static/library.js, src/reader3_app/web/static/ai.js)
+- [ ] T119 [P2] Update `contracts/library-api.yaml` to include the AI conversation list/load/save endpoints used by Library Chat (specs/004-library-bulk-indexing/contracts/library-api.yaml)
+- [ ] T120 [P1] Manual test: collapse/expand, bottom tab bar sizing, Dashboard full-width, and chat history dropdown (latest 5), load, send/stream/stop with selected book (manual test)
 
 ---
 

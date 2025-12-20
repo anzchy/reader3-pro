@@ -115,7 +115,8 @@ This document consolidates research for the Library UI rebuild into a 3-pane lay
 - Chat panel shows dropdown: `Single book` (enabled), `All books` (disabled), `Collection` (disabled)
 - Disabled options show tooltip: "Coming in future update"
 - Single-book chat uses existing `/api/ai/question/{book_uuid}` endpoint (streaming when `stream=true`).
-- Library Chat must be independent from in-book AI UI state and should not reuse the in-book IndexedDB store (`reader3_ai_assistant`) in v1; prefer `sessionStorage` under `reader3.library.chat.*`.
+- Library Chat must be independent from in-book AI UI state but shares the same on-disk conversation history (`books/{book_id}/ai_conversations/*.json`).
+- On book selection, the UI should show the most recent 5 conversations by `created_at` (JSON timestamp) in a History dropdown and allow loading a prior thread.
 
 ---
 

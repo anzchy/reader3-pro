@@ -21,8 +21,131 @@ tags:
     description: Aggregated statistics for books in scope
   - name: Indexing
     description: Bulk semantic indexing operations (reuses existing endpoints)
+  - name: AI Conversations
+    description: Existing conversation persistence endpoints (used by Library Chat)
 
 paths:
+  /api/ai/conversations/{book_uuid}:
+    get:
+      summary: List conversation threads for a book (existing endpoint)
+      tags: [AI Conversations]
+      parameters:
+        - name: book_uuid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: provider
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional provider filter
+      responses:
+        '200':
+          description: Thread summaries (server-sorted; clients may re-sort by created_at)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  book_uuid:
+                    type: string
+                    format: uuid
+                  provider:
+                    type: string
+                    nullable: true
+                  conversations:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ConversationThreadSummary'
+        '404':
+          description: Book not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/ai/conversations/{book_uuid}/{conversation_id}:
+    get:
+      summary: Load a conversation thread (existing endpoint)
+      tags: [AI Conversations]
+      parameters:
+        - name: book_uuid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: conversation_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Conversation thread
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationThread'
+        '404':
+          description: Book or conversation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '400':
+          description: Invalid request or stored data invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    put:
+      summary: Save a conversation thread (existing endpoint)
+      tags: [AI Conversations]
+      parameters:
+        - name: book_uuid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: conversation_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveConversationRequest'
+      responses:
+        '200':
+          description: Saved conversation thread
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationThread'
+        '404':
+          description: Book not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   /api/collections:
     get:
       summary: List all collections
@@ -516,6 +639,92 @@ components:
           type: string
           description: Human-readable error message
           example: "Collection not found"
+
+    ConversationMessage:
+      type: object
+      required: [id, role, content, timestamp]
+      properties:
+        id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+        timestamp:
+          type: string
+          description: ISO 8601 UTC timestamp
+        metadata:
+          type: object
+          additionalProperties: true
+
+    ConversationThread:
+      type: object
+      required: [schema_version, book_uuid, book_folder, conversation_id, provider, created_at, last_updated, messages]
+      properties:
+        schema_version:
+          type: integer
+        book_uuid:
+          type: string
+          format: uuid
+        book_folder:
+          type: string
+        conversation_id:
+          type: string
+          format: uuid
+        provider:
+          type: string
+        model:
+          type: string
+        created_at:
+          type: string
+        last_updated:
+          type: string
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConversationMessage'
+
+    ConversationThreadSummary:
+      type: object
+      required: [conversation_id, provider, created_at, last_updated, message_count, title]
+      properties:
+        conversation_id:
+          type: string
+          format: uuid
+        provider:
+          type: string
+        model:
+          type: string
+        created_at:
+          type: string
+        last_updated:
+          type: string
+        message_count:
+          type: integer
+        title:
+          type: string
+
+    SaveConversationRequest:
+      type: object
+      required: [provider, messages]
+      properties:
+        provider:
+          type: string
+        model:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          nullable: true
+        last_updated:
+          type: string
+          nullable: true
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConversationMessage'
 
     IndexMeta:
       type: object

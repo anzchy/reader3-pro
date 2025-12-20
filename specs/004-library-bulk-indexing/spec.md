@@ -190,11 +190,15 @@ As a user, I want a right-panel switcher so I can see stats, run cross-book sear
 - **FR-017a**: The Library Chat panel MUST include a message list and an input box to send messages.
 - **FR-017b**: Library Chat MUST be independent from the in-book AI panel:
   - it MUST NOT reuse in-book UI state (open/close state, active thread, input text)
-  - it MUST NOT reuse in-book conversation persistence (browser IndexedDB store `reader3_ai_assistant`) in v1
-  - it MAY reuse shared backend AI endpoints for generation (see `api/ai/*`)
-- **FR-017c**: Library Chat storage (v1):
-  - message history MAY be stored in `sessionStorage` (per-tab) and cleared on browser restart
-  - recommended key prefix: `reader3.library.chat.*`
+  - it MUST NOT reuse the in-book browser IndexedDB store (`reader3_ai_assistant`) for message persistence
+  - it MUST reuse the same server-side conversation storage as in-book chat (`books/{book_id}/ai_conversations/*.json`) so history is shared across Library and Reader
+  - it MAY reuse shared backend AI endpoints for generation and persistence (see `api/ai/*`)
+- **FR-017c**: Library Chat storage & history (v1):
+  - Library Chat threads MUST persist to per-book disk storage under `books/{book_id}/ai_conversations/{conversation_id}.json`
+  - When a user selects a book in Library Chat, the UI MUST show the most recent **5** conversations for that book in a History dropdown
+  - “Most recent” MUST be determined by the conversation JSON’s `created_at` timestamp (ISO 8601 UTC with timezone); sort descending and take top 5
+  - Selecting a history item MUST load that thread and render its messages in the Library Chat message list
+  - If `created_at` is missing, the system MAY fall back to `last_updated`, then file modified time, but MUST keep a deterministic order
 - **FR-017d**: Library Chat UX requirements:
   - Enter sends; Shift+Enter inserts newline
   - show streaming assistant responses when `stream=true` is supported

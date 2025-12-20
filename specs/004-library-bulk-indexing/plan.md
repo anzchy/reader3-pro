@@ -140,7 +140,9 @@ If localStorage is unavailable: fall back to defaults without errors.
 - Chat:
   - implement single-book selector + a real chat input + message list
   - reuse the existing backend AI generation endpoints (`/api/ai/question/{book_uuid}?stream=true`) where possible
-  - Library Chat must be independent from in-book AI UI and must not reuse its browser IndexedDB store (`reader3_ai_assistant`) in v1
+  - reuse the existing conversation persistence endpoints (`/api/ai/conversations/{book_uuid}/*`) so Library Chat shares `books/{book_id}/ai_conversations/*.json` history with in-book AI
+  - Library Chat must be independent from in-book AI UI state and must not reuse the in-book browser IndexedDB store (`reader3_ai_assistant`) for persistence
+  - when a user selects a book, load the latest 5 conversation threads (sorted by `created_at` descending) and show them in a History dropdown; selecting one loads messages
 
 #### 5a) Right panel v2 layout rules
 
@@ -198,6 +200,12 @@ If localStorage is unavailable: fall back to defaults without errors.
 - Remove outer frame styling from right panel tab content.
 - Implement full-width bottom tab bar (3 buttons, 1/3 each).
 - Add mid-gutter collapse/expand chevron; persist optional collapsed state.
+
+### Phase 6 — Library Chat history integration
+
+- On book selection, fetch threads via `GET /api/ai/conversations/{book_uuid}` and sort by `created_at` descending to take the latest 5.
+- Provide a History dropdown to select a thread; load via `GET /api/ai/conversations/{book_uuid}/{conversation_id}`.
+- Persist updates by `PUT /api/ai/conversations/{book_uuid}/{conversation_id}` (shared storage with reader chat).
 
 ## Files to Change (expected)
 
