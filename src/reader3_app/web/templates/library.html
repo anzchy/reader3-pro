@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="/static/library.css">
     <link rel="stylesheet" href="/static/search.css">
 </head>
-<body>
+<body data-ai-default-provider="{{ ai_default_provider }}">
     <div class="library-layout">
         <aside class="library-sidebar" aria-label="Library Sidebar">
             <div class="sidebar-header">
@@ -169,8 +169,10 @@
             </section>
         </main>
 
-        <aside class="library-right" aria-label="Right Panel">
-            <div class="right-panel">
+        <button type="button" class="right-collapse-toggle" id="right-collapse-toggle" aria-label="Hide right panel" title="Hide right panel">›</button>
+
+        <aside class="library-right" id="library-right" aria-label="Right Panel">
+            <div class="right-content" id="right-content">
                 <section class="right-tab is-active" id="dashboard-tab" aria-label="Dashboard">
                     <div class="right-title">Dashboard</div>
                     <div class="stats-grid" aria-label="Library Stats">
@@ -216,12 +218,28 @@
                             <select id="chat-book-select">
                                 <option value="" selected disabled>Select a book…</option>
                                 {% for book in books %}
-                                    <option value="{{ book.id }}">{{ book.title }}</option>
+                                    <option value="{{ book.id }}" data-book-uuid="{{ book.book_uuid }}">{{ book.title }}</option>
                                 {% endfor %}
                             </select>
                         </label>
                     </div>
-                    <div class="right-placeholder">Chat UI will be wired to existing reader AI endpoints in a follow-up.</div>
+                    <div class="chat-history" id="chat-history" hidden>
+                        <label class="form-field">
+                            <div class="form-label">History (latest 5)</div>
+                            <select id="chat-history-select">
+                                <option value="" selected>New chat</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="chat-thread" id="chat-thread" aria-label="Chat Messages"></div>
+                    <div class="chat-composer" aria-label="Chat Composer">
+                        <textarea id="chat-input" rows="2" placeholder="Ask about this book…"></textarea>
+                        <div class="chat-actions">
+                            <button type="button" class="toolbar-btn" id="chat-stop-btn" disabled>Stop</button>
+                            <button type="button" class="toolbar-btn toolbar-btn--primary" id="chat-send-btn" disabled>Send</button>
+                        </div>
+                    </div>
+                    <div class="chat-status" id="chat-status" aria-live="polite"></div>
                 </section>
                 <section class="right-tab" id="search-tab" aria-label="Search">
                     <div class="right-title">Search</div>
@@ -259,11 +277,11 @@
                 </section>
             </div>
 
-            <div class="right-tab-switcher" role="group" aria-label="Right Panel Tabs">
-                <button type="button" class="tab-btn is-active" data-tab="dashboard" aria-label="Dashboard">▣</button>
-                <button type="button" class="tab-btn" data-tab="chat" aria-label="Chat">💬</button>
-                <button type="button" class="tab-btn" data-tab="search" aria-label="Search">⌕</button>
-            </div>
+            <nav class="right-tabbar" id="right-tabbar" role="tablist" aria-label="Right Panel Tabs">
+                <button type="button" class="tab-btn is-active" data-tab="dashboard" aria-label="Dashboard" role="tab" aria-selected="true">Dashboard</button>
+                <button type="button" class="tab-btn" data-tab="chat" aria-label="Chat" role="tab" aria-selected="false">Chat</button>
+                <button type="button" class="tab-btn" data-tab="search" aria-label="Search" role="tab" aria-selected="false">Search</button>
+            </nav>
         </aside>
     </div>
 
@@ -330,6 +348,7 @@
     <div class="sr-only" id="aria-live" aria-live="polite" aria-atomic="true"></div>
 
     <script src="/static/library.js" defer></script>
+    <script src="/static/library-chat.js" defer></script>
     <script src="/static/library-search.js" defer></script>
 </body>
 </html>

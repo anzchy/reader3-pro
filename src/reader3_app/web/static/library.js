@@ -504,17 +504,62 @@
     announce(errors.length ? "Indexing finished with errors." : "Indexing finished.");
   }
 
+  function setActiveRightTab(tab) {
+    const name = tab || "dashboard";
+    state.activeRightTab = name;
+    qsa(".right-tab").forEach((el) => el.classList.toggle("is-active", el.id === `${name}-tab`));
+    qsa("#right-tabbar .tab-btn").forEach((el) => {
+      const active = el.getAttribute("data-tab") === name;
+      el.classList.toggle("is-active", active);
+      el.setAttribute("aria-selected", active ? "true" : "false");
+    });
+    if (state.activeRightTab === "dashboard") void refreshStats(false);
+  }
+
   function initTabSwitcher() {
-    const switcher = qs(".right-tab-switcher");
-    if (!switcher) return;
-    switcher.addEventListener("click", (e) => {
+    const tabbar = qs("#right-tabbar");
+    if (!tabbar) return;
+    tabbar.addEventListener("click", (e) => {
       const btn = e.target.closest("button[data-tab]");
       if (!btn) return;
-      const name = btn.getAttribute("data-tab");
-      qsa(".right-tab").forEach((el) => el.classList.toggle("is-active", el.id === `${name}-tab`));
-      qsa(".tab-btn").forEach((el) => el.classList.toggle("is-active", el === btn));
-      state.activeRightTab = name || "dashboard";
-      if (state.activeRightTab === "dashboard") void refreshStats(false);
+      setActiveRightTab(btn.getAttribute("data-tab"));
+    });
+  }
+
+  function setRightPanelCollapsed(collapsed, persist) {
+    const layout = qs(".library-layout");
+    if (!layout) return;
+    const isCollapsed = Boolean(collapsed);
+    layout.classList.toggle("is-right-collapsed", isCollapsed);
+    const toggle = qs("#right-collapse-toggle");
+    if (toggle) {
+      toggle.setAttribute("aria-label", isCollapsed ? "Show right panel" : "Hide right panel");
+      toggle.title = isCollapsed ? "Show right panel" : "Hide right panel";
+      toggle.textContent = isCollapsed ? "›" : "›";
+    }
+    if (persist) {
+      try {
+        localStorage.setItem("reader3.library.rightPanelCollapsed", isCollapsed ? "true" : "false");
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  function initRightPanelCollapse() {
+    const toggle = qs("#right-collapse-toggle");
+    const layout = qs(".library-layout");
+    if (!toggle || !layout) return;
+    let stored = null;
+    try {
+      stored = localStorage.getItem("reader3.library.rightPanelCollapsed");
+    } catch {
+      stored = null;
+    }
+    setRightPanelCollapsed(stored === "true", false);
+    toggle.addEventListener("click", () => {
+      const next = !layout.classList.contains("is-right-collapsed");
+      setRightPanelCollapsed(next, true);
     });
   }
 
@@ -957,6 +1002,7 @@
 
   function init() {
     initTabSwitcher();
+    initRightPanelCollapse();
     initAddBooksModal();
     initFilters();
     initTitleFilter();
@@ -976,6 +1022,8 @@
     const refreshBtn = qs("#refresh-stats-btn");
     if (refreshBtn) refreshBtn.addEventListener("click", () => refreshStats(true));
     void refreshStats(false);
+
+    setActiveRightTab(state.activeRightTab);
   }
 
   if (document.readyState === "loading") {

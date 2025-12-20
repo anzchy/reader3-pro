@@ -2,7 +2,7 @@
 
 **Feature Branch**: `004-library-bulk-indexing`
 **Date**: 2025-12-19
-**Status**: Implemented (v1) + Pending (Right Panel v2)
+**Status**: Implemented (v1 + Right Panel v2)
 
 **Total Tasks**: 120
 **Estimated MVP Scope**: Phase 0-3 + Phase 6 + Phase 8 (security/a11y)
@@ -370,19 +370,19 @@ This allows shipping bulk indexing and view toggle (core user pain points) quick
 
 ### Right Panel v2 Layout
 
-- [ ] T111 [P1] Update right panel styling so Dashboard/Chat/Search content fills the sidebar width with no outer frame (src/reader3_app/web/templates/library.html, src/reader3_app/web/static/library.css)
-- [ ] T112 [P1] Replace floating switcher with a full-width bottom tab bar (3 buttons, each 1/3 width; no outer border) (src/reader3_app/web/templates/library.html, src/reader3_app/web/static/library.css)
-- [ ] T113 [P1] Add mid-gutter collapse/expand chevron to hide/show right sidebar; update layout columns accordingly (src/reader3_app/web/templates/library.html, src/reader3_app/web/static/library.css, src/reader3_app/web/static/library.js)
-- [ ] T114 [P1] Persist optional collapsed state in localStorage `reader3.library.rightPanelCollapsed` and restore on load (src/reader3_app/web/static/library.js)
+- [x] T111 [P1] Update right panel styling so Dashboard/Chat/Search content fills the sidebar width with no outer frame (src/reader3_app/web/templates/library.html, src/reader3_app/web/static/library.css)
+- [x] T112 [P1] Replace floating switcher with a full-width bottom tab bar (3 buttons, each 1/3 width; no outer border) (src/reader3_app/web/templates/library.html, src/reader3_app/web/static/library.css)
+- [x] T113 [P1] Add mid-gutter collapse/expand chevron to hide/show right sidebar; update layout columns accordingly (src/reader3_app/web/templates/library.html, src/reader3_app/web/static/library.css, src/reader3_app/web/static/library.js)
+- [x] T114 [P1] Persist optional collapsed state in localStorage `reader3.library.rightPanelCollapsed` and restore on load (src/reader3_app/web/static/library.js)
 
 ### Library Chat (Functional)
 
-- [ ] T115 [P1] Add Library Chat message list + input box + Send/Stop controls (src/reader3_app/web/templates/library.html, src/reader3_app/web/static/library.css)
-- [ ] T116 [P1] Implement Library Chat client using existing AI generation endpoint (`/api/ai/question/{book_uuid}?stream=true`) and persist threads via existing conversation endpoints so history is shared with in-book chat (src/reader3_app/web/static/library.js or new `src/reader3_app/web/static/library-chat.js`)
-- [ ] T117 [P1] Implement History dropdown: when a book is selected, list conversations via `GET /api/ai/conversations/{book_uuid}` and show the most recent 5 threads sorted by JSON `created_at` (fallback to `last_updated`); selecting loads via `GET /api/ai/conversations/{book_uuid}/{conversation_id}` (src/reader3_app/web/templates/library.html, src/reader3_app/web/static/library.js)
-- [ ] T118 [P1] Ensure Library Chat is independent from in-book AI UI state and does not read/write the in-book browser IndexedDB store `reader3_ai_assistant` (src/reader3_app/web/static/library.js, src/reader3_app/web/static/ai.js)
-- [ ] T119 [P2] Update `contracts/library-api.yaml` to include the AI conversation list/load/save endpoints used by Library Chat (specs/004-library-bulk-indexing/contracts/library-api.yaml)
-- [ ] T120 [P1] Manual test: collapse/expand, bottom tab bar sizing, Dashboard full-width, and chat history dropdown (latest 5), load, send/stream/stop with selected book (manual test)
+- [x] T115 [P1] Add Library Chat message list + input box + Send/Stop controls (src/reader3_app/web/templates/library.html, src/reader3_app/web/static/library.css)
+- [x] T116 [P1] Implement Library Chat client using existing AI generation endpoint (`/api/ai/question/{book_uuid}?stream=true`) and persist threads via existing conversation endpoints so history is shared with in-book chat (src/reader3_app/web/static/library.js or new `src/reader3_app/web/static/library-chat.js`)
+- [x] T117 [P1] Implement History dropdown: when a book is selected, list conversations via `GET /api/ai/conversations/{book_uuid}` and show the most recent 5 threads sorted by JSON `created_at` (fallback to `last_updated`); selecting loads via `GET /api/ai/conversations/{book_uuid}/{conversation_id}` (src/reader3_app/web/templates/library.html, src/reader3_app/web/static/library.js)
+- [x] T118 [P1] Ensure Library Chat is independent from in-book AI UI state and does not read/write the in-book browser IndexedDB store `reader3_ai_assistant` (src/reader3_app/web/static/library.js, src/reader3_app/web/static/ai.js)
+- [x] T119 [P2] Update `contracts/library-api.yaml` to include the AI conversation list/load/save endpoints used by Library Chat (specs/004-library-bulk-indexing/contracts/library-api.yaml)
+- [x] T120 [P1] Manual test: collapse/expand, bottom tab bar sizing, Dashboard full-width, and chat history dropdown (latest 5), load, send/stream/stop with selected book (manual test)
 
 ---
 

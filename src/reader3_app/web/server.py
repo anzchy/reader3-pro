@@ -187,6 +187,7 @@ async def library_view(request: Request):
                         cover_image = None
 
                     cover_url = f"/read/{item}/images/{cover_image}" if cover_image else None
+                    book_uuid = book_uuid_resolver.book_uuid_for_folder(item)
                     books.append({
                         "id": item,
                         "title": book.metadata.title,
@@ -195,6 +196,7 @@ async def library_view(request: Request):
                         "section_count": len(book.spine),
                         "cover_url": cover_url,
                         "format": "epub",
+                        "book_uuid": book_uuid,
                     })
 
     existing_book_ids = {b.get("id") for b in books if b.get("id")}
@@ -232,6 +234,7 @@ async def library_view(request: Request):
             "collections": collections,
             "collections_error": collections_error,
             "library_ui_mode": _library_ui_mode(),
+            "ai_default_provider": _ui_default_provider(),
         },
     )
 
