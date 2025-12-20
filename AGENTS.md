@@ -2,12 +2,20 @@
 
 ## Project Structure
 
-- `src/reader3_app/reader3.py`: EPUB ingestion + conversion into a pickled `Book` (`book.pkl`) and extracted `images/`.
-- `src/reader3_app/web/server.py`: FastAPI app that serves the library + reader UI on `http://127.0.0.1:8123`.
-- `src/reader3_app/web/templates/`: Jinja2 HTML templates (`library.html`, `reader.html`).
-- `src/reader3_app/web/static/`: JS/CSS assets for the UI.
-- `specs/`: Feature specs and checklists (source of truth for acceptance behavior).
-- Generated/ignored: `books/*_data/` (processed books), `.venv/`, and typically `*.epub` (see `.gitignore`).
+- `src/reader3_app/reader3.py`: EPUB ingestion + conversion into `books/<book_id>_data/` (pickled `Book` in `book.pkl`, extracted `images/`).
+- `src/reader3_app/web/server.py`: FastAPI app (library + reader UI, plus JSON APIs) on `http://127.0.0.1:8123`.
+- `src/reader3_app/web/templates/`: Jinja2 templates (`library.html`, `reader.html`, `settings.html`).
+- `src/reader3_app/web/static/`: UI assets (search, settings, AI assistant JS/CSS).
+- `src/reader3_app/search_service.py`: Library + in-book search (query parsing, highlighting, API helpers).
+- `src/reader3_app/vector_search.py`: Vector/RAG indexing and retrieval (ChromaDB).
+- `src/reader3_app/notes_service.py`: Per-book notes/annotations persistence (`notes.json`) + helpers.
+- `src/reader3_app/models/`: Shared dataclasses/models (e.g. annotations schema).
+- `src/reader3_app/ai/`: AI assistant orchestration (providers, routing, RAG, disk conversations).
+- `config/`: Runtime settings (notably `config/ai_settings.json` is gitignored; see `config/ai_settings.example.json`).
+- `books/`: Local library root; processed books live in `books/<book_id>_data/` (may contain `book.pkl`, `images/`, `ai_conversations/`, `chroma_db/`, `notes.json`).
+- `specs/`: Feature specs + checklists + API contracts (source of truth for acceptance behavior).
+- `docs/technical-detail/`: Data locations, settings, and persistence details.
+- Generated/ignored (see `.gitignore`): `books/*_data/`, `.venv/`, `conversations/`, and typically `*.epub`.
 
 ## Build, Test, and Development Commands
 
@@ -15,9 +23,12 @@ This repo uses `uv` for dependency management and execution.
 
 - Install deps: `uv sync`
 - Process a book (creates `books/<book>_data/`): `uv run reader3 path/to/book.epub`
+- Index a processed book for vector/RAG search: `uv run reader3 --index <book_id>` (e.g. `dracula_data`)
 - Run the web server: `uv run reader3-server`
 
 If you need a clean re-process, delete the corresponding `books/*_data/` folder and rerun `reader3`.
+
+You can override the default `books/` directory via `READER3_BOOKS_DIR`.
 
 ## Coding Style & Naming
 
@@ -39,13 +50,10 @@ Git history currently contains only `init commit`, so no strict convention exist
 
 - Short, imperative commit messages (e.g., “Add in-book search UI”).
 - One logical change per commit when possible.
-
-- Prefer Conventional Commits (`feat:`, `fix:`, `chore:`, `test:`,  `docs: ...`, `refactor: ...`); keep commits scoped and readable.
+- Prefer Conventional Commits (`feat:`, `fix:`, `chore:`, `test:`, `docs: ...`, `refactor: ...`); keep commits scoped and readable.
 - Note which tests were run and call out follow-ups or known gaps.
 
-For PRs: include a clear description, link relevant `specs/` docs/issues, and add screenshots for template/UI changes.PRs should summarize the change, link issues/tasks, and include screenshots or Markdown diffs for UI or output changes.
-
-
+For PRs: include a clear description, link relevant `specs/` docs/issues, and add screenshots or Markdown diffs for UI/output changes.
 
 ## Security & Data Notes
 

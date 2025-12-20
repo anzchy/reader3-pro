@@ -352,6 +352,8 @@ The `book_uuid` (stored in `{book_folder}/ai_meta.json`) ensures conversations r
 ## Active Technologies
 - Python 3.10+ (backend), Vanilla JavaScript ES6+ (frontend) + FastAPI 0.121.2+, Jinja2 3.1.6+ (existing stack) (003-add-book-notes)
 - Filesystem JSON (`books/{book_id}/notes.json` per book) (003-add-book-notes)
+- Library UI (004): 3-pane layout + bulk indexing + collections (`config/library_collections.json`, gitignored) + stats (`/api/library/stats`) (004-library-bulk-indexing)
 
 ## Recent Changes
 - 003-add-book-notes: Added Python 3.10+ (backend), Vanilla JavaScript ES6+ (frontend) + FastAPI 0.121.2+, Jinja2 3.1.6+ (existing stack)
+- 004-library-bulk-indexing: Reorganized library UI (3 panes), added bulk indexing + collections + dashboard stats + right-panel search/chat scaffolding

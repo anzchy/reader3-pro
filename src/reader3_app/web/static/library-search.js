@@ -13,15 +13,14 @@ function sessionKey() {
 
 class LibrarySearchUI {
   constructor() {
-    this.input = document.getElementById("library-search-input");
-    this.caseBox = document.getElementById("library-search-case");
-    this.modeSelect = document.getElementById("library-search-mode");
-    this.sortBy = document.getElementById("library-search-sort");
-    this.clearBtn = document.getElementById("library-search-clear");
-    this.status = document.getElementById("library-search-status");
-    this.panel = document.getElementById("library-search-panel");
-    this.results = document.getElementById("library-search-results");
-    this.grid = document.getElementById("library-book-grid");
+    this.input = document.getElementById("library-panel-search-input");
+    this.caseBox = document.getElementById("library-panel-search-case");
+    this.modeSelect = document.getElementById("library-panel-search-mode");
+    this.sortBy = document.getElementById("library-panel-search-sort");
+    this.clearBtn = document.getElementById("library-panel-search-clear");
+    this.status = document.getElementById("library-panel-search-status");
+    this.panel = document.getElementById("library-panel-search-panel");
+    this.results = document.getElementById("library-panel-search-results");
     this.debounceTimer = null;
   }
 
@@ -68,7 +67,6 @@ class LibrarySearchUI {
     this.panel.style.display = "none";
     this.results.innerHTML = "";
     this.status.textContent = "";
-    this.grid.style.display = "grid";
     if (clearSession) {
       try {
         sessionStorage.removeItem(sessionKey());
@@ -90,7 +88,6 @@ class LibrarySearchUI {
     const mode = this.modeSelect?.value || "keyword";
 
     this.panel.style.display = "block";
-    this.grid.style.display = "none";
     this.status.textContent = "Searching…";
     this.results.innerHTML = "";
 
@@ -115,6 +112,7 @@ class LibrarySearchUI {
   renderPayload(payload) {
     const q = this.input.value.trim();
     const status = payload?.status_message || "";
+    this.panel.style.display = "block";
     this.status.textContent = status;
     this.results.innerHTML = "";
 
