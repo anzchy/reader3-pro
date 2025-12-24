@@ -3,18 +3,1105 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Library</title>
-    <link rel="stylesheet" href="/static/library.css">
-    <link rel="stylesheet" href="/static/search.css">
+    <title>Library - Reader3 Pro</title>
+    <link rel="stylesheet" href="/static/dedao-theme.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        /* Library-specific overrides */
+        body {
+            font-family: var(--dedao-font-sans);
+            background-color: var(--dedao-bg);
+            color: var(--dedao-text);
+            margin: 0;
+            min-height: 100vh;
+        }
+
+        /* Header */
+        .library-header {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            height: var(--dedao-header-height);
+            background: rgba(255, 255, 255, 0.92);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--dedao-border);
+            display: flex;
+            align-items: center;
+            padding: 0 24px;
+        }
+
+        .header-logo {
+            font-size: 18px;
+            font-weight: 600;
+            letter-spacing: -0.02em;
+            color: var(--dedao-text);
+        }
+
+        .header-nav {
+            display: flex;
+            gap: 32px;
+            margin-left: 48px;
+        }
+
+        .nav-link {
+            font-size: 14px;
+            color: var(--dedao-muted);
+            text-decoration: none;
+            padding: 16px 0;
+            border-bottom: 2px solid transparent;
+            transition: color var(--dedao-transition-fast), border-color var(--dedao-transition-fast);
+        }
+
+        .nav-link:hover {
+            color: var(--dedao-text);
+        }
+
+        .nav-link.active {
+            color: var(--dedao-orange);
+            border-bottom-color: var(--dedao-orange);
+        }
+
+        .header-actions {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        /* Layout */
+        .library-layout {
+            display: grid;
+            grid-template-columns: var(--dedao-sidebar-width) minmax(0, 1fr) var(--dedao-right-panel-width);
+            min-height: calc(100vh - var(--dedao-header-height));
+        }
+
+        .library-layout.right-collapsed {
+            grid-template-columns: var(--dedao-sidebar-width) minmax(0, 1fr);
+        }
+
+        /* Left Sidebar */
+        .library-sidebar {
+            background-color: var(--dedao-card);
+            border-right: 1px solid var(--dedao-border);
+            padding: 20px 16px;
+            overflow-y: auto;
+        }
+
+        .sidebar-section {
+            margin-bottom: 24px;
+        }
+
+        .sidebar-section-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .sidebar-section-title {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--dedao-light);
+            margin-bottom: 12px;
+        }
+
+        .filter-list {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .filter-btn {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 12px;
+            background: none;
+            border: none;
+            border-radius: var(--dedao-radius-md);
+            font-size: 14px;
+            color: var(--dedao-muted);
+            cursor: pointer;
+            transition: background-color var(--dedao-transition-fast), color var(--dedao-transition-fast);
+        }
+
+        .filter-btn:hover {
+            background-color: var(--dedao-bg);
+        }
+
+        .filter-btn.is-active {
+            background-color: var(--dedao-orange-light);
+            color: var(--dedao-orange);
+        }
+
+        .filter-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .filter-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .badge {
+            font-size: 12px;
+            padding: 2px 8px;
+            background-color: var(--dedao-bg);
+            border-radius: var(--dedao-radius-full);
+            color: var(--dedao-light);
+        }
+
+        .filter-btn.is-active .badge {
+            background-color: rgba(255, 107, 0, 0.2);
+            color: var(--dedao-orange);
+        }
+
+        /* Collections */
+        .icon-btn {
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: none;
+            border: 1px solid var(--dedao-border);
+            border-radius: var(--dedao-radius-md);
+            font-size: 14px;
+            color: var(--dedao-muted);
+            cursor: pointer;
+            transition: all var(--dedao-transition-fast);
+        }
+
+        .icon-btn:hover {
+            background-color: var(--dedao-bg);
+            border-color: var(--dedao-border-hover);
+        }
+
+        .collections-error {
+            padding: 12px;
+            font-size: 13px;
+            color: var(--dedao-error);
+            background-color: var(--dedao-error-bg);
+            border-radius: var(--dedao-radius-md);
+            margin-bottom: 12px;
+        }
+
+        .collections-empty {
+            padding: 16px;
+            font-size: 13px;
+            color: var(--dedao-light);
+            text-align: center;
+            background-color: var(--dedao-bg);
+            border-radius: var(--dedao-radius-md);
+        }
+
+        .collections-list {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .collection-row {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .collection-btn {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 12px;
+            background: none;
+            border: none;
+            border-radius: var(--dedao-radius-md);
+            font-size: 14px;
+            color: var(--dedao-muted);
+            cursor: pointer;
+            text-align: left;
+            transition: background-color var(--dedao-transition-fast);
+        }
+
+        .collection-btn:hover {
+            background-color: var(--dedao-bg);
+        }
+
+        .collection-btn.is-active {
+            background-color: var(--dedao-orange-light);
+            color: var(--dedao-orange);
+        }
+
+        .collection-actions {
+            display: none;
+            gap: 4px;
+        }
+
+        .collection-row:hover .collection-actions {
+            display: flex;
+        }
+
+        .mini-btn {
+            padding: 4px 8px;
+            font-size: 11px;
+            background-color: var(--dedao-bg);
+            border: none;
+            border-radius: var(--dedao-radius-sm);
+            color: var(--dedao-muted);
+            cursor: pointer;
+            transition: background-color var(--dedao-transition-fast);
+        }
+
+        .mini-btn:hover {
+            background-color: var(--dedao-bg-hover);
+        }
+
+        .mini-btn--danger {
+            color: var(--dedao-error);
+        }
+
+        .mini-btn--danger:hover {
+            background-color: var(--dedao-error-bg);
+        }
+
+        /* Main Content */
+        .library-main {
+            padding: 20px 24px;
+            overflow-y: auto;
+        }
+
+        .library-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            gap: 16px;
+        }
+
+        .toolbar-left {
+            flex: 1;
+            max-width: 320px;
+        }
+
+        .search-input {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 0 14px;
+            background-color: var(--dedao-card);
+            border: 1px solid var(--dedao-border);
+            border-radius: var(--dedao-radius-md);
+        }
+
+        .search-input:focus-within {
+            border-color: var(--dedao-orange);
+        }
+
+        .search-icon {
+            color: var(--dedao-light);
+            font-size: 14px;
+        }
+
+        .search-input input {
+            flex: 1;
+            padding: 10px 0;
+            font-size: 14px;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: var(--dedao-text);
+        }
+
+        .search-input input::placeholder {
+            color: var(--dedao-light);
+        }
+
+        .toolbar-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .toolbar-btn {
+            padding: 8px 16px;
+            font-size: 13px;
+            font-weight: 500;
+            background-color: var(--dedao-bg);
+            border: none;
+            border-radius: var(--dedao-radius-md);
+            color: var(--dedao-muted);
+            cursor: pointer;
+            transition: all var(--dedao-transition-fast);
+        }
+
+        .toolbar-btn:hover {
+            background-color: var(--dedao-bg-hover);
+        }
+
+        .toolbar-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .toolbar-btn--primary {
+            background-color: var(--dedao-orange);
+            color: white;
+        }
+
+        .toolbar-btn--primary:hover:not(:disabled) {
+            background-color: var(--dedao-orange-hover);
+        }
+
+        .selection-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding-left: 12px;
+            border-left: 1px solid var(--dedao-border);
+            margin-left: 4px;
+        }
+
+        .selected-count {
+            font-size: 13px;
+            color: var(--dedao-muted);
+        }
+
+        .toolbar-notice {
+            padding: 12px 16px;
+            margin-bottom: 16px;
+            font-size: 13px;
+            background-color: var(--dedao-warning-bg);
+            color: #92400e;
+            border-radius: var(--dedao-radius-md);
+        }
+
+        /* Empty State */
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 80px 24px;
+            text-align: center;
+        }
+
+        .empty-title {
+            font-size: 18px;
+            font-weight: 500;
+            color: var(--dedao-text);
+            margin-bottom: 8px;
+        }
+
+        .empty-subtitle {
+            font-size: 14px;
+            color: var(--dedao-light);
+        }
+
+        .empty-subtitle code {
+            padding: 2px 6px;
+            background-color: var(--dedao-bg);
+            border-radius: var(--dedao-radius-sm);
+            font-family: 'SF Mono', 'Consolas', monospace;
+            font-size: 13px;
+        }
+
+        /* Book Grid */
+        .library-shelf {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 20px;
+        }
+
+        .book-card {
+            position: relative;
+            background-color: var(--dedao-card);
+            border-radius: var(--dedao-radius-lg);
+            padding: 16px;
+            transition: transform var(--dedao-transition-fast), box-shadow var(--dedao-transition-fast);
+        }
+
+        .book-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--dedao-shadow-lg);
+        }
+
+        .select-checkbox {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            width: 18px;
+            height: 18px;
+            accent-color: var(--dedao-orange);
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity var(--dedao-transition-fast);
+        }
+
+        .selection-mode .select-checkbox,
+        .book-card:hover .select-checkbox {
+            opacity: 1;
+        }
+
+        .book-badges {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            align-items: flex-end;
+        }
+
+        .status-pill {
+            font-size: 10px;
+            padding: 3px 8px;
+            border-radius: var(--dedao-radius-full);
+            font-weight: 500;
+        }
+
+        .status-pill.is-loading {
+            background-color: var(--dedao-bg);
+            color: var(--dedao-light);
+        }
+
+        .status-pill.is-indexed {
+            background-color: var(--dedao-success-bg);
+            color: var(--dedao-success);
+        }
+
+        .status-pill.is-not-indexed {
+            background-color: var(--dedao-warning-bg);
+            color: var(--dedao-warning);
+        }
+
+        .chunk-pill {
+            font-size: 10px;
+            padding: 3px 8px;
+            background-color: var(--dedao-info-bg);
+            color: var(--dedao-info);
+            border-radius: var(--dedao-radius-full);
+        }
+
+        .book-link {
+            display: flex;
+            flex-direction: column;
+            text-decoration: none;
+            color: inherit;
+        }
+
+        .book-cover {
+            width: 100%;
+            aspect-ratio: 3/4;
+            object-fit: cover;
+            border-radius: var(--dedao-radius-md);
+            margin-bottom: 12px;
+            background-color: var(--dedao-bg);
+        }
+
+        .book-cover--placeholder {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, var(--dedao-bg) 0%, var(--dedao-border) 100%);
+        }
+
+        .book-cover--placeholder::after {
+            content: '📖';
+            font-size: 32px;
+        }
+
+        .book-title {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--dedao-text);
+            margin-bottom: 4px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+        }
+
+        .book-author {
+            font-size: 12px;
+            color: var(--dedao-light);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* Book List View */
+        .library-list-view {
+            background-color: var(--dedao-card);
+            border-radius: var(--dedao-radius-lg);
+            overflow: hidden;
+        }
+
+        .books-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .books-table th {
+            padding: 12px 16px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            color: var(--dedao-light);
+            background-color: var(--dedao-bg);
+            text-align: left;
+            border-bottom: 1px solid var(--dedao-border);
+        }
+
+        .books-table td {
+            padding: 16px;
+            font-size: 14px;
+            color: var(--dedao-text);
+            border-bottom: 1px solid var(--dedao-border);
+        }
+
+        .book-row:hover {
+            background-color: var(--dedao-bg);
+        }
+
+        .cell-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .list-title {
+            font-weight: 500;
+        }
+
+        .cell-author {
+            color: var(--dedao-muted);
+        }
+
+        .cell-chunks, .cell-sections {
+            font-size: 13px;
+            color: var(--dedao-light);
+        }
+
+        .mini-link {
+            font-size: 13px;
+            color: var(--dedao-orange);
+            text-decoration: none;
+        }
+
+        .mini-link:hover {
+            text-decoration: underline;
+        }
+
+        /* Right Panel Toggle */
+        .right-collapse-toggle {
+            position: fixed;
+            right: var(--dedao-right-panel-width);
+            top: 50%;
+            transform: translateY(-50%);
+            width: 24px;
+            height: 48px;
+            background-color: var(--dedao-card);
+            border: 1px solid var(--dedao-border);
+            border-right: none;
+            border-radius: var(--dedao-radius-md) 0 0 var(--dedao-radius-md);
+            font-size: 14px;
+            color: var(--dedao-muted);
+            cursor: pointer;
+            transition: right var(--dedao-transition-normal), background-color var(--dedao-transition-fast);
+            z-index: 50;
+        }
+
+        .right-collapse-toggle:hover {
+            background-color: var(--dedao-bg);
+        }
+
+        .library-layout.right-collapsed .right-collapse-toggle {
+            right: 0;
+        }
+
+        /* Right Panel */
+        .library-right {
+            background-color: var(--dedao-card);
+            border-left: 1px solid var(--dedao-border);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            transition: transform var(--dedao-transition-normal), margin-right var(--dedao-transition-normal);
+        }
+
+        .library-layout.right-collapsed .library-right {
+            transform: translateX(100%);
+            position: absolute;
+            right: 0;
+            top: var(--dedao-header-height);
+            bottom: 0;
+            width: var(--dedao-right-panel-width);
+        }
+
+        .right-tabbar {
+            display: flex;
+            border-bottom: 1px solid var(--dedao-border);
+            flex-shrink: 0;
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 14px 12px;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--dedao-muted);
+            background: none;
+            border: none;
+            border-bottom: 2px solid transparent;
+            cursor: pointer;
+            transition: color var(--dedao-transition-fast), border-color var(--dedao-transition-fast);
+        }
+
+        .tab-btn:hover {
+            color: var(--dedao-text);
+        }
+
+        .tab-btn.is-active {
+            color: var(--dedao-orange);
+            border-bottom-color: var(--dedao-orange);
+        }
+
+        .right-content {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .right-tab {
+            display: none;
+            padding: 20px;
+        }
+
+        .right-tab.is-active {
+            display: block;
+        }
+
+        .right-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--dedao-text);
+            margin-bottom: 20px;
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .stats-card {
+            padding: 16px;
+            background-color: var(--dedao-bg);
+            border-radius: var(--dedao-radius-lg);
+        }
+
+        .stats-label {
+            font-size: 12px;
+            color: var(--dedao-light);
+            margin-bottom: 4px;
+        }
+
+        .stats-value {
+            font-size: 24px;
+            font-weight: 600;
+            color: var(--dedao-text);
+        }
+
+        .stats-sub {
+            font-size: 12px;
+            color: var(--dedao-light);
+            margin-top: 2px;
+        }
+
+        .stats-progress {
+            margin-bottom: 16px;
+        }
+
+        .stats-bar {
+            height: 6px;
+            background-color: var(--dedao-bg);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-bottom: 8px;
+        }
+
+        .stats-bar-fill {
+            height: 100%;
+            background-color: var(--dedao-orange);
+            border-radius: 3px;
+            transition: width var(--dedao-transition-normal);
+        }
+
+        .stats-bar-label {
+            font-size: 12px;
+            color: var(--dedao-light);
+            text-align: center;
+        }
+
+        .stats-actions {
+            margin-bottom: 16px;
+        }
+
+        .stats-state {
+            font-size: 13px;
+            color: var(--dedao-muted);
+            min-height: 20px;
+        }
+
+        /* Chat Tab */
+        .chat-modes {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .chat-modes .mini-btn.is-active {
+            background-color: var(--dedao-orange);
+            color: white;
+        }
+
+        .chat-controls {
+            margin-bottom: 16px;
+        }
+
+        .form-field {
+            display: block;
+        }
+
+        .form-label {
+            font-size: 12px;
+            color: var(--dedao-light);
+            margin-bottom: 6px;
+        }
+
+        .form-field select,
+        .form-field input[type="text"] {
+            width: 100%;
+            padding: 10px 12px;
+            font-size: 14px;
+            background-color: var(--dedao-bg);
+            border: 1px solid var(--dedao-border);
+            border-radius: var(--dedao-radius-md);
+            color: var(--dedao-text);
+        }
+
+        .form-error {
+            padding: 10px 12px;
+            font-size: 13px;
+            color: var(--dedao-error);
+            background-color: var(--dedao-error-bg);
+            border-radius: var(--dedao-radius-md);
+            margin-top: 8px;
+        }
+
+        .chat-history {
+            margin-bottom: 16px;
+        }
+
+        .chat-thread {
+            min-height: 200px;
+            max-height: 300px;
+            overflow-y: auto;
+            padding: 12px;
+            background-color: var(--dedao-bg);
+            border-radius: var(--dedao-radius-lg);
+            margin-bottom: 16px;
+        }
+
+        .chat-composer textarea {
+            width: 100%;
+            padding: 12px;
+            font-size: 14px;
+            background-color: var(--dedao-bg);
+            border: 1px solid var(--dedao-border);
+            border-radius: var(--dedao-radius-md);
+            color: var(--dedao-text);
+            resize: none;
+            margin-bottom: 12px;
+        }
+
+        .chat-composer textarea:focus {
+            outline: none;
+            border-color: var(--dedao-orange);
+        }
+
+        .chat-actions {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+
+        .chat-status {
+            font-size: 12px;
+            color: var(--dedao-light);
+            min-height: 18px;
+            margin-top: 8px;
+        }
+
+        /* Search Tab */
+        .search-box {
+            margin-bottom: 16px;
+        }
+
+        .search-box input {
+            width: 100%;
+            padding: 12px 14px;
+            font-size: 14px;
+            background-color: var(--dedao-bg);
+            border: 1px solid var(--dedao-border);
+            border-radius: var(--dedao-radius-md);
+            color: var(--dedao-text);
+            margin-bottom: 12px;
+        }
+
+        .search-box input:focus {
+            outline: none;
+            border-color: var(--dedao-orange);
+        }
+
+        .search-actions {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 12px;
+            font-size: 13px;
+        }
+
+        .search-actions label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--dedao-muted);
+        }
+
+        .search-actions select {
+            padding: 6px 8px;
+            font-size: 12px;
+            background-color: var(--dedao-bg);
+            border: 1px solid var(--dedao-border);
+            border-radius: var(--dedao-radius-sm);
+            color: var(--dedao-text);
+        }
+
+        .search-btn {
+            padding: 6px 12px;
+            font-size: 12px;
+            background-color: var(--dedao-bg);
+            border: none;
+            border-radius: var(--dedao-radius-sm);
+            color: var(--dedao-muted);
+            cursor: pointer;
+        }
+
+        .search-btn:hover {
+            background-color: var(--dedao-bg-hover);
+        }
+
+        .library-search-panel {
+            margin-top: 16px;
+        }
+
+        .search-status {
+            font-size: 13px;
+            color: var(--dedao-light);
+            margin-bottom: 12px;
+        }
+
+        /* Modals */
+        .modal {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            max-width: 480px;
+            width: 90%;
+            background-color: var(--dedao-card);
+            border-radius: var(--dedao-radius-xl);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+            padding: 0;
+            border: none;
+        }
+
+        .modal::backdrop {
+            background-color: rgba(0, 0, 0, 0.4);
+        }
+
+        .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--dedao-border);
+        }
+
+        .modal-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--dedao-text);
+        }
+
+        .modal-body {
+            padding: 24px;
+        }
+
+        .modal-body p {
+            font-size: 14px;
+            color: var(--dedao-muted);
+            margin-bottom: 12px;
+        }
+
+        .modal-body pre {
+            padding: 12px;
+            background-color: var(--dedao-bg);
+            border-radius: var(--dedao-radius-md);
+            overflow-x: auto;
+        }
+
+        .modal-body code {
+            font-family: 'SF Mono', 'Consolas', monospace;
+            font-size: 13px;
+            color: var(--dedao-text);
+        }
+
+        .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            padding: 16px 24px;
+            border-top: 1px solid var(--dedao-border);
+            background-color: var(--dedao-bg);
+            border-radius: 0 0 var(--dedao-radius-xl) var(--dedao-radius-xl);
+        }
+
+        .error-summary {
+            font-size: 13px;
+            color: var(--dedao-error);
+        }
+
+        .collections-picker {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        /* Utilities */
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
+
+        [hidden] {
+            display: none !important;
+        }
+
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .library-layout {
+                grid-template-columns: var(--dedao-sidebar-width) 1fr;
+            }
+
+            .library-right {
+                position: fixed;
+                right: 0;
+                top: var(--dedao-header-height);
+                bottom: 0;
+                transform: translateX(100%);
+                z-index: 40;
+            }
+
+            .library-right.is-open {
+                transform: translateX(0);
+            }
+
+            .right-collapse-toggle {
+                right: 0;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .library-layout {
+                grid-template-columns: 1fr;
+            }
+
+            .library-sidebar {
+                position: fixed;
+                left: 0;
+                top: var(--dedao-header-height);
+                bottom: 0;
+                transform: translateX(-100%);
+                z-index: 40;
+            }
+
+            .library-sidebar.is-open {
+                transform: translateX(0);
+            }
+
+            .header-nav {
+                display: none;
+            }
+
+            .library-toolbar {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .toolbar-left {
+                max-width: none;
+            }
+
+            .toolbar-right {
+                flex-wrap: wrap;
+            }
+
+            .selection-group {
+                width: 100%;
+                padding-left: 0;
+                border-left: none;
+                margin-left: 0;
+                margin-top: 12px;
+                flex-wrap: wrap;
+            }
+        }
+    </style>
 </head>
 <body data-ai-default-provider="{{ ai_default_provider }}">
-    <div class="library-layout">
-        <aside class="library-sidebar" aria-label="Library Sidebar">
-            <div class="sidebar-header">
-                <div class="app-title">Library</div>
-                <a class="settings-link" href="/settings">Settings</a>
-            </div>
+    <!-- Header -->
+    <header class="library-header">
+        <div class="header-logo">Reader3 Pro</div>
+        <nav class="header-nav">
+            <a href="/" class="nav-link active">My Library</a>
+            <a href="/settings" class="nav-link">Settings</a>
+        </nav>
+        <div class="header-actions">
+            <button type="button" class="toolbar-btn toolbar-btn--primary" id="add-books-btn">Add books</button>
+        </div>
+    </header>
 
+    <!-- Main Layout -->
+    <div class="library-layout" id="library-layout">
+        <!-- Left Sidebar -->
+        <aside class="library-sidebar" id="library-sidebar" aria-label="Library Sidebar">
             <div class="sidebar-section">
                 <div class="sidebar-section-title">Types</div>
                 <div class="filter-list" role="list">
@@ -26,14 +1113,7 @@
                         <span class="filter-label">EPUB</span>
                         <span class="badge" id="count-epub">{{ counts.epub }}</span>
                     </button>
-                    <button
-                        type="button"
-                        class="filter-btn"
-                        data-scope="format:pdf"
-                        role="listitem"
-                        disabled
-                        title="PDF not supported yet"
-                    >
+                    <button type="button" class="filter-btn" data-scope="format:pdf" role="listitem" disabled title="PDF not supported yet">
                         <span class="filter-label">PDF</span>
                         <span class="badge" id="count-pdf">{{ counts.pdf }}</span>
                     </button>
@@ -49,9 +1129,8 @@
                     {{ collections_error }}
                 </div>
                 <div class="collections-empty" id="collections-empty-message" {% if collections %}hidden{% endif %}>
-                    No collections yet. Create one to group books by author or theme.
+                    No collections yet. Create one to group books.
                 </div>
-
                 <div class="collections-list" id="collections-list" aria-label="Collections List">
                     {% for c in collections %}
                         <div class="collection-row" data-collection-id="{{ c.id }}">
@@ -61,12 +1140,7 @@
                             </button>
                             <div class="collection-actions">
                                 {% if c.missing_count %}
-                                    <button
-                                        type="button"
-                                        class="mini-btn"
-                                        data-action="cleanup"
-                                        title="Remove missing books from this collection"
-                                    >
+                                    <button type="button" class="mini-btn" data-action="cleanup" title="Remove missing books">
                                         Clean ({{ c.missing_count }})
                                     </button>
                                 {% endif %}
@@ -78,17 +1152,16 @@
             </div>
         </aside>
 
+        <!-- Main Content -->
         <main class="library-main" aria-label="Library">
             <div class="library-toolbar" role="region" aria-label="Library Toolbar">
                 <div class="toolbar-left">
                     <label class="search-input" aria-label="Filter books by title">
-                        <span class="search-icon" aria-hidden="true">⌕</span>
-                        <input type="text" id="title-filter" placeholder="Find books…" autocomplete="off" />
+                        <span class="search-icon" aria-hidden="true">🔍</span>
+                        <input type="text" id="title-filter" placeholder="Find books..." autocomplete="off" />
                     </label>
                 </div>
-
                 <div class="toolbar-right" role="group" aria-label="Library Actions">
-                    <button type="button" class="toolbar-btn" id="add-books-btn">Add books</button>
                     <button type="button" class="icon-btn" id="sort-btn" aria-label="Sort A to Z">A→Z</button>
                     <button type="button" class="icon-btn" id="view-toggle-btn" aria-label="Toggle grid and list view">▦</button>
                     <button type="button" class="icon-btn" id="select-toggle-btn" aria-label="Toggle selection mode">✓</button>
@@ -118,7 +1191,7 @@
                     <article class="book-card" data-book-id="{{ book.id }}" data-format="{{ book.format }}" data-title="{{ book.title|lower }}" data-author="{{ book.author|lower }}">
                         <input type="checkbox" class="select-checkbox" aria-label="Select {{ book.title }}" />
                         <div class="book-badges" aria-hidden="true">
-                            <span class="status-pill is-loading" data-status="loading">Loading…</span>
+                            <span class="status-pill is-loading" data-status="loading">Loading...</span>
                             <span class="chunk-pill" hidden></span>
                         </div>
                         <a class="book-link" href="/read/{{ book.id }}/0" aria-label="Read {{ book.title }}">
@@ -154,10 +1227,10 @@
                                     <div class="list-title">{{ book.title }}</div>
                                 </td>
                                 <td class="cell-author">{{ book.author }}</td>
-                                <td class="cell-chunks" data-role="chunk-count">—</td>
+                                <td class="cell-chunks" data-role="chunk-count">-</td>
                                 <td class="cell-sections">{{ book.section_count }}</td>
                                 <td class="cell-status">
-                                    <span class="status-pill is-loading" data-status="loading">Loading…</span>
+                                    <span class="status-pill is-loading" data-status="loading">Loading...</span>
                                 </td>
                                 <td class="cell-read">
                                     <a class="mini-link" href="/read/{{ book.id }}/0">Read</a>
@@ -169,54 +1242,65 @@
             </section>
         </main>
 
+        <!-- Right Panel Toggle -->
         <button type="button" class="right-collapse-toggle" id="right-collapse-toggle" aria-label="Hide right panel" title="Hide right panel">›</button>
 
+        <!-- Right Panel -->
         <aside class="library-right" id="library-right" aria-label="Right Panel">
+            <nav class="right-tabbar" id="right-tabbar" role="tablist" aria-label="Right Panel Tabs">
+                <button type="button" class="tab-btn is-active" data-tab="dashboard" aria-label="Dashboard" role="tab" aria-selected="true">Dashboard</button>
+                <button type="button" class="tab-btn" data-tab="chat" aria-label="Chat" role="tab" aria-selected="false">Chat</button>
+                <button type="button" class="tab-btn" data-tab="search" aria-label="Search" role="tab" aria-selected="false">Search</button>
+            </nav>
+
             <div class="right-content" id="right-content">
+                <!-- Dashboard Tab -->
                 <section class="right-tab is-active" id="dashboard-tab" aria-label="Dashboard">
                     <div class="right-title">Dashboard</div>
                     <div class="stats-grid" aria-label="Library Stats">
                         <div class="stats-card">
                             <div class="stats-label">Books</div>
-                            <div class="stats-value" id="stats-books-total">—</div>
+                            <div class="stats-value" id="stats-books-total">-</div>
                         </div>
                         <div class="stats-card">
                             <div class="stats-label">Indexed</div>
-                            <div class="stats-value" id="stats-books-indexed">—</div>
-                            <div class="stats-sub" id="stats-indexed-percent">—</div>
+                            <div class="stats-value" id="stats-books-indexed">-</div>
+                            <div class="stats-sub" id="stats-indexed-percent">-</div>
                         </div>
                         <div class="stats-card">
                             <div class="stats-label">Sections</div>
-                            <div class="stats-value" id="stats-sections-total">—</div>
+                            <div class="stats-value" id="stats-sections-total">-</div>
                         </div>
                         <div class="stats-card">
                             <div class="stats-label">Chunks</div>
-                            <div class="stats-value" id="stats-chunks-total">—</div>
+                            <div class="stats-value" id="stats-chunks-total">-</div>
                         </div>
                     </div>
                     <div class="stats-progress" aria-label="Index progress">
                         <div class="stats-bar">
                             <div class="stats-bar-fill" id="stats-bar-fill" style="width:0%;"></div>
                         </div>
-                        <div class="stats-bar-label" id="stats-bar-label">—</div>
+                        <div class="stats-bar-label" id="stats-bar-label">-</div>
                     </div>
                     <div class="stats-actions">
                         <button type="button" class="toolbar-btn" id="refresh-stats-btn">Refresh stats</button>
                     </div>
                     <div class="stats-state" id="stats-state" aria-live="polite"></div>
                 </section>
+
+                <!-- Chat Tab -->
                 <section class="right-tab" id="chat-tab" aria-label="Chat">
                     <div class="right-title">Chat</div>
                     <div class="chat-modes" role="group" aria-label="Chat scope">
-                        <button type="button" class="mini-btn" disabled title="Coming soon" aria-label="All books (Coming soon)">All books</button>
-                        <button type="button" class="mini-btn mini-btn--danger" disabled title="Coming soon" aria-label="Collection (Coming soon)">Collection</button>
+                        <button type="button" class="mini-btn" disabled title="Coming soon">All books</button>
+                        <button type="button" class="mini-btn" disabled title="Coming soon">Collection</button>
                         <button type="button" class="mini-btn is-active" aria-current="true">Single book</button>
                     </div>
                     <div class="chat-controls">
                         <label class="form-field">
                             <div class="form-label">Book</div>
                             <select id="chat-book-select">
-                                <option value="" selected disabled>Select a book…</option>
+                                <option value="" selected disabled>Select a book...</option>
                                 {% for book in books %}
                                     <option value="{{ book.id }}" data-book-uuid="{{ book.book_uuid }}">{{ book.title }}</option>
                                 {% endfor %}
@@ -233,7 +1317,7 @@
                     </div>
                     <div class="chat-thread" id="chat-thread" aria-label="Chat Messages"></div>
                     <div class="chat-composer" aria-label="Chat Composer">
-                        <textarea id="chat-input" rows="2" placeholder="Ask about this book…"></textarea>
+                        <textarea id="chat-input" rows="2" placeholder="Ask about this book..."></textarea>
                         <div class="chat-actions">
                             <button type="button" class="toolbar-btn" id="chat-stop-btn" disabled>Stop</button>
                             <button type="button" class="toolbar-btn toolbar-btn--primary" id="chat-send-btn" disabled>Send</button>
@@ -241,10 +1325,12 @@
                     </div>
                     <div class="chat-status" id="chat-status" aria-live="polite"></div>
                 </section>
+
+                <!-- Search Tab -->
                 <section class="right-tab" id="search-tab" aria-label="Search">
                     <div class="right-title">Search</div>
                     <div class="search-box">
-                        <input type="text" id="library-panel-search-input" placeholder="Search across your library…" autocomplete="off" />
+                        <input type="text" id="library-panel-search-input" placeholder="Search across your library..." autocomplete="off" />
                         <div class="search-actions">
                             <button type="button" class="search-btn" id="library-panel-search-clear">Clear</button>
                             <label>
@@ -269,22 +1355,16 @@
                             </label>
                         </div>
                     </div>
-
                     <div class="library-search-panel" id="library-panel-search-panel" style="display:none;">
                         <div class="search-status" id="library-panel-search-status"></div>
                         <div id="library-panel-search-results"></div>
                     </div>
                 </section>
             </div>
-
-            <nav class="right-tabbar" id="right-tabbar" role="tablist" aria-label="Right Panel Tabs">
-                <button type="button" class="tab-btn is-active" data-tab="dashboard" aria-label="Dashboard" role="tab" aria-selected="true">Dashboard</button>
-                <button type="button" class="tab-btn" data-tab="chat" aria-label="Chat" role="tab" aria-selected="false">Chat</button>
-                <button type="button" class="tab-btn" data-tab="search" aria-label="Search" role="tab" aria-selected="false">Search</button>
-            </nav>
         </aside>
     </div>
 
+    <!-- Add Books Modal -->
     <dialog class="modal" id="add-books-modal" aria-label="Add books">
         <div class="modal-header">
             <div class="modal-title">Add books</div>
@@ -296,10 +1376,11 @@
             <p>Then refresh this page.</p>
         </div>
         <div class="modal-actions">
-            <button type="button" class="toolbar-btn" id="add-books-ok">OK</button>
+            <button type="button" class="toolbar-btn toolbar-btn--primary" id="add-books-ok">OK</button>
         </div>
     </dialog>
 
+    <!-- Index Errors Modal -->
     <dialog class="modal" id="index-errors-modal" aria-label="Indexing errors">
         <div class="modal-header">
             <div class="modal-title">Indexing completed with errors</div>
@@ -309,10 +1390,11 @@
             <div class="error-summary" id="index-errors-summary"></div>
         </div>
         <div class="modal-actions">
-            <button type="button" class="toolbar-btn" id="index-errors-ok">OK</button>
+            <button type="button" class="toolbar-btn toolbar-btn--primary" id="index-errors-ok">OK</button>
         </div>
     </dialog>
 
+    <!-- Create Collection Modal -->
     <dialog class="modal" id="create-collection-modal" aria-label="Create collection">
         <div class="modal-header">
             <div class="modal-title">Create collection</div>
@@ -331,6 +1413,7 @@
         </div>
     </dialog>
 
+    <!-- Add to Collection Modal -->
     <dialog class="modal" id="add-to-collection-modal" aria-label="Add selected books to collection">
         <div class="modal-header">
             <div class="modal-title">Add to collection</div>
@@ -345,8 +1428,10 @@
         </div>
     </dialog>
 
+    <!-- Screen Reader Announcements -->
     <div class="sr-only" id="aria-live" aria-live="polite" aria-atomic="true"></div>
 
+    <!-- Scripts -->
     <script src="/static/library.js" defer></script>
     <script src="/static/library-chat.js" defer></script>
     <script src="/static/library-search.js" defer></script>

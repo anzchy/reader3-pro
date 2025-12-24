@@ -3,14 +3,1197 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ book.metadata.title }}</title>
-    <link rel="stylesheet" href="/static/search.css">
-    <link rel="stylesheet" href="/static/ai.css">
-    <link rel="stylesheet" href="/static/css/reader.css">
-    <link rel="stylesheet" href="/static/css/toolbar.css">
-    <link rel="stylesheet" href="/static/css/toc-panel.css">
-    <link rel="stylesheet" href="/static/css/notes-panel.css">
-    <link rel="stylesheet" href="/static/css/annotations.css">
+    <title>{{ book.metadata.title }} - Reader3 Pro</title>
+    <link rel="stylesheet" href="/static/dedao-theme.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        /* Reader-specific styles */
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: var(--dedao-font-sans);
+            background-color: var(--dedao-bg);
+            color: var(--dedao-text);
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        .reader-header {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            height: var(--dedao-header-height);
+            background: rgba(255, 255, 255, 0.92);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--dedao-border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 16px;
+            flex-shrink: 0;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .back-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            border-radius: var(--dedao-radius-md);
+            color: var(--dedao-muted);
+            text-decoration: none;
+            transition: background-color var(--dedao-transition-fast);
+        }
+
+        .back-btn:hover {
+            background-color: var(--dedao-bg);
+        }
+
+        .header-divider {
+            width: 1px;
+            height: 20px;
+            background-color: var(--dedao-border);
+        }
+
+        .header-info {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header-section {
+            font-size: 11px;
+            color: var(--dedao-light);
+        }
+
+        .header-title {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--dedao-text);
+            max-width: 300px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .header-center {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .header-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            padding: 8px 10px;
+            border: none;
+            background: none;
+            border-radius: var(--dedao-radius-md);
+            color: var(--dedao-muted);
+            cursor: pointer;
+            transition: background-color var(--dedao-transition-fast);
+        }
+
+        .header-btn:hover {
+            background-color: var(--dedao-bg);
+        }
+
+        .header-btn svg {
+            width: 18px;
+            height: 18px;
+        }
+
+        .font-label {
+            font-size: 12px;
+        }
+
+        .font-label-lg {
+            font-size: 15px;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        /* Main Layout */
+        .reader-layout {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* TOC Sidebar */
+        #toc-mode {
+            position: fixed;
+            left: 0;
+            top: var(--dedao-header-height);
+            bottom: var(--dedao-footer-height);
+            width: 288px;
+            background-color: var(--dedao-card);
+            border-right: 1px solid var(--dedao-border);
+            transform: translateX(-100%);
+            transition: transform var(--dedao-transition-normal);
+            z-index: 40;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #toc-mode.is-open {
+            transform: translateX(0);
+        }
+
+        .toc-shell {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            padding: 16px;
+        }
+
+        .toc-nav-links {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .toc-nav-links a {
+            font-size: 12px;
+            color: var(--dedao-muted);
+            text-decoration: none;
+        }
+
+        .toc-nav-links a:hover {
+            color: var(--dedao-orange);
+        }
+
+        .toc-card {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .toc-search {
+            margin-bottom: 12px;
+        }
+
+        .toc-search input {
+            width: 100%;
+            padding: 10px 14px;
+            font-size: 14px;
+            background-color: var(--dedao-bg);
+            border: 1px solid var(--dedao-border);
+            border-radius: var(--dedao-radius-md);
+            color: var(--dedao-text);
+            outline: none;
+        }
+
+        .toc-search input:focus {
+            border-color: var(--dedao-orange);
+        }
+
+        .toc-body {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .toc-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        .toc-item {
+            margin-bottom: 2px;
+        }
+
+        .toc-link {
+            display: block;
+            padding: 8px 12px;
+            font-size: 14px;
+            color: var(--dedao-muted);
+            text-decoration: none;
+            border-radius: var(--dedao-radius-md);
+            transition: background-color var(--dedao-transition-fast), color var(--dedao-transition-fast);
+        }
+
+        .toc-link:hover {
+            background-color: var(--dedao-bg);
+        }
+
+        .toc-link.active {
+            background-color: var(--dedao-orange-light);
+            color: var(--dedao-orange);
+            font-weight: 500;
+        }
+
+        .toc-list .toc-list {
+            margin-left: 12px;
+        }
+
+        .toc-list .toc-list .toc-link {
+            font-size: 13px;
+            padding: 6px 12px;
+            color: var(--dedao-light);
+        }
+
+        /* Main Content */
+        #reader {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            padding: 32px 24px;
+            overflow-y: auto;
+            transition: margin-left var(--dedao-transition-normal);
+        }
+
+        #reader.toc-open {
+            margin-left: 288px;
+        }
+
+        #main {
+            width: 100%;
+            max-width: 768px;
+        }
+
+        .content-container {
+            background-color: var(--dedao-card);
+            border-radius: var(--dedao-radius-xl);
+            box-shadow: var(--dedao-shadow-md);
+            padding: 48px;
+        }
+
+        .book-content {
+            font-family: var(--dedao-font-serif);
+            font-size: 17px;
+            line-height: 1.9;
+            color: var(--dedao-text);
+        }
+
+        .book-content p {
+            text-indent: 2em;
+            margin-bottom: 1.5rem;
+        }
+
+        .book-content h1, .book-content h2 {
+            font-size: 22px;
+            font-weight: 600;
+            margin-top: 2.5rem;
+            margin-bottom: 1.5rem;
+            text-indent: 0;
+            color: var(--dedao-text);
+        }
+
+        .book-content h3, .book-content h4 {
+            font-size: 18px;
+            font-weight: 500;
+            margin-top: 2rem;
+            margin-bottom: 1rem;
+            text-indent: 0;
+            color: var(--dedao-text);
+        }
+
+        .book-content img {
+            max-width: 100%;
+            height: auto;
+            border-radius: var(--dedao-radius-md);
+            margin: 1.5rem 0;
+        }
+
+        .chapter-nav {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 48px;
+            padding-top: 24px;
+            border-top: 1px solid var(--dedao-border);
+        }
+
+        .nav-btn {
+            padding: 10px 20px;
+            font-size: 14px;
+            color: var(--dedao-muted);
+            text-decoration: none;
+            background-color: var(--dedao-bg);
+            border-radius: var(--dedao-radius-md);
+            transition: all var(--dedao-transition-fast);
+        }
+
+        .nav-btn:hover {
+            background-color: var(--dedao-bg-hover);
+            color: var(--dedao-text);
+        }
+
+        .nav-btn.disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+
+        .nav-indicator {
+            font-size: 13px;
+            color: var(--dedao-light);
+        }
+
+        /* Right Toolbar */
+        #right-toolbar {
+            position: fixed;
+            right: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            z-index: 30;
+        }
+
+        .rt-btn {
+            width: 44px;
+            height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: var(--dedao-card);
+            border: none;
+            border-radius: var(--dedao-radius-xl);
+            box-shadow: var(--dedao-shadow-md);
+            cursor: pointer;
+            transition: all var(--dedao-transition-fast);
+        }
+
+        .rt-btn:hover {
+            box-shadow: var(--dedao-shadow-lg);
+            transform: scale(1.05);
+        }
+
+        .rt-btn.is-active {
+            background-color: var(--dedao-orange);
+            box-shadow: var(--dedao-shadow-orange);
+        }
+
+        .rt-btn.is-active svg,
+        .rt-btn.is-active img {
+            filter: brightness(10);
+        }
+
+        .rt-btn svg {
+            width: 20px;
+            height: 20px;
+            color: var(--dedao-muted);
+        }
+
+        .rt-btn img {
+            width: 20px;
+            height: 20px;
+            opacity: 0.6;
+        }
+
+        .rt-icon-invert {
+            filter: invert(1) opacity(0.6);
+        }
+
+        /* Footer */
+        .reader-footer {
+            height: var(--dedao-footer-height);
+            background-color: var(--dedao-dark);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+            flex-shrink: 0;
+        }
+
+        .footer-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .footer-btn {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 12px;
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.7);
+            background: none;
+            border: none;
+            cursor: pointer;
+            transition: color var(--dedao-transition-fast);
+        }
+
+        .footer-btn:hover {
+            color: white;
+        }
+
+        .footer-btn svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        .footer-center {
+            flex: 1;
+            max-width: 480px;
+            margin: 0 32px;
+        }
+
+        .progress-container {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .progress-label {
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.5);
+            min-width: 24px;
+        }
+
+        .progress-bar {
+            flex: 1;
+            height: 4px;
+            background-color: rgba(255, 255, 255, 0.2);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background-color: var(--dedao-orange);
+            border-radius: 2px;
+            transition: width var(--dedao-transition-normal);
+        }
+
+        .footer-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .footer-nav {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.7);
+            text-decoration: none;
+            transition: color var(--dedao-transition-fast);
+        }
+
+        .footer-nav:hover {
+            color: white;
+        }
+
+        .footer-nav svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        .footer-indicator {
+            font-size: 14px;
+            font-weight: 500;
+            color: white;
+        }
+
+        /* Notes Mode Panel */
+        #notes-mode {
+            position: fixed;
+            right: 0;
+            top: var(--dedao-header-height);
+            bottom: var(--dedao-footer-height);
+            width: 384px;
+            background-color: var(--dedao-card);
+            border-left: 1px solid var(--dedao-border);
+            transform: translateX(100%);
+            transition: transform var(--dedao-transition-normal);
+            z-index: 40;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #notes-mode.is-open {
+            transform: translateX(0);
+        }
+
+        .notes-shell {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .notes-card {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .notes-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            padding: 20px;
+            border-bottom: 1px solid var(--dedao-border);
+        }
+
+        .notes-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--dedao-text);
+            margin-bottom: 4px;
+        }
+
+        .notes-meta {
+            font-size: 12px;
+            color: var(--dedao-light);
+        }
+
+        .notes-cover {
+            width: 48px;
+            height: 64px;
+            border-radius: var(--dedao-radius-sm);
+            overflow: hidden;
+            background-color: var(--dedao-bg);
+        }
+
+        .notes-cover img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .notes-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+        }
+
+        .note-group {
+            margin-bottom: 24px;
+        }
+
+        .note-group-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--dedao-light);
+            margin-bottom: 12px;
+        }
+
+        .note-item {
+            padding: 12px;
+            background-color: var(--dedao-bg);
+            border-radius: var(--dedao-radius-lg);
+            border-left: 4px solid var(--dedao-highlight-yellow);
+            margin-bottom: 8px;
+        }
+
+        .note-item.color-green { border-color: var(--dedao-highlight-green); }
+        .note-item.color-pink { border-color: var(--dedao-highlight-red); }
+        .note-item.color-blue { border-color: var(--dedao-highlight-blue); }
+
+        .note-quote {
+            font-size: 14px;
+            color: var(--dedao-text);
+            margin-bottom: 8px;
+        }
+
+        .note-thought {
+            font-size: 13px;
+            color: var(--dedao-muted);
+            font-style: italic;
+        }
+
+        .note-date {
+            font-size: 11px;
+            color: var(--dedao-light);
+            margin-top: 8px;
+        }
+
+        /* Annotation Toolbar */
+        #annotation-toolbar {
+            position: fixed;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            padding: 8px;
+            background-color: var(--dedao-card);
+            border-radius: var(--dedao-radius-lg);
+            box-shadow: var(--dedao-shadow-lg);
+            z-index: 100;
+        }
+
+        #annotation-toolbar.is-visible {
+            display: flex;
+        }
+
+        .anno-btn {
+            padding: 8px 12px;
+            font-size: 13px;
+            color: var(--dedao-muted);
+            background: none;
+            border: none;
+            border-radius: var(--dedao-radius-sm);
+            cursor: pointer;
+            transition: all var(--dedao-transition-fast);
+            white-space: nowrap;
+        }
+
+        .anno-btn:hover {
+            background-color: var(--dedao-bg);
+            color: var(--dedao-text);
+        }
+
+        .anno-btn[data-action="ask_ai"] {
+            color: var(--dedao-orange);
+        }
+
+        .anno-color-row {
+            display: none;
+            gap: 6px;
+            padding: 8px 4px;
+            border-top: 1px solid var(--dedao-border);
+            margin-top: 4px;
+        }
+
+        .anno-color-row.is-visible {
+            display: flex;
+        }
+
+        .anno-color {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            border: 2px solid white;
+            cursor: pointer;
+            transition: transform var(--dedao-transition-fast);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+        }
+
+        .anno-color:hover {
+            transform: scale(1.15);
+        }
+
+        .anno-color[data-color="yellow"] { background-color: var(--dedao-highlight-yellow); }
+        .anno-color[data-color="green"] { background-color: var(--dedao-highlight-green); }
+        .anno-color[data-color="pink"] { background-color: var(--dedao-highlight-red); }
+        .anno-color[data-color="blue"] { background-color: var(--dedao-highlight-blue); }
+
+        /* Note Editor */
+        #note-editor {
+            position: fixed;
+            display: none;
+            flex-direction: column;
+            width: 320px;
+            padding: 16px;
+            background-color: var(--dedao-card);
+            border-radius: var(--dedao-radius-lg);
+            box-shadow: var(--dedao-shadow-lg);
+            z-index: 100;
+        }
+
+        #note-editor.is-visible {
+            display: flex;
+        }
+
+        #note-editor-text {
+            width: 100%;
+            min-height: 100px;
+            padding: 12px;
+            font-size: 14px;
+            background-color: var(--dedao-bg);
+            border: 1px solid var(--dedao-border);
+            border-radius: var(--dedao-radius-md);
+            color: var(--dedao-text);
+            resize: none;
+            margin-bottom: 12px;
+        }
+
+        #note-editor-text:focus {
+            outline: none;
+            border-color: var(--dedao-orange);
+        }
+
+        .note-editor-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+
+        .note-editor-actions button {
+            padding: 8px 16px;
+            font-size: 13px;
+            border: none;
+            border-radius: var(--dedao-radius-md);
+            cursor: pointer;
+            transition: all var(--dedao-transition-fast);
+        }
+
+        #note-editor-cancel {
+            background-color: var(--dedao-bg);
+            color: var(--dedao-muted);
+        }
+
+        #note-editor-cancel:hover {
+            background-color: var(--dedao-bg-hover);
+        }
+
+        #note-editor-save {
+            background-color: var(--dedao-orange);
+            color: white;
+        }
+
+        #note-editor-save:hover {
+            background-color: var(--dedao-orange-hover);
+        }
+
+        #note-tooltip {
+            position: fixed;
+            display: none;
+            max-width: 280px;
+            padding: 12px;
+            font-size: 13px;
+            background-color: var(--dedao-card);
+            border-radius: var(--dedao-radius-md);
+            box-shadow: var(--dedao-shadow-lg);
+            color: var(--dedao-text);
+            z-index: 90;
+        }
+
+        #note-tooltip.is-visible {
+            display: block;
+        }
+
+        /* Search Drawer */
+        #reader-search-drawer {
+            position: fixed;
+            right: 0;
+            top: var(--dedao-header-height);
+            bottom: var(--dedao-footer-height);
+            width: 384px;
+            background-color: var(--dedao-card);
+            border-left: 1px solid var(--dedao-border);
+            transform: translateX(100%);
+            transition: transform var(--dedao-transition-normal);
+            z-index: 50;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #reader-search-drawer.is-open {
+            transform: translateX(0);
+        }
+
+        .drawer-header {
+            padding: 16px;
+            border-bottom: 1px solid var(--dedao-border);
+        }
+
+        .drawer-search-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .drawer-header input[type="text"] {
+            flex: 1;
+            padding: 10px 14px;
+            font-size: 14px;
+            background-color: var(--dedao-bg);
+            border: 1px solid var(--dedao-border);
+            border-radius: var(--dedao-radius-md);
+            color: var(--dedao-text);
+            outline: none;
+        }
+
+        .drawer-header input[type="text"]:focus {
+            border-color: var(--dedao-orange);
+        }
+
+        .drawer-btn {
+            padding: 8px 12px;
+            font-size: 13px;
+            background-color: var(--dedao-bg);
+            border: none;
+            border-radius: var(--dedao-radius-md);
+            color: var(--dedao-muted);
+            cursor: pointer;
+            transition: all var(--dedao-transition-fast);
+        }
+
+        .drawer-btn:hover {
+            background-color: var(--dedao-bg-hover);
+        }
+
+        .drawer-cancel {
+            color: var(--dedao-orange);
+        }
+
+        .drawer-options {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+            margin-top: 12px;
+            font-size: 13px;
+        }
+
+        .drawer-case {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--dedao-muted);
+        }
+
+        .drawer-case select {
+            padding: 6px 8px;
+            font-size: 12px;
+            background-color: var(--dedao-bg);
+            border: 1px solid var(--dedao-border);
+            border-radius: var(--dedao-radius-sm);
+            color: var(--dedao-text);
+        }
+
+        .drawer-case input[type="checkbox"] {
+            accent-color: var(--dedao-orange);
+        }
+
+        #reader-index-status {
+            font-size: 12px;
+            color: var(--dedao-light);
+        }
+
+        .search-results {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+        }
+
+        .search-status {
+            font-size: 12px;
+            color: var(--dedao-light);
+            margin-bottom: 12px;
+        }
+
+        .search-results-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .search-result-item {
+            padding: 12px;
+            background-color: var(--dedao-bg);
+            border-radius: var(--dedao-radius-lg);
+            cursor: pointer;
+            transition: box-shadow var(--dedao-transition-fast);
+        }
+
+        .search-result-item:hover {
+            box-shadow: var(--dedao-shadow-sm);
+        }
+
+        .search-result-meta {
+            font-size: 11px;
+            color: var(--dedao-light);
+            margin-bottom: 4px;
+        }
+
+        .search-result-text {
+            font-size: 14px;
+            color: var(--dedao-text);
+        }
+
+        .search-result-text mark {
+            background-color: #fef08a;
+            padding: 0 2px;
+            border-radius: 2px;
+        }
+
+        /* AI Panel */
+        #reader-ai-panel {
+            position: fixed;
+            right: 0;
+            top: var(--dedao-header-height);
+            bottom: var(--dedao-footer-height);
+            width: 420px;
+            background-color: var(--dedao-card);
+            border-left: 1px solid var(--dedao-border);
+            transform: translateX(100%);
+            transition: transform var(--dedao-transition-normal);
+            z-index: 50;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #reader-ai-panel.is-open {
+            transform: translateX(0);
+        }
+
+        .ai-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            padding: 16px;
+            border-bottom: 1px solid var(--dedao-border);
+        }
+
+        .ai-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--dedao-text);
+        }
+
+        .ai-provider {
+            font-size: 12px;
+            color: var(--dedao-light);
+            margin-top: 2px;
+        }
+
+        .ai-header-actions {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .ai-select {
+            padding: 6px 8px;
+            font-size: 12px;
+            background-color: var(--dedao-bg);
+            border: 1px solid var(--dedao-border);
+            border-radius: var(--dedao-radius-sm);
+            color: var(--dedao-text);
+        }
+
+        .ai-btn {
+            padding: 6px 12px;
+            font-size: 12px;
+            background-color: var(--dedao-bg);
+            border: none;
+            border-radius: var(--dedao-radius-sm);
+            color: var(--dedao-muted);
+            cursor: pointer;
+            transition: all var(--dedao-transition-fast);
+        }
+
+        .ai-btn:hover {
+            background-color: var(--dedao-bg-hover);
+        }
+
+        .ai-body {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .ai-threads {
+            width: 140px;
+            border-right: 1px solid var(--dedao-border);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .ai-threads-head {
+            padding: 12px;
+            border-bottom: 1px solid var(--dedao-border);
+        }
+
+        .ai-threads-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--dedao-light);
+        }
+
+        .ai-threads-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+        }
+
+        .ai-thread-item {
+            padding: 8px;
+            font-size: 12px;
+            color: var(--dedao-muted);
+            border-radius: var(--dedao-radius-sm);
+            cursor: pointer;
+            margin-bottom: 4px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .ai-thread-item:hover {
+            background-color: var(--dedao-bg);
+        }
+
+        .ai-thread-item.is-active {
+            background-color: var(--dedao-orange-light);
+            color: var(--dedao-orange);
+        }
+
+        .ai-chat {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .ai-quick-actions {
+            display: flex;
+            gap: 8px;
+            padding: 12px;
+            border-bottom: 1px solid var(--dedao-border);
+        }
+
+        .ai-quick-actions .ai-btn {
+            background-color: var(--dedao-orange-light);
+            color: var(--dedao-orange);
+        }
+
+        .ai-quick-actions .ai-btn:hover {
+            background-color: #ffe4cc;
+        }
+
+        .ai-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+        }
+
+        .ai-message {
+            max-width: 85%;
+            padding: 12px 16px;
+            border-radius: var(--dedao-radius-lg);
+            font-size: 14px;
+            margin-bottom: 12px;
+        }
+
+        .ai-message.user {
+            background-color: var(--dedao-orange);
+            color: white;
+            margin-left: auto;
+        }
+
+        .ai-message.assistant {
+            background-color: var(--dedao-bg);
+            color: var(--dedao-text);
+        }
+
+        .ai-citation {
+            display: inline-flex;
+            padding: 4px 8px;
+            font-size: 11px;
+            background-color: var(--dedao-orange-light);
+            color: var(--dedao-orange);
+            border-radius: var(--dedao-radius-sm);
+            margin-top: 8px;
+            cursor: pointer;
+        }
+
+        .ai-input {
+            display: flex;
+            gap: 8px;
+            padding: 12px;
+            border-top: 1px solid var(--dedao-border);
+        }
+
+        .ai-input textarea {
+            flex: 1;
+            padding: 10px 12px;
+            font-size: 14px;
+            background-color: var(--dedao-bg);
+            border: 1px solid var(--dedao-border);
+            border-radius: var(--dedao-radius-md);
+            color: var(--dedao-text);
+            resize: none;
+            min-height: 60px;
+        }
+
+        .ai-input textarea:focus {
+            outline: none;
+            border-color: var(--dedao-orange);
+        }
+
+        .ai-send, .ai-stop {
+            padding: 10px 16px;
+            font-size: 13px;
+            font-weight: 500;
+            border: none;
+            border-radius: var(--dedao-radius-md);
+            cursor: pointer;
+            align-self: flex-end;
+        }
+
+        .ai-send {
+            background-color: var(--dedao-orange);
+            color: white;
+        }
+
+        .ai-send:hover {
+            background-color: var(--dedao-orange-hover);
+        }
+
+        .ai-stop {
+            background-color: var(--dedao-error);
+            color: white;
+        }
+
+        /* Responsive */
+        @media (max-width: 1024px) {
+            #toc-mode, #notes-mode, #reader-search-drawer, #reader-ai-panel {
+                width: 100%;
+            }
+
+            #reader.toc-open {
+                margin-left: 0;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .content-container {
+                padding: 24px;
+            }
+
+            .book-content {
+                font-size: 16px;
+            }
+
+            .header-center {
+                display: none;
+            }
+
+            .footer-center {
+                display: none;
+            }
+
+            #right-toolbar {
+                right: 8px;
+            }
+
+            .rt-btn {
+                width: 40px;
+                height: 40px;
+            }
+        }
+    </style>
 </head>
 <body>
     <!-- Recursive Macro for TOC -->
@@ -31,157 +1214,142 @@
         </ul>
     {% endmacro %}
 
-    <div id="reader">
-        <div id="main">
-            <div class="content-container">
-                <div class="book-content">
-                    {{ current_chapter.content | safe }}
-                </div>
-
-                <div class="chapter-nav">
-                    {% if prev_idx is not none %}
-                        <a href="/read/{{ book_id }}/{{ prev_idx }}" class="nav-btn">← Previous</a>
-                    {% else %}
-                        <span class="nav-btn disabled">← Previous</span>
-                    {% endif %}
-
-                    <span style="color: rgba(17,24,39,0.45); padding: 10px; font-family: -apple-system, system-ui, sans-serif;">
-                        Section {{ chapter_index + 1 }} of {{ book.spine|length }}
-                    </span>
-
-                    {% if next_idx is not none %}
-                        <a href="/read/{{ book_id }}/{{ next_idx }}" class="nav-btn">Next →</a>
-                    {% else %}
-                        <span class="nav-btn disabled">Next →</span>
-                    {% endif %}
-                </div>
+    <!-- Header -->
+    <header class="reader-header">
+        <div class="header-left">
+            <a href="/" class="back-btn" title="Back to Library">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
+                    <path d="M19 12H5M12 19l-7-7 7-7"/>
+                </svg>
+            </a>
+            <div class="header-divider"></div>
+            <div class="header-info">
+                <div class="header-section">Section {{ chapter_index + 1 }}</div>
+                <div class="header-title">{{ book.metadata.title }}</div>
             </div>
         </div>
-    </div>
-
-    <script>
-        window.Reader3Ctx = {
-            bookId: "{{ book_id }}",
-            bookUuid: "{{ book_uuid }}",
-            provider: "{{ ai_default_provider }}",
-            chapterIndex: {{ chapter_index }},
-            totalChapters: {{ book.spine|length }},
-            title: {{ book.metadata.title | tojson }},
-            coverUrl: {{ cover_url | tojson }}
-        };
-
-        // Helper to map TOC filenames to Spine Indices
-        // Pass the spine data from python to JS
-        const spineMap = {
-            {% for ch in book.spine %}
-            "{{ ch.href }}": {{ ch.order }},
-            {% endfor %}
-        };
-
-        function findAndGo(filename) {
-            // The TOC usually has specific filenames e.g. "text/part001.html"
-            // Sometimes it has anchors "text/part001.html#header"
-            // We strip the anchor to find the page index
-            const cleanFile = filename.split('#')[0];
-            const anchor = filename.split('#')[1];
-
-            const idx = spineMap[cleanFile];
-
-            if (idx !== undefined) {
-                let url = "/read/{{ book_id }}/" + idx;
-                // If there was an anchor, we could try to scroll to it,
-                // but simple page loads often lose anchor position without extra JS.
-                // Let's just go to the page.
-                window.location.href = url;
-            } else {
-                console.log("Could not find index for", filename);
-            }
-        }
-    </script>
-
-    <!-- TOC Mode (WeRead-style) -->
-    <div id="toc-mode" aria-hidden="true">
-        <div class="toc-shell">
-            <div style="display:flex; gap:12px; align-items:center; margin-bottom:12px; font-family:-apple-system,system-ui,sans-serif;">
-                <a href="/" style="text-decoration:none; color: rgba(17,24,39,0.72); font-size:12px;">← Library</a>
-                <a href="/settings" style="text-decoration:none; color: rgba(17,24,39,0.72); font-size:12px;">Settings</a>
-            </div>
-            <div class="toc-card">
-                <div class="toc-search">
-                    <input type="text" id="toc-search-input" placeholder="搜索" autocomplete="off" />
-                </div>
-                <div class="toc-body" id="toc-list-root">
-                    {{ render_toc(book.toc) }}
-                </div>
-            </div>
+        <div class="header-center">
+            <button type="button" class="header-btn" title="Decrease font size">
+                <span class="font-label">A</span>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="14" height="14"><path d="M5 12h14"/></svg>
+            </button>
+            <button type="button" class="header-btn" title="Increase font size">
+                <span class="font-label-lg">A</span>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="14" height="14"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
+            <div class="header-divider"></div>
+            <button type="button" class="header-btn" id="header-toc-toggle" title="Table of Contents">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+            </button>
+            <button type="button" class="header-btn" title="Bookmark">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+            </button>
         </div>
-    </div>
+        <div class="header-right">
+            <a href="/settings" class="header-btn" title="Settings">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </a>
+        </div>
+    </header>
 
-    <!-- Notes Mode (WeRead-style) -->
-    <div id="notes-mode" aria-hidden="true">
-        <div class="notes-shell">
-            <div class="notes-card">
-                <div class="notes-header">
-                    <div>
-                        <div class="notes-title" id="notes-title">{{ book.metadata.title }}</div>
-                        <div class="notes-meta">
-                            <span id="notes-progress">已读到0%</span> · <span id="notes-count">共0条笔记</span>
-                        </div>
+    <!-- Main Layout -->
+    <div class="reader-layout">
+        <!-- TOC Sidebar -->
+        <div id="toc-mode" aria-hidden="true">
+            <div class="toc-shell">
+                <div class="toc-nav-links">
+                    <a href="/">Library</a>
+                    <a href="/settings">Settings</a>
+                </div>
+                <div class="toc-card">
+                    <div class="toc-search">
+                        <input type="text" id="toc-search-input" placeholder="Search chapters..." autocomplete="off" />
                     </div>
-                    <div class="notes-cover">
-                        {% if cover_url %}
-                            <img id="notes-cover-img" src="{{ cover_url }}" alt="" />
+                    <div class="toc-body" id="toc-list-root">
+                        {{ render_toc(book.toc) }}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div id="reader">
+            <div id="main">
+                <div class="content-container">
+                    <div class="book-content">
+                        {{ current_chapter.content | safe }}
+                    </div>
+
+                    <div class="chapter-nav">
+                        {% if prev_idx is not none %}
+                            <a href="/read/{{ book_id }}/{{ prev_idx }}" class="nav-btn">Previous</a>
                         {% else %}
-                            <img id="notes-cover-img" alt="" />
+                            <span class="nav-btn disabled">Previous</span>
+                        {% endif %}
+
+                        <span class="nav-indicator">
+                            Section {{ chapter_index + 1 }} of {{ book.spine|length }}
+                        </span>
+
+                        {% if next_idx is not none %}
+                            <a href="/read/{{ book_id }}/{{ next_idx }}" class="nav-btn">Next</a>
+                        {% else %}
+                            <span class="nav-btn disabled">Next</span>
                         {% endif %}
                     </div>
                 </div>
-                <div class="notes-body" id="notes-body"></div>
+            </div>
+        </div>
+
+        <!-- Notes Panel -->
+        <div id="notes-mode" aria-hidden="true">
+            <div class="notes-shell">
+                <div class="notes-card">
+                    <div class="notes-header">
+                        <div>
+                            <div class="notes-title" id="notes-title">{{ book.metadata.title }}</div>
+                            <div class="notes-meta">
+                                <span id="notes-progress">0% read</span> · <span id="notes-count">0 notes</span>
+                            </div>
+                        </div>
+                        <div class="notes-cover">
+                            {% if cover_url %}
+                                <img id="notes-cover-img" src="{{ cover_url }}" alt="" />
+                            {% else %}
+                                <img id="notes-cover-img" alt="" />
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="notes-body" id="notes-body"></div>
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- Right-side toolbar (WeRead-style) -->
+    <!-- Right Toolbar -->
     <div id="right-toolbar" aria-label="Reader tools">
-        <button type="button" class="rt-btn" id="reader-toc-toggle" title="目录页" aria-label="目录页">
-            <img
-                src="https://cdn.weread.qq.com/web/wrwebnjlogic/image/reader_bottom_catalog_white_3x.39188ac3.png"
-                class="rt-icon-invert"
-                width="18"
-                height="18"
-                alt=""
-                aria-hidden="true"
-            />
+        <button type="button" class="rt-btn" id="reader-toc-toggle" title="Table of Contents">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
         </button>
-        <button type="button" class="rt-btn" id="reader-search-toggle" title="Search" aria-label="Search">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-                <path fill="currentColor" d="M10 4a6 6 0 1 1 0 12A6 6 0 0 1 10 4m0-2a8 8 0 1 0 4.9 14.3l4.4 4.4 1.4-1.4-4.4-4.4A8 8 0 0 0 10 2z"/>
-            </svg>
+        <button type="button" class="rt-btn" id="reader-search-toggle" title="Search">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
         </button>
-        <button type="button" class="rt-btn" id="reader-ai-toggle" title="AI" aria-label="AI">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-                <path fill="currentColor" d="M12 2a7 7 0 0 0-7 7v3a5 5 0 0 0 4 4.9V19a3 3 0 0 0 3 3h2a3 3 0 0 0 3-3v-2.1A5 5 0 0 0 19 12V9a7 7 0 0 0-7-7Zm-5 7a5 5 0 0 1 10 0v3a3 3 0 0 1-3 3h-4a3 3 0 0 1-3-3V9Zm4 10h2v0a1 1 0 0 1-1 1 1 1 0 0 1-1-1Z"/>
-            </svg>
+        <button type="button" class="rt-btn" id="reader-ai-toggle" title="AI Assistant">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
         </button>
-        <button type="button" class="rt-btn" id="reader-notes-toggle" title="Notes" aria-label="Notes">
-            <img
-                src="https://cdn.weread.qq.com/web/wrwebnjlogic/image/icon_reader_notes_default_dark_3x.90d3c7a8.png"
-                width="18"
-                height="18"
-                alt=""
-                aria-hidden="true"
-            />
+        <button type="button" class="rt-btn" id="reader-notes-toggle" title="Notes">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
         </button>
     </div>
 
-    <!-- Selection toolbar -->
+    <!-- Annotation Toolbar -->
     <div id="annotation-toolbar" role="toolbar" aria-hidden="true">
         <button type="button" class="anno-btn" data-action="copy">Copy</button>
         <button type="button" class="anno-btn" data-action="marker">Marker</button>
         <button type="button" class="anno-btn" data-action="wavy">Wavy</button>
         <button type="button" class="anno-btn" data-action="underline">Underline</button>
-        <button type="button" class="anno-btn" data-action="note">写想法</button>
-        <button type="button" class="anno-btn" data-action="ask_ai">AI 问书</button>
+        <button type="button" class="anno-btn" data-action="note">Add Note</button>
+        <button type="button" class="anno-btn" data-action="ask_ai">Ask AI</button>
         <div class="anno-color-row" id="anno-color-row" aria-label="Marker colors">
             <button type="button" class="anno-color" data-color="yellow" aria-label="yellow"></button>
             <button type="button" class="anno-color" data-color="green" aria-label="green"></button>
@@ -190,25 +1358,26 @@
         </div>
     </div>
 
-    <!-- Note editor popover -->
+    <!-- Note Editor -->
     <div id="note-editor" role="dialog" aria-hidden="true">
-        <textarea id="note-editor-text" placeholder="写下想法…"></textarea>
+        <textarea id="note-editor-text" placeholder="Write your thoughts..."></textarea>
         <div class="note-editor-actions">
             <button type="button" id="note-editor-cancel">Cancel</button>
-            <button type="button" class="primary" id="note-editor-save">Save</button>
+            <button type="button" id="note-editor-save">Save</button>
         </div>
     </div>
     <div id="note-tooltip" aria-hidden="true"></div>
 
+    <!-- Search Drawer -->
     <div id="reader-search-drawer" aria-hidden="true">
         <div class="drawer-header">
             <div class="drawer-search-row">
-                <input type="text" id="reader-search-input" placeholder="Search…" autocomplete="off" />
-                <button type="button" class="drawer-btn" id="reader-search-clear" title="Clear" aria-label="Clear">×</button>
-                <button type="button" class="drawer-btn drawer-cancel" id="reader-search-close">Cancel</button>
+                <input type="text" id="reader-search-input" placeholder="Search..." autocomplete="off" />
+                <button type="button" class="drawer-btn" id="reader-search-clear" title="Clear">Clear</button>
+                <button type="button" class="drawer-btn drawer-cancel" id="reader-search-close">Close</button>
             </div>
-            <div style="display:flex; gap:10px; align-items:center; margin-top:10px; flex-wrap:wrap;">
-                <label class="drawer-case" style="margin-top:0;">
+            <div class="drawer-options">
+                <label class="drawer-case">
                     Mode
                     <select id="reader-search-mode">
                         <option value="keyword">keyword</option>
@@ -216,12 +1385,12 @@
                         <option value="hybrid">hybrid</option>
                     </select>
                 </label>
-                <label class="drawer-case" style="margin-top:0;">
+                <label class="drawer-case">
                     <input type="checkbox" id="reader-search-case" />
                     Case sensitive
                 </label>
-                <button type="button" class="drawer-btn" id="reader-index-btn" style="display:none;">Index for semantic</button>
-                <span id="reader-index-status" style="font-size:12px; color: rgba(255,255,255,0.72);"></span>
+                <button type="button" class="drawer-btn" id="reader-index-btn" style="display:none;">Index</button>
+                <span id="reader-index-status"></span>
             </div>
         </div>
         <div class="search-results" id="reader-search-panel">
@@ -230,11 +1399,12 @@
         </div>
     </div>
 
+    <!-- AI Panel -->
     <div id="reader-ai-panel" aria-hidden="true">
         <div class="ai-header">
             <div>
                 <div class="ai-title">AI Reading Assistant</div>
-                <div class="ai-provider" id="reader-ai-provider">anthropic</div>
+                <div class="ai-provider" id="reader-ai-provider">{{ ai_default_provider }}</div>
             </div>
             <div class="ai-header-actions">
                 <select id="reader-ai-export-format" class="ai-select" aria-label="Export format">
@@ -257,19 +1427,86 @@
             </div>
             <div class="ai-chat">
                 <div class="ai-quick-actions">
-                    <button type="button" class="ai-btn" data-ai-summary-type="overview">全书总结</button>
-                    <button type="button" class="ai-btn" data-ai-summary-type="highlights">书籍亮点</button>
-                    <button type="button" class="ai-btn" data-ai-summary-type="background">背景解读</button>
+                    <button type="button" class="ai-btn" data-ai-summary-type="overview">Summary</button>
+                    <button type="button" class="ai-btn" data-ai-summary-type="highlights">Highlights</button>
+                    <button type="button" class="ai-btn" data-ai-summary-type="background">Background</button>
                 </div>
                 <div class="ai-messages" id="reader-ai-messages"></div>
                 <div class="ai-input">
-                    <textarea id="reader-ai-input" placeholder="问我关于这本书的问题…（Enter 发送，Shift+Enter 换行）"></textarea>
+                    <textarea id="reader-ai-input" placeholder="Ask about this book... (Enter to send)"></textarea>
                     <button type="button" class="ai-send" id="reader-ai-send">Send</button>
                     <button type="button" class="ai-stop" id="reader-ai-stop" style="display:none;">Stop</button>
                 </div>
             </div>
         </div>
     </div>
+
+    <!-- Footer -->
+    <footer class="reader-footer">
+        <div class="footer-left">
+            <button type="button" class="footer-btn" title="Go to page">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                Go to page
+            </button>
+        </div>
+        <div class="footer-center">
+            <div class="progress-container">
+                <span class="progress-label">1</span>
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: {{ ((chapter_index + 1) / book.spine|length * 100)|round(1) }}%;"></div>
+                </div>
+                <span class="progress-label">{{ book.spine|length }}</span>
+            </div>
+        </div>
+        <div class="footer-right">
+            {% if prev_idx is not none %}
+                <a href="/read/{{ book_id }}/{{ prev_idx }}" class="footer-nav">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M15 18l-6-6 6-6"/></svg>
+                    Prev
+                </a>
+            {% endif %}
+            <span class="footer-indicator">{{ chapter_index + 1 }} / {{ book.spine|length }}</span>
+            {% if next_idx is not none %}
+                <a href="/read/{{ book_id }}/{{ next_idx }}" class="footer-nav">
+                    Next
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 18l6-6-6-6"/></svg>
+                </a>
+            {% endif %}
+        </div>
+    </footer>
+
+    <script>
+        window.Reader3Ctx = {
+            bookId: "{{ book_id }}",
+            bookUuid: "{{ book_uuid }}",
+            provider: "{{ ai_default_provider }}",
+            chapterIndex: {{ chapter_index }},
+            totalChapters: {{ book.spine|length }},
+            title: {{ book.metadata.title | tojson }},
+            coverUrl: {{ cover_url | tojson }}
+        };
+
+        const spineMap = {
+            {% for ch in book.spine %}
+            "{{ ch.href }}": {{ ch.order }},
+            {% endfor %}
+        };
+
+        function findAndGo(filename) {
+            const cleanFile = filename.split('#')[0];
+            const idx = spineMap[cleanFile];
+            if (idx !== undefined) {
+                window.location.href = "/read/{{ book_id }}/" + idx;
+            } else {
+                console.log("Could not find index for", filename);
+            }
+        }
+
+        // Header TOC toggle syncs with sidebar TOC toggle
+        document.getElementById('header-toc-toggle')?.addEventListener('click', function() {
+            document.getElementById('reader-toc-toggle')?.click();
+        });
+    </script>
 
     <script src="/static/js/toc-panel.js"></script>
     <script src="/static/js/notes-panel.js"></script>

@@ -10,14 +10,17 @@ Reader3 Pro is a lightweight, self-hosted EPUB reader designed for reading books
 
 ### Processing EPUB Files
 ```bash
-# Process an EPUB file and add it to the library, put epub files at the /books folder
-uv run reader3 <file.epub>
+# Process an EPUB file and add it to the library
+uv run reader3 ./books/<file.epub>
 
 # Example: Process Dracula
-uv run reader3 dracula.epub
+uv run reader3 ./books/dracula.epub
+
+# Index a book for semantic search/RAG
+uv run reader3 --index dracula_data
 ```
 
-This creates a `{bookname}_data/` directory containing:
+This creates a `books/{bookname}_data/` directory containing:
 - `book.pkl` - Serialized Book object
 - `images/` - Extracted images from the EPUB
 - `chroma_db/` - Vector embeddings for semantic search (created on demand)
@@ -26,6 +29,9 @@ This creates a `{bookname}_data/` directory containing:
 ```bash
 # Start the web server on http://127.0.0.1:8123
 uv run reader3-server
+
+# Use classic library UI (pre-004)
+READER3_LIBRARY_UI=classic uv run reader3-server
 ```
 
 ### Dependency Management
@@ -40,108 +46,69 @@ uv add <package-name>
 uv lock --upgrade
 ```
 
-### Search Features
-```bash
-# Keyword search works out of the box (no additional setup)
-
-# For semantic search, ensure ChromaDB dependencies are installed:
-uv add chromadb sentence-transformers
-
-# Download the embedding model (paraphrase-multilingual-MiniLM-L12-v2, ~420MB):
-uv run python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')"
-
-# Model is cached at ~/.cache/huggingface/hub/ (macOS/Linux) or %USERPROFILE%\.cache\huggingface\hub\ (Windows)
-```
-
-### AI Assistant
-
-#### Setup
+### AI Assistant Setup
 ```bash
 # Copy example config
 cp config/ai_settings.example.json config/ai_settings.json
 
-# Index book for RAG (semantic retrieval)
-uv run reader3 --index dracula_data
+# Configure via Web UI: http://127.0.0.1:8123/settings
+# Or edit config/ai_settings.json directly (API keys never returned to browser)
 ```
 
-#### Configuration
-Settings live in `config/ai_settings.json` and can be edited via:
-- Web UI: `http://127.0.0.1:8123/settings`
-- File: `config/ai_settings.json` (server-side only; API keys never returned to browser)
+**Supported providers**: `anthropic`, `openai`, `gemini`, `openrouter`, `ollama`
 
-**Supported providers**:
-- `anthropic` - Claude models (cloud)
-- `openai` - GPT models (cloud)
-- `gemini` - Google Gemini (cloud)
-- `openrouter` - OpenRouter (cloud aggregator)
-- `ollama` - Local models (free, private, offline)
-
-#### Key endpoints
+**Key API endpoints**:
 - `GET/PUT /api/settings` - Global settings
-- `GET/PUT /api/settings/providers/{provider_name}` - Provider config
-- `GET /api/ollama/status`, `GET /api/ollama/models` - Ollama helpers
 - `POST /api/ai/question/{book_uuid}?stream=true` - Q&A streaming (SSE)
 - `GET/POST/DELETE /api/ai/conversations/{book_uuid}` - Conversation management
-
-#### Troubleshooting
-- `AI provider is disabled in settings`: Enable in `/settings` and restart server
-- `API key not configured`: Set provider API key in `/settings`
-- `Ollama not running`: Start with `ollama serve`, verify with `ollama ps`
-- Semantic index missing: Run `uv run reader3 --index <book_folder>`
 
 ## Architecture
 
 ### Four-Layer Architecture
 
+```
+Layer 1: EPUB Processing (reader3.py)
+         ↓ book.pkl
+Layer 2: Search & Vector Services (search_service.py, vector_search.py)
+         ↓
+Layer 3: AI Assistant (ai/)
+         ↓
+Layer 4: Web Server (web/server.py)
+```
+
 **Layer 1: EPUB Processing (`reader3.py`)**
-- Parses EPUB files using `ebooklib`
-- Extracts and cleans HTML content with BeautifulSoup
-- Builds two structures:
-  - **Spine** (linear reading order): Physical HTML files from the EPUB
-  - **TOC** (logical navigation): Hierarchical table of contents
-- Extracts images and rewrites paths
-- Serializes everything into `book.pkl` using pickle
+- Parses EPUB files using `ebooklib`, cleans HTML with BeautifulSoup
+- Builds **Spine** (linear reading order) and **TOC** (hierarchical navigation)
+- Serializes to `book.pkl` using pickle
 
 **Layer 2: Search & Vector Services**
-- `search_service.py` - Keyword search with diacritic normalization
-  - Functions: `search_text()`, `search_book()`, `search_library()`
-  - Normalizes Latin scripts (café→cafe) while preserving non-Latin
-  - XSS-safe HTML escaping via `escape_for_highlighting()`
-  - Performance: <500ms in-book, <2s library-wide (up to 50 books)
-- `vector_search.py` - Semantic search using ChromaDB
-  - Chunks chapters into ~1000-char passages with overlap
-  - Embeddings: `paraphrase-multilingual-MiniLM-L12-v2` (384-dim)
-  - Per-book vector storage in `{book_folder}/chroma_db/`
-  - Performance: <1s single book, <3s library-wide
+- `search_service.py` - Keyword search with diacritic normalization (café→cafe)
+- `vector_search.py` - Semantic search using ChromaDB + `paraphrase-multilingual-MiniLM-L12-v2`
 
 **Layer 3: AI Assistant (`ai/`)**
-- `config.py` - Settings management for multi-provider AI
+- `config.py` - Multi-provider settings management
 - `providers/` - Provider implementations (anthropic, openai, gemini, ollama, openrouter)
-- `rag.py` - RAG pipeline (retrieval + context injection)
-- `books.py` - Book UUID resolution for cross-storage conversation tracking
-- `conversations.py` - Conversation storage with dual-location support
-  - Per-book: `books/{book_folder}/ai_conversations/{conversation_id}.json`
-  - Project-root: `{project_root}/conversations/{book_uuid}/{conversation_id}.json`
-- `queue.py` - Request queueing for rate limiting
-- `routing.py` - FastAPI endpoints for AI features
+- `rag.py` - RAG pipeline with retrieval + context injection
+- `conversations.py` - Conversation storage (per-book or project-root)
 
 **Layer 4: Web Server (`web/server.py`)**
-- FastAPI application serving the reader interface
-- Loads `book.pkl` files from `*_data/` directories
-- Uses Jinja2 templates for rendering
-- Caches loaded books with `lru_cache` (maxsize=10)
-- Key endpoint groups: `/api/search/*`, `/api/ai/*`, `/api/settings/*`
+- FastAPI app with Jinja2 templates
+- Caches loaded books with `lru_cache(maxsize=10)`
+- Endpoint groups: `/api/search/*`, `/api/ai/*`, `/api/settings/*`, `/api/library/*`
+
+### Spine vs TOC (Critical Distinction)
+
+- **Spine**: Linear sequence of physical HTML files in reading order. What the reader displays chapter-by-chapter. Navigate with Previous/Next.
+- **TOC**: Logical navigation tree that maps to spine files via `href`. Multiple TOC entries may point to the same spine file with different anchors. Shown in sidebar.
 
 ### Key Data Structures
 
-**Book Processing (`reader3.py`):**
 ```python
 @dataclass
 class Book:
     metadata: BookMetadata
-    spine: List[ChapterContent]    # Linear reading order (actual files)
-    toc: List[TOCEntry]            # Hierarchical navigation tree
-    images: Dict[str, str]         # Original path -> local path mapping
+    spine: List[ChapterContent]    # Linear reading order
+    toc: List[TOCEntry]            # Hierarchical navigation
 
 @dataclass
 class ChapterContent:
@@ -150,210 +117,84 @@ class ChapterContent:
     title: str       # Title from filename
     content: str     # Cleaned HTML
     text: str        # Plain text for search/LLM
-    order: int       # Reading order
+    order: int       # Spine index for navigation
 ```
-
-**Search (`search_service.py`):**
-```python
-@dataclass
-class SearchQuery:
-    term: str                                    # User search input
-    mode: SearchMode                             # KEYWORD, SEMANTIC, HYBRID
-    scope: SearchScope                           # CURRENT_BOOK, ALL_BOOKS
-    case_sensitive: bool = False
-    max_results: int = 1000                      # Capped at 1000
-    book_id: Optional[str] = None
-
-@dataclass
-class SearchResult:
-    book_id: str
-    book_title: str
-    book_author: str
-    chapter_title: str
-    chapter_order: int                           # Spine index for navigation
-    occurrence_index: int                        # 0-indexed within chapter
-    match_text: str
-    context_before: str                          # 20 words or 40 chars
-    context_after: str
-    position: int                                # Character offset in chapter.text
-    relevance_score: float = 0.0
-
-@dataclass
-class SearchResultSet:
-    query: SearchQuery
-    results: List[SearchResult]
-    total_matches: int                           # May exceed len(results) if truncated
-    searched_books: int
-    failed_books: List[str]                      # Books that failed to search
-    is_truncated: bool
-    execution_time_ms: float
-    grouped_by_book: Dict[str, List[SearchResult]]  # For library search
-```
-
-**AI Conversations (`ai/conversations.py`):**
-```python
-@dataclass
-class ConversationMessage:
-    id: str                                      # UUID
-    role: str                                    # "user" or "assistant"
-    content: str                                 # Message text
-    timestamp: str                               # ISO 8601 UTC
-    metadata: Dict[str, Any]                     # Citations, etc.
-
-@dataclass
-class ConversationThread:
-    schema_version: int                          # 1 (current)
-    book_uuid: str                               # Stable book identifier
-    book_folder: str                             # e.g., "dracula_data"
-    conversation_id: str                         # UUID
-    provider: str                                # "anthropic", "ollama", etc.
-    model: str                                   # Model name
-    created_at: str                              # ISO 8601 UTC
-    last_updated: str                            # ISO 8601 UTC
-    messages: List[ConversationMessage]
-```
-
-### Spine vs TOC
-
-**Critical distinction:**
-- **Spine**: Linear sequence of physical HTML files in reading order. What the reader displays chapter-by-chapter.
-- **TOC**: Logical navigation tree that maps to spine files via `href`. Multiple TOC entries may point to the same spine file with different anchors.
-
-The reader navigates spine sequentially (Previous/Next), while the sidebar shows the hierarchical TOC.
-
-### Templates
-
-`templates/library.html` - Library grid view listing all processed books
-`templates/reader.html` - Reader interface with:
-- Left sidebar: TOC navigation with recursive macro for nested entries
-- Center: Current chapter content (from spine)
-- Bottom: Previous/Next navigation
-- JavaScript mapping: TOC hrefs → spine indices for click navigation
-
-### Image Serving
-
-Images are served via `/read/{book_id}/images/{image_name}` with path sanitization. HTML content has rewritten `<img src="images/pic.jpg">` paths that resolve to the book-specific route.
-
-## Data Flow
-
-1. User processes `book.epub` → creates `book_data/` with `book.pkl` + images
-2. Server scans for `*_data/` directories on library page load
-3. User clicks book → redirects to `/read/{book_id}/0` (first spine item)
-4. Reader loads `book.pkl`, displays spine[0], renders TOC sidebar
-5. Navigation: Previous/Next uses spine indices, TOC clicks map to spine via JavaScript
-
-## Library Management
-
-Books are added by processing EPUBs and removed by deleting the `{bookname}_data/` directory. There is no database - the filesystem is the source of truth.
 
 ### Book Identity System
 
 Each book has two identifiers:
 - **book_folder**: Filesystem name (e.g., `dracula_data`) - used for file paths
-- **book_uuid**: Stable UUID stored in `{book_folder}/ai_meta.json` - used for cross-storage tracking
+- **book_uuid**: Stable UUID in `{book_folder}/ai_meta.json` - used for conversation tracking
 
-The UUID system enables conversation mirroring across storage locations (per-book vs project-root) while maintaining referential integrity when books are moved or renamed.
+## Frontend Development
 
-## Constitution Principles
+Templates in `src/reader3_app/web/templates/`:
+- `library.html` - Modern 3-pane library UI (left: collections, center: book grid, right: search/chat)
+- `library_classic.html` - Legacy grid view
+- `reader.html` - Reading interface with TOC sidebar and chapter content
 
-Reader3 Pro follows 7 core principles documented in `.specify/memory/constitution.md`:
+Static assets in `src/reader3_app/web/static/`:
+- `library.js` / `library.css` - Library UI logic and styles
+- `library-search.js` - Cross-book search functionality
+- `search.css` - Search panel styles
 
-1. **Data Structures First**: All entities as `@dataclass` with explicit type annotations before implementation
-2. **Simplicity Over Engineering**: YAGNI - no frameworks, patterns, or abstractions beyond FastAPI/BeautifulSoup
-3. **File-Based State Management**: Filesystem IS the database - each book = one `{bookname}_data/` directory
-4. **HTML Content Sanitization**: XSS prevention via `html.escape()` before rendering user input (search terms)
-5. **Path Security**: Book IDs validated against enumerated `*_data/` directories, no direct path construction
-6. **Explicit Over Implicit**: Clear distinctions (spine vs TOC, keyword vs semantic), type-annotated signatures
-7. **Performance Through Caching**: `@lru_cache` for frequent operations, ChromaDB HNSW for semantic search
+JavaScript uses vanilla ES6+ (no frameworks). CSS is plain CSS (no preprocessors).
 
-**Key architectural decision**: Maintain simplicity and filesystem-based state. Resist premature optimization and over-engineering. The codebase should remain "vibes codable" with LLMs.
+## Constitution Principles (Summary)
 
-## Search Implementation Details
+Reader3 Pro follows 7 core principles in `.specify/memory/constitution.md`:
 
-**Keyword Search** (no additional deps):
-- Uses Python stdlib `re` + `unicodedata` for diacritic normalization
-- Latin scripts normalized (café→cafe), non-Latin preserved exactly (Chinese, Japanese, etc.)
-- Debouncing: 300ms in UI to prevent excessive requests
-- Result limits: 1000 max per query, with truncation notification
-- XSS prevention: All search terms HTML-escaped before highlighting
+1. **Data Structures First**: All entities as `@dataclass` with type annotations
+2. **Simplicity Over Engineering**: YAGNI - no abstractions beyond FastAPI/BeautifulSoup
+3. **File-Based State Management**: Filesystem IS the database (`*_data/` directories)
+4. **HTML Content Sanitization**: XSS prevention via `html.escape()` and `clean_html_content()`
+5. **Path Security**: Validate book IDs against enumerated directories, use `os.path.basename()`
+6. **Explicit Over Implicit**: Type hints everywhere, clear naming, documented distinctions
+7. **Performance Through Caching**: `@lru_cache` for expensive operations
 
-**Semantic Search** (requires ChromaDB setup):
-- Uses ChromaDB with `paraphrase-multilingual-MiniLM-L12-v2` (384-dim embeddings)
-- Per-book vector storage in `{bookname}_data/chroma_db/`
-- RAG pattern: semantic search → retrieve relevant passages → provide context to LLM
-- Indexing: On-demand (first search) or manual via CLI
-- Performance: <1s single book, <3s library-wide
-
-**Search UI**:
-- Reader sidebar: In-book search with live results and highlighting
-- Library page: Cross-book search with results grouped by book
-- Deep linking: `/read/{book_id}/{chapter_index}?q=term&occurrence=0`
-
-## Security Considerations
-
-- **Pickle deserialization**: Currently loads pickle files without validation. Only process trusted EPUB files.
-- **Path traversal**: Book IDs validated against enumerated directories (constitution principle V)
-- **XSS prevention**: Search terms HTML-escaped via `escape_for_highlighting()` (constitution principle IV)
-- **Input validation**: Search terms capped at 500 chars, max_results capped at 1000
-- **HTML sanitization**: `clean_html_content()` removes script/style/iframe tags
-
-## Performance Targets
-
-- **In-book keyword search**: <500ms for books up to 500 pages
-- **Library-wide search**: <2s for libraries up to 50 books
-- **Semantic search**: <1s single book, <3s library-wide
-- **Book loading**: `lru_cache(maxsize=10)` - increase for concurrent users
-- **Scalability**: Tested up to 50 books; consider database migration for >100 books
+**Key architectural decision**: Maintain simplicity. Resist premature optimization. The codebase should remain "vibes codable" with LLMs.
 
 ## Feature Development Workflow
 
-Reader3 Pro uses a spec-driven development process with numbered feature branches:
+Uses spec-driven development with numbered feature branches:
 
 **Branch naming**: `{number}-{short-name}` (e.g., `001-search-features`, `002-ai-assistant`)
 
-**Specs directory**: Each feature has its own `specs/{number}-{short-name}/` with:
+**Specs directory**: `specs/{number}-{short-name}/` contains:
 - `spec.md` - User stories, requirements, success criteria
 - `plan.md` - Technical design, architecture decisions
 - `tasks.md` - Implementation tasks organized by user story
 - `data-model.md` - Entity definitions
 - `contracts/` - API specifications (OpenAPI YAML)
-- `checklists/` - Quality validation checklists
 
-**Current features**:
+**Feature status**:
 - `001-search-features`: Keyword + semantic search (✅ Completed)
-- `002-ai-assistant`: Multi-provider AI assistant with RAG (✅ Completed)
+- `002-ai-assistant`: Multi-provider AI with RAG (✅ Completed)
 - `003-add-book-notes`: Book annotation system (📋 Spec phase)
+- `004-library-bulk-indexing`: 3-pane UI, collections, bulk indexing (✅ Completed)
 
-**Commands**:
+**Speckit commands**:
 - `/speckit.specify` - Create feature specification
 - `/speckit.clarify` - Resolve ambiguous requirements
 - `/speckit.plan` - Generate technical implementation plan
 - `/speckit.tasks` - Generate implementation task breakdown
 
-## AI Assistant Features
+## Data Flow
 
-The AI assistant (feature 002) provides:
-- **Book Summarization**: Quick overviews, highlights, and background context
-- **Conversational Q&A**: Ask questions and get RAG-powered answers with citations
-- **Multi-Provider Support**: Choose from Anthropic, OpenAI, Gemini, OpenRouter, or Ollama
-- **Conversation Persistence**: Dual-storage support (per-book and/or project-root)
-- **Streaming Responses**: SSE-based streaming for real-time answers
-- **Privacy Mode**: Use Ollama for 100% offline, free, private operation
+1. User processes `book.epub` → creates `books/book_data/` with `book.pkl` + images
+2. Server scans for `books/*_data/` directories on library page load
+3. User clicks book → redirects to `/read/{book_id}/0` (first spine item)
+4. Reader loads `book.pkl`, displays spine[0], renders TOC sidebar
+5. Navigation: Previous/Next uses spine indices, TOC clicks map to spine via JavaScript
 
-### Conversation Storage
+## Troubleshooting
 
-Controlled by `config/ai_settings.json` → `preferences.conversation_disk_storage`:
-- `per_book` (default): `books/{book_folder}/ai_conversations/{conversation_id}.json`
-- `project_root`: `{project_root}/conversations/{book_uuid}/{conversation_id}.json`
-- `both`: Write to both locations (enables mirroring for backup/sync)
+**AI Assistant Issues**:
+- `AI provider is disabled`: Enable in `/settings` and restart server
+- `API key not configured`: Set provider API key in `/settings`
+- `Ollama not running`: Start with `ollama serve`, verify with `ollama ps`
+- Semantic index missing: Run `uv run reader3 --index <book_folder>`
 
-The `book_uuid` (stored in `{book_folder}/ai_meta.json`) ensures conversations remain linked to the correct book even if the folder is renamed or moved.
-
-## Active Technologies
-- Python 3.10+ (backend), Vanilla JavaScript ES6+ (frontend) + FastAPI 0.121.2+, Jinja2 3.1.6+ (existing stack) (003-add-book-notes)
-- Filesystem JSON (`books/{book_id}/notes.json` per book) (003-add-book-notes)
-- Library UI (004): 3-pane layout + bulk indexing + collections (`config/library_collections.json`, gitignored) + stats (`/api/library/stats`) (004-library-bulk-indexing)
-
-## Recent Changes
-- 003-add-book-notes: Added Python 3.10+ (backend), Vanilla JavaScript ES6+ (frontend) + FastAPI 0.121.2+, Jinja2 3.1.6+ (existing stack)
-- 004-library-bulk-indexing: Reorganized library UI (3 panes), added bulk indexing + collections + dashboard stats + right-panel search/chat scaffolding
+**Common Operations**:
+- Delete a book: Remove its `books/{bookname}_data/` directory
+- Move existing `*_data/` folders to `books/`: `find . -maxdepth 1 -type d -name '*_data' -exec mv {} books/ \;`
