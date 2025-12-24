@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reader3 Pro - Reading</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        /* Dedao Design System Variables */
+        :root {
+            --dedao-orange: #ff6b00;
+            --dedao-orange-light: #fff7f0;
+            --dedao-text: #333333;
+            --dedao-muted: #666666;
+            --dedao-light: #999999;
+            --dedao-bg: #f5f5f5;
+            --dedao-card: #ffffff;
+            --dedao-border: #f0f0f0;
+            --dedao-dark: #17222e;
+        }
+
+        body {
+            font-family: -apple-system, 'system-ui', 'Helvetica Neue', Arial, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+            background-color: var(--dedao-bg);
+            color: var(--dedao-text);
+        }
+
+        /* Scrollbar Styling */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #d1d5db;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #9ca3af;
+        }
+
+        /* Reading Content Typography */
+        .reading-content {
+            font-family: 'Noto Serif SC', -apple-system, 'PingFang SC', serif;
+            line-height: 1.9;
+        }
+
+        .reading-content p {
+            text-indent: 2em;
+            margin-bottom: 1.5rem;
+        }
+
+        /* Slide-in Panel */
+        .slide-panel {
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
+        }
+        .slide-panel.open {
+            transform: translateX(0);
+        }
+
+        /* TOC Active state */
+        .toc-item.active {
+            background-color: var(--dedao-orange-light);
+            color: var(--dedao-orange);
+        }
+
+        /* Annotation Toolbar */
+        .annotation-toolbar {
+            display: none;
+        }
+        .annotation-toolbar.visible {
+            display: flex;
+        }
+
+        /* Search highlight */
+        .search-highlight {
+            background-color: #fef08a;
+            padding: 0 2px;
+            border-radius: 2px;
+        }
+        .search-highlight.current {
+            background-color: #fbbf24;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <!-- Top Header Bar -->
+    <header style="background-color: var(--dedao-card); border-bottom: 1px solid var(--dedao-border);" class="h-14 flex items-center justify-between px-4 flex-shrink-0">
+        <!-- Left: Back & Book Info -->
+        <div class="flex items-center gap-3">
+            <a href="library-dedao.html" class="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                <i data-lucide="arrow-left" class="w-5 h-5" style="color: var(--dedao-text); stroke-width: 1.5;"></i>
+            </a>
+            <div class="h-5 w-px" style="background-color: var(--dedao-border);"></div>
+            <div>
+                <p class="text-xs" style="color: var(--dedao-light);">Chapter 3</p>
+                <p class="text-sm font-medium" style="color: var(--dedao-text);">劳阿毛并购新说</p>
+            </div>
+        </div>
+
+        <!-- Center: Reading Controls -->
+        <div class="flex items-center gap-1">
+            <!-- Font Size Down -->
+            <button class="flex items-center gap-1 px-2 py-1.5 hover:bg-gray-100 rounded-md transition-colors">
+                <span class="text-xs" style="color: var(--dedao-muted);">A</span>
+                <i data-lucide="minus" class="w-3 h-3" style="color: var(--dedao-muted); stroke-width: 1.5;"></i>
+            </button>
+            <!-- Font Size Up -->
+            <button class="flex items-center gap-1 px-2 py-1.5 hover:bg-gray-100 rounded-md transition-colors">
+                <span class="text-base" style="color: var(--dedao-muted);">A</span>
+                <i data-lucide="plus" class="w-3 h-3" style="color: var(--dedao-muted); stroke-width: 1.5;"></i>
+            </button>
+
+            <div class="h-5 w-px mx-2" style="background-color: var(--dedao-border);"></div>
+
+            <!-- Chapter Dropdown -->
+            <button onclick="toggleTOC()" class="p-2 hover:bg-gray-100 rounded-md transition-colors">
+                <i data-lucide="list" class="w-5 h-5" style="color: var(--dedao-muted); stroke-width: 1.5;"></i>
+            </button>
+
+            <!-- Bookmark -->
+            <button class="p-2 hover:bg-gray-100 rounded-md transition-colors">
+                <i data-lucide="bookmark" class="w-5 h-5" style="color: var(--dedao-muted); stroke-width: 1.5;"></i>
+            </button>
+
+            <!-- More Options -->
+            <button class="p-2 hover:bg-gray-100 rounded-md transition-colors">
+                <i data-lucide="more-horizontal" class="w-5 h-5" style="color: var(--dedao-muted); stroke-width: 1.5;"></i>
+            </button>
+        </div>
+
+        <!-- Right: Share/Settings -->
+        <div class="flex items-center gap-1">
+            <button class="p-2 hover:bg-gray-100 rounded-md transition-colors">
+                <i data-lucide="share-2" class="w-5 h-5" style="color: var(--dedao-muted); stroke-width: 1.5;"></i>
+            </button>
+            <button class="p-2 hover:bg-gray-100 rounded-md transition-colors">
+                <i data-lucide="settings" class="w-5 h-5" style="color: var(--dedao-muted); stroke-width: 1.5;"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <div class="flex-1 flex overflow-hidden relative">
+
+        <!-- TOC Sidebar (Toggleable) -->
+        <aside id="toc-sidebar" class="w-72 bg-white border-r flex-shrink-0 flex flex-col transition-all duration-300" style="border-color: var(--dedao-border); margin-left: -288px;">
+            <!-- TOC Header -->
+            <div class="p-4 border-b" style="border-color: var(--dedao-border);">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="font-medium" style="color: var(--dedao-text);">Table of Contents</h2>
+                    <button onclick="toggleTOC()" class="p-1 hover:bg-gray-100 rounded transition-colors">
+                        <i data-lucide="x" class="w-5 h-5" style="color: var(--dedao-muted); stroke-width: 1.5;"></i>
+                    </button>
+                </div>
+                <!-- TOC Filter -->
+                <div class="flex items-center rounded-md px-3" style="background-color: var(--dedao-bg); border: 1px solid var(--dedao-border);">
+                    <i data-lucide="search" class="w-4 h-4" style="color: var(--dedao-light); stroke-width: 1.5;"></i>
+                    <input type="text" placeholder="Filter chapters..." class="flex-1 bg-transparent border-none outline-none px-2 py-2 text-sm" style="caret-color: var(--dedao-text);">
+                </div>
+            </div>
+
+            <!-- TOC List -->
+            <nav class="flex-1 overflow-y-auto p-3">
+                <ul class="space-y-0.5">
+                    <li>
+                        <a href="#" class="toc-item block py-2 px-3 text-sm rounded-md hover:bg-gray-50 transition-colors" style="color: var(--dedao-muted);">前言</a>
+                    </li>
+                    <li>
+                        <a href="#" class="toc-item block py-2 px-3 text-sm rounded-md hover:bg-gray-50 transition-colors" style="color: var(--dedao-muted);">第一章 并购基础知识</a>
+                        <ul class="ml-3 mt-0.5 space-y-0.5">
+                            <li><a href="#" class="toc-item block py-1.5 px-3 text-xs rounded-md hover:bg-gray-50 transition-colors" style="color: var(--dedao-light);">1.1 并购的定义</a></li>
+                            <li><a href="#" class="toc-item block py-1.5 px-3 text-xs rounded-md hover:bg-gray-50 transition-colors" style="color: var(--dedao-light);">1.2 并购的类型</a></li>
+                        </ul>
+                    </li>
+                    <li>
+                        <a href="#" class="toc-item block py-2 px-3 text-sm rounded-md hover:bg-gray-50 transition-colors" style="color: var(--dedao-muted);">第二章 借壳上市概述</a>
+                    </li>
+                    <li>
+                        <a href="#" class="toc-item active block py-2 px-3 text-sm rounded-md font-medium">第三章 阿毛看速录</a>
+                    </li>
+                    <li>
+                        <a href="#" class="toc-item block py-2 px-3 text-sm rounded-md hover:bg-gray-50 transition-colors" style="color: var(--dedao-muted);">第四章 借壳标准与监管</a>
+                    </li>
+                    <li>
+                        <a href="#" class="toc-item block py-2 px-3 text-sm rounded-md hover:bg-gray-50 transition-colors" style="color: var(--dedao-muted);">第五章 法规界定</a>
+                    </li>
+                    <li>
+                        <a href="#" class="toc-item block py-2 px-3 text-sm rounded-md hover:bg-gray-50 transition-colors" style="color: var(--dedao-muted);">第六章 案例分析</a>
+                    </li>
+                    <li>
+                        <a href="#" class="toc-item block py-2 px-3 text-sm rounded-md hover:bg-gray-50 transition-colors" style="color: var(--dedao-muted);">第七章 未来展望</a>
+                    </li>
+                    <li>
+                        <a href="#" class="toc-item block py-2 px-3 text-sm rounded-md hover:bg-gray-50 transition-colors" style="color: var(--dedao-muted);">附录</a>
+                    </li>
+                </ul>
+            </nav>
+        </aside>
+
+        <!-- Reading Content -->
+        <main id="reading-main" class="flex-1 overflow-y-auto flex justify-center py-8 px-4 transition-all duration-300">
+            <article class="bg-white rounded-lg max-w-3xl w-full p-8 md:p-12" style="box-shadow: 0 2px 10px rgba(0,0,0,0.05);">
+                <!-- Chapter Title -->
+                <header class="mb-8 pb-6 border-b" style="border-color: var(--dedao-border);">
+                    <h1 class="text-2xl font-semibold tracking-tight mb-2" style="color: var(--dedao-text); font-family: 'Noto Serif SC', serif;">阿毛看速录</h1>
+                    <p class="text-sm" style="color: var(--dedao-light);">劳阿毛并购新说 · 第三章</p>
+                </header>
+
+                <!-- Content -->
+                <div class="reading-content" style="color: var(--dedao-text);">
+                    <p>
+                        国内证券公司的投行更多是在IPO项目操作上经验丰富，很长时间以来并购重组都是性价比较低的业务，从业务的复杂性而言要求很高，但是由于融资有难度、券商又难以收费，故此国内精通并购操作的券商不多。近几年随着并购市场的火爆和配套融资工具的应用，更多的投行人开始重视并购重组业务，但是短期间向内培养也有难度。对于借壳交易而言，既乏足够经验的中介机构也会让操作举步维艰。
+                    </p>
+
+                    <p>
+                        所以说呢，若想成功借壳，得找华泰联合，哈！
+                    </p>
+
+                    <h2 class="text-xl font-semibold mt-10 mb-6" style="color: var(--dedao-text); font-family: 'Noto Serif SC', serif; text-indent: 0;">借壳与IPO都是证券化的基础制度</h2>
+
+                    <p>
+                        借壳与IPO都是证券化的基础制度，但本质不同，IPO制度的根基是行政许可而借壳是股东自治。故此，借壳是更接近注册制本质的行为。注册改革的核心就是由行政导向转向市场导向，所以IPO向借壳靠拢才是大势所趋。当前要求借壳与IPO等同，视借壳为洪水猛兽，其实是整反了。
+                    </p>
+
+                    <h2 class="text-xl font-semibold mt-10 mb-6" style="color: var(--dedao-text); font-family: 'Noto Serif SC', serif; text-indent: 0;">借壳标准与监管取向再思考</h2>
+
+                    <h3 class="text-lg font-medium mt-8 mb-4" style="color: var(--dedao-text); text-indent: 0;">一、法规如何界定借壳上市?</h3>
+
+                    <p>
+                        其实呢，借壳上市并不是严格的法律用语，即使重组办法修订增加了借壳新规部分，也并未明确地界定与定义，甚至连借壳上市也未提及。只有交易所相关规则中首次使用了借壳上市说法，在信息披露实践中对其说法也是有所差异，有的称之为"借壳上市"或者"类借壳上市"。
+                    </p>
+
+                    <p>
+                        有的称之为"重组办法13条之情形"。
+                    </p>
+                </div>
+            </article>
+        </main>
+
+        <!-- Right Toolbar (Vertical) -->
+        <div class="fixed right-4 top-1/2 -translate-y-1/2 flex flex-col gap-2 z-30">
+            <button onclick="toggleTOC()" class="w-11 h-11 rounded-xl flex items-center justify-center transition-all hover:shadow-md" style="background-color: var(--dedao-card); box-shadow: 0 2px 8px rgba(0,0,0,0.08);" title="目录">
+                <i data-lucide="list" class="w-5 h-5" style="color: var(--dedao-muted); stroke-width: 1.5;"></i>
+            </button>
+            <button onclick="toggleSearch()" class="w-11 h-11 rounded-xl flex items-center justify-center transition-all hover:shadow-md" style="background-color: var(--dedao-card); box-shadow: 0 2px 8px rgba(0,0,0,0.08);" title="搜索">
+                <i data-lucide="search" class="w-5 h-5" style="color: var(--dedao-muted); stroke-width: 1.5;"></i>
+            </button>
+            <button onclick="toggleAI()" class="w-11 h-11 rounded-xl flex items-center justify-center transition-all hover:shadow-md" style="background-color: var(--dedao-orange); box-shadow: 0 2px 8px rgba(255,107,0,0.3);" title="AI 助手">
+                <i data-lucide="sparkles" class="w-5 h-5 text-white" style="stroke-width: 1.5;"></i>
+            </button>
+            <button onclick="toggleNotes()" class="w-11 h-11 rounded-xl flex items-center justify-center transition-all hover:shadow-md" style="background-color: var(--dedao-card); box-shadow: 0 2px 8px rgba(0,0,0,0.08);" title="笔记">
+                <i data-lucide="sticky-note" class="w-5 h-5" style="color: var(--dedao-muted); stroke-width: 1.5;"></i>
+            </button>
+        </div>
+
+        <!-- Search Drawer (Slide-in from right) -->
+        <div id="search-drawer" class="slide-panel fixed top-14 right-0 bottom-16 w-96 bg-white border-l z-40 flex flex-col" style="border-color: var(--dedao-border);">
+            <!-- Search Header -->
+            <div class="p-4 border-b" style="border-color: var(--dedao-border);">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="font-medium" style="color: var(--dedao-text);">Search</h3>
+                    <button onclick="toggleSearch()" class="p-1 hover:bg-gray-100 rounded transition-colors">
+                        <i data-lucide="x" class="w-5 h-5" style="color: var(--dedao-muted); stroke-width: 1.5;"></i>
+                    </button>
+                </div>
+                <!-- Search Input -->
+                <div class="flex items-center rounded-md px-3 mb-3" style="background-color: var(--dedao-bg); border: 1px solid var(--dedao-border);">
+                    <i data-lucide="search" class="w-4 h-4" style="color: var(--dedao-light); stroke-width: 1.5;"></i>
+                    <input type="text" placeholder="Search in this book..." class="flex-1 bg-transparent border-none outline-none px-2 py-2 text-sm" style="caret-color: var(--dedao-text);">
+                </div>
+                <!-- Search Options -->
+                <div class="flex items-center gap-3 text-xs">
+                    <select class="px-2 py-1 rounded" style="background-color: var(--dedao-bg); border: 1px solid var(--dedao-border); color: var(--dedao-muted);">
+                        <option>Keyword</option>
+                        <option>Semantic</option>
+                        <option>Hybrid</option>
+                    </select>
+                    <label class="flex items-center gap-1" style="color: var(--dedao-muted);">
+                        <input type="checkbox" class="rounded" style="accent-color: var(--dedao-orange);">
+                        Case
+                    </label>
+                    <!-- Index Status -->
+                    <span class="ml-auto text-xs px-2 py-0.5 rounded-full" style="background-color: #dcfce7; color: #16a34a;">Indexed</span>
+                </div>
+            </div>
+
+            <!-- Search Results -->
+            <div class="flex-1 overflow-y-auto p-4">
+                <p class="text-xs mb-3" style="color: var(--dedao-light);">Found 12 results</p>
+                <div class="space-y-3">
+                    <!-- Result Item -->
+                    <a href="#" class="block p-3 rounded-lg hover:shadow-sm transition-shadow" style="background-color: var(--dedao-bg);">
+                        <p class="text-xs mb-1" style="color: var(--dedao-light);">Chapter 3 • Match 1</p>
+                        <p class="text-sm" style="color: var(--dedao-text);">...国内证券公司的<mark class="search-highlight">投行</mark>更多是在IPO项目操作上经验丰富...</p>
+                    </a>
+                    <a href="#" class="block p-3 rounded-lg hover:shadow-sm transition-shadow" style="background-color: var(--dedao-bg);">
+                        <p class="text-xs mb-1" style="color: var(--dedao-light);">Chapter 3 • Match 2</p>
+                        <p class="text-sm" style="color: var(--dedao-text);">...更多的<mark class="search-highlight">投行</mark>人开始重视并购重组业务...</p>
+                    </a>
+                    <a href="#" class="block p-3 rounded-lg hover:shadow-sm transition-shadow" style="background-color: var(--dedao-bg);">
+                        <p class="text-xs mb-1" style="color: var(--dedao-light);">Chapter 5 • Match 3</p>
+                        <p class="text-sm" style="color: var(--dedao-text);">...传统<mark class="search-highlight">投行</mark>业务模式面临转型挑战...</p>
+                    </a>
+                </div>
+            </div>
+
+            <!-- Search Navigation -->
+            <div class="p-4 border-t flex items-center justify-between" style="border-color: var(--dedao-border);">
+                <button class="px-3 py-1.5 rounded-md text-sm hover:bg-gray-100 transition-colors flex items-center gap-1" style="color: var(--dedao-muted);">
+                    <i data-lucide="chevron-up" class="w-4 h-4" style="stroke-width: 1.5;"></i>
+                    Prev
+                </button>
+                <span class="text-sm" style="color: var(--dedao-light);">1 / 12</span>
+                <button class="px-3 py-1.5 rounded-md text-sm hover:bg-gray-100 transition-colors flex items-center gap-1" style="color: var(--dedao-muted);">
+                    Next
+                    <i data-lucide="chevron-down" class="w-4 h-4" style="stroke-width: 1.5;"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- AI Panel (Slide-in from right) -->
+        <div id="ai-panel" class="slide-panel fixed top-14 right-0 bottom-16 w-[420px] bg-white border-l z-40 flex flex-col" style="border-color: var(--dedao-border);">
+            <!-- AI Header -->
+            <div class="p-4 border-b" style="border-color: var(--dedao-border);">
+                <div class="flex items-center justify-between">
+                    <h3 class="font-medium" style="color: var(--dedao-text);">AI Assistant</h3>
+                    <button onclick="toggleAI()" class="p-1 hover:bg-gray-100 rounded transition-colors">
+                        <i data-lucide="x" class="w-5 h-5" style="color: var(--dedao-muted); stroke-width: 1.5;"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="p-4 border-b" style="border-color: var(--dedao-border);">
+                <p class="text-xs mb-2" style="color: var(--dedao-light);">Quick Actions</p>
+                <div class="flex gap-2">
+                    <button class="flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors hover:opacity-90" style="background-color: var(--dedao-orange-light); color: var(--dedao-orange);">
+                        <i data-lucide="file-text" class="w-4 h-4 inline mr-1" style="stroke-width: 1.5;"></i>
+                        Summary
+                    </button>
+                    <button class="flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors hover:opacity-90" style="background-color: var(--dedao-bg); color: var(--dedao-muted);">
+                        <i data-lucide="star" class="w-4 h-4 inline mr-1" style="stroke-width: 1.5;"></i>
+                        Highlights
+                    </button>
+                    <button class="flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors hover:opacity-90" style="background-color: var(--dedao-bg); color: var(--dedao-muted);">
+                        <i data-lucide="info" class="w-4 h-4 inline mr-1" style="stroke-width: 1.5;"></i>
+                        Background
+                    </button>
+                </div>
+            </div>
+
+            <!-- Conversation History Selector -->
+            <div class="px-4 py-2 border-b" style="border-color: var(--dedao-border);">
+                <select class="w-full px-3 py-2 rounded-md text-sm" style="background-color: var(--dedao-bg); border: 1px solid var(--dedao-border); color: var(--dedao-text);">
+                    <option>+ New conversation</option>
+                    <option>Dec 24: Investment strategies</option>
+                    <option>Dec 23: M&A analysis</option>
+                </select>
+            </div>
+
+            <!-- Chat Messages -->
+            <div class="flex-1 overflow-y-auto p-4 space-y-4">
+                <!-- User Message -->
+                <div class="flex justify-end">
+                    <div class="max-w-[85%] px-4 py-3 rounded-lg text-sm" style="background-color: var(--dedao-orange); color: white;">
+                        这本书关于借壳上市的主要观点是什么？
+                    </div>
+                </div>
+                <!-- Assistant Message with Citations -->
+                <div class="flex justify-start">
+                    <div class="max-w-[85%]">
+                        <div class="px-4 py-3 rounded-lg text-sm" style="background-color: var(--dedao-bg); color: var(--dedao-text);">
+                            <p class="mb-3">根据书中内容，作者关于借壳上市的主要观点包括：</p>
+                            <ol class="list-decimal ml-4 space-y-2">
+                                <li><strong>借壳更接近注册制</strong> - IPO是行政许可，借壳是股东自治</li>
+                                <li><strong>市场导向优先</strong> - 注册改革核心是市场导向</li>
+                                <li><strong>专业性要求高</strong> - 需要经验丰富的中介机构</li>
+                            </ol>
+                        </div>
+                        <!-- Citations -->
+                        <div class="mt-2 flex flex-wrap gap-2">
+                            <a href="#" class="text-xs px-2 py-1 rounded" style="background-color: var(--dedao-orange-light); color: var(--dedao-orange);">
+                                📖 Chapter 3, p.45
+                            </a>
+                            <a href="#" class="text-xs px-2 py-1 rounded" style="background-color: var(--dedao-orange-light); color: var(--dedao-orange);">
+                                📖 Chapter 4, p.72
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chat Input -->
+            <div class="p-4 border-t" style="border-color: var(--dedao-border);">
+                <div class="flex gap-2">
+                    <textarea placeholder="Ask about this book..." rows="2" class="flex-1 px-3 py-2 rounded-lg text-sm resize-none" style="background-color: var(--dedao-bg); border: 1px solid var(--dedao-border); color: var(--dedao-text);"></textarea>
+                    <button class="px-4 rounded-lg transition-opacity hover:opacity-90 self-end" style="background-color: var(--dedao-orange);">
+                        <i data-lucide="send" class="w-4 h-4 text-white" style="stroke-width: 1.5;"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Notes Panel (Slide-in from right) -->
+        <div id="notes-panel" class="slide-panel fixed top-14 right-0 bottom-16 w-96 bg-white border-l z-40 flex flex-col" style="border-color: var(--dedao-border);">
+            <!-- Notes Header -->
+            <div class="p-4 border-b" style="border-color: var(--dedao-border);">
+                <div class="flex items-center justify-between">
+                    <h3 class="font-medium" style="color: var(--dedao-text);">Notes & Highlights</h3>
+                    <button onclick="toggleNotes()" class="p-1 hover:bg-gray-100 rounded transition-colors">
+                        <i data-lucide="x" class="w-5 h-5" style="color: var(--dedao-muted); stroke-width: 1.5;"></i>
+                    </button>
+                </div>
+                <p class="text-xs mt-2" style="color: var(--dedao-light);">Reading progress: 18% (45/253 pages)</p>
+            </div>
+
+            <!-- Notes List -->
+            <div class="flex-1 overflow-y-auto p-4 space-y-4">
+                <!-- Chapter Group -->
+                <div>
+                    <h4 class="text-xs font-medium mb-2" style="color: var(--dedao-light);">Chapter 3 • 3 notes</h4>
+                    <div class="space-y-2">
+                        <!-- Highlight -->
+                        <div class="p-3 rounded-lg border-l-4" style="background-color: var(--dedao-bg); border-color: #fbbf24;">
+                            <p class="text-sm mb-2" style="color: var(--dedao-text);">"借壳是更接近注册制本质的行为"</p>
+                            <p class="text-xs" style="color: var(--dedao-light);">Highlighted on Dec 24</p>
+                        </div>
+                        <!-- Note -->
+                        <div class="p-3 rounded-lg border-l-4" style="background-color: var(--dedao-bg); border-color: var(--dedao-orange);">
+                            <p class="text-sm italic mb-2" style="color: var(--dedao-muted);">"国内精通并购操作的券商不多"</p>
+                            <p class="text-sm mb-2" style="color: var(--dedao-text);">This explains why M&A advisory fees are so high - scarcity of expertise.</p>
+                            <p class="text-xs" style="color: var(--dedao-light);">Note added Dec 24</p>
+                        </div>
+                    </div>
+                </div>
+                <!-- Another Chapter Group -->
+                <div>
+                    <h4 class="text-xs font-medium mb-2" style="color: var(--dedao-light);">Chapter 1 • 2 notes</h4>
+                    <div class="space-y-2">
+                        <div class="p-3 rounded-lg border-l-4" style="background-color: var(--dedao-bg); border-color: #22c55e;">
+                            <p class="text-sm mb-2" style="color: var(--dedao-text);">"并购重组是资本市场的重要功能"</p>
+                            <p class="text-xs" style="color: var(--dedao-light);">Highlighted on Dec 23</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Export Button -->
+            <div class="p-4 border-t" style="border-color: var(--dedao-border);">
+                <button class="w-full py-2 rounded-lg text-sm font-medium transition-colors hover:opacity-90" style="background-color: var(--dedao-bg); color: var(--dedao-muted);">
+                    <i data-lucide="download" class="w-4 h-4 inline mr-1" style="stroke-width: 1.5;"></i>
+                    Export Notes
+                </button>
+            </div>
+        </div>
+
+        <!-- Annotation Toolbar (Floating, hidden by default) -->
+        <div id="annotation-toolbar" class="annotation-toolbar fixed z-50 p-2 rounded-lg gap-1 items-center" style="background-color: var(--dedao-card); box-shadow: 0 4px 20px rgba(0,0,0,0.15); display: none;">
+            <button class="p-2 hover:bg-gray-100 rounded transition-colors" title="Copy">
+                <i data-lucide="copy" class="w-4 h-4" style="color: var(--dedao-muted); stroke-width: 1.5;"></i>
+            </button>
+            <div class="h-5 w-px mx-1" style="background-color: var(--dedao-border);"></div>
+            <!-- Color markers -->
+            <button class="w-6 h-6 rounded-full border-2 border-white" style="background-color: #fbbf24;" title="Yellow"></button>
+            <button class="w-6 h-6 rounded-full border-2 border-white" style="background-color: #f87171;" title="Red"></button>
+            <button class="w-6 h-6 rounded-full border-2 border-white" style="background-color: #4ade80;" title="Green"></button>
+            <button class="w-6 h-6 rounded-full border-2 border-white" style="background-color: #60a5fa;" title="Blue"></button>
+            <div class="h-5 w-px mx-1" style="background-color: var(--dedao-border);"></div>
+            <button class="p-2 hover:bg-gray-100 rounded transition-colors" title="Underline">
+                <i data-lucide="underline" class="w-4 h-4" style="color: var(--dedao-muted); stroke-width: 1.5;"></i>
+            </button>
+            <button class="p-2 hover:bg-gray-100 rounded transition-colors" title="Add Note">
+                <i data-lucide="message-square" class="w-4 h-4" style="color: var(--dedao-muted); stroke-width: 1.5;"></i>
+            </button>
+            <button class="p-2 hover:bg-gray-100 rounded transition-colors" title="Ask AI" style="color: var(--dedao-orange);">
+                <i data-lucide="sparkles" class="w-4 h-4" style="stroke-width: 1.5;"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Bottom Navigation Bar -->
+    <footer style="background-color: var(--dedao-dark);" class="h-16 flex items-center justify-between px-6 flex-shrink-0">
+        <!-- Left: Page Jump -->
+        <button class="flex items-center gap-2 text-sm hover:opacity-80 transition-opacity" style="color: #d8d8d8;">
+            <i data-lucide="file-text" class="w-4 h-4" style="stroke-width: 1.5;"></i>
+            Go to page
+        </button>
+
+        <!-- Center: Progress Bar -->
+        <div class="flex-1 max-w-lg mx-8">
+            <div class="flex items-center gap-3">
+                <span class="text-xs" style="color: rgba(255,255,255,0.5);">1</span>
+                <div class="flex-1 h-1 bg-gray-700 rounded-full overflow-hidden">
+                    <div style="width: 18%; background-color: var(--dedao-orange);" class="h-full rounded-full"></div>
+                </div>
+                <span class="text-xs" style="color: rgba(255,255,255,0.5);">253</span>
+            </div>
+        </div>
+
+        <!-- Right: Page Navigation -->
+        <div class="flex items-center gap-4">
+            <button class="flex items-center gap-1 text-sm hover:opacity-80 transition-opacity" style="color: #d8d8d8;">
+                <i data-lucide="chevron-left" class="w-4 h-4" style="stroke-width: 1.5;"></i>
+                Prev
+            </button>
+            <span class="text-sm font-medium text-white">45 / 253</span>
+            <button class="flex items-center gap-1 text-sm hover:opacity-80 transition-opacity" style="color: #d8d8d8;">
+                Next
+                <i data-lucide="chevron-right" class="w-4 h-4" style="stroke-width: 1.5;"></i>
+            </button>
+        </div>
+    </footer>
+
+    <script>
+        lucide.createIcons();
+
+        // Panel state
+        let tocOpen = false;
+        let searchOpen = false;
+        let aiOpen = false;
+        let notesOpen = false;
+
+        function closeAllPanels() {
+            searchOpen = false;
+            aiOpen = false;
+            notesOpen = false;
+            document.getElementById('search-drawer').classList.remove('open');
+            document.getElementById('ai-panel').classList.remove('open');
+            document.getElementById('notes-panel').classList.remove('open');
+        }
+
+        function toggleTOC() {
+            tocOpen = !tocOpen;
+            const sidebar = document.getElementById('toc-sidebar');
+            if (tocOpen) {
+                sidebar.style.marginLeft = '0';
+            } else {
+                sidebar.style.marginLeft = '-288px';
+            }
+        }
+
+        function toggleSearch() {
+            if (!searchOpen) closeAllPanels();
+            searchOpen = !searchOpen;
+            document.getElementById('search-drawer').classList.toggle('open', searchOpen);
+        }
+
+        function toggleAI() {
+            if (!aiOpen) closeAllPanels();
+            aiOpen = !aiOpen;
+            document.getElementById('ai-panel').classList.toggle('open', aiOpen);
+        }
+
+        function toggleNotes() {
+            if (!notesOpen) closeAllPanels();
+            notesOpen = !notesOpen;
+            document.getElementById('notes-panel').classList.toggle('open', notesOpen);
+        }
+
+        // Show annotation toolbar on text selection
+        document.addEventListener('mouseup', function(e) {
+            const selection = window.getSelection();
+            const toolbar = document.getElementById('annotation-toolbar');
+
+            if (selection.toString().trim().length > 0) {
+                const range = selection.getRangeAt(0);
+                const rect = range.getBoundingClientRect();
+
+                toolbar.style.display = 'flex';
+                toolbar.style.top = (rect.top - 50 + window.scrollY) + 'px';
+                toolbar.style.left = (rect.left + rect.width / 2 - 150) + 'px';
+            } else if (!toolbar.contains(e.target)) {
+                toolbar.style.display = 'none';
+            }
+        });
+
+        // Close panels with Escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeAllPanels();
+                if (tocOpen) toggleTOC();
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reader3 Pro - Library</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Dedao Design System Variables */
+        :root {
+            --dedao-orange: #ff6b00;
+            --dedao-orange-light: #fff7f0;
+            --dedao-text: #333333;
+            --dedao-muted: #666666;
+            --dedao-light: #999999;
+            --dedao-bg: #f5f5f5;
+            --dedao-card: #ffffff;
+            --dedao-border: #f0f0f0;
+            --dedao-dark: #17222e;
+            --sidebar-w: 240px;
+            --right-w: 340px;
+        }
+
+        body {
+            font-family: -apple-system, 'system-ui', 'Helvetica Neue', Arial, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+            background-color: var(--dedao-bg);
+            color: var(--dedao-text);
+        }
+
+        /* 3-Pane Layout */
+        .library-layout {
+            display: grid;
+            grid-template-columns: var(--sidebar-w) minmax(0, 1fr) var(--right-w);
+            min-height: calc(100vh - 64px);
+        }
+
+        .library-layout.right-collapsed {
+            grid-template-columns: var(--sidebar-w) minmax(0, 1fr) 0;
+        }
+
+        /* Scrollbar Styling */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #d1d5db;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #9ca3af;
+        }
+
+        /* Line clamp */
+        .line-clamp-2 {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        /* Tab underline animation */
+        .tab-btn {
+            position: relative;
+        }
+        .tab-btn.active::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background-color: var(--dedao-orange);
+        }
+    </style>
+</head>
+<body class="min-h-screen">
+
+    <!-- Glassmorphism Header -->
+    <header style="background: rgba(255,255,255,0.92); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);" class="fixed top-0 left-0 right-0 z-50 border-b border-gray-100">
+        <div class="max-w-[1400px] mx-auto px-5 h-16 flex items-center justify-between">
+            <!-- Logo -->
+            <div class="flex items-center gap-2">
+                <div style="background-color: var(--dedao-orange);" class="w-8 h-8 rounded-lg flex items-center justify-center">
+                    <i data-lucide="book-open" class="w-5 h-5 text-white" style="stroke-width: 1.5;"></i>
+                </div>
+                <span class="text-lg font-semibold tracking-tight" style="color: var(--dedao-text);">Reader3</span>
+            </div>
+
+            <!-- Main Navigation Tabs -->
+            <nav class="flex items-center gap-10">
+                <a href="#" class="text-base font-normal hover:text-gray-600 transition-colors" style="color: var(--dedao-text);">Home</a>
+                <a href="#" class="text-base font-medium" style="color: var(--dedao-orange);">My Library</a>
+                <a href="#" class="text-base font-normal hover:text-gray-600 transition-colors" style="color: var(--dedao-text);">Settings</a>
+            </nav>
+
+            <!-- Right Actions -->
+            <div class="flex items-center gap-4">
+                <button class="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                    <i data-lucide="bell" class="w-5 h-5" style="color: var(--dedao-muted); stroke-width: 1.5;"></i>
+                </button>
+                <div class="w-8 h-8 rounded-full bg-gray-200 overflow-hidden">
+                    <img src="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=face" alt="Avatar" class="w-full h-full object-cover">
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- 3-Pane Layout -->
+    <div class="library-layout pt-16" id="library-layout">
+
+        <!-- LEFT SIDEBAR -->
+        <aside class="bg-white border-r" style="border-color: var(--dedao-border);">
+            <div class="h-full flex flex-col p-4">
+
+                <!-- Book Types Section -->
+                <div class="mb-6">
+                    <h3 class="text-xs font-medium uppercase tracking-wider mb-3" style="color: var(--dedao-light);">Book Types</h3>
+                    <div class="space-y-1">
+                        <button class="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors" style="background-color: var(--dedao-orange-light); color: var(--dedao-orange);">
+                            <i data-lucide="library" class="w-4 h-4" style="stroke-width: 1.5;"></i>
+                            All Books
+                            <span class="ml-auto text-xs px-2 py-0.5 rounded-full" style="background-color: var(--dedao-orange); color: white;">318</span>
+                        </button>
+                        <button class="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-normal hover:bg-gray-50 transition-colors" style="color: var(--dedao-text);">
+                            <i data-lucide="book" class="w-4 h-4" style="stroke-width: 1.5;"></i>
+                            EPUB
+                            <span class="ml-auto text-xs" style="color: var(--dedao-light);">318</span>
+                        </button>
+                        <button class="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-normal opacity-50 cursor-not-allowed" style="color: var(--dedao-light);">
+                            <i data-lucide="file-text" class="w-4 h-4" style="stroke-width: 1.5;"></i>
+                            PDF
+                            <span class="ml-auto text-xs">Soon</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Divider -->
+                <div class="border-t mb-4" style="border-color: var(--dedao-border);"></div>
+
+                <!-- Collections Section -->
+                <div class="flex-1 overflow-hidden flex flex-col">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-xs font-medium uppercase tracking-wider" style="color: var(--dedao-light);">Collections</h3>
+                        <button class="p-1 hover:bg-gray-100 rounded transition-colors" title="Create Collection">
+                            <i data-lucide="plus" class="w-4 h-4" style="color: var(--dedao-muted); stroke-width: 1.5;"></i>
+                        </button>
+                    </div>
+                    <div class="flex-1 overflow-y-auto space-y-1">
+                        <button class="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-normal hover:bg-gray-50 transition-colors text-left" style="color: var(--dedao-text);">
+                            <i data-lucide="folder" class="w-4 h-4 flex-shrink-0" style="stroke-width: 1.5; color: var(--dedao-orange);"></i>
+                            <span class="truncate">Investment & Finance</span>
+                            <span class="ml-auto text-xs flex-shrink-0" style="color: var(--dedao-light);">24</span>
+                        </button>
+                        <button class="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-normal hover:bg-gray-50 transition-colors text-left" style="color: var(--dedao-text);">
+                            <i data-lucide="folder" class="w-4 h-4 flex-shrink-0" style="stroke-width: 1.5; color: #3b82f6;"></i>
+                            <span class="truncate">Technology</span>
+                            <span class="ml-auto text-xs flex-shrink-0" style="color: var(--dedao-light);">18</span>
+                        </button>
+                        <button class="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-normal hover:bg-gray-50 transition-colors text-left" style="color: var(--dedao-text);">
+                            <i data-lucide="folder" class="w-4 h-4 flex-shrink-0" style="stroke-width: 1.5; color: #22c55e;"></i>
+                            <span class="truncate">Philosophy</span>
+                            <span class="ml-auto text-xs flex-shrink-0" style="color: var(--dedao-light);">12</span>
+                        </button>
+                        <button class="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-normal hover:bg-gray-50 transition-colors text-left" style="color: var(--dedao-text);">
+                            <i data-lucide="folder" class="w-4 h-4 flex-shrink-0" style="stroke-width: 1.5; color: #a855f7;"></i>
+                            <span class="truncate">History & Biography</span>
+                            <span class="ml-auto text-xs flex-shrink-0" style="color: var(--dedao-light);">31</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Settings Link -->
+                <div class="mt-4 pt-4 border-t" style="border-color: var(--dedao-border);">
+                    <a href="#" class="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-normal hover:bg-gray-50 transition-colors" style="color: var(--dedao-muted);">
+                        <i data-lucide="settings" class="w-4 h-4" style="stroke-width: 1.5;"></i>
+                        Settings
+                    </a>
+                </div>
+            </div>
+        </aside>
+
+        <!-- CENTER CONTENT -->
+        <main class="overflow-y-auto">
+            <div class="p-6">
+
+                <!-- Toolbar -->
+                <div class="flex items-center justify-between mb-6">
+                    <!-- Left: Filter Input -->
+                    <div class="flex items-center gap-4">
+                        <div style="background-color: var(--dedao-card); border: 1px solid var(--dedao-border);" class="flex items-center rounded-md h-9 px-3 w-64">
+                            <i data-lucide="search" class="w-4 h-4" style="color: var(--dedao-light); stroke-width: 1.5;"></i>
+                            <input type="text" placeholder="Filter by title..." class="flex-1 bg-transparent border-none outline-none px-2 text-sm" style="caret-color: var(--dedao-text);">
+                        </div>
+                    </div>
+
+                    <!-- Right: Actions -->
+                    <div class="flex items-center gap-2">
+                        <!-- Add Book -->
+                        <button style="background-color: var(--dedao-orange);" class="text-white text-sm font-medium px-4 h-9 rounded-full hover:opacity-90 transition-opacity flex items-center gap-2">
+                            <i data-lucide="plus" class="w-4 h-4" style="stroke-width: 1.5;"></i>
+                            Add Book
+                        </button>
+
+                        <!-- Sort -->
+                        <button class="flex items-center gap-1 px-3 h-9 rounded-md text-sm font-normal hover:bg-gray-100 transition-colors" style="color: var(--dedao-muted);">
+                            <i data-lucide="arrow-up-down" class="w-4 h-4" style="stroke-width: 1.5;"></i>
+                            A→Z
+                        </button>
+
+                        <!-- View Toggle -->
+                        <div class="flex items-center rounded-md overflow-hidden" style="background-color: var(--dedao-card); border: 1px solid var(--dedao-border);">
+                            <button class="p-2 transition-colors" style="background-color: var(--dedao-orange-light);">
+                                <i data-lucide="layout-grid" class="w-4 h-4" style="color: var(--dedao-orange); stroke-width: 1.5;"></i>
+                            </button>
+                            <button class="p-2 hover:bg-gray-50 transition-colors">
+                                <i data-lucide="list" class="w-4 h-4" style="color: var(--dedao-muted); stroke-width: 1.5;"></i>
+                            </button>
+                        </div>
+
+                        <!-- Selection Mode -->
+                        <button class="flex items-center gap-1 px-3 h-9 rounded-md text-sm font-normal hover:bg-gray-100 transition-colors" style="color: var(--dedao-muted);">
+                            <i data-lucide="check-square" class="w-4 h-4" style="stroke-width: 1.5;"></i>
+                            Select
+                        </button>
+
+                        <!-- Collapse Right Panel -->
+                        <button onclick="toggleRightPanel()" class="p-2 hover:bg-gray-100 rounded-md transition-colors" title="Toggle Panel">
+                            <i data-lucide="panel-right" class="w-4 h-4" style="color: var(--dedao-muted); stroke-width: 1.5;"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Selection Toolbar (hidden by default) -->
+                <div class="hidden mb-4 px-4 py-3 rounded-lg flex items-center justify-between" style="background-color: var(--dedao-orange-light);">
+                    <div class="flex items-center gap-4">
+                        <span class="text-sm font-medium" style="color: var(--dedao-orange);">3 selected</span>
+                        <button class="text-sm hover:underline" style="color: var(--dedao-orange);">Select All</button>
+                        <button class="text-sm hover:underline" style="color: var(--dedao-muted);">Clear</button>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button class="px-3 py-1.5 rounded-md text-sm font-medium hover:bg-white/50 transition-colors" style="color: var(--dedao-orange);">
+                            Add to Collection
+                        </button>
+                        <button class="px-3 py-1.5 rounded-md text-sm font-medium hover:bg-white/50 transition-colors" style="color: var(--dedao-orange);">
+                            Index Selected
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Book Grid -->
+                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+
+                    <!-- Book Card 1 -->
+                    <div class="bg-white rounded-lg p-3 flex gap-3 hover:shadow-md transition-shadow cursor-pointer group relative" style="border: 1px solid var(--dedao-border);">
+                        <!-- Selection Checkbox (hidden until select mode) -->
+                        <div class="hidden absolute top-2 left-2 z-10">
+                            <input type="checkbox" class="w-4 h-4 rounded" style="accent-color: var(--dedao-orange);">
+                        </div>
+                        <div class="relative flex-shrink-0">
+                            <img src="https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=84&h=112&fit=crop" alt="Book Cover" class="rounded-md object-cover" style="width: 84px; height: 112px; border: 0.5px solid rgba(0,0,0,0.1);">
+                            <span style="background: rgba(0,0,0,0.5);" class="absolute bottom-1 right-1 text-white text-xs px-1 py-0.5 rounded">EPUB</span>
+                        </div>
+                        <div class="flex-1 flex flex-col min-w-0">
+                            <div class="flex items-start justify-between gap-2">
+                                <h3 class="font-medium text-sm truncate" style="color: var(--dedao-text);">The Art of Investment</h3>
+                                <!-- Status Badge -->
+                                <span class="flex-shrink-0 text-xs px-2 py-0.5 rounded-full" style="background-color: #dcfce7; color: #16a34a;">Indexed</span>
+                            </div>
+                            <p class="text-xs mt-1 line-clamp-2" style="color: var(--dedao-muted);">A comprehensive guide to understanding market dynamics and building wealth...</p>
+                            <p class="text-xs mt-auto" style="color: var(--dedao-light);">John Smith</p>
+                            <div class="flex items-center justify-between mt-2">
+                                <div class="flex items-center gap-2 flex-1">
+                                    <span class="text-xs" style="color: var(--dedao-orange);">21%</span>
+                                    <div class="flex-1 h-1 rounded-full overflow-hidden" style="background-color: var(--dedao-border);">
+                                        <div style="width: 21%; background-color: var(--dedao-orange);" class="h-full rounded-full"></div>
+                                    </div>
+                                </div>
+                                <button class="flex items-center gap-1 text-xs ml-3 hover:opacity-80 transition-opacity" style="color: var(--dedao-orange);">
+                                    <i data-lucide="book-open" class="w-3.5 h-3.5" style="stroke-width: 1.5;"></i>
+                                    Read
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Book Card 2 -->
+                    <div class="bg-white rounded-lg p-3 flex gap-3 hover:shadow-md transition-shadow cursor-pointer group relative" style="border: 1px solid var(--dedao-border);">
+                        <div class="relative flex-shrink-0">
+                            <img src="https://images.unsplash.com/photo-1589829085413-56de8ae18c73?w=84&h=112&fit=crop" alt="Book Cover" class="rounded-md object-cover" style="width: 84px; height: 112px; border: 0.5px solid rgba(0,0,0,0.1);">
+                            <span style="background: rgba(0,0,0,0.5);" class="absolute bottom-1 right-1 text-white text-xs px-1 py-0.5 rounded">EPUB</span>
+                        </div>
+                        <div class="flex-1 flex flex-col min-w-0">
+                            <div class="flex items-start justify-between gap-2">
+                                <h3 class="font-medium text-sm truncate" style="color: var(--dedao-text);">Chinese Venture Capital History</h3>
+                                <span class="flex-shrink-0 text-xs px-2 py-0.5 rounded-full" style="background-color: #fef3c7; color: #d97706;">Not indexed</span>
+                            </div>
+                            <p class="text-xs mt-1 line-clamp-2" style="color: var(--dedao-muted);">From internet pioneers to hard tech, exploring the evolution of risk investment...</p>
+                            <p class="text-xs mt-auto" style="color: var(--dedao-light);">Investment Network</p>
+                            <div class="flex items-center justify-between mt-2">
+                                <span class="text-xs" style="color: var(--dedao-orange);">Unread</span>
+                                <button class="flex items-center gap-1 text-xs hover:opacity-80 transition-opacity" style="color: var(--dedao-orange);">
+                                    <i data-lucide="book-open" class="w-3.5 h-3.5" style="stroke-width: 1.5;"></i>
+                                    Read
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Book Card 3 -->
+                    <div class="bg-white rounded-lg p-3 flex gap-3 hover:shadow-md transition-shadow cursor-pointer group relative" style="border: 1px solid var(--dedao-border);">
+                        <div class="relative flex-shrink-0">
+                            <img src="https://images.unsplash.com/photo-1512820790803-83ca734da794?w=84&h=112&fit=crop" alt="Book Cover" class="rounded-md object-cover" style="width: 84px; height: 112px; border: 0.5px solid rgba(0,0,0,0.1);">
+                            <span style="background: rgba(0,0,0,0.5);" class="absolute bottom-1 right-1 text-white text-xs px-1 py-0.5 rounded">EPUB</span>
+                        </div>
+                        <div class="flex-1 flex flex-col min-w-0">
+                            <div class="flex items-start justify-between gap-2">
+                                <h3 class="font-medium text-sm truncate" style="color: var(--dedao-text);">Opportunities for Investors</h3>
+                                <span class="flex-shrink-0 text-xs px-2 py-0.5 rounded-full" style="background-color: #dcfce7; color: #16a34a;">Indexed</span>
+                            </div>
+                            <p class="text-xs mt-1 line-clamp-2" style="color: var(--dedao-muted);">Discussing key issues in investment cognition and valuable insights for modern...</p>
+                            <p class="text-xs mt-auto" style="color: var(--dedao-light);">Chen Jiahe</p>
+                            <div class="flex items-center justify-between mt-2">
+                                <div class="flex items-center gap-2 flex-1">
+                                    <span class="text-xs" style="color: var(--dedao-orange);">2%</span>
+                                    <div class="flex-1 h-1 rounded-full overflow-hidden" style="background-color: var(--dedao-border);">
+                                        <div style="width: 2%; background-color: var(--dedao-orange);" class="h-full rounded-full"></div>
+                                    </div>
+                                </div>
+                                <button class="flex items-center gap-1 text-xs ml-3 hover:opacity-80 transition-opacity" style="color: var(--dedao-orange);">
+                                    <i data-lucide="book-open" class="w-3.5 h-3.5" style="stroke-width: 1.5;"></i>
+                                    Read
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Book Card 4 -->
+                    <div class="bg-white rounded-lg p-3 flex gap-3 hover:shadow-md transition-shadow cursor-pointer group relative" style="border: 1px solid var(--dedao-border);">
+                        <div class="relative flex-shrink-0">
+                            <img src="https://images.unsplash.com/photo-1543002588-bfa74002ed7e?w=84&h=112&fit=crop" alt="Book Cover" class="rounded-md object-cover" style="width: 84px; height: 112px; border: 0.5px solid rgba(0,0,0,0.1);">
+                            <span style="background: rgba(0,0,0,0.5);" class="absolute bottom-1 right-1 text-white text-xs px-1 py-0.5 rounded">EPUB</span>
+                        </div>
+                        <div class="flex-1 flex flex-col min-w-0">
+                            <div class="flex items-start justify-between gap-2">
+                                <h3 class="font-medium text-sm truncate" style="color: var(--dedao-text);">IPO Regulations for Enterprises</h3>
+                                <span class="flex-shrink-0 text-xs px-2 py-0.5 rounded-full" style="background-color: #dcfce7; color: #16a34a;">Indexed</span>
+                            </div>
+                            <p class="text-xs mt-1 line-clamp-2" style="color: var(--dedao-muted);">Helping Chinese enterprises navigate domestic and overseas IPO listing...</p>
+                            <p class="text-xs mt-auto" style="color: var(--dedao-light);">Wang He, Chen Xin</p>
+                            <div class="flex items-center justify-between mt-2">
+                                <span class="text-xs" style="color: var(--dedao-orange);">Unread</span>
+                                <button class="flex items-center gap-1 text-xs hover:opacity-80 transition-opacity" style="color: var(--dedao-orange);">
+                                    <i data-lucide="book-open" class="w-3.5 h-3.5" style="stroke-width: 1.5;"></i>
+                                    Read
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Book Card 5 -->
+                    <div class="bg-white rounded-lg p-3 flex gap-3 hover:shadow-md transition-shadow cursor-pointer group relative" style="border: 1px solid var(--dedao-border);">
+                        <div class="relative flex-shrink-0">
+                            <img src="https://images.unsplash.com/photo-1497633762265-9d179a990aa6?w=84&h=112&fit=crop" alt="Book Cover" class="rounded-md object-cover" style="width: 84px; height: 112px; border: 0.5px solid rgba(0,0,0,0.1);">
+                            <span style="background: rgba(0,0,0,0.5);" class="absolute bottom-1 right-1 text-white text-xs px-1 py-0.5 rounded">EPUB</span>
+                        </div>
+                        <div class="flex-1 flex flex-col min-w-0">
+                            <div class="flex items-start justify-between gap-2">
+                                <h3 class="font-medium text-sm truncate" style="color: var(--dedao-text);">Hong Kong IPO Express</h3>
+                                <span class="flex-shrink-0 text-xs px-2 py-0.5 rounded-full" style="background-color: #fef3c7; color: #d97706;">Not indexed</span>
+                            </div>
+                            <p class="text-xs mt-1 line-clamp-2" style="color: var(--dedao-muted);">A systematic introduction to Hong Kong Stock Exchange listing rules...</p>
+                            <p class="text-xs mt-auto" style="color: var(--dedao-light);">Wang He</p>
+                            <div class="flex items-center justify-between mt-2">
+                                <div class="flex items-center gap-2 flex-1">
+                                    <span class="text-xs" style="color: var(--dedao-orange);">1%</span>
+                                    <div class="flex-1 h-1 rounded-full overflow-hidden" style="background-color: var(--dedao-border);">
+                                        <div style="width: 1%; background-color: var(--dedao-orange);" class="h-full rounded-full"></div>
+                                    </div>
+                                </div>
+                                <button class="flex items-center gap-1 text-xs ml-3 hover:opacity-80 transition-opacity" style="color: var(--dedao-orange);">
+                                    <i data-lucide="book-open" class="w-3.5 h-3.5" style="stroke-width: 1.5;"></i>
+                                    Read
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Book Card 6 -->
+                    <div class="bg-white rounded-lg p-3 flex gap-3 hover:shadow-md transition-shadow cursor-pointer group relative" style="border: 1px solid var(--dedao-border);">
+                        <div class="relative flex-shrink-0">
+                            <img src="https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=84&h=112&fit=crop" alt="Book Cover" class="rounded-md object-cover" style="width: 84px; height: 112px; border: 0.5px solid rgba(0,0,0,0.1);">
+                            <span style="background: rgba(0,0,0,0.5);" class="absolute bottom-1 right-1 text-white text-xs px-1 py-0.5 rounded">EPUB</span>
+                        </div>
+                        <div class="flex-1 flex flex-col min-w-0">
+                            <div class="flex items-start justify-between gap-2">
+                                <h3 class="font-medium text-sm truncate" style="color: var(--dedao-text);">Understanding Industries Fast</h3>
+                                <span class="flex-shrink-0 text-xs px-2 py-0.5 rounded-full" style="background-color: #dcfce7; color: #16a34a;">Indexed</span>
+                            </div>
+                            <p class="text-xs mt-1 line-clamp-2" style="color: var(--dedao-muted);">A detailed introduction to industry research frameworks and practical...</p>
+                            <p class="text-xs mt-auto" style="color: var(--dedao-light);">Xiao Jing</p>
+                            <div class="flex items-center justify-between mt-2">
+                                <span class="text-xs" style="color: var(--dedao-orange);">Unread</span>
+                                <button class="flex items-center gap-1 text-xs hover:opacity-80 transition-opacity" style="color: var(--dedao-orange);">
+                                    <i data-lucide="book-open" class="w-3.5 h-3.5" style="stroke-width: 1.5;"></i>
+                                    Read
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </main>
+
+        <!-- RIGHT PANEL -->
+        <aside id="right-panel" class="bg-white border-l overflow-hidden transition-all duration-300" style="border-color: var(--dedao-border);">
+            <div class="h-full flex flex-col">
+
+                <!-- Tab Bar -->
+                <div class="flex border-b" style="border-color: var(--dedao-border);">
+                    <button onclick="switchTab('dashboard')" class="tab-btn active flex-1 py-3 text-sm font-medium transition-colors" style="color: var(--dedao-orange);">
+                        Dashboard
+                    </button>
+                    <button onclick="switchTab('chat')" class="tab-btn flex-1 py-3 text-sm font-normal transition-colors" style="color: var(--dedao-muted);">
+                        Chat
+                    </button>
+                    <button onclick="switchTab('search')" class="tab-btn flex-1 py-3 text-sm font-normal transition-colors" style="color: var(--dedao-muted);">
+                        Search
+                    </button>
+                </div>
+
+                <!-- Tab Content -->
+                <div class="flex-1 overflow-y-auto">
+
+                    <!-- Dashboard Tab -->
+                    <div id="tab-dashboard" class="p-4">
+                        <h3 class="text-sm font-medium mb-4" style="color: var(--dedao-text);">Library Stats</h3>
+
+                        <!-- Stats Grid -->
+                        <div class="grid grid-cols-2 gap-3 mb-6">
+                            <div class="p-3 rounded-lg" style="background-color: var(--dedao-bg);">
+                                <p class="text-2xl font-semibold" style="color: var(--dedao-orange);">318</p>
+                                <p class="text-xs" style="color: var(--dedao-light);">Total Books</p>
+                            </div>
+                            <div class="p-3 rounded-lg" style="background-color: var(--dedao-bg);">
+                                <p class="text-2xl font-semibold" style="color: #16a34a;">156</p>
+                                <p class="text-xs" style="color: var(--dedao-light);">Indexed</p>
+                            </div>
+                            <div class="p-3 rounded-lg" style="background-color: var(--dedao-bg);">
+                                <p class="text-2xl font-semibold" style="color: var(--dedao-text);">4,521</p>
+                                <p class="text-xs" style="color: var(--dedao-light);">Sections</p>
+                            </div>
+                            <div class="p-3 rounded-lg" style="background-color: var(--dedao-bg);">
+                                <p class="text-2xl font-semibold" style="color: var(--dedao-text);">89.2K</p>
+                                <p class="text-xs" style="color: var(--dedao-light);">Chunks</p>
+                            </div>
+                        </div>
+
+                        <!-- Index Progress -->
+                        <div class="mb-6">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-sm font-medium" style="color: var(--dedao-text);">Index Progress</span>
+                                <span class="text-sm" style="color: var(--dedao-orange);">49%</span>
+                            </div>
+                            <div class="h-2 rounded-full overflow-hidden" style="background-color: var(--dedao-border);">
+                                <div style="width: 49%; background-color: var(--dedao-orange);" class="h-full rounded-full transition-all"></div>
+                            </div>
+                            <p class="text-xs mt-1" style="color: var(--dedao-light);">156 of 318 books indexed</p>
+                        </div>
+
+                        <!-- Refresh Button -->
+                        <button class="w-full py-2 rounded-lg text-sm font-medium transition-colors hover:opacity-90" style="background-color: var(--dedao-bg); color: var(--dedao-muted);">
+                            <i data-lucide="refresh-cw" class="w-4 h-4 inline mr-1" style="stroke-width: 1.5;"></i>
+                            Refresh Stats
+                        </button>
+                    </div>
+
+                    <!-- Chat Tab -->
+                    <div id="tab-chat" class="hidden h-full flex flex-col">
+                        <!-- Book Selector -->
+                        <div class="p-4 border-b" style="border-color: var(--dedao-border);">
+                            <label class="text-xs font-medium mb-2 block" style="color: var(--dedao-light);">Select Book</label>
+                            <select class="w-full px-3 py-2 rounded-md text-sm" style="background-color: var(--dedao-bg); border: 1px solid var(--dedao-border); color: var(--dedao-text);">
+                                <option>The Art of Investment</option>
+                                <option>Chinese Venture Capital History</option>
+                                <option>Opportunities for Investors</option>
+                            </select>
+                        </div>
+
+                        <!-- Conversation History -->
+                        <div class="p-4 border-b" style="border-color: var(--dedao-border);">
+                            <label class="text-xs font-medium mb-2 block" style="color: var(--dedao-light);">Conversation</label>
+                            <select class="w-full px-3 py-2 rounded-md text-sm" style="background-color: var(--dedao-bg); border: 1px solid var(--dedao-border); color: var(--dedao-text);">
+                                <option>+ New conversation</option>
+                                <option>Dec 24: Investment strategies</option>
+                                <option>Dec 23: Market analysis</option>
+                            </select>
+                        </div>
+
+                        <!-- Chat Messages -->
+                        <div class="flex-1 overflow-y-auto p-4 space-y-4">
+                            <!-- User Message -->
+                            <div class="flex justify-end">
+                                <div class="max-w-[85%] px-3 py-2 rounded-lg text-sm" style="background-color: var(--dedao-orange); color: white;">
+                                    What are the key investment principles in this book?
+                                </div>
+                            </div>
+                            <!-- Assistant Message -->
+                            <div class="flex justify-start">
+                                <div class="max-w-[85%] px-3 py-2 rounded-lg text-sm" style="background-color: var(--dedao-bg); color: var(--dedao-text);">
+                                    Based on the book, here are the key investment principles:
+                                    <br><br>
+                                    1. <strong>Value Investing</strong> - Focus on intrinsic value rather than market price
+                                    <br>
+                                    2. <strong>Long-term Perspective</strong> - Patience is crucial for compounding
+                                    <br>
+                                    3. <strong>Risk Management</strong> - Always consider downside scenarios
+                                    <br><br>
+                                    <a href="#" class="underline" style="color: var(--dedao-orange);">See Chapter 3 →</a>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Chat Input -->
+                        <div class="p-4 border-t" style="border-color: var(--dedao-border);">
+                            <div class="flex gap-2">
+                                <textarea placeholder="Ask about the book..." rows="2" class="flex-1 px-3 py-2 rounded-lg text-sm resize-none" style="background-color: var(--dedao-bg); border: 1px solid var(--dedao-border); color: var(--dedao-text);"></textarea>
+                                <button class="px-4 rounded-lg transition-opacity hover:opacity-90" style="background-color: var(--dedao-orange);">
+                                    <i data-lucide="send" class="w-4 h-4 text-white" style="stroke-width: 1.5;"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Search Tab -->
+                    <div id="tab-search" class="hidden h-full flex flex-col">
+                        <!-- Search Input -->
+                        <div class="p-4 border-b" style="border-color: var(--dedao-border);">
+                            <div class="flex items-center gap-2 mb-3">
+                                <div class="flex-1 flex items-center rounded-md px-3" style="background-color: var(--dedao-bg); border: 1px solid var(--dedao-border);">
+                                    <i data-lucide="search" class="w-4 h-4" style="color: var(--dedao-light); stroke-width: 1.5;"></i>
+                                    <input type="text" placeholder="Search all books..." class="flex-1 bg-transparent border-none outline-none px-2 py-2 text-sm" style="caret-color: var(--dedao-text);">
+                                </div>
+                                <button class="p-2 rounded-md hover:bg-gray-100 transition-colors">
+                                    <i data-lucide="x" class="w-4 h-4" style="color: var(--dedao-muted); stroke-width: 1.5;"></i>
+                                </button>
+                            </div>
+
+                            <!-- Search Options -->
+                            <div class="flex items-center gap-3 text-xs">
+                                <select class="px-2 py-1 rounded" style="background-color: var(--dedao-bg); border: 1px solid var(--dedao-border); color: var(--dedao-muted);">
+                                    <option>Keyword</option>
+                                    <option>Semantic</option>
+                                    <option>Hybrid</option>
+                                </select>
+                                <label class="flex items-center gap-1" style="color: var(--dedao-muted);">
+                                    <input type="checkbox" class="rounded" style="accent-color: var(--dedao-orange);">
+                                    Case sensitive
+                                </label>
+                                <select class="px-2 py-1 rounded ml-auto" style="background-color: var(--dedao-bg); border: 1px solid var(--dedao-border); color: var(--dedao-muted);">
+                                    <option>Relevance</option>
+                                    <option>Title A→Z</option>
+                                    <option>Author</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Search Results -->
+                        <div class="flex-1 overflow-y-auto p-4 space-y-4">
+                            <!-- Result Group: Book 1 -->
+                            <div>
+                                <div class="flex items-center justify-between mb-2">
+                                    <h4 class="text-sm font-medium" style="color: var(--dedao-text);">The Art of Investment</h4>
+                                    <span class="text-xs px-2 py-0.5 rounded-full" style="background-color: #dcfce7; color: #16a34a;">Indexed</span>
+                                </div>
+                                <div class="space-y-2">
+                                    <a href="#" class="block p-2 rounded-md hover:bg-gray-50 transition-colors" style="background-color: var(--dedao-bg);">
+                                        <p class="text-xs mb-1" style="color: var(--dedao-light);">Chapter 3 • Page 42</p>
+                                        <p class="text-sm" style="color: var(--dedao-text);">...the key to successful <mark style="background-color: #fef08a;">investment</mark> lies in understanding market cycles and...</p>
+                                    </a>
+                                    <a href="#" class="block p-2 rounded-md hover:bg-gray-50 transition-colors" style="background-color: var(--dedao-bg);">
+                                        <p class="text-xs mb-1" style="color: var(--dedao-light);">Chapter 5 • Page 89</p>
+                                        <p class="text-sm" style="color: var(--dedao-text);">...value <mark style="background-color: #fef08a;">investment</mark> principles suggest focusing on intrinsic worth...</p>
+                                    </a>
+                                </div>
+                                <button class="text-xs mt-2 hover:underline" style="color: var(--dedao-orange);">Show 5 more results →</button>
+                            </div>
+
+                            <!-- Result Group: Book 2 -->
+                            <div class="pt-4 border-t" style="border-color: var(--dedao-border);">
+                                <div class="flex items-center justify-between mb-2">
+                                    <h4 class="text-sm font-medium" style="color: var(--dedao-text);">Chinese Venture Capital</h4>
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-xs px-2 py-0.5 rounded-full" style="background-color: #fef3c7; color: #d97706;">Not indexed</span>
+                                        <button class="text-xs underline" style="color: var(--dedao-orange);">Index</button>
+                                    </div>
+                                </div>
+                                <div class="space-y-2">
+                                    <a href="#" class="block p-2 rounded-md hover:bg-gray-50 transition-colors" style="background-color: var(--dedao-bg);">
+                                        <p class="text-xs mb-1" style="color: var(--dedao-light);">Chapter 1 • Page 15</p>
+                                        <p class="text-sm" style="color: var(--dedao-text);">...early <mark style="background-color: #fef08a;">investment</mark> in technology startups transformed the landscape...</p>
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <!-- Floating Back to Top Button -->
+    <button style="background-color: var(--dedao-card); box-shadow: 0 2px 10px rgba(0,0,0,0.1);" class="fixed bottom-6 right-6 w-10 h-10 rounded-full flex items-center justify-center hover:shadow-lg transition-shadow">
+        <i data-lucide="chevron-up" class="w-5 h-5" style="color: var(--dedao-muted); stroke-width: 1.5;"></i>
+    </button>
+
+    <script>
+        lucide.createIcons();
+
+        // Tab switching
+        function switchTab(tabName) {
+            // Update tab buttons
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active');
+                btn.style.color = 'var(--dedao-muted)';
+                btn.style.fontWeight = '400';
+            });
+            event.target.classList.add('active');
+            event.target.style.color = 'var(--dedao-orange)';
+            event.target.style.fontWeight = '500';
+
+            // Update tab content
+            document.querySelectorAll('[id^="tab-"]').forEach(tab => {
+                tab.classList.add('hidden');
+            });
+            document.getElementById('tab-' + tabName).classList.remove('hidden');
+        }
+
+        // Toggle right panel
+        function toggleRightPanel() {
+            const layout = document.getElementById('library-layout');
+            const panel = document.getElementById('right-panel');
+
+            if (layout.classList.contains('right-collapsed')) {
+                layout.classList.remove('right-collapsed');
+                panel.style.width = 'var(--right-w)';
+            } else {
+                layout.classList.add('right-collapsed');
+                panel.style.width = '0';
+            }
+        }
+    </script>
+</body>
+</html>
