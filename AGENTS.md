@@ -14,7 +14,7 @@
 - `config/`: Runtime settings (notably `config/ai_settings.json` is gitignored; see `config/ai_settings.example.json`).
 - `books/`: Local library root; processed books live in `books/<book_id>_data/` (may contain `book.pkl`, `images/`, `ai_conversations/`, `chroma_db/`, `notes.json`).
 - `specs/`: Feature specs + checklists + API contracts (source of truth for acceptance behavior).
-- `docs/technical-detail/`: Data locations, settings, and persistence details.
+- `docs/`: Data locations, settings, and persistence details.
 - Generated/ignored (see `.gitignore`): `books/*_data/`, `.venv/`, `conversations/`, and typically `*.epub`.
 
 ## Build, Test, and Development Commands
@@ -63,5 +63,5 @@ For PRs: include a clear description, link relevant `specs/` docs/issues, and ad
 ## Documentation Rule (Technical Details)
 
 - When adding/changing any “record-like” behavior (data storage locations, new persisted files/folders, new env vars, new endpoints that persist state), update the technical docs:
-  - `docs/technical-detail/technical-detail.md`
-  - and the relevant page(s) under `docs/technical-detail/`
+  - `docs/technical-detail.md`
+  - and the relevant page(s) under `docs/`

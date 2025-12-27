@@ -396,3 +396,58 @@ _Phase 1 Completed: 2025-12-27_
 _Phase 2 Completed: 2025-12-27_
 _Phase 3 Completed: 2025-12-27 (T034-T055, cross-browser testing T054 pending)_
 _Phase 4 Completed: 2025-12-27 (T056-T084, all annotation enhancements implemented)_
+
+---
+
+## Phase 5: Renderer Refactor (epub.js) (Planned)
+
+> See `spec.md` Phase 5 section for requirements (FR-RF-001 to FR-RF-008).
+> See `plan.md` Phase 5 section for architecture and integration plan.
+
+### Issue 9 — epub.js Renderer Integration (P1)
+
+**Goal**: Replace direct HTML injection with epub.js rendering inside an isolated iframe.
+
+**Acceptance Test**: Chapter renders via epub.js; clicking annotated text opens toolbar reliably.
+
+- [x] T085 [Issue9] Persist original `.epub` alongside processed data (e.g., `books/<book_id>_data/book.epub`)
+- [x] T086 [Issue9] Add epub.js to `static/vendor/` and wire a local import in `reader.html`
+- [x] T087 [Issue9] Replace `.book-content` HTML injection with epub.js `Rendition` mount point
+- [x] T088 [Issue9] Render current spine item by `chapter_index` on page load
+- [x] T089 [Issue9] Update Next/Previous navigation to use epub.js spine navigation
+
+### Issue 10 — Annotation Bridge (P1)
+
+**Goal**: Make annotations work reliably inside iframe-rendered content.
+
+**Acceptance Test**: Click marker/underline/wavy -> selection + toolbar; notes open for editing.
+
+- [x] T090 [Issue10] Port annotation DOM operations into iframe document
+- [x] T091 [Issue10] Bridge selection data from iframe to parent (postMessage or hook)
+- [x] T092 [Issue10] Store CFI for new annotations, keep fallback for legacy notes
+- [x] T093 [Issue10] Ensure annotation CRUD uses existing `/api/notes` endpoints unchanged
+- [x] T094 [Issue10] Re-apply annotations after spine navigation
+
+### Issue 11 — Pagination & Progress (P2)
+
+**Goal**: Align pagination/progress with epub.js rendering.
+
+**Acceptance Test**: Page-turn + progress indicator behave consistently with epub.js pagination.
+
+- [x] T095 [Issue11] Use epub.js pagination as the source of truth
+- [x] T096 [Issue11] Replace/retire `pagination.js` behavior when using epub.js pagination
+- [x] T097 [Issue11] Update progress indicator to track epub.js location percentage
+
+### Issue 12 — Search/Highlight Integration (P2)
+
+**Goal**: Keep in-chapter search highlighting working with iframe rendering.
+
+**Acceptance Test**: Search results highlight and scroll correctly inside iframe.
+
+- [x] T098 [Issue12] Move search highlight logic into iframe document
+- [x] T099 [Issue12] Update `search.js` to target iframe content
+
+### Phase 5 Polish & Docs
+
+- [x] T100 Update technical docs for new `book.epub` storage + `cfi` annotation field
+- [ ] T101 Manual regression: annotations (click/delete/edit), search, TOC, AI panel, notes panel

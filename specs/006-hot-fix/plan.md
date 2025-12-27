@@ -340,7 +340,66 @@ Issue 1 (First Page Fix) → Issue 3 (Annotations) → Issue 2 (AI Panel) → Is
 
 ---
 
+## Phase 5: Renderer Refactor (epub.js)
+
+> See `spec.md` Phase 5 section for detailed requirements (FR-RF-001 to FR-RF-008).
+
+### Goal
+
+Replace direct HTML injection with epub.js rendering inside an isolated iframe. This reduces style interference from EPUB content and stabilizes annotation interactions (click-to-select, selection toolbar, note editing).
+
+### Technical Approach
+
+1. **Add epub.js dependency**
+   - Include a pinned version under `src/reader3_app/web/static/vendor/` or via a local bundle.
+2. **Isolated rendering container**
+   - Replace the `.book-content` direct HTML injection with an epub.js `Rendition` mounted to a dedicated container.
+   - Use iframe `srcdoc` or epub.js built-in iframe to isolate styles.
+3. **Annotation bridge**
+   - Move annotation DOM operations into the iframe document.
+   - Expose selection ranges from iframe to parent via `postMessage` or a direct API hook.
+   - Keep annotation CRUD via existing `/api/notes` endpoints.
+4. **Pagination strategy**
+   - Decide between epub.js pagination (preferred) or custom pagination integration.
+   - If using epub.js pagination, deprecate `pagination.js` logic and re-implement progress tracking.
+5. **Search integration**
+   - Move in-chapter highlighting to the iframe document.
+   - Keep library search API unchanged.
+6. **TOC navigation**
+   - Map TOC entries to epub.js spine locations.
+   - Ensure Next/Previous navigation uses epub.js spine indices.
+
+### Decision Summary (Confirmed)
+
+- Render from stored `.epub` copy in `books/<book_id>_data/`.
+- Add `cfi` field for new annotations; keep quote/prefix/suffix fallback for existing notes.
+- Use epub.js pagination and progress APIs.
+- Keep reading settings UI; apply via epub.js themes.
+- Keep DOM search; target iframe document.
+
+### Data Flow
+
+```
+EPUB (book.pkl) -> reader.html -> epub.js Rendition (iframe)
+                               -> annotation bridge -> /api/notes
+```
+
+### Compatibility Notes
+
+- Side panels (TOC/Search/AI/Notes) remain outside iframe and communicate via events.
+- Annotation rendering and selection must be iframe-aware; avoid mixing marks between parent and iframe.
+
+### Risks / Mitigations
+
+- **Risk**: Complex bridge between iframe and parent for selection.
+  - **Mitigation**: Use epub.js hooks + structured messages containing range offsets and spine item IDs.
+- **Risk**: Pagination behavior changes.
+  - **Mitigation**: Define acceptance criteria for page-turn and progress indicator early; update UI to match.
+
+---
+
 _Plan created: 2025-12-27_
 _Phase 2 Status: Implemented_
 _Phase 3 Status: Implemented_
 _Phase 4 Status: Implemented_
+_Phase 5 Status: Planned_

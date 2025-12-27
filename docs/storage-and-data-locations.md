@@ -94,12 +94,26 @@ User-defined Collections are persisted on disk as a gitignored JSON file:
 - **Per book**: `books/{book_id}/chroma_db/`
 - This is created by indexing (Library UI or `uv run reader3 --index {book_id}`).
 
+## Processed book assets
+
+The EPUB ingestion pipeline writes processed outputs per book:
+
+- **Pickled book**: `books/{book_id}/book.pkl` (parsed spine + metadata)
+- **Original EPUB copy**: `books/{book_id}/book.epub` (source file for epub.js rendering)
+- **Extracted images**: `books/{book_id}/images/`
+
+## Reader rendering sources
+
+- Frontend reader renders content from `book.epub` via epub.js (iframe).
+- Backend uses `book.pkl` for metadata, TOC/spine structure, search indexing, and notes grouping.
+
 ## Book notes & annotations (003)
 
 Persistent highlights/underlines/notes are stored per book as JSON.
 
 - **File**: `books/{book_id}/notes.json`
 - **Schema**: `{ schema_version: 1, book_id, annotations: [...] }`
+- **Annotation fields**: `quote`, `prefix`, `suffix`, `position`, optional `cfi` (epub.js anchor)
 
 ### Related API endpoints
 

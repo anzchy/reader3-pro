@@ -212,6 +212,12 @@
         panel.loadAndRender().catch(() => {});
       }
     });
+
+    // Refresh header when chapter changes (epub.js navigation)
+    window.addEventListener("reader3:chapter:change", () => {
+      if (isOpen(panel.mode)) {
+        panel.renderHeader();
+      }
+    });
   });
 })();
-

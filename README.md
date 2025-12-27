@@ -13,8 +13,9 @@ This project is an enhanced version (thus add `pro` to repo name) of Andrie Karp
 #### Reader
 
 1. `src/reader3_app/reader3.py` parses an `.epub`, cleans HTML, extracts plain text, and writes a `books/{bookname}_data/` folder.
-2. The folder contains `book.pkl` (a pickled `Book` dataclass) and `images/` (extracted assets).
-3. `src/reader3_app/web/server.py` serves the Library + Reader UI and reads chapters from `book.pkl` one spine item at a time.
+2. The folder contains `book.pkl` (a pickled `Book` dataclass), `book.epub` (original EPUB copy for the reader), and `images/` (extracted assets).
+3. `src/reader3_app/web/server.py` serves the Library + Reader UI, uses `book.pkl` for metadata/TOC/search, and passes the EPUB URL to the frontend.
+4. The reader page loads `book.epub` in the browser via epub.js and renders the chapter content inside an iframe.
 
 #### Search (Keyword + RAG/Semantic)
 
@@ -42,7 +43,7 @@ This project is an enhanced version (thus add `pro` to repo name) of Andrie Karp
 │   └── ai_settings.example.json    # Example AI config (copy to ai_settings.json)
 ├── specs/                  # Feature specs + tasks (search lives in specs/001-search-features/)
 └── books/                  # Generated per-book folders (ignored by git)
-    └── *_data/             # One folder per book (book.pkl, images/, chroma_db/)
+    └── *_data/             # One folder per book (book.pkl, book.epub, images/, chroma_db/)
 ```
 
 
@@ -84,7 +85,7 @@ uv run reader3-server
 Open a book, click the **AI** button on the right toolbar, and use quick actions or chat.
 
 Technical details (chat storage locations, IndexedDB paths, provider privacy, speed tuning, model caches):
-- `docs/technical-detail/technical-detail.md`
+- `docs/technical-detail.md`
 
 
 
@@ -134,7 +135,7 @@ uv run python -c "from sentence_transformers import SentenceTransformer; Sentenc
 ```
 
 The model download is large (~420MB) and is cached by HuggingFace after the first run. For cache locations and offline/portable setup, see:
-- `docs/technical-detail/models-and-caches.md`
+- `docs/models-and-caches.md`
 
 #### Index a Book (Semantic Search)
 

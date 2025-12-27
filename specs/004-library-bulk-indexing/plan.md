@@ -217,8 +217,8 @@ If localStorage is unavailable: fall back to defaults without errors.
 - `src/reader3_app/web/static/library-search.js` (refactor)
 - `config/library_collections.json` (runtime file; gitignored; created at runtime)
 - `.gitignore` (add `config/library_collections.json`)
-- `docs/technical-detail/storage-and-data-locations.md` (document collections + stats endpoint cache behavior)
-- `docs/technical-detail/technical-detail.md`
+- `docs/storage-and-data-locations.md` (document collections + stats endpoint cache behavior)
+- `docs/technical-detail.md`
 
 ## Manual Validation
 

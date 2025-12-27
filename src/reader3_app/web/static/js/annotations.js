@@ -1,9 +1,16 @@
 (() => {
+  let globalListenersBound = false;
+  let toolbarListenersBound = false;
+
   function qs(id) {
     return document.getElementById(id);
   }
 
   function getReaderContext() {
+    const ctx = window.Reader3Ctx || {};
+    if (ctx.bookId && Number.isFinite(ctx.chapterIndex)) {
+      return { bookId: ctx.bookId, chapterIndex: Number(ctx.chapterIndex) };
+    }
     const parts = window.location.pathname.split("/").filter(Boolean);
     if (parts.length >= 3 && parts[0] === "read") {
       return { bookId: parts[1], chapterIndex: Number(parts[2]) };
@@ -44,7 +51,8 @@
   }
 
   function buildTextIndex(container) {
-    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
+    const doc = container?.ownerDocument || document;
+    const walker = doc.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
       acceptNode(node) {
         if (!node.nodeValue) return NodeFilter.FILTER_REJECT;
         const parent = node.parentElement;
@@ -79,7 +87,8 @@
     // If it's an element, attempt to find a nearby text node within it.
     const el = targetNode.nodeType === Node.ELEMENT_NODE ? targetNode : targetNode.parentElement;
     if (!el) return null;
-    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+    const doc = el?.ownerDocument || document;
+    const walker = doc.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
     let n = walker.nextNode();
     if (!n) return null;
     const found = nodes.find((x) => x.node === n);
@@ -129,11 +138,26 @@
     return null;
   }
 
+  function offsetRect(rect, frameEl) {
+    if (!rect) return rect;
+    if (!frameEl) return rect;
+    const frameRect = frameEl.getBoundingClientRect();
+    return {
+      left: rect.left + frameRect.left,
+      right: rect.right + frameRect.left,
+      top: rect.top + frameRect.top,
+      bottom: rect.bottom + frameRect.top,
+      width: rect.width,
+      height: rect.height,
+    };
+  }
+
   function elementDebugInfo(el) {
     if (!el) return null;
     let style = null;
     try {
-      style = window.getComputedStyle(el);
+      const view = el.ownerDocument?.defaultView || window;
+      style = view.getComputedStyle(el);
     } catch {
       style = null;
     }
@@ -203,8 +227,30 @@
     return { classes, ids, meta, noteText };
   }
 
+  function rangeFromCfi(cfi, contents, doc) {
+    if (!cfi) return null;
+    if (contents && typeof contents.range === "function") {
+      try {
+        const range = contents.range(cfi);
+        if (range) return range;
+      } catch {
+        // ignore
+      }
+    }
+    if (window.ePub && window.ePub.CFI && doc) {
+      try {
+        const cfiObj = new window.ePub.CFI(cfi);
+        return cfiObj.toRange(doc);
+      } catch {
+        // ignore
+      }
+    }
+    return null;
+  }
+
   function applySegments(container, index, segments) {
     const nodes = index.nodes;
+    const doc = container?.ownerDocument || document;
     let segIdx = 0;
 
     for (const entry of nodes) {
@@ -228,11 +274,11 @@
       if (!local.length) continue;
 
       local.sort((a, b) => a.start - b.start);
-      const frag = document.createDocumentFragment();
+      const frag = doc.createDocumentFragment();
       let cursor = 0;
       for (const r of local) {
-        if (r.start > cursor) frag.appendChild(document.createTextNode(text.slice(cursor, r.start)));
-        const mark = document.createElement("mark");
+        if (r.start > cursor) frag.appendChild(doc.createTextNode(text.slice(cursor, r.start)));
+        const mark = doc.createElement("mark");
         const style = segmentStyle(r.seg);
         mark.className = style.classes.join(" ");
         mark.setAttribute("data-annotation-ids", JSON.stringify(style.ids));
@@ -243,15 +289,16 @@
         frag.appendChild(mark);
         cursor = r.end;
       }
-      if (cursor < text.length) frag.appendChild(document.createTextNode(text.slice(cursor)));
+      if (cursor < text.length) frag.appendChild(doc.createTextNode(text.slice(cursor)));
       entry.node.parentNode.replaceChild(frag, entry.node);
     }
   }
 
   class AnnotationRenderer {
-    constructor(contentEl) {
+    constructor(contentEl, getContents) {
       this.contentEl = contentEl;
       this.lastAnnotations = [];
+      this.getContents = typeof getContents === "function" ? getContents : null;
     }
 
     async loadAndRender() {
@@ -266,10 +313,35 @@
 
     render(annotations) {
       clearExistingAnnotationMarks(this.contentEl);
-      const idx = buildTextIndex(this.contentEl);
+      const doc = this.contentEl?.ownerDocument || document;
+      const contents = this.getContents ? this.getContents() : null;
 
+      const cfiAnnotations = annotations.filter((ann) => ann?.cfi);
+      for (const ann of cfiAnnotations) {
+        const range = rangeFromCfi(String(ann.cfi || ""), contents, doc);
+        if (!range) continue;
+        const style = segmentStyle({ anns: [ann] });
+        const mark = doc.createElement("mark");
+        mark.className = style.classes.join(" ");
+        mark.setAttribute("data-annotation-ids", JSON.stringify(style.ids));
+        mark.setAttribute("data-annotation-id", style.ids[0] || "");
+        if (style.noteText) mark.setAttribute("data-note-text", style.noteText);
+        mark.setAttribute("data-annotation-meta", JSON.stringify(style.meta || []));
+        try {
+          const fragment = range.extractContents();
+          mark.appendChild(fragment);
+          range.insertNode(mark);
+        } catch {
+          // ignore invalid range wrapping
+        }
+      }
+
+      const textAnnotations = annotations.filter((ann) => !ann?.cfi);
+      if (!textAnnotations.length) return;
+
+      const idx = buildTextIndex(this.contentEl);
       const ranges = [];
-      for (const ann of annotations) {
+      for (const ann of textAnnotations) {
         const r = findRange(idx.text, ann);
         if (!r) continue;
         ranges.push({ start: r.start, end: r.end, ann });
@@ -305,8 +377,11 @@
   }
 
   class AnnotationUI {
-    constructor(contentEl) {
+    constructor(contentEl, frameEl) {
       this.contentEl = contentEl;
+      this.frameEl = frameEl || null;
+      this.contentDocument = contentEl?.ownerDocument || document;
+      this.contentWindow = this.contentDocument?.defaultView || window;
       this.toolbar = qs("annotation-toolbar");
       this.colorRow = qs("anno-color-row");
       this.noteEditor = qs("note-editor");
@@ -320,7 +395,7 @@
       this.currentAnnotationMeta = [];
       this.currentAnnotationIds = [];
       this.editingNoteId = null;
-      this.renderer = new AnnotationRenderer(contentEl);
+      this.renderer = new AnnotationRenderer(contentEl, () => window.Reader3Epub?.getContents?.());
     }
 
     init() {
@@ -328,54 +403,77 @@
 
       console.log("[Annotations] init", { hasContent: !!this.contentEl, hasToolbar: !!this.toolbar });
 
-      document.addEventListener("click", (e) => {
-        const elements = document.elementsFromPoint(e.clientX, e.clientY) || [];
-        const slice = elements.slice(0, 8).map((el) => elementDebugInfo(el));
-        console.log("[Annotations] elementsFromPoint", {
-          x: e.clientX,
-          y: e.clientY,
-          count: elements.length,
-          top: slice,
-        });
-      }, true);
+      if (!globalListenersBound) {
+        document.addEventListener("click", (e) => {
+          const elements = document.elementsFromPoint(e.clientX, e.clientY) || [];
+          const slice = elements.slice(0, 8).map((el) => elementDebugInfo(el));
+          console.log("[Annotations] elementsFromPoint", {
+            x: e.clientX,
+            y: e.clientY,
+            count: elements.length,
+            top: slice,
+          });
+        }, true);
 
-      this.contentEl.addEventListener("mouseup", () => this.onSelection());
-      this.contentEl.addEventListener("click", (e) => {
+        document.addEventListener("mousedown", (e) => {
+          const t = e.target;
+          if (this.toolbar?.contains(t) || this.noteEditor?.contains(t)) return;
+          this.closeSelectionToolbarIfOpen();
+        });
+
+        globalListenersBound = true;
+      }
+
+      this.contentDocument.addEventListener("mouseup", () => this.onSelection());
+      this.contentDocument.addEventListener("click", (e) => {
         const target = getEventTargetElement(e.target);
         const mark = target?.closest ? target.closest("mark.annotation") : null;
         const tagName = target?.tagName || "unknown";
         const className = target?.className || "";
         const nodeType = target?.nodeType || e.target?.nodeType;
         console.log("[Annotations] content click", { tagName, className, nodeType, hasMark: !!mark });
+
+        const elements = this.contentDocument.elementsFromPoint?.(e.clientX, e.clientY) || [];
+        const slice = elements.slice(0, 8).map((el) => elementDebugInfo(el));
+        console.log("[Annotations] iframe elementsFromPoint", {
+          x: e.clientX,
+          y: e.clientY,
+          count: elements.length,
+          top: slice,
+        });
       }, true);
-      document.addEventListener("mousedown", (e) => {
+      if (!toolbarListenersBound) {
+        this.toolbar.addEventListener("click", (e) => {
+          const btn = e.target.closest("button[data-action]");
+          if (!btn) return;
+          const action = btn.getAttribute("data-action");
+          window.Reader3AnnotationUI?.handleAction?.(action);
+        });
+
+        this.colorRow?.addEventListener("click", (e) => {
+          const swatch = e.target.closest("button[data-color]");
+          if (!swatch) return;
+          const color = swatch.getAttribute("data-color");
+          window.Reader3AnnotationUI?.toggleMarkerAnnotation?.(color);
+        });
+
+        this.noteSave?.addEventListener("click", () => window.Reader3AnnotationUI?.saveNote?.());
+        this.noteCancel?.addEventListener("click", () => window.Reader3AnnotationUI?.closeNoteEditorIfOpen?.());
+
+        toolbarListenersBound = true;
+      }
+
+      this.contentDocument.addEventListener("mousedown", (e) => {
         const t = e.target;
         if (this.toolbar?.contains(t) || this.noteEditor?.contains(t)) return;
         this.closeSelectionToolbarIfOpen();
       });
 
-      this.toolbar.addEventListener("click", (e) => {
-        const btn = e.target.closest("button[data-action]");
-        if (!btn) return;
-        const action = btn.getAttribute("data-action");
-        this.handleAction(action);
-      });
-
-      this.colorRow?.addEventListener("click", (e) => {
-        const swatch = e.target.closest("button[data-color]");
-        if (!swatch) return;
-        const color = swatch.getAttribute("data-color");
-        this.toggleMarkerAnnotation(color);
-      });
-
-      this.noteSave?.addEventListener("click", () => this.saveNote());
-      this.noteCancel?.addEventListener("click", () => this.closeNoteEditorIfOpen());
-
-      this.contentEl.addEventListener("mouseover", (e) => this.onHover(e));
-      this.contentEl.addEventListener("mouseout", () => this.hideTooltip());
+      this.contentDocument.addEventListener("mouseover", (e) => this.onHover(e));
+      this.contentDocument.addEventListener("mouseout", () => this.hideTooltip());
 
       // Click on annotated text to select and show toolbar
-      this.contentEl.addEventListener("click", (e) => this.onAnnotationClick(e));
+      this.contentDocument.addEventListener("click", (e) => this.onAnnotationClick(e));
 
       this.renderer.loadAndRender().catch(() => {});
     }
@@ -429,7 +527,7 @@
       console.log("[Annotations] onAnnotationClick", { hasMark: !!mark });
       if (!mark) return;
 
-      const sel = window.getSelection();
+      const sel = this.contentWindow?.getSelection?.();
       console.log("[Annotations] selection", { text: sel ? sel.toString() : "" });
 
       // Get annotation info and meta
@@ -440,7 +538,7 @@
 
       // Select the text in the mark element
       if (sel) {
-        const range = document.createRange();
+        const range = this.contentDocument.createRange();
         range.selectNodeContents(mark);
         sel.removeAllRanges();
         sel.addRange(range);
@@ -449,7 +547,7 @@
       console.log("[Annotations] range set", { hasRange: !!this.currentRange });
 
       // Position and show toolbar
-      const rect = mark.getBoundingClientRect();
+      const rect = offsetRect(mark.getBoundingClientRect(), this.frameEl);
       const toolbarHalfWidth = 200;
       const x = clamp(rect.left + rect.width / 2, 20 + toolbarHalfWidth, window.innerWidth - 20 - toolbarHalfWidth);
       const y = clamp(rect.top - 12, 60, window.innerHeight - 20);
@@ -481,10 +579,10 @@
       this.noteTextarea.value = noteText;
 
       // Position the note editor
-      const sel = window.getSelection();
+      const sel = this.contentWindow?.getSelection?.();
       if (!sel || sel.rangeCount < 1) return;
       const range = sel.getRangeAt(0);
-      const rect = range.getBoundingClientRect();
+      const rect = offsetRect(range.getBoundingClientRect(), this.frameEl);
 
       const editorWidth = 320;
       const editorHeight = 180;
@@ -542,7 +640,7 @@
         console.log('[Annotations] contentEl not found');
         return;
       }
-      const sel = window.getSelection();
+      const sel = this.contentWindow?.getSelection?.();
       console.log('[Annotations] Selection object:', sel);
       if (!sel || sel.rangeCount < 1) {
         console.log('[Annotations] No selection or rangeCount < 1');
@@ -557,15 +655,15 @@
       const common = range.commonAncestorContainer;
       const within = common.nodeType === Node.ELEMENT_NODE ? common : common.parentElement;
       console.log('[Annotations] Common ancestor:', common, 'Within element:', within);
-      if (!within || !within.closest(".book-content")) {
-        console.log('[Annotations] Selection not within .book-content');
+      if (!within || !this.contentEl.contains(within)) {
+        console.log('[Annotations] Selection not within content container');
         return;
       }
       this.currentRange = range;
       this.setCurrentAnnotations(this.getAnnotationMetaForRange(range));
       this.editingNoteId = null;
 
-      const rect = range.getBoundingClientRect();
+      const rect = offsetRect(range.getBoundingClientRect(), this.frameEl);
       console.log('[Annotations] Selection rect:', rect);
       // Horizontal toolbar is approximately 400px wide, centered via transform
       const toolbarHalfWidth = 200;
@@ -698,7 +796,7 @@
     }
 
     copySelection() {
-      const sel = window.getSelection();
+      const sel = this.contentWindow?.getSelection?.();
       const text = sel ? String(sel.toString() || "") : "";
       if (!text.trim()) return;
       navigator.clipboard?.writeText?.(text).catch(() => {});
@@ -708,7 +806,7 @@
     openNoteEditor() {
       if (!this.currentRange || !this.noteEditor) return;
       this.editingNoteId = null;
-      const rect = this.currentRange.getBoundingClientRect();
+      const rect = offsetRect(this.currentRange.getBoundingClientRect(), this.frameEl);
       const editorWidth = 320; // matches CSS width
       const editorHeight = 180; // approximate height
 
@@ -790,6 +888,19 @@
       const prefix = idx.text.slice(Math.max(0, s - 50), s);
       const suffix = idx.text.slice(e, Math.min(idx.text.length, e + 50));
 
+      let cfi = null;
+      const contents = window.Reader3Epub?.getContents?.();
+      if (contents && typeof contents.cfiFromRange === "function") {
+        try {
+          cfi = contents.cfiFromRange(this.currentRange);
+        } catch {
+          cfi = null;
+        }
+      }
+      if (typeof cfi !== "string" || !cfi.startsWith("epubcfi(")) {
+        cfi = null;
+      }
+
       const payload = {
         type: extra.type,
         color: extra.color || null,
@@ -797,6 +908,7 @@
         prefix,
         suffix,
         position: s,
+        cfi,
         note_text: extra.note_text || null,
       };
       console.log('[Annotations] createAnnotation: sending payload:', payload);
@@ -838,7 +950,8 @@
       if (!mark) return;
       const text = mark.getAttribute("data-note-text");
       if (!text) return;
-      this.showTooltip(text, mark.getBoundingClientRect());
+      const rect = offsetRect(mark.getBoundingClientRect(), this.frameEl);
+      this.showTooltip(text, rect);
     }
 
     showTooltip(text, rect) {
@@ -857,11 +970,36 @@
     }
   }
 
-  document.addEventListener("DOMContentLoaded", () => {
+  function initAnnotations() {
+    if (window.Reader3AnnotationUI) return; // Already initialized
+
+    const initForContent = (contentEl, frameEl) => {
+      if (!contentEl) return;
+      const ui = new AnnotationUI(contentEl, frameEl);
+      ui.init();
+      window.Reader3AnnotationUI = ui;
+    };
+
+    // For epub.js rendering: use Reader3Epub bridge
+    if (window.Reader3Epub && window.Reader3Epub.onContentsReady) {
+      window.Reader3Epub.onContentsReady((contents) => {
+        if (window.Reader3AnnotationUI) return; // Already initialized
+        const root = window.Reader3Epub.getContentRoot?.();
+        const frameEl = window.Reader3Epub.getFrameElement?.() || null;
+        initForContent(root, frameEl);
+      });
+      return;
+    }
+
+    // Fallback: use .book-content in main document
     const contentEl = document.querySelector(".book-content");
-    if (!contentEl) return;
-    const ui = new AnnotationUI(contentEl);
-    ui.init();
-    window.Reader3AnnotationUI = ui;
-  });
+    initForContent(contentEl, null);
+  }
+
+  // Initialize immediately if DOM is ready, otherwise wait for DOMContentLoaded
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initAnnotations);
+  } else {
+    initAnnotations();
+  }
 })();

@@ -46,7 +46,7 @@ This document consolidates research for the Library UI rebuild into a 3-pane lay
 - Use Python's `json` module for read/write
 - Atomic writes via write-to-temp + rename pattern
 - Add validation on load (schema_version check)
-- Update `.gitignore` and `docs/technical-detail/storage-and-data-locations.md`
+- Update `.gitignore` and `docs/storage-and-data-locations.md`
 - Validate collection names (trim, 1–60 chars, allowed chars, case-insensitive uniqueness) and HTML-escape names on render (XSS-safe)
 
 ---

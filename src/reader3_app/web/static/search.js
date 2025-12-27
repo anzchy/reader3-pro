@@ -1,4 +1,8 @@
 function getReaderContext() {
+  const ctx = window.Reader3Ctx || {};
+  if (ctx.bookId && Number.isFinite(ctx.chapterIndex)) {
+    return { bookId: ctx.bookId, chapterIndex: Number(ctx.chapterIndex) };
+  }
   const parts = window.location.pathname.split("/").filter(Boolean);
   // /read/{book_id}/{chapter_index}
   if (parts.length >= 3 && parts[0] === "read") {
@@ -122,9 +126,10 @@ function findAllOccurrencesInTextNode(text, term, caseSensitive) {
 function applyHighlights(container, term, caseSensitive) {
   if (!term) return [];
   clearExistingMarks(container);
+  const doc = container?.ownerDocument || document;
 
   const marks = [];
-  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
+  const walker = doc.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
       if (!node.nodeValue) return NodeFilter.FILTER_REJECT;
       if (!node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
@@ -143,18 +148,18 @@ function applyHighlights(container, term, caseSensitive) {
     const hits = findAllOccurrencesInTextNode(text, term, caseSensitive);
     if (!hits.length) continue;
 
-    const frag = document.createDocumentFragment();
+    const frag = doc.createDocumentFragment();
     let cursor = 0;
     for (const [start, end] of hits) {
-      if (start > cursor) frag.appendChild(document.createTextNode(text.slice(cursor, start)));
-      const mark = document.createElement("mark");
+      if (start > cursor) frag.appendChild(doc.createTextNode(text.slice(cursor, start)));
+      const mark = doc.createElement("mark");
       mark.className = "search-match";
       mark.textContent = text.slice(start, end);
       frag.appendChild(mark);
       marks.push(mark);
       cursor = end;
     }
-    if (cursor < text.length) frag.appendChild(document.createTextNode(text.slice(cursor)));
+    if (cursor < text.length) frag.appendChild(doc.createTextNode(text.slice(cursor)));
     node.parentNode.replaceChild(frag, node);
   }
 
@@ -169,6 +174,13 @@ function scrollToOccurrence(marks, occurrenceIndex) {
   const target = marks[idx];
   target.classList.add("search-current");
   target.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function getContentRoot() {
+  if (window.Reader3Epub && window.Reader3Epub.getContentRoot) {
+    return window.Reader3Epub.getContentRoot();
+  }
+  return document.querySelector(".book-content");
 }
 
 class ReaderSearchUI {
@@ -186,11 +198,28 @@ class ReaderSearchUI {
     this.status = document.getElementById("reader-search-status");
     this.list = document.getElementById("reader-search-results");
     this.panel = document.getElementById("reader-search-panel");
-    this.content = document.querySelector(".book-content");
+    this.content = getContentRoot();
+    this.pendingHighlight = null;
   }
 
   init() {
-    if (!this.bookId || !this.input || !this.content || !this.drawer || !this.toggleBtn) return;
+    if (!this.bookId || !this.input || !this.drawer || !this.toggleBtn) return;
+
+    if (!this.content && window.Reader3Epub && window.Reader3Epub.onContentsReady) {
+      window.Reader3Epub.onContentsReady(() => {
+        this.content = getContentRoot();
+        if (this.input.value.trim()) {
+          const pending = this.pendingHighlight;
+          this.performSearch().then(() => {
+            if (pending) {
+              this.highlightFromUrl(pending.term, pending.occurrence);
+              this.pendingHighlight = null;
+            }
+          });
+        }
+      });
+    }
+
 
     this.toggleBtn.addEventListener("click", () => this.openDrawer());
     this.closeBtn?.addEventListener("click", () => this.closeDrawer());
@@ -224,6 +253,7 @@ class ReaderSearchUI {
     if (qp.q) {
       this.input.value = qp.q;
       this.openDrawer();
+      this.pendingHighlight = { term: qp.q, occurrence: qp.occurrence };
       this.performSearch().then(() => {
         const occ = qp.occurrence == null ? null : Number(qp.occurrence);
         this.highlightFromUrl(qp.q, occ);
@@ -269,7 +299,7 @@ class ReaderSearchUI {
     this.input.value = "";
     this.status.textContent = "";
     this.list.innerHTML = "";
-    clearExistingMarks(this.content);
+    if (this.content) clearExistingMarks(this.content);
     if (clearSession) {
       try {
         sessionStorage.removeItem(sessionKey(this.bookId));
@@ -283,6 +313,10 @@ class ReaderSearchUI {
     const q = this.input.value.trim();
     if (!q) {
       this.clearSearch(false);
+      return;
+    }
+    if (!this.content) {
+      this.status.textContent = "Content not ready";
       return;
     }
 
@@ -414,6 +448,10 @@ class ReaderSearchUI {
     const ctx = getReaderContext();
     if (!ctx.bookId || ctx.chapterIndex == null) return;
     const caseSensitive = Boolean(this.caseBox?.checked);
+    if (!this.content) {
+      this.content = getContentRoot();
+    }
+    if (!this.content) return;
 
     try {
       const resp = await fetch(`/api/highlight/${encodeURIComponent(ctx.bookId)}/${encodeURIComponent(String(ctx.chapterIndex))}`, {
