@@ -7,13 +7,13 @@
 
 Transform the reader page from a narrow card-based layout (`max-width: 768px`) to a full-screen paginated reading experience. Content will fill the viewport width with 80px margins on each side, be automatically paginated horizontally using CSS Multi-column Layout, and support keyboard/click navigation between pages with a reading progress indicator.
 
-This is a **pure frontend feature** (CSS + JavaScript changes only) with no backend modifications required.
+Phase 5 adds epub.js rendering (iframe) and requires backend support for serving `book.epub`, so the plan now spans both frontend and backend changes. `pagination.js` is retained only as legacy (not loaded by the reader).
 
 ## Technical Context
 
 **Language/Version**: JavaScript ES6+, CSS3
-**Primary Dependencies**: Vanilla JS (no frameworks), existing reader.html template
-**Storage**: N/A (frontend-only, no persistent state changes)
+**Primary Dependencies**: Vanilla JS (no frameworks), epub.js (static/vendor), existing reader.html template
+**Storage**: `book.epub` copy stored under `books/<book_id>_data/` for epub.js rendering; annotations add optional `cfi`
 **Testing**: Manual browser testing across Chrome 90+, Safari 14+, Firefox 88+, Edge 90+
 **Target Platform**: Desktop browsers (≥600px viewport), mobile fallback to vertical scroll
 **Project Type**: Web application (frontend modification)
@@ -54,13 +54,17 @@ specs/006-hot-fix/
 ```text
 src/reader3_app/web/
 ├── templates/
-│   └── reader.html          # UPDATE: CSS layout, add pagination container
+│   └── reader.html          # UPDATE: epub viewer container + renderer bootstrapping
 └── static/
-    └── js/
-        └── pagination.js    # NEW: Pagination logic and navigation
+    ├── js/
+    │   ├── epub-renderer.js # NEW: epub.js integration + iframe event bridge
+    │   └── pagination.js    # Legacy pagination (not loaded by reader.html)
+    └── vendor/
+        ├── epub.min.js
+        └── jszip.min.js
 ```
 
-**Structure Decision**: Minimal changes - one template update, one new JS file. Follows existing project structure.
+**Structure Decision**: epub.js integration requires a new renderer module, reader template updates, and server support for serving `book.epub`, while keeping existing panels and annotations intact.
 
 ## Phase 0: Research
 
@@ -348,26 +352,23 @@ Issue 1 (First Page Fix) → Issue 3 (Annotations) → Issue 2 (AI Panel) → Is
 
 Replace direct HTML injection with epub.js rendering inside an isolated iframe. This reduces style interference from EPUB content and stabilizes annotation interactions (click-to-select, selection toolbar, note editing).
 
-### Technical Approach
+### Technical Approach (Implemented)
 
-1. **Add epub.js dependency**
-   - Include a pinned version under `src/reader3_app/web/static/vendor/` or via a local bundle.
+1. **epub.js dependency**
+   - Use `src/reader3_app/web/static/vendor/epub.min.js` + `jszip.min.js`.
 2. **Isolated rendering container**
-   - Replace the `.book-content` direct HTML injection with an epub.js `Rendition` mounted to a dedicated container.
-   - Use iframe `srcdoc` or epub.js built-in iframe to isolate styles.
-3. **Annotation bridge**
-   - Move annotation DOM operations into the iframe document.
-   - Expose selection ranges from iframe to parent via `postMessage` or a direct API hook.
-   - Keep annotation CRUD via existing `/api/notes` endpoints.
-4. **Pagination strategy**
-   - Decide between epub.js pagination (preferred) or custom pagination integration.
-   - If using epub.js pagination, deprecate `pagination.js` logic and re-implement progress tracking.
-5. **Search integration**
-   - Move in-chapter highlighting to the iframe document.
-   - Keep library search API unchanged.
-6. **TOC navigation**
-   - Map TOC entries to epub.js spine locations.
-   - Ensure Next/Previous navigation uses epub.js spine indices.
+   - Replace direct HTML injection with epub.js `Rendition` mounted to `#epub-viewer`.
+   - epub.js renders into its own iframe so EPUB styles do not leak.
+3. **Renderer module**
+   - `src/reader3_app/web/static/js/epub-renderer.js` boots epub.js, updates progress, and exposes `window.Reader3Epub` APIs.
+4. **Annotation bridge**
+   - Annotations read selection/DOM from the iframe via `Reader3Epub` helpers.
+   - `reader3:content:rendered` and `reader3:chapter:change` events trigger re-apply.
+5. **Pagination strategy**
+   - epub.js pagination is the source of truth; `pagination.js` is legacy.
+6. **Backend support**
+   - Ingestion copies `book.epub` into `books/<book_id>_data/`.
+   - Server serves `/read/{book_id}/book.epub` for the renderer.
 
 ### Decision Summary (Confirmed)
 
@@ -380,8 +381,9 @@ Replace direct HTML injection with epub.js rendering inside an isolated iframe. 
 ### Data Flow
 
 ```
-EPUB (book.pkl) -> reader.html -> epub.js Rendition (iframe)
-                               -> annotation bridge -> /api/notes
+EPUB (book.epub) -> epub-renderer.js -> epub.js Rendition (iframe)
+book.pkl -> reader.html context -> TOC/search/notes grouping
+iframe selection -> annotations.js -> /api/notes
 ```
 
 ### Compatibility Notes
@@ -402,4 +404,4 @@ _Plan created: 2025-12-27_
 _Phase 2 Status: Implemented_
 _Phase 3 Status: Implemented_
 _Phase 4 Status: Implemented_
-_Phase 5 Status: Planned_
+_Phase 5 Status: Implemented_

@@ -14,8 +14,8 @@ This directory collects implementation notes and “where things live” referen
 ## Recent updates
 
 - EPUB renderer now stores the original file at `books/{book_id}/book.epub` (details in storage & data locations).
-- Annotations now support an optional `cfi` anchor field (details in storage & data locations).
-- Reader rendering now uses `book.epub` on the frontend, with `book.pkl` reserved for metadata/TOC/search.
+- Reader rendering now uses epub.js in an iframe (`/static/js/epub-renderer.js`), with `book.pkl` reserved for metadata/TOC/search.
+- Annotations now support an optional `cfi` anchor field and color for underline/wavy (details in storage & data locations).
 
 ## Update Rule (project convention)
 

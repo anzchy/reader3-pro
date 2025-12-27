@@ -2,7 +2,7 @@
 
 **Feature Branch**: `006-hot-fix`
 **Created**: 2025-12-27
-**Status**: Implemented (Phase 1-4 Complete)
+**Status**: Implemented (Phase 1-5 Complete; post-refactor fixes tracked in tasks)
 **Input**: User description: "Reader page 目前的章节显示不是 full screen，两边有大量的空白，而且内容没有自动分页。期望效果是每一个 section 内容根据浏览器页面自动分页，两边各留出 80px 的空白。"
 
 ## Overview
@@ -420,6 +420,13 @@ Render EPUB content using a dedicated renderer (epub.js) inside an isolated cont
 - **Pagination**: Use epub.js pagination and update progress tracking accordingly.
 - **Reading settings**: Keep existing font/spacing UI, inject via epub.js themes.
 - **Search**: Keep DOM-based search, target the iframe document.
+
+### Implementation Notes (Current)
+
+- epub.js renderer is implemented in `src/reader3_app/web/static/js/epub-renderer.js` and mounts into `#epub-viewer` in `reader.html`.
+- Reader template passes `epub_url` and availability flags via `Reader3Ctx`; server serves `/read/{book_id}/book.epub`.
+- Annotations use epub.js CFI anchors when available and fall back to quote/prefix/suffix matching; rendering runs in the iframe document.
+- Reader emits `reader3:content:rendered` and `reader3:chapter:change` events so annotations/search can re-apply per section.
 
 ### Data Storage Impact
 

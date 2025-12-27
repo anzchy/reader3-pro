@@ -635,10 +635,10 @@
         #annotation-toolbar {
             position: fixed;
             display: none;
-            flex-direction: row;
+            flex-direction: column;
             align-items: center;
-            gap: 2px;
-            padding: 6px 8px;
+            gap: 8px;
+            padding: 10px 12px;
             background-color: var(--dedao-card);
             border-radius: var(--dedao-radius-lg);
             box-shadow: var(--dedao-shadow-lg);
@@ -647,6 +647,12 @@
 
         #annotation-toolbar.is-visible {
             display: flex;
+        }
+
+        .anno-actions {
+            display: flex;
+            align-items: center;
+            gap: 2px;
         }
 
         .anno-btn {
@@ -679,15 +685,11 @@
         }
 
         .anno-color-row {
-            display: none;
-            gap: 6px;
-            padding: 8px 4px;
-            border-top: 1px solid var(--dedao-border);
-            margin-top: 4px;
-        }
-
-        .anno-color-row.is-visible {
             display: flex;
+            gap: 6px;
+            padding: 4px 2px;
+            border-radius: 999px;
+            background: var(--dedao-bg);
         }
 
         .anno-color {
@@ -698,10 +700,26 @@
             cursor: pointer;
             transition: transform var(--dedao-transition-fast);
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+            position: relative;
         }
 
         .anno-color:hover {
             transform: scale(1.15);
+        }
+
+        .anno-color.is-selected {
+            box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.6);
+        }
+
+        .anno-color.is-selected::after {
+            content: "✓";
+            position: absolute;
+            inset: 0;
+            display: grid;
+            place-items: center;
+            color: rgba(15, 23, 42, 0.85);
+            font-size: 13px;
+            font-weight: 700;
         }
 
         .anno-color[data-color="yellow"] { background-color: var(--dedao-highlight-yellow); }
@@ -1578,18 +1596,20 @@
 
     <!-- Annotation Toolbar -->
     <div id="annotation-toolbar" role="toolbar" aria-hidden="true">
-        <button type="button" class="anno-btn" data-action="copy">Copy</button>
-        <button type="button" class="anno-btn" data-action="marker">Marker</button>
-        <button type="button" class="anno-btn" data-action="wavy">Wavy</button>
-        <button type="button" class="anno-btn" data-action="underline">Underline</button>
-        <button type="button" class="anno-btn" data-action="delete">Delete</button>
-        <button type="button" class="anno-btn" data-action="note">Add Note</button>
-        <button type="button" class="anno-btn" data-action="ask_ai">Ask AI</button>
         <div class="anno-color-row" id="anno-color-row" aria-label="Marker colors">
             <button type="button" class="anno-color" data-color="yellow" aria-label="yellow"></button>
             <button type="button" class="anno-color" data-color="green" aria-label="green"></button>
             <button type="button" class="anno-color" data-color="pink" aria-label="pink"></button>
             <button type="button" class="anno-color" data-color="blue" aria-label="blue"></button>
+        </div>
+        <div class="anno-actions" role="group" aria-label="Annotation actions">
+            <button type="button" class="anno-btn" data-action="copy">Copy</button>
+            <button type="button" class="anno-btn" data-action="marker">Marker</button>
+            <button type="button" class="anno-btn" data-action="wavy">Wavy</button>
+            <button type="button" class="anno-btn" data-action="underline">Underline</button>
+            <button type="button" class="anno-btn" data-action="delete">Delete</button>
+            <button type="button" class="anno-btn" data-action="note">Add Note</button>
+            <button type="button" class="anno-btn" data-action="ask_ai">Ask AI</button>
         </div>
     </div>
 
@@ -1921,6 +1941,10 @@
                 closePopup();
             }
         });
+
+        // Close when reader content is clicked (iframe) or Escape is pressed inside iframe
+        window.addEventListener('reader3:content:click', closePopup);
+        window.addEventListener('reader3:escape', closePopup);
 
         // Font size controls
         if (fontSizeDecrease) {

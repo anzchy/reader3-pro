@@ -138,6 +138,10 @@
         text-decoration-color: #f97316;
         text-underline-offset: 3px;
       }
+      mark.annotation.annotation--underline.annotation--yellow { text-decoration-color: rgba(251, 191, 36, 0.95); }
+      mark.annotation.annotation--underline.annotation--green { text-decoration-color: rgba(74, 222, 128, 0.95); }
+      mark.annotation.annotation--underline.annotation--pink { text-decoration-color: rgba(248, 113, 113, 0.95); }
+      mark.annotation.annotation--underline.annotation--blue { text-decoration-color: rgba(96, 165, 250, 0.95); }
       mark.annotation.annotation--wavy {
         background: transparent !important;
         text-decoration: underline wavy;
@@ -145,6 +149,10 @@
         text-decoration-color: #84cc16;
         text-underline-offset: 3px;
       }
+      mark.annotation.annotation--wavy.annotation--yellow { text-decoration-color: rgba(251, 191, 36, 0.95); }
+      mark.annotation.annotation--wavy.annotation--green { text-decoration-color: rgba(74, 222, 128, 0.95); }
+      mark.annotation.annotation--wavy.annotation--pink { text-decoration-color: rgba(248, 113, 113, 0.95); }
+      mark.annotation.annotation--wavy.annotation--blue { text-decoration-color: rgba(96, 165, 250, 0.95); }
       mark.search-match {
         background: #ffe58f;
         padding: 0 2px;
@@ -240,6 +248,23 @@
   }
 
   rendition.on("rendered", (section, contents) => {
+    if (contents?.document && !contents.document.__reader3Bound) {
+      contents.document.__reader3Bound = true;
+      contents.document.addEventListener("click", () => {
+        window.dispatchEvent(new CustomEvent("reader3:content:click"));
+      });
+      contents.document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          window.dispatchEvent(new CustomEvent("reader3:escape"));
+        }
+      });
+    }
+    if (contents?.document && !contents.document.__reader3NavBound) {
+      contents.document.__reader3NavBound = true;
+      contents.document.addEventListener("keydown", (e) => {
+        handleNavKey(e);
+      });
+    }
     const bodyText = contents?.document?.body?.textContent || "";
     console.log(`${logPrefix} rendered`, {
       sectionHref: section?.href,
@@ -262,6 +287,9 @@
     currentContents = contents || null;
     ensureContentStyles(contents);
     notifyContentsReady(contents);
+    window.dispatchEvent(new CustomEvent("reader3:content:rendered", {
+      detail: { chapterIndex: currentSectionIndex },
+    }));
   });
 
   rendition.on("relocated", (location) => updateProgress(location));
@@ -295,15 +323,36 @@
     });
   }
 
-  document.addEventListener("keydown", (e) => {
-    if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+  function handleNavKey(e) {
+    if (e.defaultPrevented) return false;
+    const target = e.target;
+    if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA") return false;
+    if (target?.isContentEditable) return false;
     if (e.key === "ArrowRight" || e.key === "PageDown") {
       e.preventDefault();
       rendition.next();
-    } else if (e.key === "ArrowLeft" || e.key === "PageUp") {
+      return true;
+    }
+    if (e.key === "ArrowLeft" || e.key === "PageUp") {
       e.preventDefault();
       rendition.prev();
+      return true;
     }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      displaySectionIndex(currentSectionIndex + 1);
+      return true;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      displaySectionIndex(currentSectionIndex - 1);
+      return true;
+    }
+    return false;
+  }
+
+  document.addEventListener("keydown", (e) => {
+    handleNavKey(e);
   });
 
   window.addEventListener("resize", () => {

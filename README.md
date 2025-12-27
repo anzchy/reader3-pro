@@ -17,6 +17,15 @@ This project is an enhanced version (thus add `pro` to repo name) of Andrie Karp
 3. `src/reader3_app/web/server.py` serves the Library + Reader UI, uses `book.pkl` for metadata/TOC/search, and passes the EPUB URL to the frontend.
 4. The reader page loads `book.epub` in the browser via epub.js and renders the chapter content inside an iframe.
 
+#### Reader Navigation & Annotations
+
+- **Keyboard navigation**: Left/Right arrow keys turn pages inside the current chapter. Up/Down arrow keys move to previous/next chapter.
+- **TOC/Notes/Search/AI**: Use the right toolbar buttons to open panels; click the reading area or press `Esc` to close.
+- **Mark text**: Select text to show the annotation toolbar, pick a color, then click Marker / Underline / Wavy to apply.
+- **Reopen annotations**: Click existing highlighted text to reopen the toolbar for edits or deletion.
+- **Add notes**: Select text, choose color, click Add Note, then save.
+- **Unmark**: Select the annotated text and click Delete to remove the annotation.
+
 #### Search (Keyword + RAG/Semantic)
 
 - **Keyword search** scans `ChapterContent.text` with Latin diacritic normalization (e.g. `café` → `cafe`) and returns matches with context.

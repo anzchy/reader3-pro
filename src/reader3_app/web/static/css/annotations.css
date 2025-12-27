@@ -6,12 +6,19 @@
   border: 1px solid rgba(0, 0, 0, 0.10);
   border-radius: 14px;
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.18);
-  padding: 8px;
+  padding: 10px 12px;
   font-family: -apple-system, system-ui, sans-serif;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
 }
 
 #annotation-toolbar.is-open,
 #annotation-toolbar.is-visible {
+  display: flex;
+}
+
+.anno-actions {
   display: flex;
   gap: 6px;
   align-items: center;
@@ -32,14 +39,11 @@
 }
 
 .anno-color-row {
-  display: none;
-  gap: 6px;
-  margin-left: 6px;
-}
-
-.anno-color-row.is-open,
-.anno-color-row.is-visible {
   display: flex;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 999px;
+  background: rgba(17, 24, 39, 0.05);
 }
 
 .anno-color {
@@ -48,6 +52,22 @@
   border-radius: 9px;
   border: 1px solid rgba(0, 0, 0, 0.14);
   cursor: pointer;
+  position: relative;
+}
+
+.anno-color.is-selected {
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.6);
+}
+
+.anno-color.is-selected::after {
+  content: "✓";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: rgba(17, 24, 39, 0.9);
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .anno-color[data-color="yellow"] {
@@ -162,6 +182,11 @@ mark.annotation.annotation--underline {
   text-underline-offset: 3px;
 }
 
+mark.annotation.annotation--underline.annotation--yellow { text-decoration-color: rgba(251, 191, 36, 0.95); }
+mark.annotation.annotation--underline.annotation--green { text-decoration-color: rgba(74, 222, 128, 0.95); }
+mark.annotation.annotation--underline.annotation--pink { text-decoration-color: rgba(248, 113, 113, 0.95); }
+mark.annotation.annotation--underline.annotation--blue { text-decoration-color: rgba(96, 165, 250, 0.95); }
+
 mark.annotation.annotation--wavy {
   background: transparent !important;
   text-decoration: underline wavy;
@@ -169,6 +194,11 @@ mark.annotation.annotation--wavy {
   text-decoration-color: #84cc16; /* Lime green wavy */
   text-underline-offset: 3px;
 }
+
+mark.annotation.annotation--wavy.annotation--yellow { text-decoration-color: rgba(251, 191, 36, 0.95); }
+mark.annotation.annotation--wavy.annotation--green { text-decoration-color: rgba(74, 222, 128, 0.95); }
+mark.annotation.annotation--wavy.annotation--pink { text-decoration-color: rgba(248, 113, 113, 0.95); }
+mark.annotation.annotation--wavy.annotation--blue { text-decoration-color: rgba(96, 165, 250, 0.95); }
 
 mark.annotation.annotation--note {
   cursor: pointer;

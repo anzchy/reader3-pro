@@ -31,6 +31,34 @@
     return true;
   }
 
+  function closeAllPanels() {
+    const closed = [closeSearchDrawer(), closeAiPanel()];
+    resetFocusAfterClose();
+    return closed.some(Boolean);
+  }
+
+  function isInside(el, selectors) {
+    if (!el) return false;
+    return selectors.some((sel) => el.closest(sel));
+  }
+
+  function resetFocusAfterClose() {
+    const active = document.activeElement;
+    if (!active || active === document.body) return;
+    const focusTargets = [
+      "#toc-mode",
+      "#notes-mode",
+      "#reader-search-drawer",
+      "#reader-ai-panel",
+      "#font-settings-popup",
+      "#annotation-toolbar",
+      "#note-editor",
+    ];
+    if (active.closest && focusTargets.some((sel) => active.closest(sel))) {
+      active.blur();
+    }
+  }
+
   class RightToolbar {
     constructor() {
       this.btnToc = qs("reader-toc-toggle");
@@ -65,6 +93,49 @@
         },
         true
       );
+
+      document.addEventListener(
+        "click",
+        (e) => {
+          const target = e.target;
+          const ignoreSelectors = [
+            "#toc-mode",
+            "#notes-mode",
+            "#reader-search-drawer",
+            "#reader-ai-panel",
+            "#annotation-toolbar",
+            "#note-editor",
+            "#right-toolbar",
+            "#reader-toc-toggle",
+            "#reader-search-toggle",
+            "#reader-ai-toggle",
+            "#reader-notes-toggle",
+            "#font-settings-popup",
+            "#reader-font-toggle",
+          ];
+          if (isInside(target, ignoreSelectors)) return;
+          const closedPanels = closeAllPanels();
+          const closedModes = this.close("toc") || this.close("notes");
+          if (closedPanels || closedModes) {
+            e.preventDefault();
+          }
+        },
+        true
+      );
+
+      window.addEventListener("reader3:content:click", () => {
+        closeAllPanels();
+        this.close("toc");
+        this.close("notes");
+        resetFocusAfterClose();
+      });
+
+      window.addEventListener("reader3:escape", () => {
+        if (closeAllPanels()) return;
+        this.close("toc");
+        this.close("notes");
+        resetFocusAfterClose();
+      });
 
       const watch = (el) => {
         if (!el) return;
@@ -101,7 +172,10 @@
             e.stopPropagation();
             return;
           }
-          // Let Search/AI handle their own Esc, unless nothing else is open.
+          if (closeAllPanels()) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
         },
         true
       );
@@ -169,6 +243,8 @@
     }
 
     close(mode) {
+      const wasTocOpen = isOpen(this.tocMode);
+      const wasNotesOpen = isOpen(this.notesMode);
       if (mode === "toc") setOpen(this.tocMode, false);
       if (mode === "notes") setOpen(this.notesMode, false);
 
@@ -177,7 +253,10 @@
         this._restoreScroll();
       }
       this._syncActive();
-      return true;
+      resetFocusAfterClose();
+      if (mode === "toc") return wasTocOpen;
+      if (mode === "notes") return wasNotesOpen;
+      return false;
     }
 
     _syncActive() {

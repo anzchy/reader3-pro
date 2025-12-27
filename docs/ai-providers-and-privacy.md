@@ -10,6 +10,7 @@
 In this project, Q&A/summary are implemented as **RAG** by default:
 
 1. Server retrieves top‑k relevant chunks from the local index at `books/{book_id}/chroma_db/`
+   - `book_id` is the processed folder name (e.g. `dracula_data`) under `books/`
 2. Server builds a prompt using:
    - your question
    - recent chat history (client sends it)

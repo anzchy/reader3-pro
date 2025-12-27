@@ -584,7 +584,7 @@ def _refresh_orphaned_annotations(book_id: str, book: Book, annotations: list[An
 
 class CreateAnnotationRequest(BaseModel):
     type: str = Field(..., description="marker|wavy|underline|note")
-    color: Optional[str] = Field(default=None, description="yellow|green|pink|blue (marker/note only)")
+    color: Optional[str] = Field(default=None, description="yellow|green|pink|blue")
     quote: str
     prefix: str = ""
     suffix: str = ""
@@ -699,13 +699,10 @@ async def api_create_annotation(book_id: str, chapter_index: int, payload: Creat
         raise HTTPException(status_code=400, detail="Invalid type")
 
     color = payload.color
-    if ann_type in ("wavy", "underline"):
-        color = None
-    else:
-        if not color:
-            color = "yellow"
-        if color not in ("yellow", "green", "pink", "blue"):
-            raise HTTPException(status_code=400, detail="Invalid color")
+    if not color:
+        color = "yellow"
+    if color not in ("yellow", "green", "pink", "blue"):
+        raise HTTPException(status_code=400, detail="Invalid color")
 
     note_text = payload.note_text
     if ann_type == "note":

@@ -1,6 +1,7 @@
 (() => {
   let globalListenersBound = false;
   let toolbarListenersBound = false;
+  let renditionListenersBound = false;
 
   function qs(id) {
     return document.getElementById(id);
@@ -206,19 +207,30 @@
     const underline = anns.some((a) => a.type === "underline");
 
     let color = null;
+    let colorSource = null;
     let isNote = false;
     let noteText = null;
     if (notes.length) {
       isNote = true;
       color = notes[notes.length - 1].color || "yellow";
+      colorSource = "note";
       noteText = notes[notes.length - 1].note_text || null;
     } else if (markers.length) {
       color = markers[markers.length - 1].color || "yellow";
+      colorSource = "marker";
+    } else if (wavy || underline) {
+      const styled = anns.filter((a) => a.type === "wavy" || a.type === "underline");
+      const last = styled[styled.length - 1];
+      color = last?.color || "yellow";
+      colorSource = last?.type || "underline";
     }
 
     const classes = ["annotation"];
     if (color) {
-      classes.push("annotation--marker", `annotation--${color}`);
+      if (colorSource === "marker" || colorSource === "note") {
+        classes.push("annotation--marker");
+      }
+      classes.push(`annotation--${color}`);
     }
     if (wavy) classes.push("annotation--wavy");
     else if (underline) classes.push("annotation--underline");
@@ -303,6 +315,12 @@
 
     async loadAndRender() {
       const ctx = getReaderContext();
+      if (!this.contentEl && this.getContents) {
+        const contents = this.getContents();
+        if (contents?.document?.body) {
+          this.contentEl = contents.document.body;
+        }
+      }
       if (!ctx.bookId || ctx.chapterIndex == null || !this.contentEl) return;
       const resp = await fetch(`/api/notes/${encodeURIComponent(ctx.bookId)}/${encodeURIComponent(String(ctx.chapterIndex))}`);
       const data = await resp.json().catch(() => ({}));
@@ -312,14 +330,22 @@
     }
 
     render(annotations) {
+      const contents = this.getContents ? this.getContents() : null;
+      if (contents?.document?.body && this.contentEl?.ownerDocument !== contents.document) {
+        this.contentEl = contents.document.body;
+      }
+      if (!this.contentEl) return;
       clearExistingAnnotationMarks(this.contentEl);
       const doc = this.contentEl?.ownerDocument || document;
-      const contents = this.getContents ? this.getContents() : null;
 
+      const textAnnotations = [];
       const cfiAnnotations = annotations.filter((ann) => ann?.cfi);
       for (const ann of cfiAnnotations) {
         const range = rangeFromCfi(String(ann.cfi || ""), contents, doc);
-        if (!range) continue;
+        if (!range) {
+          textAnnotations.push(ann);
+          continue;
+        }
         const style = segmentStyle({ anns: [ann] });
         const mark = doc.createElement("mark");
         mark.className = style.classes.join(" ");
@@ -331,12 +357,13 @@
           const fragment = range.extractContents();
           mark.appendChild(fragment);
           range.insertNode(mark);
-        } catch {
-          // ignore invalid range wrapping
+        } catch (err) {
+          console.warn("[Annotations] failed to wrap CFI range, falling back to text match", err);
+          textAnnotations.push(ann);
         }
       }
 
-      const textAnnotations = annotations.filter((ann) => !ann?.cfi);
+      textAnnotations.push(...annotations.filter((ann) => !ann?.cfi));
       if (!textAnnotations.length) return;
 
       const idx = buildTextIndex(this.contentEl);
@@ -395,6 +422,8 @@
       this.currentAnnotationMeta = [];
       this.currentAnnotationIds = [];
       this.editingNoteId = null;
+      this.lastSelectionAt = 0;
+      this.selectedColor = "yellow";
       this.renderer = new AnnotationRenderer(contentEl, () => window.Reader3Epub?.getContents?.());
     }
 
@@ -454,13 +483,20 @@
           const swatch = e.target.closest("button[data-color]");
           if (!swatch) return;
           const color = swatch.getAttribute("data-color");
-          window.Reader3AnnotationUI?.toggleMarkerAnnotation?.(color);
+          window.Reader3AnnotationUI?.setSelectedColor?.(color);
         });
 
         this.noteSave?.addEventListener("click", () => window.Reader3AnnotationUI?.saveNote?.());
         this.noteCancel?.addEventListener("click", () => window.Reader3AnnotationUI?.closeNoteEditorIfOpen?.());
 
         toolbarListenersBound = true;
+      }
+
+      if (!renditionListenersBound && window.Reader3Epub?.rendition) {
+        window.Reader3Epub.rendition.on("selected", (cfiRange, contents) => {
+          window.Reader3AnnotationUI?.handleRenditionSelection?.(cfiRange, contents);
+        });
+        renditionListenersBound = true;
       }
 
       this.contentDocument.addEventListener("mousedown", (e) => {
@@ -475,6 +511,7 @@
       // Click on annotated text to select and show toolbar
       this.contentDocument.addEventListener("click", (e) => this.onAnnotationClick(e));
 
+      this.syncSelectedColor();
       this.renderer.loadAndRender().catch(() => {});
     }
 
@@ -613,8 +650,9 @@
     async toggleMarkerAnnotation(color) {
       if (!this.currentRange || !this.contentEl) return;
 
+      const selected = color || this.selectedColor || "yellow";
       // Check if there's existing marker annotation with same color
-      const existingIds = this.getExistingMarkerIds(color);
+      const existingIds = this.getExistingMarkerIds(selected);
 
       if (existingIds.length > 0) {
         // Delete existing marker annotations
@@ -622,8 +660,8 @@
         await this.deleteAnnotations(existingIds);
       } else {
         // Create new marker annotation
-        console.log('[Annotations] Creating new marker:', color);
-        await this.createAnnotation({ type: "marker", color });
+        console.log('[Annotations] Creating new marker:', selected);
+        await this.createAnnotation({ type: "marker", color: selected });
       }
     }
 
@@ -652,10 +690,60 @@
         console.log('[Annotations] Range is collapsed, ignoring');
         return;
       }
+      if (Date.now() - this.lastSelectionAt < 120) return;
+      this.handleSelectionRange(range);
+    }
+
+    handleRenditionSelection(cfiRange, contents) {
+      if (!cfiRange) return;
+      const doc = contents?.document || this.contentDocument;
+      if (contents?.document) {
+        this.contentDocument = contents.document;
+        this.contentWindow = contents.document.defaultView || window;
+        if (contents.document.body) {
+          this.contentEl = contents.document.body;
+        }
+        if (contents.document.defaultView?.frameElement) {
+          this.frameEl = contents.document.defaultView.frameElement;
+        }
+        if (this.renderer) {
+          this.renderer.contentEl = this.contentEl;
+        }
+      }
+      const range = rangeFromCfi(String(cfiRange), contents, doc);
+      if (!range) return;
+      const sel = doc?.defaultView?.getSelection?.();
+      if (sel) {
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+      this.lastSelectionAt = Date.now();
+      this.handleSelectionRange(range);
+    }
+
+    handleSelectionRange(range) {
+      if (!range || !this.contentEl) return;
+      const rangeDoc = range.commonAncestorContainer?.ownerDocument || this.contentDocument;
+      if (rangeDoc && this.contentDocument !== rangeDoc) {
+        this.contentDocument = rangeDoc;
+        this.contentWindow = rangeDoc.defaultView || window;
+      }
+      if (!this.contentEl || (rangeDoc && this.contentEl.ownerDocument !== rangeDoc)) {
+        this.contentEl = rangeDoc?.body || this.contentEl;
+        if (rangeDoc?.defaultView?.frameElement) {
+          this.frameEl = rangeDoc.defaultView.frameElement;
+        }
+        if (this.renderer) {
+          this.renderer.contentEl = this.contentEl;
+        }
+      }
       const common = range.commonAncestorContainer;
       const within = common.nodeType === Node.ELEMENT_NODE ? common : common.parentElement;
-      console.log('[Annotations] Common ancestor:', common, 'Within element:', within);
-      if (!within || !this.contentEl.contains(within)) {
+      console.log('[Annotations] Common ancestor:', common, 'Within element:', within, {
+        contentEl: this.contentEl?.tagName || null,
+        sameDoc: within?.ownerDocument === this.contentEl?.ownerDocument,
+      });
+      if (!within || !this.contentEl || !this.contentEl.contains(within)) {
         console.log('[Annotations] Selection not within content container');
         return;
       }
@@ -679,22 +767,28 @@
       this.toolbar.style.left = `${Math.round(x)}px`;
       this.toolbar.style.top = `${Math.round(y)}px`;
       this.toolbar.style.transform = "translate(-50%, -100%)";
-      this.hideColorRow();
+      this.syncSelectedColor();
     }
 
     closeSelectionToolbarIfOpen() {
       if (!this.toolbar?.classList.contains("is-visible")) return false;
       this.toolbar.classList.remove("is-visible");
-      this.hideColorRow();
       return true;
     }
 
-    showColorRow() {
-      this.colorRow?.classList.add("is-visible");
+    setSelectedColor(color) {
+      if (!color) return;
+      this.selectedColor = color;
+      this.syncSelectedColor();
     }
 
-    hideColorRow() {
-      this.colorRow?.classList.remove("is-visible");
+    syncSelectedColor() {
+      if (!this.colorRow) return;
+      const buttons = this.colorRow.querySelectorAll("button[data-color]");
+      buttons.forEach((btn) => {
+        const active = btn.getAttribute("data-color") === this.selectedColor;
+        btn.classList.toggle("is-selected", active);
+      });
     }
 
     closeNoteEditorIfOpen() {
@@ -710,7 +804,7 @@
       console.log('[Annotations] handleAction called with:', action);
       if (!action) return;
       if (action === "copy") return this.copySelection();
-      if (action === "marker") return this.showColorRow();
+      if (action === "marker") return this.toggleMarkerAnnotation(this.selectedColor);
       if (action === "wavy") {
         console.log('[Annotations] Toggle wavy annotation');
         return this.toggleAnnotation("wavy");
@@ -731,7 +825,14 @@
       if (!this.currentRange || !this.contentEl) return;
 
       // Check if there are existing annotations of this type covering the selection
-      const existingIds = this.getExistingAnnotationIds(type);
+      const selectedColor = this.selectedColor || "yellow";
+      const existingIds = this.getExistingAnnotationIds(type, selectedColor);
+      if (!existingIds.length) {
+        const anyIds = this.getExistingAnnotationIds(type);
+        if (anyIds.length) {
+          await this.deleteAnnotations(anyIds);
+        }
+      }
 
       if (existingIds.length > 0) {
         // Delete existing annotations of this type
@@ -740,7 +841,7 @@
       } else {
         // Create new annotation
         console.log('[Annotations] Creating new annotation:', type);
-        await this.createAnnotation({ type });
+        await this.createAnnotation({ type, color: selectedColor });
       }
     }
 
@@ -776,7 +877,6 @@
       }
 
       this.closeSelectionToolbarIfOpen();
-      this.hideColorRow();
       await this.renderer.loadAndRender().catch(() => {});
       this.setCurrentAnnotations([]);
       window.dispatchEvent(new CustomEvent("reader3:annotations:updated"));
@@ -858,7 +958,8 @@
       }
 
       // Otherwise create a new note annotation
-      await this.createAnnotation({ type: "note", color: "yellow", note_text: text });
+      const color = this.selectedColor || "yellow";
+      await this.createAnnotation({ type: "note", color, note_text: text });
       this.closeNoteEditorIfOpen();
     }
 
@@ -921,7 +1022,6 @@
       console.log('[Annotations] createAnnotation: response:', resp);
 
       this.closeSelectionToolbarIfOpen();
-      this.hideColorRow();
       await this.renderer.loadAndRender().catch(() => {});
 
       // Notify notes panel to refresh
@@ -980,12 +1080,34 @@
       window.Reader3AnnotationUI = ui;
     };
 
+    let refreshTimer = null;
+    const scheduleRefresh = () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => {
+        window.Reader3AnnotationUI?.renderer?.loadAndRender?.().catch(() => {});
+      }, 80);
+    };
+
+    window.addEventListener("reader3:content:rendered", scheduleRefresh);
+    window.addEventListener("reader3:chapter:change", scheduleRefresh);
+    window.addEventListener("reader3:annotations:updated", scheduleRefresh);
+
     // For epub.js rendering: use Reader3Epub bridge
     if (window.Reader3Epub && window.Reader3Epub.onContentsReady) {
-      window.Reader3Epub.onContentsReady((contents) => {
-        if (window.Reader3AnnotationUI) return; // Already initialized
+      window.Reader3Epub.onContentsReady(() => {
         const root = window.Reader3Epub.getContentRoot?.();
         const frameEl = window.Reader3Epub.getFrameElement?.() || null;
+        if (!root) return;
+        const ui = window.Reader3AnnotationUI;
+        if (ui) {
+          ui.contentEl = root;
+          ui.frameEl = frameEl;
+          ui.contentDocument = root.ownerDocument || document;
+          ui.contentWindow = ui.contentDocument.defaultView || window;
+          if (ui.renderer) ui.renderer.contentEl = root;
+          ui.renderer?.loadAndRender?.().catch(() => {});
+          return;
+        }
         initForContent(root, frameEl);
       });
       return;

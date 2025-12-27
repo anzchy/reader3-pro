@@ -39,8 +39,8 @@ class Annotation:
 
         if self.type in ("marker", "note") and self.color is None:
             self.color = "yellow"
-        if self.type in ("wavy", "underline"):
-            self.color = None
+        if self.type in ("wavy", "underline") and self.color is None:
+            self.color = "yellow"
 
         if len(self.prefix) > 50:
             self.prefix = self.prefix[-50:]

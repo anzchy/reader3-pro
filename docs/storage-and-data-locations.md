@@ -1,5 +1,9 @@
 # Storage & Data Locations
 
+## Book folder naming
+
+In this document, `book_id` refers to the processed folder name (e.g. `dracula_data`) stored under `books/`.
+
 ## Browser storage (IndexedDB)
 
 - **DB name**: `reader3_ai_assistant`
@@ -99,7 +103,7 @@ User-defined Collections are persisted on disk as a gitignored JSON file:
 The EPUB ingestion pipeline writes processed outputs per book:
 
 - **Pickled book**: `books/{book_id}/book.pkl` (parsed spine + metadata)
-- **Original EPUB copy**: `books/{book_id}/book.epub` (source file for epub.js rendering)
+- **Original EPUB copy**: `books/{book_id}/book.epub` (source file for epub.js rendering, served at `/read/{book_id}/book.epub`)
 - **Extracted images**: `books/{book_id}/images/`
 
 ## Reader rendering sources
@@ -113,7 +117,7 @@ Persistent highlights/underlines/notes are stored per book as JSON.
 
 - **File**: `books/{book_id}/notes.json`
 - **Schema**: `{ schema_version: 1, book_id, annotations: [...] }`
-- **Annotation fields**: `quote`, `prefix`, `suffix`, `position`, optional `cfi` (epub.js anchor)
+- **Annotation fields**: `quote`, `prefix`, `suffix`, `position`, optional `cfi` (epub.js anchor), optional `color` (marker/underline/wavy)
 
 ### Related API endpoints
 
