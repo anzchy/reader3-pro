@@ -57,6 +57,35 @@ Suggested mapping:
 - `../reader3-pro-wt/002`: AI assistant specs + later implementation
 - `../reader3-pro-wt/003`: book notes spec + later implementation
 
+#### 复制 Master 分支到 001 和 002 branch 的操作步骤
+
+你要的是：**001、002 两个分支都以 master 为起点创建**，并且分别检出到不同 worktree 目录。
+
+直接用 `-b`（创建新分支）+ 指定起点 `master`：
+
+```
+git worktree add -b 001-search-features ../reader3-pro-wt/001 master
+git worktree add -b 002-ai-assistant   ../reader3-pro-wt/002 master
+```
+
+含义：
+
+- 从 `master` 当前指向的提交创建新分支 `001-search-features`，并检出到 `../reader3-pro-wt/001`
+- 从 `master` 当前指向的提交创建新分支 `002-ai-assistant`，并检出到 `../reader3-pro-wt/002`
+
+> 这不是“复制 master 分支本身”，而是 **从 master 的 HEAD 分叉出两个新分支**（效果等同你理解的“从 master copy 出来”）。
+
+#### 如果分支已经存在（只想检出到 worktree）
+
+那就去掉 `-b`：
+
+```
+git worktree add ../reader3-pro-wt/001 001-search-features
+git worktree add ../reader3-pro-wt/002 002-ai-assistant
+```
+
+
+
 ---
 
 ## 2) Professional Parallel Workflow (Docs vs Code, Multi-Branch)

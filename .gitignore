@@ -31,4 +31,9 @@ wheels/
 
 .codex/
 
+<<<<<<< Updated upstream
 .moat/
+=======
+# Moat task system
+.moat/
+>>>>>>> Stashed changes
