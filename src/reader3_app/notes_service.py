@@ -70,3 +70,14 @@ def delete_annotation(books_dir: str, book_id: str, note_id: str) -> bool:
         return False
     save_annotations(books_dir, book_id, annotations)
     return True
+
+
+def update_annotation(books_dir: str, book_id: str, note_id: str, note_text: str) -> Annotation | None:
+    """Update note_text for an existing annotation. Returns updated annotation or None if not found."""
+    annotations = load_annotations(books_dir, book_id)
+    for ann in annotations:
+        if ann.id == note_id:
+            ann.note_text = note_text
+            save_annotations(books_dir, book_id, annotations)
+            return ann
+    return None

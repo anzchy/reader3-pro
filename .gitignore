@@ -30,3 +30,5 @@ wheels/
 .envrc
 
 .codex/
+
+.moat/

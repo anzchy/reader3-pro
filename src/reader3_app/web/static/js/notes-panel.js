@@ -34,8 +34,16 @@
       this.titleEl = qs("notes-title");
       this.progressEl = qs("notes-progress");
       this.countEl = qs("notes-count");
+      this.copyCountEl = qs("notes-copy-count");
       this.coverEl = qs("notes-cover-img");
       this.body = qs("notes-body");
+      this.copyBtn = qs("notes-copy-btn");
+      this.allAnnotations = [];
+
+      // Setup copy button handler
+      if (this.copyBtn) {
+        this.copyBtn.addEventListener("click", () => this.copyAllNotes());
+      }
     }
 
     open() {
@@ -77,7 +85,13 @@
       const data = await resp.json().catch(() => ({}));
       const groups = Array.isArray(data?.annotations_by_chapter) ? data.annotations_by_chapter : [];
       const totalCount = Number.isFinite(data?.total_count) ? Number(data.total_count) : 0;
+
+      // Update counts
       if (this.countEl) this.countEl.textContent = `共${totalCount}条笔记`;
+      if (this.copyCountEl) this.copyCountEl.textContent = totalCount;
+
+      // Store all annotations for copy function
+      this.allAnnotations = groups;
 
       this.body.innerHTML = "";
 
@@ -106,9 +120,10 @@
           const id = String(ann?.id || "");
           const quote = String(ann?.quote || "");
           const noteText = ann?.note_text == null ? "" : String(ann.note_text);
+          const hasNote = !!noteText;
 
           const item = document.createElement("div");
-          item.className = "notes-item";
+          item.className = "notes-item" + (hasNote ? " has-note" : "");
           item.tabIndex = 0;
           item.addEventListener("click", () => {
             if (!ctx.bookId) return;
@@ -116,29 +131,87 @@
             window.location.href = url;
           });
 
-          const quoteEl = document.createElement("div");
-          quoteEl.className = "notes-item-quote";
-          quoteEl.textContent = quote;
-          item.appendChild(quoteEl);
+          // Icon - A for highlights, speech bubble for notes
+          const iconEl = document.createElement("div");
+          iconEl.className = "notes-item-icon" + (hasNote ? " is-note" : "");
+          iconEl.innerHTML = hasNote
+            ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>'
+            : '<span style="font-family: serif; font-style: italic;">A</span>';
+          item.appendChild(iconEl);
 
-          if (noteText) {
+          // Content container
+          const contentEl = document.createElement("div");
+          contentEl.className = "notes-item-content";
+
+          // For notes: show note text first, then quote
+          if (hasNote) {
             const noteEl = document.createElement("div");
             noteEl.className = "notes-item-note";
             noteEl.textContent = noteText;
-            item.appendChild(noteEl);
+            contentEl.appendChild(noteEl);
           }
 
+          const quoteEl = document.createElement("div");
+          quoteEl.className = "notes-item-quote";
+          quoteEl.textContent = quote;
+          contentEl.appendChild(quoteEl);
+
+          item.appendChild(contentEl);
           groupEl.appendChild(item);
         }
 
         this.body.appendChild(groupEl);
       }
     }
+
+    copyAllNotes() {
+      if (!this.allAnnotations.length) return;
+
+      const ctx = getCtx();
+      let text = `《${ctx.title || ""}》笔记摘录\n\n`;
+
+      for (const g of this.allAnnotations) {
+        const chapterTitle = String(g?.chapter_title || "");
+        const anns = Array.isArray(g?.annotations) ? g.annotations : [];
+
+        if (anns.length) {
+          text += `## ${chapterTitle}\n\n`;
+          for (const ann of anns) {
+            const quote = String(ann?.quote || "");
+            const noteText = ann?.note_text || "";
+
+            text += `> ${quote}\n`;
+            if (noteText) {
+              text += `\n💭 ${noteText}\n`;
+            }
+            text += `\n`;
+          }
+        }
+      }
+
+      navigator.clipboard?.writeText?.(text).then(() => {
+        // Show brief feedback
+        if (this.copyBtn) {
+          const originalText = this.copyBtn.innerHTML;
+          this.copyBtn.innerHTML = "已复制!";
+          setTimeout(() => {
+            this.copyBtn.innerHTML = originalText;
+          }, 1500);
+        }
+      }).catch(() => {});
+    }
   }
 
   document.addEventListener("DOMContentLoaded", () => {
     const panel = new NotesPanel();
     window.Reader3NotesPanel = panel;
+
+    // Listen for annotation updates to refresh the notes panel
+    window.addEventListener("reader3:annotations:updated", () => {
+      if (isOpen(panel.mode)) {
+        panel.loadAndRender().catch(() => {});
+      }
+    });
   });
 })();
 
