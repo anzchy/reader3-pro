@@ -1,5 +1,9 @@
 # Storage & Data Locations
 
+## Book folder naming
+
+In this document, `book_id` refers to the processed folder name (e.g. `dracula_data`) stored under `books/`.
+
 ## Browser storage (IndexedDB)
 
 - **DB name**: `reader3_ai_assistant`
@@ -23,9 +27,22 @@
 
 ## Browser storage (localStorage)
 
-The Library UI stores small UI preferences in localStorage:
+The UI stores small UI preferences in localStorage:
 
 - `reader3.library.viewMode`: `grid` or `list`
+- `reader3.library.rightPanelCollapsed`: `true` or `false` for the right panel state
+- `reader3.library.bulkIndexingActive`: `true` while bulk indexing is running (used to show an interrupted hint after reload)
+- `reader3.ai.model.{book_uuid}.{provider}`: last selected AI model per book/provider
+- `reader3.ai.activeConversation.{book_uuid}.{provider}`: active AI conversation id per book/provider
+- `reader3-ai-panel-width`: AI sidebar width in pixels (reader view)
+- `reader3-font-settings`: JSON `{ "fontSize": number, "lineHeight": number }` for reader font settings
+
+## Browser storage (sessionStorage)
+
+Search panels persist the last query and results for the current tab:
+
+- `reader3.search.reader.{book_id}`: JSON `{ q, caseSensitive, mode, results, statusMessage }`
+- `reader3.search.library`: JSON `{ payload, q, caseSensitive, sortBy, mode }`
 
 ## Server-side on-disk storage (conversations)
 
@@ -81,12 +98,26 @@ User-defined Collections are persisted on disk as a gitignored JSON file:
 - **Per book**: `books/{book_id}/chroma_db/`
 - This is created by indexing (Library UI or `uv run reader3 --index {book_id}`).
 
+## Processed book assets
+
+The EPUB ingestion pipeline writes processed outputs per book:
+
+- **Pickled book**: `books/{book_id}/book.pkl` (parsed spine + metadata)
+- **Original EPUB copy**: `books/{book_id}/book.epub` (source file for epub.js rendering, served at `/read/{book_id}/book.epub`)
+- **Extracted images**: `books/{book_id}/images/`
+
+## Reader rendering sources
+
+- Frontend reader renders content from `book.epub` via epub.js (iframe).
+- Backend uses `book.pkl` for metadata, TOC/spine structure, search indexing, and notes grouping.
+
 ## Book notes & annotations (003)
 
 Persistent highlights/underlines/notes are stored per book as JSON.
 
 - **File**: `books/{book_id}/notes.json`
 - **Schema**: `{ schema_version: 1, book_id, annotations: [...] }`
+- **Annotation fields**: `quote`, `prefix`, `suffix`, `position`, optional `cfi` (epub.js anchor), optional `color` (marker/underline/wavy)
 
 ### Related API endpoints
 

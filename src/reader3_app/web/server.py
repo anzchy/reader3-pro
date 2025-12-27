@@ -470,6 +470,16 @@ async def api_library_stats(scope: str = "all", fresh: bool = False):
     _stats_cache[cache_key] = (now, stats)
     return stats
 
+@app.get("/read/{book_id}/book.epub")
+async def serve_epub(book_id: str):
+    """Serve the original EPUB for epub.js rendering."""
+    safe_book_id = _validate_book_id(book_id)
+    epub_path = os.path.join(BOOKS_DIR, safe_book_id, "book.epub")
+    if not os.path.exists(epub_path):
+        raise HTTPException(status_code=404, detail="EPUB not found")
+    return FileResponse(epub_path, filename="book.epub")
+
+
 @app.get("/read/{book_id}", response_class=HTMLResponse)
 async def redirect_to_first_chapter(book_id: str):
     """Helper to just go to chapter 0."""
@@ -503,15 +513,19 @@ async def read_chapter(request: Request, book_id: str, chapter_index: int):
                 cover_image = sorted(pick_from, key=lambda x: (len(x), x.lower()))[0]
     except Exception:
         cover_image = None
-    cover_url = f"/read/{book_id}/images/{cover_image}" if cover_image else None
+    safe_book_id = os.path.basename(book_id)
+    cover_url = f"/read/{safe_book_id}/images/{cover_image}" if cover_image else None
+    epub_available = os.path.exists(os.path.join(BOOKS_DIR, safe_book_id, "book.epub"))
     return templates.TemplateResponse("reader.html", {
         "request": request,
         "book": book,
         "current_chapter": current_chapter,
         "chapter_index": chapter_index,
-        "book_id": book_id,
+        "book_id": safe_book_id,
         "book_uuid": book_uuid,
         "cover_url": cover_url,
+        "epub_url": f"/read/{safe_book_id}/book.epub",
+        "epub_available": epub_available,
         "ai_default_provider": _ui_default_provider(),
         "prev_idx": prev_idx,
         "next_idx": next_idx
@@ -570,11 +584,12 @@ def _refresh_orphaned_annotations(book_id: str, book: Book, annotations: list[An
 
 class CreateAnnotationRequest(BaseModel):
     type: str = Field(..., description="marker|wavy|underline|note")
-    color: Optional[str] = Field(default=None, description="yellow|green|pink|blue (marker/note only)")
+    color: Optional[str] = Field(default=None, description="yellow|green|pink|blue")
     quote: str
     prefix: str = ""
     suffix: str = ""
     position: Optional[int] = None
+    cfi: Optional[str] = Field(default=None, description="epub.js CFI for precise anchor")
     note_text: Optional[str] = None
 
 
@@ -684,13 +699,10 @@ async def api_create_annotation(book_id: str, chapter_index: int, payload: Creat
         raise HTTPException(status_code=400, detail="Invalid type")
 
     color = payload.color
-    if ann_type in ("wavy", "underline"):
-        color = None
-    else:
-        if not color:
-            color = "yellow"
-        if color not in ("yellow", "green", "pink", "blue"):
-            raise HTTPException(status_code=400, detail="Invalid color")
+    if not color:
+        color = "yellow"
+    if color not in ("yellow", "green", "pink", "blue"):
+        raise HTTPException(status_code=400, detail="Invalid color")
 
     note_text = payload.note_text
     if ann_type == "note":
@@ -720,6 +732,10 @@ async def api_create_annotation(book_id: str, chapter_index: int, payload: Creat
     if position is not None and position < 0:
         position = 0
 
+    cfi = str(payload.cfi).strip() if payload.cfi is not None else None
+    if not cfi:
+        cfi = None
+
     annotation = Annotation(
         book_id=safe_book_id,
         chapter_index=chapter_index,
@@ -729,6 +745,7 @@ async def api_create_annotation(book_id: str, chapter_index: int, payload: Creat
         prefix=prefix,
         suffix=suffix,
         position=position,
+        cfi=cfi,
         note_text=note_text,
         orphaned=False,
     )

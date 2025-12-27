@@ -23,6 +23,7 @@ class Annotation:
     prefix: str = ""
     suffix: str = ""
     position: Optional[int] = None
+    cfi: Optional[str] = None
 
     note_text: Optional[str] = None
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -38,8 +39,8 @@ class Annotation:
 
         if self.type in ("marker", "note") and self.color is None:
             self.color = "yellow"
-        if self.type in ("wavy", "underline"):
-            self.color = None
+        if self.type in ("wavy", "underline") and self.color is None:
+            self.color = "yellow"
 
         if len(self.prefix) > 50:
             self.prefix = self.prefix[-50:]
@@ -60,6 +61,7 @@ class Annotation:
             "prefix": self.prefix,
             "suffix": self.suffix,
             "position": self.position,
+            "cfi": self.cfi,
             "note_text": self.note_text,
             "created_at": self.created_at,
             "orphaned": self.orphaned,
@@ -77,8 +79,8 @@ class Annotation:
             prefix=str(data.get("prefix") or ""),
             suffix=str(data.get("suffix") or ""),
             position=data.get("position"),
+            cfi=data.get("cfi"),
             note_text=data.get("note_text"),
             created_at=str(data.get("created_at") or datetime.now(timezone.utc).isoformat()),
             orphaned=bool(data.get("orphaned") or False),
         )
-

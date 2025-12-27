@@ -2,7 +2,7 @@
 
 **Feature Branch**: `006-hot-fix`
 **Created**: 2025-12-27
-**Status**: Implemented (Phase 1-4 Complete)
+**Status**: Implemented (Phase 1-5 Complete; post-refactor fixes tracked in tasks)
 **Input**: User description: "Reader page 目前的章节显示不是 full screen，两边有大量的空白，而且内容没有自动分页。期望效果是每一个 section 内容根据浏览器页面自动分页，两边各留出 80px 的空白。"
 
 ## Overview
@@ -373,6 +373,86 @@ As a reader, I want to see my reading progress within the current section so tha
 - Touch swipe gestures (keyboard/click is sufficient for v1)
 - Offline reading support
 - Custom font families (UI placeholder only in Phase 3)
+
+---
+
+## Phase 5: Renderer Refactor (epub.js)
+
+### Problem Statement
+
+The current reader injects raw EPUB HTML directly into the DOM and overlays annotations on top. This makes the UI sensitive to inline styles and absolute positioning in EPUB content, which can block clicks and selection on annotated text. We need a more reliable rendering mechanism that isolates EPUB styles and normalizes interaction behavior.
+
+### Desired State
+
+Render EPUB content using a dedicated renderer (epub.js) inside an isolated container (iframe) so that:
+- EPUB styles are sandboxed and do not interfere with reader UI or annotation interactions.
+- Clicking on annotated text reliably selects the annotation (WeChat Reading-style behavior).
+- The annotation system continues to work with minimal user-visible changes.
+
+### Acceptance Scenarios
+
+1. **Given** the reader page is open, **When** a chapter renders, **Then** content is rendered via epub.js in an isolated frame (no direct HTML injection into `.book-content`).
+2. **Given** text is annotated (marker/underline/wavy), **When** the user clicks the annotated text, **Then** the annotation is selected and the toolbar opens.
+3. **Given** an existing note annotation, **When** the user clicks it, **Then** the note editor opens with existing content and updates via PUT.
+4. **Given** EPUB content contains absolute-positioned elements or custom styles, **When** the user clicks text, **Then** clicks are still captured by the annotation layer (no blocked clicks).
+5. **Given** the user navigates chapters, **When** they go next/previous, **Then** epub.js renders the correct spine item and annotations re-apply.
+
+### Requirements
+
+#### Renderer Integration
+- **FR-RF-001**: The reader MUST render EPUB content via epub.js rather than direct HTML injection.
+- **FR-RF-002**: The epub.js renderer MUST run inside an isolated container (iframe or equivalent).
+- **FR-RF-003**: The renderer MUST expose DOM selection events to the annotation system.
+
+#### Annotation Compatibility
+- **FR-RF-004**: Annotation selection MUST work consistently (click-to-select).
+- **FR-RF-005**: Annotation CRUD MUST continue to use the existing `/api/notes` endpoints.
+- **FR-RF-006**: Notes editing MUST still use PUT updates with existing annotation IDs.
+
+#### Reader UI Compatibility
+- **FR-RF-007**: Existing reader UI (TOC, search, AI panel, notes panel, toolbar) MUST continue to work.
+- **FR-RF-008**: Pagination logic MUST be re-evaluated; either replaced by epub.js pagination or integrated with it.
+
+### Decision Summary (Confirmed)
+
+- **Renderer source**: Render from the original `.epub` (stored alongside processed data).
+- **Annotation anchors**: Add epub.js CFI anchors for new annotations and keep quote/prefix/suffix fallback for legacy notes.
+- **Pagination**: Use epub.js pagination and update progress tracking accordingly.
+- **Reading settings**: Keep existing font/spacing UI, inject via epub.js themes.
+- **Search**: Keep DOM-based search, target the iframe document.
+
+### Implementation Notes (Current)
+
+- epub.js renderer is implemented in `src/reader3_app/web/static/js/epub-renderer.js` and mounts into `#epub-viewer` in `reader.html`.
+- Reader template passes `epub_url` and availability flags via `Reader3Ctx`; server serves `/read/{book_id}/book.epub`.
+- Annotations use epub.js CFI anchors when available and fall back to quote/prefix/suffix matching; rendering runs in the iframe document.
+- Reader emits `reader3:content:rendered` and `reader3:chapter:change` events so annotations/search can re-apply per section.
+
+### Data Storage Impact
+
+- A copy of the original `.epub` MUST be stored in `books/<book_id>_data/` for epub.js rendering.
+- `notes.json` SHOULD support a new optional `cfi` field on annotations for precise anchors.
+
+### Non-Functional Requirements
+
+- **NFR-RF-001**: Rendering MUST complete within 200ms for typical chapters.
+- **NFR-RF-002**: Annotation interaction MUST not regress compared to Phase 4.
+- **NFR-RF-003**: No new security risks (sanitize input, avoid unsafe iframe messaging).
+
+### Risks & Mitigations
+
+| Risk | Likelihood | Impact | Mitigation |
+|------|------------|--------|------------|
+| epub.js integration conflicts with existing pagination | Medium | High | Decide on epub.js pagination vs. custom pagination early; update spec accordingly |
+| Annotation selection inside iframe is harder | Medium | Medium | Use epub.js hooks + postMessage to bridge selection/mark rendering |
+| Search highlighting conflicts with annotations | Medium | Medium | Consolidate highlight logic inside iframe renderer |
+| Performance regressions for large chapters | Low | Medium | Lazy-load spine items, defer annotation rendering |
+
+### Out of Scope (Phase 5)
+
+- Full offline caching of EPUB assets
+- Cross-device sync for annotations
+- Mobile gesture controls
 
 ## Success Metrics
 

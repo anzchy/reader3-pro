@@ -194,18 +194,7 @@
             width: 100%;
             height: calc(100vh - var(--reader-padding-bottom));
             padding-top: 40px;
-            overflow-x: auto;
-            overflow-y: hidden;
-            scroll-snap-type: x mandatory;
-            scroll-behavior: smooth;
-            -webkit-overflow-scrolling: touch;
-            /* Hide scrollbar but keep functionality */
-            scrollbar-width: none;
-            -ms-overflow-style: none;
-        }
-
-        .pagination-container::-webkit-scrollbar {
-            display: none;
+            overflow: hidden;
         }
 
         .book-content {
@@ -221,6 +210,33 @@
             /* Horizontal padding creates margins on each page */
             padding: 0 var(--reader-margin-x);
             box-sizing: border-box;
+        }
+
+        /* epub.js container */
+        #epub-viewer {
+            width: 100%;
+            height: calc(100vh - var(--reader-padding-bottom) - 40px);
+        }
+
+        #epub-viewer iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        .epub-missing {
+            display: none;
+            padding: 24px;
+            margin: 0 80px;
+            background: var(--dedao-card);
+            border-radius: var(--dedao-radius-lg);
+            border: 1px solid var(--dedao-border);
+            color: var(--dedao-muted);
+            font-size: 14px;
+        }
+
+        .epub-missing.is-visible {
+            display: block;
         }
 
         /* Prevent awkward page breaks */
@@ -619,10 +635,10 @@
         #annotation-toolbar {
             position: fixed;
             display: none;
-            flex-direction: row;
+            flex-direction: column;
             align-items: center;
-            gap: 2px;
-            padding: 6px 8px;
+            gap: 8px;
+            padding: 10px 12px;
             background-color: var(--dedao-card);
             border-radius: var(--dedao-radius-lg);
             box-shadow: var(--dedao-shadow-lg);
@@ -631,6 +647,12 @@
 
         #annotation-toolbar.is-visible {
             display: flex;
+        }
+
+        .anno-actions {
+            display: flex;
+            align-items: center;
+            gap: 2px;
         }
 
         .anno-btn {
@@ -663,15 +685,11 @@
         }
 
         .anno-color-row {
-            display: none;
-            gap: 6px;
-            padding: 8px 4px;
-            border-top: 1px solid var(--dedao-border);
-            margin-top: 4px;
-        }
-
-        .anno-color-row.is-visible {
             display: flex;
+            gap: 6px;
+            padding: 4px 2px;
+            border-radius: 999px;
+            background: var(--dedao-bg);
         }
 
         .anno-color {
@@ -682,10 +700,26 @@
             cursor: pointer;
             transition: transform var(--dedao-transition-fast);
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+            position: relative;
         }
 
         .anno-color:hover {
             transform: scale(1.15);
+        }
+
+        .anno-color.is-selected {
+            box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.6);
+        }
+
+        .anno-color.is-selected::after {
+            content: "✓";
+            position: absolute;
+            inset: 0;
+            display: grid;
+            place-items: center;
+            color: rgba(15, 23, 42, 0.85);
+            font-size: 13px;
+            font-weight: 700;
         }
 
         .anno-color[data-color="yellow"] { background-color: var(--dedao-highlight-yellow); }
@@ -1388,7 +1422,8 @@
             <li class="toc-item">
                 {% set is_active = current_chapter.href == item.file_href %}
                 <a href="#" onclick="findAndGo('{{ item.file_href }}')"
-                   class="toc-link {% if is_active %}active{% endif %}">
+                   class="toc-link {% if is_active %}active{% endif %}"
+                   data-file-href="{{ item.file_href }}">
                     {{ item.title }}
                 </a>
                 {% if item.children %}
@@ -1426,28 +1461,29 @@
             <div id="main">
                 <div class="content-container">
                     <div class="pagination-container" id="pagination-container">
-                        <div class="book-content" id="book-content">
-                            {{ current_chapter.content | safe }}
-
-                            <!-- Chapter navigation at end of content -->
-                            <div class="chapter-nav">
-                                {% if prev_idx is not none %}
-                                    <a href="/read/{{ book_id }}/{{ prev_idx }}" class="nav-btn" id="prev-chapter-link">Previous</a>
-                                {% else %}
-                                    <span class="nav-btn disabled">Previous</span>
-                                {% endif %}
-
-                                <span class="nav-indicator">
-                                    Section {{ chapter_index + 1 }} of {{ book.spine|length }}
-                                </span>
-
-                                {% if next_idx is not none %}
-                                    <a href="/read/{{ book_id }}/{{ next_idx }}" class="nav-btn" id="next-chapter-link">Next</a>
-                                {% else %}
-                                    <span class="nav-btn disabled">Next</span>
-                                {% endif %}
-                            </div>
+                        <div id="epub-viewer" aria-live="polite"></div>
+                        <div class="epub-missing" id="epub-missing">
+                            未找到原始 EPUB 文件。请删除 `books/{{ book_id }}/` 后重新运行 `reader3` 重新处理图书。
                         </div>
+                    </div>
+
+                    <!-- Chapter navigation (outside iframe) -->
+                    <div class="chapter-nav">
+                        {% if prev_idx is not none %}
+                            <a href="/read/{{ book_id }}/{{ prev_idx }}" class="nav-btn" id="prev-chapter-link">Previous</a>
+                        {% else %}
+                            <span class="nav-btn disabled">Previous</span>
+                        {% endif %}
+
+                        <span class="nav-indicator">
+                            Section {{ chapter_index + 1 }} of {{ book.spine|length }}
+                        </span>
+
+                        {% if next_idx is not none %}
+                            <a href="/read/{{ book_id }}/{{ next_idx }}" class="nav-btn" id="next-chapter-link">Next</a>
+                        {% else %}
+                            <span class="nav-btn disabled">Next</span>
+                        {% endif %}
                     </div>
                 </div>
             </div>
@@ -1560,18 +1596,20 @@
 
     <!-- Annotation Toolbar -->
     <div id="annotation-toolbar" role="toolbar" aria-hidden="true">
-        <button type="button" class="anno-btn" data-action="copy">Copy</button>
-        <button type="button" class="anno-btn" data-action="marker">Marker</button>
-        <button type="button" class="anno-btn" data-action="wavy">Wavy</button>
-        <button type="button" class="anno-btn" data-action="underline">Underline</button>
-        <button type="button" class="anno-btn" data-action="delete">Delete</button>
-        <button type="button" class="anno-btn" data-action="note">Add Note</button>
-        <button type="button" class="anno-btn" data-action="ask_ai">Ask AI</button>
         <div class="anno-color-row" id="anno-color-row" aria-label="Marker colors">
             <button type="button" class="anno-color" data-color="yellow" aria-label="yellow"></button>
             <button type="button" class="anno-color" data-color="green" aria-label="green"></button>
             <button type="button" class="anno-color" data-color="pink" aria-label="pink"></button>
             <button type="button" class="anno-color" data-color="blue" aria-label="blue"></button>
+        </div>
+        <div class="anno-actions" role="group" aria-label="Annotation actions">
+            <button type="button" class="anno-btn" data-action="copy">Copy</button>
+            <button type="button" class="anno-btn" data-action="marker">Marker</button>
+            <button type="button" class="anno-btn" data-action="wavy">Wavy</button>
+            <button type="button" class="anno-btn" data-action="underline">Underline</button>
+            <button type="button" class="anno-btn" data-action="delete">Delete</button>
+            <button type="button" class="anno-btn" data-action="note">Add Note</button>
+            <button type="button" class="anno-btn" data-action="ask_ai">Ask AI</button>
         </div>
     </div>
 
@@ -1669,7 +1707,9 @@
             chapterIndex: {{ chapter_index }},
             totalChapters: {{ book.spine|length }},
             title: {{ book.metadata.title | tojson }},
-            coverUrl: {{ cover_url | tojson }}
+            coverUrl: {{ cover_url | tojson }},
+            epubUrl: {{ epub_url | tojson }},
+            epubAvailable: {{ "true" if epub_available else "false" }}
         };
 
         const spineMap = {
@@ -1682,20 +1722,26 @@
             const cleanFile = filename.split('#')[0];
             const idx = spineMap[cleanFile];
             if (idx !== undefined) {
-                window.location.href = "/read/{{ book_id }}/" + idx;
+                if (window.Reader3Epub && window.Reader3Epub.displaySectionIndex) {
+                    window.Reader3Epub.displaySectionIndex(idx);
+                } else {
+                    window.location.href = "/read/{{ book_id }}/" + idx;
+                }
             } else {
                 console.log("Could not find index for", filename);
             }
         }
     </script>
 
+    <script src="/static/vendor/jszip.min.js"></script>
+    <script src="/static/vendor/epub.min.js"></script>
+    <script src="/static/js/epub-renderer.js"></script>
     <script src="/static/js/toc-panel.js"></script>
     <script src="/static/js/notes-panel.js"></script>
     <script src="/static/js/annotations.js"></script>
     <script src="/static/js/toolbar.js"></script>
     <script src="/static/search.js"></script>
     <script src="/static/ai.js"></script>
-    <script src="/static/js/pagination.js"></script>
 
     <!-- AI Panel Resize Script -->
     <script>
@@ -1852,8 +1898,10 @@
             if (lineHeightDecrease) lineHeightDecrease.disabled = lineHeight <= MIN_LINE_HEIGHT;
             if (lineHeightIncrease) lineHeightIncrease.disabled = lineHeight >= MAX_LINE_HEIGHT;
 
-            // Trigger pagination recalculation
-            if (window.Pagination && window.Pagination.recalculate) {
+            // Notify renderer to apply theme updates
+            if (window.Reader3Epub && window.Reader3Epub.applyThemeSettings) {
+                window.Reader3Epub.applyThemeSettings();
+            } else if (window.Pagination && window.Pagination.recalculate) {
                 setTimeout(() => {
                     window.Pagination.recalculate();
                 }, 100);
@@ -1893,6 +1941,10 @@
                 closePopup();
             }
         });
+
+        // Close when reader content is clicked (iframe) or Escape is pressed inside iframe
+        window.addEventListener('reader3:content:click', closePopup);
+        window.addEventListener('reader3:escape', closePopup);
 
         // Font size controls
         if (fontSizeDecrease) {

@@ -189,7 +189,14 @@ def process_epub(epub_path: str, output_dir: str) -> Book:
     images_dir = os.path.join(output_dir, 'images')
     os.makedirs(images_dir, exist_ok=True)
 
-    # 4. Extract Images & Build Map
+    # 4. Persist original EPUB for renderer compatibility
+    original_epub_path = os.path.join(output_dir, "book.epub")
+    try:
+        shutil.copy2(epub_path, original_epub_path)
+    except Exception as exc:
+        print(f"Warning: failed to copy original EPUB to {original_epub_path}: {exc}")
+
+    # 5. Extract Images & Build Map
     print("Extracting images...")
     image_map = {} # Key: internal_path, Value: local_relative_path
 
@@ -211,14 +218,14 @@ def process_epub(epub_path: str, output_dir: str) -> Book:
             image_map[item.get_name()] = rel_path
             image_map[original_fname] = rel_path
 
-    # 5. Process TOC
+    # 6. Process TOC
     print("Parsing Table of Contents...")
     toc_structure = parse_toc_recursive(book.toc)
     if not toc_structure:
         print("Warning: Empty TOC, building fallback from Spine...")
         toc_structure = get_fallback_toc(book)
 
-    # 6. Process Content (Spine-based to preserve HTML validity)
+    # 7. Process Content (Spine-based to preserve HTML validity)
     print("Processing chapters...")
     spine_chapters = []
 
@@ -272,7 +279,7 @@ def process_epub(epub_path: str, output_dir: str) -> Book:
             )
             spine_chapters.append(chapter)
 
-    # 7. Final Assembly
+    # 8. Final Assembly
     final_book = Book(
         metadata=metadata,
         spine=spine_chapters,

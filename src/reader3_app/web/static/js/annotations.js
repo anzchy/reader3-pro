@@ -1,9 +1,17 @@
 (() => {
+  let globalListenersBound = false;
+  let toolbarListenersBound = false;
+  let renditionListenersBound = false;
+
   function qs(id) {
     return document.getElementById(id);
   }
 
   function getReaderContext() {
+    const ctx = window.Reader3Ctx || {};
+    if (ctx.bookId && Number.isFinite(ctx.chapterIndex)) {
+      return { bookId: ctx.bookId, chapterIndex: Number(ctx.chapterIndex) };
+    }
     const parts = window.location.pathname.split("/").filter(Boolean);
     if (parts.length >= 3 && parts[0] === "read") {
       return { bookId: parts[1], chapterIndex: Number(parts[2]) };
@@ -44,12 +52,13 @@
   }
 
   function buildTextIndex(container) {
-    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
+    const doc = container?.ownerDocument || document;
+    const walker = doc.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
       acceptNode(node) {
         if (!node.nodeValue) return NodeFilter.FILTER_REJECT;
         const parent = node.parentElement;
         if (!parent) return NodeFilter.FILTER_REJECT;
-        if (parent.closest("script, style, mark, #annotation-toolbar, #note-editor, #note-tooltip")) return NodeFilter.FILTER_REJECT;
+        if (parent.closest("script, style, #annotation-toolbar, #note-editor, #note-tooltip")) return NodeFilter.FILTER_REJECT;
         return NodeFilter.FILTER_ACCEPT;
       },
     });
@@ -79,7 +88,8 @@
     // If it's an element, attempt to find a nearby text node within it.
     const el = targetNode.nodeType === Node.ELEMENT_NODE ? targetNode : targetNode.parentElement;
     if (!el) return null;
-    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+    const doc = el?.ownerDocument || document;
+    const walker = doc.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
     let n = walker.nextNode();
     if (!n) return null;
     const found = nodes.find((x) => x.node === n);
@@ -122,9 +132,74 @@
     return segments.sort((a, b) => a.start - b.start);
   }
 
+  function getEventTargetElement(target) {
+    if (!target) return null;
+    if (target.nodeType === Node.TEXT_NODE) return target.parentElement;
+    if (target.nodeType === Node.ELEMENT_NODE) return target;
+    return null;
+  }
+
+  function offsetRect(rect, frameEl) {
+    if (!rect) return rect;
+    if (!frameEl) return rect;
+    const frameRect = frameEl.getBoundingClientRect();
+    return {
+      left: rect.left + frameRect.left,
+      right: rect.right + frameRect.left,
+      top: rect.top + frameRect.top,
+      bottom: rect.bottom + frameRect.top,
+      width: rect.width,
+      height: rect.height,
+    };
+  }
+
+  function elementDebugInfo(el) {
+    if (!el) return null;
+    let style = null;
+    try {
+      const view = el.ownerDocument?.defaultView || window;
+      style = view.getComputedStyle(el);
+    } catch {
+      style = null;
+    }
+    return {
+      tag: el.tagName,
+      id: el.id || "",
+      className: typeof el.className === "string" ? el.className : "",
+      pointerEvents: style ? style.pointerEvents : "",
+      position: style ? style.position : "",
+      zIndex: style ? style.zIndex : "",
+    };
+  }
+
+  function dedupeAnnotationMeta(items) {
+    const out = [];
+    const seen = new Set();
+    for (const item of items || []) {
+      const id = String(item?.id || "");
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      out.push({
+        id,
+        type: item?.type || null,
+        color: item?.color || null,
+        note_text: item?.note_text ?? null,
+      });
+    }
+    return out;
+  }
+
   function segmentStyle(seg) {
     const anns = seg.anns || [];
-    const ids = anns.map((a) => String(a.id)).filter(Boolean);
+    const meta = anns
+      .map((a) => ({
+        id: String(a.id),
+        type: a.type,
+        color: a.color || null,
+        note_text: a.note_text ?? null,
+      }))
+      .filter((item) => item.id);
+    const ids = meta.map((item) => item.id);
 
     const notes = anns.filter((a) => a.type === "note");
     const markers = anns.filter((a) => a.type === "marker");
@@ -132,29 +207,62 @@
     const underline = anns.some((a) => a.type === "underline");
 
     let color = null;
+    let colorSource = null;
     let isNote = false;
     let noteText = null;
     if (notes.length) {
       isNote = true;
       color = notes[notes.length - 1].color || "yellow";
+      colorSource = "note";
       noteText = notes[notes.length - 1].note_text || null;
     } else if (markers.length) {
       color = markers[markers.length - 1].color || "yellow";
+      colorSource = "marker";
+    } else if (wavy || underline) {
+      const styled = anns.filter((a) => a.type === "wavy" || a.type === "underline");
+      const last = styled[styled.length - 1];
+      color = last?.color || "yellow";
+      colorSource = last?.type || "underline";
     }
 
     const classes = ["annotation"];
     if (color) {
-      classes.push("annotation--marker", `annotation--${color}`);
+      if (colorSource === "marker" || colorSource === "note") {
+        classes.push("annotation--marker");
+      }
+      classes.push(`annotation--${color}`);
     }
     if (wavy) classes.push("annotation--wavy");
     else if (underline) classes.push("annotation--underline");
     if (isNote) classes.push("annotation--note");
 
-    return { classes, ids, noteText };
+    return { classes, ids, meta, noteText };
+  }
+
+  function rangeFromCfi(cfi, contents, doc) {
+    if (!cfi) return null;
+    if (contents && typeof contents.range === "function") {
+      try {
+        const range = contents.range(cfi);
+        if (range) return range;
+      } catch {
+        // ignore
+      }
+    }
+    if (window.ePub && window.ePub.CFI && doc) {
+      try {
+        const cfiObj = new window.ePub.CFI(cfi);
+        return cfiObj.toRange(doc);
+      } catch {
+        // ignore
+      }
+    }
+    return null;
   }
 
   function applySegments(container, index, segments) {
     const nodes = index.nodes;
+    const doc = container?.ownerDocument || document;
     let segIdx = 0;
 
     for (const entry of nodes) {
@@ -178,33 +286,41 @@
       if (!local.length) continue;
 
       local.sort((a, b) => a.start - b.start);
-      const frag = document.createDocumentFragment();
+      const frag = doc.createDocumentFragment();
       let cursor = 0;
       for (const r of local) {
-        if (r.start > cursor) frag.appendChild(document.createTextNode(text.slice(cursor, r.start)));
-        const mark = document.createElement("mark");
+        if (r.start > cursor) frag.appendChild(doc.createTextNode(text.slice(cursor, r.start)));
+        const mark = doc.createElement("mark");
         const style = segmentStyle(r.seg);
         mark.className = style.classes.join(" ");
         mark.setAttribute("data-annotation-ids", JSON.stringify(style.ids));
         mark.setAttribute("data-annotation-id", style.ids[0] || "");
         if (style.noteText) mark.setAttribute("data-note-text", style.noteText);
         mark.textContent = text.slice(r.start, r.end);
+        mark.setAttribute("data-annotation-meta", JSON.stringify(style.meta || []));
         frag.appendChild(mark);
         cursor = r.end;
       }
-      if (cursor < text.length) frag.appendChild(document.createTextNode(text.slice(cursor)));
+      if (cursor < text.length) frag.appendChild(doc.createTextNode(text.slice(cursor)));
       entry.node.parentNode.replaceChild(frag, entry.node);
     }
   }
 
   class AnnotationRenderer {
-    constructor(contentEl) {
+    constructor(contentEl, getContents) {
       this.contentEl = contentEl;
       this.lastAnnotations = [];
+      this.getContents = typeof getContents === "function" ? getContents : null;
     }
 
     async loadAndRender() {
       const ctx = getReaderContext();
+      if (!this.contentEl && this.getContents) {
+        const contents = this.getContents();
+        if (contents?.document?.body) {
+          this.contentEl = contents.document.body;
+        }
+      }
       if (!ctx.bookId || ctx.chapterIndex == null || !this.contentEl) return;
       const resp = await fetch(`/api/notes/${encodeURIComponent(ctx.bookId)}/${encodeURIComponent(String(ctx.chapterIndex))}`);
       const data = await resp.json().catch(() => ({}));
@@ -214,11 +330,45 @@
     }
 
     render(annotations) {
+      const contents = this.getContents ? this.getContents() : null;
+      if (contents?.document?.body && this.contentEl?.ownerDocument !== contents.document) {
+        this.contentEl = contents.document.body;
+      }
+      if (!this.contentEl) return;
       clearExistingAnnotationMarks(this.contentEl);
-      const idx = buildTextIndex(this.contentEl);
+      const doc = this.contentEl?.ownerDocument || document;
 
+      const textAnnotations = [];
+      const cfiAnnotations = annotations.filter((ann) => ann?.cfi);
+      for (const ann of cfiAnnotations) {
+        const range = rangeFromCfi(String(ann.cfi || ""), contents, doc);
+        if (!range) {
+          textAnnotations.push(ann);
+          continue;
+        }
+        const style = segmentStyle({ anns: [ann] });
+        const mark = doc.createElement("mark");
+        mark.className = style.classes.join(" ");
+        mark.setAttribute("data-annotation-ids", JSON.stringify(style.ids));
+        mark.setAttribute("data-annotation-id", style.ids[0] || "");
+        if (style.noteText) mark.setAttribute("data-note-text", style.noteText);
+        mark.setAttribute("data-annotation-meta", JSON.stringify(style.meta || []));
+        try {
+          const fragment = range.extractContents();
+          mark.appendChild(fragment);
+          range.insertNode(mark);
+        } catch (err) {
+          console.warn("[Annotations] failed to wrap CFI range, falling back to text match", err);
+          textAnnotations.push(ann);
+        }
+      }
+
+      textAnnotations.push(...annotations.filter((ann) => !ann?.cfi));
+      if (!textAnnotations.length) return;
+
+      const idx = buildTextIndex(this.contentEl);
       const ranges = [];
-      for (const ann of annotations) {
+      for (const ann of textAnnotations) {
         const r = findRange(idx.text, ann);
         if (!r) continue;
         ranges.push({ start: r.start, end: r.end, ann });
@@ -254,8 +404,11 @@
   }
 
   class AnnotationUI {
-    constructor(contentEl) {
+    constructor(contentEl, frameEl) {
       this.contentEl = contentEl;
+      this.frameEl = frameEl || null;
+      this.contentDocument = contentEl?.ownerDocument || document;
+      this.contentWindow = this.contentDocument?.defaultView || window;
       this.toolbar = qs("annotation-toolbar");
       this.colorRow = qs("anno-color-row");
       this.noteEditor = qs("note-editor");
@@ -266,86 +419,184 @@
 
       this.currentRange = null;
       this.currentIndex = null;
-      this.renderer = new AnnotationRenderer(contentEl);
+      this.currentAnnotationMeta = [];
+      this.currentAnnotationIds = [];
+      this.editingNoteId = null;
+      this.lastSelectionAt = 0;
+      this.selectedColor = "yellow";
+      this.renderer = new AnnotationRenderer(contentEl, () => window.Reader3Epub?.getContents?.());
     }
 
     init() {
       if (!this.contentEl || !this.toolbar) return;
 
-      this.contentEl.addEventListener("mouseup", () => this.onSelection());
-      document.addEventListener("mousedown", (e) => {
+      console.log("[Annotations] init", { hasContent: !!this.contentEl, hasToolbar: !!this.toolbar });
+
+      if (!globalListenersBound) {
+        document.addEventListener("click", (e) => {
+          const elements = document.elementsFromPoint(e.clientX, e.clientY) || [];
+          const slice = elements.slice(0, 8).map((el) => elementDebugInfo(el));
+          console.log("[Annotations] elementsFromPoint", {
+            x: e.clientX,
+            y: e.clientY,
+            count: elements.length,
+            top: slice,
+          });
+        }, true);
+
+        document.addEventListener("mousedown", (e) => {
+          const t = e.target;
+          if (this.toolbar?.contains(t) || this.noteEditor?.contains(t)) return;
+          this.closeSelectionToolbarIfOpen();
+        });
+
+        globalListenersBound = true;
+      }
+
+      this.contentDocument.addEventListener("mouseup", () => this.onSelection());
+      this.contentDocument.addEventListener("click", (e) => {
+        const target = getEventTargetElement(e.target);
+        const mark = target?.closest ? target.closest("mark.annotation") : null;
+        const tagName = target?.tagName || "unknown";
+        const className = target?.className || "";
+        const nodeType = target?.nodeType || e.target?.nodeType;
+        console.log("[Annotations] content click", { tagName, className, nodeType, hasMark: !!mark });
+
+        const elements = this.contentDocument.elementsFromPoint?.(e.clientX, e.clientY) || [];
+        const slice = elements.slice(0, 8).map((el) => elementDebugInfo(el));
+        console.log("[Annotations] iframe elementsFromPoint", {
+          x: e.clientX,
+          y: e.clientY,
+          count: elements.length,
+          top: slice,
+        });
+      }, true);
+      if (!toolbarListenersBound) {
+        this.toolbar.addEventListener("click", (e) => {
+          const btn = e.target.closest("button[data-action]");
+          if (!btn) return;
+          const action = btn.getAttribute("data-action");
+          window.Reader3AnnotationUI?.handleAction?.(action);
+        });
+
+        this.colorRow?.addEventListener("click", (e) => {
+          const swatch = e.target.closest("button[data-color]");
+          if (!swatch) return;
+          const color = swatch.getAttribute("data-color");
+          window.Reader3AnnotationUI?.setSelectedColor?.(color);
+        });
+
+        this.noteSave?.addEventListener("click", () => window.Reader3AnnotationUI?.saveNote?.());
+        this.noteCancel?.addEventListener("click", () => window.Reader3AnnotationUI?.closeNoteEditorIfOpen?.());
+
+        toolbarListenersBound = true;
+      }
+
+      if (!renditionListenersBound && window.Reader3Epub?.rendition) {
+        window.Reader3Epub.rendition.on("selected", (cfiRange, contents) => {
+          window.Reader3AnnotationUI?.handleRenditionSelection?.(cfiRange, contents);
+        });
+        renditionListenersBound = true;
+      }
+
+      this.contentDocument.addEventListener("mousedown", (e) => {
         const t = e.target;
         if (this.toolbar?.contains(t) || this.noteEditor?.contains(t)) return;
         this.closeSelectionToolbarIfOpen();
       });
 
-      this.toolbar.addEventListener("click", (e) => {
-        const btn = e.target.closest("button[data-action]");
-        if (!btn) return;
-        const action = btn.getAttribute("data-action");
-        this.handleAction(action);
-      });
-
-      this.colorRow?.addEventListener("click", (e) => {
-        const swatch = e.target.closest("button[data-color]");
-        if (!swatch) return;
-        const color = swatch.getAttribute("data-color");
-        this.toggleMarkerAnnotation(color);
-      });
-
-      this.noteSave?.addEventListener("click", () => this.saveNote());
-      this.noteCancel?.addEventListener("click", () => this.closeNoteEditorIfOpen());
-
-      this.contentEl.addEventListener("mouseover", (e) => this.onHover(e));
-      this.contentEl.addEventListener("mouseout", () => this.hideTooltip());
+      this.contentDocument.addEventListener("mouseover", (e) => this.onHover(e));
+      this.contentDocument.addEventListener("mouseout", () => this.hideTooltip());
 
       // Click on annotated text to select and show toolbar
-      this.contentEl.addEventListener("click", (e) => this.onAnnotationClick(e));
+      this.contentDocument.addEventListener("click", (e) => this.onAnnotationClick(e));
 
+      this.syncSelectedColor();
       this.renderer.loadAndRender().catch(() => {});
+    }
+
+    setCurrentAnnotations(meta) {
+      const deduped = dedupeAnnotationMeta(meta);
+      this.currentAnnotationMeta = deduped;
+      this.currentAnnotationIds = deduped.map((item) => item.id);
+    }
+
+    getAnnotationMetaFromMark(mark) {
+      if (!mark) return [];
+      const rawMeta = mark.getAttribute("data-annotation-meta");
+      if (rawMeta) {
+        try {
+          const parsed = JSON.parse(rawMeta || "[]");
+          if (Array.isArray(parsed)) return dedupeAnnotationMeta(parsed);
+        } catch {
+          // ignore
+        }
+      }
+      const rawIds = mark.getAttribute("data-annotation-ids");
+      try {
+        const parsedIds = JSON.parse(rawIds || "[]");
+        if (Array.isArray(parsedIds)) {
+          return dedupeAnnotationMeta(parsedIds.map((id) => ({ id })));
+        }
+      } catch {
+        // ignore
+      }
+      return [];
+    }
+
+    getAnnotationMetaForRange(range) {
+      if (!range || !this.contentEl) return [];
+      const marks = this.contentEl.querySelectorAll("mark.annotation");
+      const meta = [];
+      for (const mark of marks) {
+        if (!range.intersectsNode(mark)) continue;
+        meta.push(...this.getAnnotationMetaFromMark(mark));
+      }
+      return dedupeAnnotationMeta(meta);
     }
 
     /**
      * Handle click on annotated text
      */
     onAnnotationClick(e) {
-      const mark = e.target.closest("mark.annotation");
+      const target = getEventTargetElement(e.target);
+      const mark = target?.closest ? target.closest("mark.annotation") : null;
+      console.log("[Annotations] onAnnotationClick", { hasMark: !!mark });
       if (!mark) return;
 
-      // Prevent if there's already a text selection being made
-      const sel = window.getSelection();
-      if (sel && sel.toString().trim().length > 0) return;
+      const sel = this.contentWindow?.getSelection?.();
+      console.log("[Annotations] selection", { text: sel ? sel.toString() : "" });
 
-      // Get annotation info
-      const hasNote = mark.classList.contains("annotation--note");
-      const noteText = mark.getAttribute("data-note-text") || "";
-
-      // Get annotation IDs
-      let ids = [];
-      try {
-        ids = JSON.parse(mark.getAttribute("data-annotation-ids") || "[]");
-      } catch {
-        ids = [];
-      }
-      this.currentAnnotationIds = ids;
+      // Get annotation info and meta
+      const meta = this.getAnnotationMetaFromMark(mark);
+      console.log("[Annotations] mark meta", meta);
+      this.setCurrentAnnotations(meta);
+      this.editingNoteId = null;
 
       // Select the text in the mark element
-      const range = document.createRange();
-      range.selectNodeContents(mark);
-      sel.removeAllRanges();
-      sel.addRange(range);
-      this.currentRange = range;
+      if (sel) {
+        const range = this.contentDocument.createRange();
+        range.selectNodeContents(mark);
+        sel.removeAllRanges();
+        sel.addRange(range);
+        this.currentRange = range;
+      }
+      console.log("[Annotations] range set", { hasRange: !!this.currentRange });
 
       // Position and show toolbar
-      const rect = mark.getBoundingClientRect();
+      const rect = offsetRect(mark.getBoundingClientRect(), this.frameEl);
       const toolbarHalfWidth = 200;
       const x = clamp(rect.left + rect.width / 2, 20 + toolbarHalfWidth, window.innerWidth - 20 - toolbarHalfWidth);
       const y = clamp(rect.top - 12, 60, window.innerHeight - 20);
       this.openToolbarAt(x, y);
+      console.log("[Annotations] toolbar opened", { x, y });
 
       // If it has a note, open note editor with existing content
-      if (hasNote && noteText) {
-        this.openNoteEditorWithExisting(noteText, ids);
+      const noteMeta = meta.find((item) => item.type === "note");
+      const noteText = noteMeta?.note_text || mark.getAttribute("data-note-text") || "";
+      if (noteMeta && noteText) {
+        this.openNoteEditorWithExisting(noteText, noteMeta.id);
+        console.log("[Annotations] note editor opened", { noteId: noteMeta.id });
       }
 
       e.preventDefault();
@@ -355,20 +606,20 @@
     /**
      * Open note editor with existing note content for editing
      */
-    openNoteEditorWithExisting(noteText, annotationIds) {
+    openNoteEditorWithExisting(noteText, noteId) {
       if (!this.noteEditor || !this.noteTextarea) return;
 
       // Store the annotation IDs being edited
-      this.editingAnnotationIds = annotationIds;
+      this.editingNoteId = noteId;
 
       // Set the existing note text
       this.noteTextarea.value = noteText;
 
       // Position the note editor
-      const sel = window.getSelection();
+      const sel = this.contentWindow?.getSelection?.();
       if (!sel || sel.rangeCount < 1) return;
       const range = sel.getRangeAt(0);
-      const rect = range.getBoundingClientRect();
+      const rect = offsetRect(range.getBoundingClientRect(), this.frameEl);
 
       const editorWidth = 320;
       const editorHeight = 180;
@@ -399,8 +650,9 @@
     async toggleMarkerAnnotation(color) {
       if (!this.currentRange || !this.contentEl) return;
 
+      const selected = color || this.selectedColor || "yellow";
       // Check if there's existing marker annotation with same color
-      const existingIds = this.getExistingMarkerIds(color);
+      const existingIds = this.getExistingMarkerIds(selected);
 
       if (existingIds.length > 0) {
         // Delete existing marker annotations
@@ -408,8 +660,8 @@
         await this.deleteAnnotations(existingIds);
       } else {
         // Create new marker annotation
-        console.log('[Annotations] Creating new marker:', color);
-        await this.createAnnotation({ type: "marker", color });
+        console.log('[Annotations] Creating new marker:', selected);
+        await this.createAnnotation({ type: "marker", color: selected });
       }
     }
 
@@ -417,29 +669,7 @@
      * Get IDs of existing marker annotations with specific color
      */
     getExistingMarkerIds(color) {
-      if (!this.currentRange) return [];
-
-      const ids = [];
-      const marks = this.contentEl.querySelectorAll("mark.annotation.annotation--marker");
-
-      for (const mark of marks) {
-        if (!this.currentRange.intersectsNode(mark)) continue;
-
-        // Check color if specified
-        if (color && !mark.classList.contains(`annotation--${color}`)) continue;
-
-        try {
-          const rawIds = mark.getAttribute("data-annotation-ids");
-          const markIds = JSON.parse(rawIds || "[]");
-          if (Array.isArray(markIds)) {
-            ids.push(...markIds);
-          }
-        } catch {
-          // ignore
-        }
-      }
-
-      return [...new Set(ids)];
+      return this.getExistingAnnotationIds("marker", color);
     }
 
     onSelection() {
@@ -448,7 +678,7 @@
         console.log('[Annotations] contentEl not found');
         return;
       }
-      const sel = window.getSelection();
+      const sel = this.contentWindow?.getSelection?.();
       console.log('[Annotations] Selection object:', sel);
       if (!sel || sel.rangeCount < 1) {
         console.log('[Annotations] No selection or rangeCount < 1');
@@ -460,16 +690,68 @@
         console.log('[Annotations] Range is collapsed, ignoring');
         return;
       }
+      if (Date.now() - this.lastSelectionAt < 120) return;
+      this.handleSelectionRange(range);
+    }
+
+    handleRenditionSelection(cfiRange, contents) {
+      if (!cfiRange) return;
+      const doc = contents?.document || this.contentDocument;
+      if (contents?.document) {
+        this.contentDocument = contents.document;
+        this.contentWindow = contents.document.defaultView || window;
+        if (contents.document.body) {
+          this.contentEl = contents.document.body;
+        }
+        if (contents.document.defaultView?.frameElement) {
+          this.frameEl = contents.document.defaultView.frameElement;
+        }
+        if (this.renderer) {
+          this.renderer.contentEl = this.contentEl;
+        }
+      }
+      const range = rangeFromCfi(String(cfiRange), contents, doc);
+      if (!range) return;
+      const sel = doc?.defaultView?.getSelection?.();
+      if (sel) {
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+      this.lastSelectionAt = Date.now();
+      this.handleSelectionRange(range);
+    }
+
+    handleSelectionRange(range) {
+      if (!range || !this.contentEl) return;
+      const rangeDoc = range.commonAncestorContainer?.ownerDocument || this.contentDocument;
+      if (rangeDoc && this.contentDocument !== rangeDoc) {
+        this.contentDocument = rangeDoc;
+        this.contentWindow = rangeDoc.defaultView || window;
+      }
+      if (!this.contentEl || (rangeDoc && this.contentEl.ownerDocument !== rangeDoc)) {
+        this.contentEl = rangeDoc?.body || this.contentEl;
+        if (rangeDoc?.defaultView?.frameElement) {
+          this.frameEl = rangeDoc.defaultView.frameElement;
+        }
+        if (this.renderer) {
+          this.renderer.contentEl = this.contentEl;
+        }
+      }
       const common = range.commonAncestorContainer;
       const within = common.nodeType === Node.ELEMENT_NODE ? common : common.parentElement;
-      console.log('[Annotations] Common ancestor:', common, 'Within element:', within);
-      if (!within || !within.closest(".book-content")) {
-        console.log('[Annotations] Selection not within .book-content');
+      console.log('[Annotations] Common ancestor:', common, 'Within element:', within, {
+        contentEl: this.contentEl?.tagName || null,
+        sameDoc: within?.ownerDocument === this.contentEl?.ownerDocument,
+      });
+      if (!within || !this.contentEl || !this.contentEl.contains(within)) {
+        console.log('[Annotations] Selection not within content container');
         return;
       }
       this.currentRange = range;
+      this.setCurrentAnnotations(this.getAnnotationMetaForRange(range));
+      this.editingNoteId = null;
 
-      const rect = range.getBoundingClientRect();
+      const rect = offsetRect(range.getBoundingClientRect(), this.frameEl);
       console.log('[Annotations] Selection rect:', rect);
       // Horizontal toolbar is approximately 400px wide, centered via transform
       const toolbarHalfWidth = 200;
@@ -485,22 +767,28 @@
       this.toolbar.style.left = `${Math.round(x)}px`;
       this.toolbar.style.top = `${Math.round(y)}px`;
       this.toolbar.style.transform = "translate(-50%, -100%)";
-      this.hideColorRow();
+      this.syncSelectedColor();
     }
 
     closeSelectionToolbarIfOpen() {
       if (!this.toolbar?.classList.contains("is-visible")) return false;
       this.toolbar.classList.remove("is-visible");
-      this.hideColorRow();
       return true;
     }
 
-    showColorRow() {
-      this.colorRow?.classList.add("is-visible");
+    setSelectedColor(color) {
+      if (!color) return;
+      this.selectedColor = color;
+      this.syncSelectedColor();
     }
 
-    hideColorRow() {
-      this.colorRow?.classList.remove("is-visible");
+    syncSelectedColor() {
+      if (!this.colorRow) return;
+      const buttons = this.colorRow.querySelectorAll("button[data-color]");
+      buttons.forEach((btn) => {
+        const active = btn.getAttribute("data-color") === this.selectedColor;
+        btn.classList.toggle("is-selected", active);
+      });
     }
 
     closeNoteEditorIfOpen() {
@@ -508,6 +796,7 @@
       this.noteEditor.classList.remove("is-visible");
       this.noteEditor.setAttribute("aria-hidden", "true");
       if (this.noteTextarea) this.noteTextarea.value = "";
+      this.editingNoteId = null;
       return true;
     }
 
@@ -515,7 +804,7 @@
       console.log('[Annotations] handleAction called with:', action);
       if (!action) return;
       if (action === "copy") return this.copySelection();
-      if (action === "marker") return this.showColorRow();
+      if (action === "marker") return this.toggleMarkerAnnotation(this.selectedColor);
       if (action === "wavy") {
         console.log('[Annotations] Toggle wavy annotation');
         return this.toggleAnnotation("wavy");
@@ -536,7 +825,14 @@
       if (!this.currentRange || !this.contentEl) return;
 
       // Check if there are existing annotations of this type covering the selection
-      const existingIds = this.getExistingAnnotationIds(type);
+      const selectedColor = this.selectedColor || "yellow";
+      const existingIds = this.getExistingAnnotationIds(type, selectedColor);
+      if (!existingIds.length) {
+        const anyIds = this.getExistingAnnotationIds(type);
+        if (anyIds.length) {
+          await this.deleteAnnotations(anyIds);
+        }
+      }
 
       if (existingIds.length > 0) {
         // Delete existing annotations of this type
@@ -545,61 +841,44 @@
       } else {
         // Create new annotation
         console.log('[Annotations] Creating new annotation:', type);
-        await this.createAnnotation({ type });
+        await this.createAnnotation({ type, color: selectedColor });
       }
     }
 
     /**
      * Get IDs of existing annotations of given type that cover current selection
      */
-    getExistingAnnotationIds(type) {
+    getExistingAnnotationIds(type, color = null) {
       if (!this.currentRange) return [];
 
-      const ids = [];
-      const marks = this.contentEl.querySelectorAll("mark.annotation");
-
-      for (const mark of marks) {
-        // Check if mark intersects with selection
-        if (!this.currentRange.intersectsNode(mark)) continue;
-
-        // Check if mark has the specified type
-        const hasType = mark.classList.contains(`annotation--${type}`) ||
-                       (type === "marker" && mark.classList.contains("annotation--marker"));
-        if (!hasType) continue;
-
-        // Get annotation IDs from this mark
-        try {
-          const rawIds = mark.getAttribute("data-annotation-ids");
-          const markIds = JSON.parse(rawIds || "[]");
-          if (Array.isArray(markIds)) {
-            ids.push(...markIds);
-          }
-        } catch {
-          // ignore
-        }
-      }
-
-      return [...new Set(ids)]; // Remove duplicates
+      const meta = this.getAnnotationMetaForRange(this.currentRange);
+      const filtered = meta.filter((item) => {
+        if (item.type !== type) return false;
+        if (color && item.color !== color) return false;
+        return true;
+      });
+      return filtered.map((item) => item.id);
     }
 
     /**
      * Delete annotations by IDs
      */
     async deleteAnnotations(ids) {
-      if (!ids.length) return;
+      const uniqueIds = [...new Set(ids)].filter(Boolean);
+      if (!uniqueIds.length) return;
 
       const ctx = getReaderContext();
       if (!ctx.bookId || ctx.chapterIndex == null) return;
 
-      for (const id of ids) {
+      for (const id of uniqueIds) {
         await fetch(`/api/notes/${encodeURIComponent(ctx.bookId)}/${encodeURIComponent(String(ctx.chapterIndex))}/${encodeURIComponent(id)}`, {
           method: "DELETE",
         }).catch(() => {});
       }
 
       this.closeSelectionToolbarIfOpen();
-      this.hideColorRow();
       await this.renderer.loadAndRender().catch(() => {});
+      this.setCurrentAnnotations([]);
       window.dispatchEvent(new CustomEvent("reader3:annotations:updated"));
     }
 
@@ -607,14 +886,17 @@
      * Delete the currently selected/clicked annotation
      */
     async deleteCurrentAnnotation() {
-      if (this.currentAnnotationIds && this.currentAnnotationIds.length > 0) {
-        await this.deleteAnnotations(this.currentAnnotationIds);
-        this.currentAnnotationIds = null;
+      let meta = this.currentAnnotationMeta || [];
+      if (!meta.length && this.currentRange) {
+        meta = this.getAnnotationMetaForRange(this.currentRange);
       }
+      const ids = meta.map((item) => item.id).filter(Boolean);
+      if (!ids.length) return;
+      await this.deleteAnnotations(ids);
     }
 
     copySelection() {
-      const sel = window.getSelection();
+      const sel = this.contentWindow?.getSelection?.();
       const text = sel ? String(sel.toString() || "") : "";
       if (!text.trim()) return;
       navigator.clipboard?.writeText?.(text).catch(() => {});
@@ -623,7 +905,8 @@
 
     openNoteEditor() {
       if (!this.currentRange || !this.noteEditor) return;
-      const rect = this.currentRange.getBoundingClientRect();
+      this.editingNoteId = null;
+      const rect = offsetRect(this.currentRange.getBoundingClientRect(), this.frameEl);
       const editorWidth = 320; // matches CSS width
       const editorHeight = 180; // approximate height
 
@@ -656,18 +939,16 @@
       if (!text) return;
 
       // If editing an existing note, update it
-      if (this.editingAnnotationIds && this.editingAnnotationIds.length > 0) {
+      if (this.editingNoteId) {
         const ctx = getReaderContext();
         if (ctx.bookId && ctx.chapterIndex != null) {
-          // Update the first note annotation (usually there's only one note per annotation)
-          const id = this.editingAnnotationIds[0];
-          await fetch(`/api/notes/${encodeURIComponent(ctx.bookId)}/${encodeURIComponent(String(ctx.chapterIndex))}/${encodeURIComponent(id)}`, {
+          await fetch(`/api/notes/${encodeURIComponent(ctx.bookId)}/${encodeURIComponent(String(ctx.chapterIndex))}/${encodeURIComponent(this.editingNoteId)}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ note_text: text }),
           }).catch(() => {});
 
-          this.editingAnnotationIds = null;
+          this.editingNoteId = null;
           this.closeNoteEditorIfOpen();
           this.closeSelectionToolbarIfOpen();
           await this.renderer.loadAndRender().catch(() => {});
@@ -677,7 +958,8 @@
       }
 
       // Otherwise create a new note annotation
-      await this.createAnnotation({ type: "note", color: "yellow", note_text: text });
+      const color = this.selectedColor || "yellow";
+      await this.createAnnotation({ type: "note", color, note_text: text });
       this.closeNoteEditorIfOpen();
     }
 
@@ -707,6 +989,19 @@
       const prefix = idx.text.slice(Math.max(0, s - 50), s);
       const suffix = idx.text.slice(e, Math.min(idx.text.length, e + 50));
 
+      let cfi = null;
+      const contents = window.Reader3Epub?.getContents?.();
+      if (contents && typeof contents.cfiFromRange === "function") {
+        try {
+          cfi = contents.cfiFromRange(this.currentRange);
+        } catch {
+          cfi = null;
+        }
+      }
+      if (typeof cfi !== "string" || !cfi.startsWith("epubcfi(")) {
+        cfi = null;
+      }
+
       const payload = {
         type: extra.type,
         color: extra.color || null,
@@ -714,6 +1009,7 @@
         prefix,
         suffix,
         position: s,
+        cfi,
         note_text: extra.note_text || null,
       };
       console.log('[Annotations] createAnnotation: sending payload:', payload);
@@ -726,7 +1022,6 @@
       console.log('[Annotations] createAnnotation: response:', resp);
 
       this.closeSelectionToolbarIfOpen();
-      this.hideColorRow();
       await this.renderer.loadAndRender().catch(() => {});
 
       // Notify notes panel to refresh
@@ -750,11 +1045,13 @@
     }
 
     onHover(e) {
-      const target = e.target.closest("mark.annotation.annotation--note");
-      if (!target) return;
-      const text = target.getAttribute("data-note-text");
+      const target = getEventTargetElement(e.target);
+      const mark = target?.closest ? target.closest("mark.annotation.annotation--note") : null;
+      if (!mark) return;
+      const text = mark.getAttribute("data-note-text");
       if (!text) return;
-      this.showTooltip(text, target.getBoundingClientRect());
+      const rect = offsetRect(mark.getBoundingClientRect(), this.frameEl);
+      this.showTooltip(text, rect);
     }
 
     showTooltip(text, rect) {
@@ -773,11 +1070,58 @@
     }
   }
 
-  document.addEventListener("DOMContentLoaded", () => {
+  function initAnnotations() {
+    if (window.Reader3AnnotationUI) return; // Already initialized
+
+    const initForContent = (contentEl, frameEl) => {
+      if (!contentEl) return;
+      const ui = new AnnotationUI(contentEl, frameEl);
+      ui.init();
+      window.Reader3AnnotationUI = ui;
+    };
+
+    let refreshTimer = null;
+    const scheduleRefresh = () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => {
+        window.Reader3AnnotationUI?.renderer?.loadAndRender?.().catch(() => {});
+      }, 80);
+    };
+
+    window.addEventListener("reader3:content:rendered", scheduleRefresh);
+    window.addEventListener("reader3:chapter:change", scheduleRefresh);
+    window.addEventListener("reader3:annotations:updated", scheduleRefresh);
+
+    // For epub.js rendering: use Reader3Epub bridge
+    if (window.Reader3Epub && window.Reader3Epub.onContentsReady) {
+      window.Reader3Epub.onContentsReady(() => {
+        const root = window.Reader3Epub.getContentRoot?.();
+        const frameEl = window.Reader3Epub.getFrameElement?.() || null;
+        if (!root) return;
+        const ui = window.Reader3AnnotationUI;
+        if (ui) {
+          ui.contentEl = root;
+          ui.frameEl = frameEl;
+          ui.contentDocument = root.ownerDocument || document;
+          ui.contentWindow = ui.contentDocument.defaultView || window;
+          if (ui.renderer) ui.renderer.contentEl = root;
+          ui.renderer?.loadAndRender?.().catch(() => {});
+          return;
+        }
+        initForContent(root, frameEl);
+      });
+      return;
+    }
+
+    // Fallback: use .book-content in main document
     const contentEl = document.querySelector(".book-content");
-    if (!contentEl) return;
-    const ui = new AnnotationUI(contentEl);
-    ui.init();
-    window.Reader3AnnotationUI = ui;
-  });
+    initForContent(contentEl, null);
+  }
+
+  // Initialize immediately if DOM is ready, otherwise wait for DOMContentLoaded
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initAnnotations);
+  } else {
+    initAnnotations();
+  }
 })();

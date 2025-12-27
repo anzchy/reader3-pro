@@ -195,7 +195,7 @@ uv run reader3-server
    - `POST /api/collections/{id}/books`
    - `DELETE /api/collections/{id}`
 3. Add collections to library page context
-4. Update `docs/technical-detail/storage-and-data-locations.md`
+4. Update `docs/storage-and-data-locations.md`
 
 **Frontend Tasks**:
 1. Render collections list in left sidebar
@@ -443,8 +443,8 @@ If performance degrades:
 After implementation, update these docs:
 
 - [ ] `CLAUDE.md`: Add 004 to "Active Technologies" section
-- [ ] `docs/technical-detail/storage-and-data-locations.md`: Document `config/library_collections.json`
-- [ ] `docs/technical-detail/technical-detail.md`: Add Collections architecture overview
+- [ ] `docs/storage-and-data-locations.md`: Document `config/library_collections.json`
+- [ ] `docs/technical-detail.md`: Add Collections architecture overview
 - [ ] `README.md`: Add Collections to feature list (if user-facing)
 
 ---

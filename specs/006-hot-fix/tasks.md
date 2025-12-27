@@ -396,3 +396,81 @@ _Phase 1 Completed: 2025-12-27_
 _Phase 2 Completed: 2025-12-27_
 _Phase 3 Completed: 2025-12-27 (T034-T055, cross-browser testing T054 pending)_
 _Phase 4 Completed: 2025-12-27 (T056-T084, all annotation enhancements implemented)_
+
+---
+
+## Phase 5: Renderer Refactor (epub.js) (Implemented)
+
+> See `spec.md` Phase 5 section for requirements (FR-RF-001 to FR-RF-008).
+> See `plan.md` Phase 5 section for architecture and integration plan.
+
+### Issue 9 — epub.js Renderer Integration (P1)
+
+**Goal**: Replace direct HTML injection with epub.js rendering inside an isolated iframe.
+
+**Acceptance Test**: Chapter renders via epub.js; clicking annotated text opens toolbar reliably.
+
+- [x] T085 [Issue9] Persist original `.epub` alongside processed data
+  - `src/reader3_app/reader3.py`
+- [x] T086 [Issue9] Serve `book.epub` and expose `epub_url` to the reader template
+  - `src/reader3_app/web/server.py`, `src/reader3_app/web/templates/reader.html`
+- [x] T087 [Issue9] Add epub.js vendor deps and load renderer bootstrap
+  - `src/reader3_app/web/static/vendor/epub.min.js`, `src/reader3_app/web/static/vendor/jszip.min.js`, `reader.html`
+- [x] T088 [Issue9] Implement `epub-renderer.js` (mount, display, progress, TOC sync)
+  - `src/reader3_app/web/static/js/epub-renderer.js`
+- [x] T089 [Issue9] Use epub.js pagination for page turns (Left/Right) and chapter jumps (Up/Down)
+  - `src/reader3_app/web/static/js/epub-renderer.js`
+
+### Issue 10 — Iframe Bridge for Annotations (P1)
+
+**Goal**: Make annotations work reliably inside iframe-rendered content.
+
+**Acceptance Test**: Click marker/underline/wavy -> selection + toolbar; notes open for editing.
+
+- [x] T090 [Issue10] Expose `window.Reader3Epub` helpers for iframe selection/content
+  - `src/reader3_app/web/static/js/epub-renderer.js`
+- [x] T091 [Issue10] Update annotations to read selection from iframe + store optional CFI
+  - `src/reader3_app/web/static/js/annotations.js`
+- [x] T092 [Issue10] Allow color for underline/wavy in API + model
+  - `src/reader3_app/models/annotations.py`, `src/reader3_app/web/server.py`
+- [x] T093 [Issue10] Re-apply annotations on render/chapter change events
+  - `src/reader3_app/web/static/js/annotations.js`
+- [x] T094 [Issue10] Redesign annotation toolbar for color-first workflow
+  - `src/reader3_app/web/templates/reader.html`, `src/reader3_app/web/static/css/annotations.css`, `src/reader3_app/web/static/js/annotations.js`
+
+### Issue 11 — Reader Panels & Focus (P1)
+
+**Goal**: Ensure panels close on content click/Esc and keyboard navigation keeps working.
+
+- [x] T102 [Issue11] Close TOC/Notes/Search/AI on content click or Esc
+  - `src/reader3_app/web/static/js/toolbar.js`, `src/reader3_app/web/static/js/epub-renderer.js`
+- [x] T103 [Issue11] Blur panel inputs on close to restore arrow-key navigation
+  - `src/reader3_app/web/static/js/toolbar.js`
+- [x] T104 [Issue11] Ensure back-to-library button navigates without toolbar interception
+  - `src/reader3_app/web/static/js/toolbar.js`
+
+### Issue 12 — Search/Notes with Iframe Content (P2)
+
+**Goal**: Keep search highlights and notes panel synced with iframe-rendered content.
+
+- [x] T105 [Issue12] Move in-chapter search highlight logic into iframe document
+  - `src/reader3_app/web/static/search.js`
+- [x] T106 [Issue12] Refresh notes panel on epub.js chapter change events
+  - `src/reader3_app/web/static/js/notes-panel.js`, `src/reader3_app/web/static/js/epub-renderer.js`
+
+### Issue 13 — Annotation Rendering Reliability (P2)
+
+**Goal**: Ensure annotations render consistently without manual refresh.
+
+- [x] T107 [Issue13] Render annotations on `reader3:content:rendered` and after create/delete
+  - `src/reader3_app/web/static/js/annotations.js`
+- [x] T108 [Issue13] Apply colored underline/wavy/marker styles in iframe
+  - `src/reader3_app/web/static/js/epub-renderer.js`, `src/reader3_app/web/static/css/annotations.css`
+
+### Phase 5 Polish & Docs
+
+- [x] T109 Update technical docs for new `book.epub` storage + epub.js renderer
+  - `docs/technical-detail.md`, `docs/storage-and-data-locations.md`, `docs/ai-providers-and-privacy.md`
+- [x] T110 Update repo guidance docs (README/AGENTS/CLAUDE/specs)
+  - `README.md`, `AGENTS.md`, `CLAUDE.md`, `specs/006-hot-fix/spec.md`, `specs/006-hot-fix/plan.md`, `specs/006-hot-fix/tasks.md`
+- [ ] T111 Manual regression: annotations (click/delete/edit), search, TOC, AI panel, notes panel

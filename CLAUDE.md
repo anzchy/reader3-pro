@@ -22,6 +22,7 @@ uv run reader3 --index dracula_data
 
 This creates a `books/{bookname}_data/` directory containing:
 - `book.pkl` - Serialized Book object
+- `book.epub` - Original EPUB copy for epub.js rendering
 - `images/` - Extracted images from the EPUB
 - `chroma_db/` - Vector embeddings for semantic search (created on demand)
 
@@ -61,6 +62,9 @@ cp config/ai_settings.example.json config/ai_settings.json
 - `GET/PUT /api/settings` - Global settings
 - `POST /api/ai/question/{book_uuid}?stream=true` - Q&A streaming (SSE)
 - `GET/POST/DELETE /api/ai/conversations/{book_uuid}` - Conversation management
+- `GET /api/notes/{book_id}` - List annotations for a book
+- `GET/POST /api/notes/{book_id}/{chapter_index}` - Fetch/create annotations for a chapter
+- `PUT/DELETE /api/notes/{book_id}/{chapter_index}/{note_id}` - Update/delete an annotation
 
 ## Architecture
 
@@ -84,6 +88,7 @@ Layer 4: Web Server (web/server.py)
 **Layer 2: Search & Vector Services**
 - `search_service.py` - Keyword search with diacritic normalization (café→cafe)
 - `vector_search.py` - Semantic search using ChromaDB + `paraphrase-multilingual-MiniLM-L12-v2`
+- `notes_service.py` - Annotation persistence to `books/{book_id}_data/notes.json`
 
 **Layer 3: AI Assistant (`ai/`)**
 - `config.py` - Multi-provider settings management
@@ -94,7 +99,8 @@ Layer 4: Web Server (web/server.py)
 **Layer 4: Web Server (`web/server.py`)**
 - FastAPI app with Jinja2 templates
 - Caches loaded books with `lru_cache(maxsize=10)`
-- Endpoint groups: `/api/search/*`, `/api/ai/*`, `/api/settings/*`, `/api/library/*`
+- Serves `book.epub` at `/read/{book_id}/book.epub` for epub.js rendering
+- Endpoint groups: `/api/search/*`, `/api/ai/*`, `/api/settings/*`, `/api/library/*`, `/api/notes/*`
 
 ### Spine vs TOC (Critical Distinction)
 
@@ -104,6 +110,7 @@ Layer 4: Web Server (web/server.py)
 ### Key Data Structures
 
 ```python
+# Core book model (reader3.py)
 @dataclass
 class Book:
     metadata: BookMetadata
@@ -118,6 +125,20 @@ class ChapterContent:
     content: str     # Cleaned HTML
     text: str        # Plain text for search/LLM
     order: int       # Spine index for navigation
+
+# Annotation model (models/annotations.py)
+@dataclass
+class Annotation:
+    id: str                        # UUID
+    book_id: str                   # Book folder name
+    chapter_index: int             # Spine index
+    type: AnnotationType           # "marker" | "wavy" | "underline" | "note"
+    color: Optional[MarkerColor]   # "yellow" | "green" | "pink" | "blue" (marker/underline/wavy)
+    quote: str                     # Selected text
+    prefix: str                    # Context before (max 50 chars)
+    suffix: str                    # Context after (max 50 chars)
+    note_text: Optional[str]       # User's note content
+    cfi: Optional[str]             # epub.js CFI anchor (optional)
 ```
 
 ### Book Identity System
@@ -131,12 +152,19 @@ Each book has two identifiers:
 Templates in `src/reader3_app/web/templates/`:
 - `library.html` - Modern 3-pane library UI (left: collections, center: book grid, right: search/chat)
 - `library_classic.html` - Legacy grid view
-- `reader.html` - Reading interface with TOC sidebar and chapter content
+- `reader.html` - Full-screen paginated reading interface with TOC sidebar, annotations, and panels
 
 Static assets in `src/reader3_app/web/static/`:
 - `library.js` / `library.css` - Library UI logic and styles
 - `library-search.js` - Cross-book search functionality
-- `search.css` - Search panel styles
+- `js/epub-renderer.js` - epub.js integration (iframe rendering, progress, navigation)
+- `js/pagination.js` - Legacy CSS column pagination (not loaded by reader.html)
+- `js/annotations.js` - Text selection, highlighting, and notes toolbar
+- `js/notes-panel.js` - Notes panel with chapter grouping
+- `js/toolbar.js` - Right-side vertical toolbar
+- `js/toc-panel.js` - Table of contents panel
+- `css/reader.css` - Full-screen reader styles
+- `css/annotations.css` - Annotation styling (marker, underline, wavy)
 
 JavaScript uses vanilla ES6+ (no frameworks). CSS is plain CSS (no preprocessors).
 
@@ -172,6 +200,8 @@ Uses spec-driven development with numbered feature branches:
 - `002-ai-assistant`: Multi-provider AI with RAG (✅ Completed)
 - `003-add-book-notes`: Book annotation system (📋 Spec phase)
 - `004-library-bulk-indexing`: 3-pane UI, collections, bulk indexing (✅ Completed)
+- `005-dedao-style-ui-reorganization`: Dedao-style UI for library and reader (✅ Completed)
+- `006-hot-fix`: Full-screen paginated reader with annotations (🚧 In progress)
 
 **Speckit commands**:
 - `/speckit.specify` - Create feature specification
