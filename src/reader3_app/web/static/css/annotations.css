@@ -10,7 +10,8 @@
   font-family: -apple-system, system-ui, sans-serif;
 }
 
-#annotation-toolbar.is-open {
+#annotation-toolbar.is-open,
+#annotation-toolbar.is-visible {
   display: flex;
   gap: 6px;
   align-items: center;
@@ -36,7 +37,8 @@
   margin-left: 6px;
 }
 
-.anno-color-row.is-open {
+.anno-color-row.is-open,
+.anno-color-row.is-visible {
   display: flex;
 }
 
@@ -74,7 +76,8 @@
   font-family: -apple-system, system-ui, sans-serif;
 }
 
-#note-editor.is-open {
+#note-editor.is-open,
+#note-editor.is-visible {
   display: block;
 }
 
@@ -127,7 +130,8 @@
   pointer-events: none;
 }
 
-#note-tooltip.is-open {
+#note-tooltip.is-open,
+#note-tooltip.is-visible {
   display: block;
 }
 
@@ -173,4 +177,3 @@ mark.annotation.annotation--note {
 mark.annotation.is-jump-target {
   outline: 2px solid rgba(37, 99, 235, 0.6);
 }
-

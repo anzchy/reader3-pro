@@ -23,9 +23,22 @@
 
 ## Browser storage (localStorage)
 
-The Library UI stores small UI preferences in localStorage:
+The UI stores small UI preferences in localStorage:
 
 - `reader3.library.viewMode`: `grid` or `list`
+- `reader3.library.rightPanelCollapsed`: `true` or `false` for the right panel state
+- `reader3.library.bulkIndexingActive`: `true` while bulk indexing is running (used to show an interrupted hint after reload)
+- `reader3.ai.model.{book_uuid}.{provider}`: last selected AI model per book/provider
+- `reader3.ai.activeConversation.{book_uuid}.{provider}`: active AI conversation id per book/provider
+- `reader3-ai-panel-width`: AI sidebar width in pixels (reader view)
+- `reader3-font-settings`: JSON `{ "fontSize": number, "lineHeight": number }` for reader font settings
+
+## Browser storage (sessionStorage)
+
+Search panels persist the last query and results for the current tab:
+
+- `reader3.search.reader.{book_id}`: JSON `{ q, caseSensitive, mode, results, statusMessage }`
+- `reader3.search.library`: JSON `{ payload, q, caseSensitive, sortBy, mode }`
 
 ## Server-side on-disk storage (conversations)
 
