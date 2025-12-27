@@ -78,7 +78,7 @@ function providerRequiresKey(name) {
   return ["anthropic", "openai", "gemini", "openrouter"].includes(String(name || "").toLowerCase());
 }
 
-function renderProviderCard(p, ollamaStatus, ollamaModels) {
+function renderProviderCard(p, ollamaStatus, ollamaModels, isExpanded) {
   const name = String(p.name || "");
   const enabled = Boolean(p.enabled);
   const apiKeyConfigured = Boolean(p.api_key_configured);
@@ -90,8 +90,8 @@ function renderProviderCard(p, ollamaStatus, ollamaModels) {
   const statusPill =
     name === "ollama"
       ? ollamaStatus?.running
-        ? `<span class="pill ok">✅ Running</span>`
-        : `<span class="pill bad">⚠️ Not connected</span>`
+        ? `<span class="pill ok">Running</span>`
+        : `<span class="pill bad">Not connected</span>`
       : enabled
         ? `<span class="pill ok">Enabled</span>`
         : `<span class="pill">Disabled</span>`;
@@ -115,45 +115,53 @@ function renderProviderCard(p, ollamaStatus, ollamaModels) {
       </div>
     `;
 
+  const expandedClass = isExpanded ? "is-expanded" : "";
+  const chevronSvg = `<svg class="provider-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
+
   return `
-    <div class="provider-card" data-provider="${escapeHtml(name)}">
-      <div class="provider-head">
-        <div class="provider-name">${escapeHtml(name)} ${statusPill} <span class="hint">${escapeHtml(modelsHint)}</span></div>
-        <label class="checkbox">
+    <div class="provider-card ${expandedClass}" data-provider="${escapeHtml(name)}">
+      <div class="provider-head" data-action="toggle">
+        <div class="provider-name">
+          ${chevronSvg}
+          ${escapeHtml(name)} ${statusPill} <span class="hint">${escapeHtml(modelsHint)}</span>
+        </div>
+        <label class="checkbox" onclick="event.stopPropagation()">
           <input type="checkbox" data-k="enabled" ${enabled ? "checked" : ""} />
           Enabled
         </label>
       </div>
-      <div class="provider-grid">
-        <label class="label">
-          Base URL
-          <input type="text" data-k="base_url" value="${escapeHtml(baseUrl)}" />
-        </label>
-        <label class="label">
-          Model
-          <input type="text" data-k="model_name" value="${escapeHtml(modelName)}" />
-        </label>
-        <label class="label">
-          Timeout (seconds)
-          <input type="number" data-k="timeout" min="5" max="120" value="${escapeHtml(timeout)}" />
-        </label>
-        <label class="label">
-          Max retries
-          <input type="number" data-k="max_retries" min="0" max="10" value="${escapeHtml(maxRetries)}" />
-        </label>
-        ${keyRow}
+      <div class="provider-body">
+        <div class="provider-grid">
+          <label class="label">
+            Base URL
+            <input type="text" data-k="base_url" value="${escapeHtml(baseUrl)}" />
+          </label>
+          <label class="label">
+            Model
+            <input type="text" data-k="model_name" value="${escapeHtml(modelName)}" />
+          </label>
+          <label class="label">
+            Timeout (seconds)
+            <input type="number" data-k="timeout" min="5" max="120" value="${escapeHtml(timeout)}" />
+          </label>
+          <label class="label">
+            Max retries
+            <input type="number" data-k="max_retries" min="0" max="10" value="${escapeHtml(maxRetries)}" />
+          </label>
+          ${keyRow}
+        </div>
+        <div class="row">
+          <button class="btn" data-action="save">Save</button>
+          <button class="btn" data-action="test">Test</button>
+          ${name === "ollama" ? `<button class="btn" data-action="refresh-models">Refresh models</button>` : ""}
+          <span class="status" data-role="status"></span>
+        </div>
+        ${
+          name === "ollama" && !ollamaStatus?.running
+            ? `<div class="hint">Install: <code>brew install ollama</code>. Start: <code>ollama serve</code>. Pull a model: <code>ollama pull qwen3:8b</code>.</div>`
+            : ""
+        }
       </div>
-      <div class="row">
-        <button class="btn" data-action="save">Save</button>
-        <button class="btn" data-action="test">Test</button>
-        ${name === "ollama" ? `<button class="btn" data-action="refresh-models">Refresh models</button>` : ""}
-        <span class="status" data-role="status"></span>
-      </div>
-      ${
-        name === "ollama" && !ollamaStatus?.running
-          ? `<div class="hint">Install: <code>brew install ollama</code>. Start: <code>ollama serve</code>. Pull a model: <code>ollama pull qwen3:8b</code>.</div>`
-          : ""
-      }
     </div>
   `;
 }
@@ -199,7 +207,11 @@ function renderProviders(settings, ollamaStatus, ollamaModels) {
   const root = $("settings-providers");
   root.innerHTML = "";
   const providers = Array.isArray(settings?.providers) ? settings.providers : [];
-  root.innerHTML = providers.map((p) => renderProviderCard(p, ollamaStatus, ollamaModels)).join("");
+  const defaultProvider = String(settings?.default_provider || "").toLowerCase();
+  root.innerHTML = providers.map((p) => {
+    const isExpanded = String(p.name || "").toLowerCase() === defaultProvider;
+    return renderProviderCard(p, ollamaStatus, ollamaModels, isExpanded);
+  }).join("");
 }
 
 function getProviderPatch(cardEl) {
@@ -227,6 +239,16 @@ function getProviderPatch(cardEl) {
 function installProviderHandlers() {
   const root = $("settings-providers");
   root.addEventListener("click", async (e) => {
+    // Handle toggle action on provider header
+    const toggleHead = e.target?.closest?.('[data-action="toggle"]');
+    if (toggleHead) {
+      const card = toggleHead.closest(".provider-card");
+      if (card) {
+        card.classList.toggle("is-expanded");
+        return;
+      }
+    }
+
     const btn = e.target?.closest?.("button[data-action]");
     if (!btn) return;
     const action = btn.getAttribute("data-action");

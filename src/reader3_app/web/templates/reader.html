@@ -5,10 +5,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ book.metadata.title }} - Reader3 Pro</title>
     <link rel="stylesheet" href="/static/dedao-theme.css">
+    <link rel="stylesheet" href="/static/css/annotations.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
+        /* Pagination CSS Variables */
+        :root {
+            --reader-margin-x: 80px;
+            --reader-padding-top: 0px;
+            --reader-padding-bottom: 40px;
+            --reader-nav-zone-width: 120px;
+            --reader-transition-duration: 180ms;
+            --reader-min-pagination-width: 600px;
+            /* Font settings (can be overridden by user preferences) */
+            --reader-font-size: 17px;
+            --reader-line-height: 1.9;
+        }
+
         /* Reader-specific styles */
         * {
             box-sizing: border-box;
@@ -24,114 +38,6 @@
             flex-direction: column;
         }
 
-        /* Header */
-        .reader-header {
-            position: sticky;
-            top: 0;
-            z-index: 100;
-            height: var(--dedao-header-height);
-            background: rgba(255, 255, 255, 0.92);
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            border-bottom: 1px solid var(--dedao-border);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 0 16px;
-            flex-shrink: 0;
-        }
-
-        .header-left {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .back-btn {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 36px;
-            height: 36px;
-            border-radius: var(--dedao-radius-md);
-            color: var(--dedao-muted);
-            text-decoration: none;
-            transition: background-color var(--dedao-transition-fast);
-        }
-
-        .back-btn:hover {
-            background-color: var(--dedao-bg);
-        }
-
-        .header-divider {
-            width: 1px;
-            height: 20px;
-            background-color: var(--dedao-border);
-        }
-
-        .header-info {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .header-section {
-            font-size: 11px;
-            color: var(--dedao-light);
-        }
-
-        .header-title {
-            font-size: 14px;
-            font-weight: 500;
-            color: var(--dedao-text);
-            max-width: 300px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .header-center {
-            display: flex;
-            align-items: center;
-            gap: 4px;
-        }
-
-        .header-btn {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 4px;
-            padding: 8px 10px;
-            border: none;
-            background: none;
-            border-radius: var(--dedao-radius-md);
-            color: var(--dedao-muted);
-            cursor: pointer;
-            transition: background-color var(--dedao-transition-fast);
-        }
-
-        .header-btn:hover {
-            background-color: var(--dedao-bg);
-        }
-
-        .header-btn svg {
-            width: 18px;
-            height: 18px;
-        }
-
-        .font-label {
-            font-size: 12px;
-        }
-
-        .font-label-lg {
-            font-size: 15px;
-        }
-
-        .header-right {
-            display: flex;
-            align-items: center;
-            gap: 4px;
-        }
-
         /* Main Layout */
         .reader-layout {
             flex: 1;
@@ -144,8 +50,8 @@
         #toc-mode {
             position: fixed;
             left: 0;
-            top: var(--dedao-header-height);
-            bottom: var(--dedao-footer-height);
+            top: 0;
+            bottom: 0;
             width: 288px;
             background-color: var(--dedao-card);
             border-right: 1px solid var(--dedao-border);
@@ -260,8 +166,8 @@
             flex: 1;
             display: flex;
             justify-content: center;
-            padding: 32px 24px;
-            overflow-y: auto;
+            padding: 0;
+            overflow: hidden;
             transition: margin-left var(--dedao-transition-normal);
         }
 
@@ -271,21 +177,93 @@
 
         #main {
             width: 100%;
-            max-width: 768px;
+            /* max-width removed for full-screen paginated layout */
         }
 
         .content-container {
             background-color: var(--dedao-card);
-            border-radius: var(--dedao-radius-xl);
-            box-shadow: var(--dedao-shadow-md);
-            padding: 48px;
+            border-radius: 0;
+            /* box-shadow removed for clean reading experience */
+            padding: 0;
+            width: 100%;
+            height: 100vh;
+        }
+
+        /* Pagination Container */
+        .pagination-container {
+            width: 100%;
+            height: calc(100vh - var(--reader-padding-bottom));
+            padding-top: 40px;
+            overflow-x: auto;
+            overflow-y: hidden;
+            scroll-snap-type: x mandatory;
+            scroll-behavior: smooth;
+            -webkit-overflow-scrolling: touch;
+            /* Hide scrollbar but keep functionality */
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+        }
+
+        .pagination-container::-webkit-scrollbar {
+            display: none;
         }
 
         .book-content {
             font-family: var(--dedao-font-serif);
-            font-size: 17px;
-            line-height: 1.9;
+            font-size: var(--reader-font-size);
+            line-height: var(--reader-line-height);
             color: var(--dedao-text);
+            /* CSS Multi-column Layout for pagination - each column = one page */
+            column-width: calc(100vw - var(--reader-margin-x) * 2);
+            column-fill: auto;
+            column-gap: calc(var(--reader-margin-x) * 2);
+            height: calc(100vh - var(--reader-padding-bottom) - 40px);
+            /* Horizontal padding creates margins on each page */
+            padding: 0 var(--reader-margin-x);
+            box-sizing: border-box;
+        }
+
+        /* Prevent awkward page breaks */
+        .book-content p,
+        .book-content img,
+        .book-content blockquote,
+        .book-content table,
+        .book-content pre,
+        .book-content figure,
+        .book-content ul,
+        .book-content ol {
+            break-inside: avoid;
+        }
+
+        /* Image scaling to fit within page */
+        .book-content img {
+            max-height: calc(100vh - var(--reader-padding-top) - var(--reader-padding-bottom) - 40px);
+            width: auto;
+            max-width: 100%;
+            object-fit: contain;
+        }
+
+        /* Navigation Zones - HIDDEN (keyboard-only navigation) */
+        .nav-zone-left,
+        .nav-zone-right {
+            display: none;
+        }
+
+        /* Reading Progress Indicator */
+        .reading-progress {
+            position: fixed;
+            bottom: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 6px 16px;
+            font-size: 12px;
+            color: var(--dedao-muted);
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 16px;
+            box-shadow: var(--dedao-shadow-sm);
+            z-index: 20;
+            pointer-events: none;
+            transition: opacity var(--reader-transition-duration);
         }
 
         .book-content p {
@@ -410,117 +388,14 @@
             filter: invert(1) opacity(0.6);
         }
 
-        /* Footer */
-        .reader-footer {
-            height: var(--dedao-footer-height);
-            background-color: var(--dedao-dark);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 0 24px;
-            flex-shrink: 0;
-        }
-
-        .footer-left {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .footer-btn {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            padding: 8px 12px;
-            font-size: 13px;
-            color: rgba(255, 255, 255, 0.7);
-            background: none;
-            border: none;
-            cursor: pointer;
-            transition: color var(--dedao-transition-fast);
-        }
-
-        .footer-btn:hover {
-            color: white;
-        }
-
-        .footer-btn svg {
-            width: 16px;
-            height: 16px;
-        }
-
-        .footer-center {
-            flex: 1;
-            max-width: 480px;
-            margin: 0 32px;
-        }
-
-        .progress-container {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .progress-label {
-            font-size: 11px;
-            color: rgba(255, 255, 255, 0.5);
-            min-width: 24px;
-        }
-
-        .progress-bar {
-            flex: 1;
-            height: 4px;
-            background-color: rgba(255, 255, 255, 0.2);
-            border-radius: 2px;
-            overflow: hidden;
-        }
-
-        .progress-fill {
-            height: 100%;
-            background-color: var(--dedao-orange);
-            border-radius: 2px;
-            transition: width var(--dedao-transition-normal);
-        }
-
-        .footer-right {
-            display: flex;
-            align-items: center;
-            gap: 16px;
-        }
-
-        .footer-nav {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 13px;
-            color: rgba(255, 255, 255, 0.7);
-            text-decoration: none;
-            transition: color var(--dedao-transition-fast);
-        }
-
-        .footer-nav:hover {
-            color: white;
-        }
-
-        .footer-nav svg {
-            width: 16px;
-            height: 16px;
-        }
-
-        .footer-indicator {
-            font-size: 14px;
-            font-weight: 500;
-            color: white;
-        }
-
         /* Notes Mode Panel */
         #notes-mode {
             position: fixed;
             right: 0;
-            top: var(--dedao-header-height);
-            bottom: var(--dedao-footer-height);
+            top: 0;
+            bottom: 0;
             width: 384px;
-            background-color: var(--dedao-card);
+            background-color: #f8f8f8;
             border-left: 1px solid var(--dedao-border);
             transform: translateX(100%);
             transition: transform var(--dedao-transition-normal);
@@ -551,27 +426,41 @@
             justify-content: space-between;
             align-items: flex-start;
             padding: 20px;
-            border-bottom: 1px solid var(--dedao-border);
+            background-color: var(--dedao-card);
+            border-radius: 0 0 16px 16px;
+            margin-bottom: 8px;
+        }
+
+        .notes-header-info {
+            flex: 1;
+            padding-right: 12px;
         }
 
         .notes-title {
-            font-size: 16px;
+            font-size: 18px;
             font-weight: 600;
             color: var(--dedao-text);
-            margin-bottom: 4px;
+            margin-bottom: 8px;
+            line-height: 1.4;
         }
 
         .notes-meta {
-            font-size: 12px;
+            font-size: 13px;
             color: var(--dedao-light);
         }
 
+        .notes-meta-icon {
+            color: var(--dedao-orange);
+        }
+
         .notes-cover {
-            width: 48px;
-            height: 64px;
-            border-radius: var(--dedao-radius-sm);
+            width: 64px;
+            height: 88px;
+            border-radius: var(--dedao-radius-md);
             overflow: hidden;
             background-color: var(--dedao-bg);
+            flex-shrink: 0;
+            box-shadow: var(--dedao-shadow-sm);
         }
 
         .notes-cover img {
@@ -583,32 +472,131 @@
         .notes-body {
             flex: 1;
             overflow-y: auto;
-            padding: 16px;
+            padding: 0 16px 16px;
         }
 
-        .note-group {
-            margin-bottom: 24px;
-        }
-
-        .note-group-title {
-            font-size: 12px;
-            font-weight: 600;
+        .notes-empty {
+            text-align: center;
             color: var(--dedao-light);
+            padding: 40px 20px;
+            font-size: 14px;
+        }
+
+        /* Chapter group title - orange/red background */
+        .notes-group {
+            margin-bottom: 16px;
+        }
+
+        .notes-group-title {
+            display: inline-block;
+            font-size: 13px;
+            font-weight: 500;
+            color: #c2410c;
+            background-color: #fff7ed;
+            padding: 6px 12px;
+            border-radius: 6px;
             margin-bottom: 12px;
         }
 
-        .note-item {
-            padding: 12px;
-            background-color: var(--dedao-bg);
-            border-radius: var(--dedao-radius-lg);
-            border-left: 4px solid var(--dedao-highlight-yellow);
-            margin-bottom: 8px;
+        /* Note item card */
+        .notes-item {
+            display: flex;
+            gap: 12px;
+            padding: 14px;
+            background-color: var(--dedao-card);
+            border-radius: 12px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: box-shadow var(--dedao-transition-fast);
         }
 
-        .note-item.color-green { border-color: var(--dedao-highlight-green); }
-        .note-item.color-pink { border-color: var(--dedao-highlight-red); }
-        .note-item.color-blue { border-color: var(--dedao-highlight-blue); }
+        .notes-item:hover {
+            box-shadow: var(--dedao-shadow-sm);
+        }
 
+        /* Note icon */
+        .notes-item-icon {
+            width: 20px;
+            height: 20px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--dedao-orange);
+        }
+
+        .notes-item-icon.is-note {
+            color: #0ea5e9;
+        }
+
+        /* Note content */
+        .notes-item-content {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .notes-item-note {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--dedao-text);
+            margin-bottom: 8px;
+            line-height: 1.5;
+        }
+
+        .notes-item-quote {
+            font-size: 13px;
+            color: var(--dedao-muted);
+            line-height: 1.6;
+            display: -webkit-box;
+            -webkit-line-clamp: 4;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        /* Quote with left border for notes */
+        .notes-item.has-note .notes-item-quote {
+            padding-left: 10px;
+            border-left: 2px solid var(--dedao-border);
+        }
+
+        /* Footer buttons */
+        .notes-footer {
+            display: flex;
+            gap: 12px;
+            padding: 16px;
+            background-color: var(--dedao-card);
+            border-top: 1px solid var(--dedao-border);
+        }
+
+        .notes-footer-btn {
+            flex: 1;
+            padding: 12px 16px;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--dedao-text);
+            background-color: var(--dedao-bg);
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all var(--dedao-transition-fast);
+        }
+
+        .notes-footer-btn:hover {
+            background-color: var(--dedao-bg-hover);
+        }
+
+        .notes-footer-btn-primary {
+            background-color: var(--dedao-orange);
+            color: white;
+        }
+
+        .notes-footer-btn-primary:hover {
+            background-color: var(--dedao-orange-hover);
+        }
+
+        /* Legacy styles for compatibility */
         .note-quote {
             font-size: 14px;
             color: var(--dedao-text);
@@ -631,10 +619,10 @@
         #annotation-toolbar {
             position: fixed;
             display: none;
-            flex-direction: column;
+            flex-direction: row;
             align-items: center;
-            gap: 4px;
-            padding: 8px;
+            gap: 2px;
+            padding: 6px 8px;
             background-color: var(--dedao-card);
             border-radius: var(--dedao-radius-lg);
             box-shadow: var(--dedao-shadow-lg);
@@ -664,6 +652,14 @@
 
         .anno-btn[data-action="ask_ai"] {
             color: var(--dedao-orange);
+        }
+
+        .anno-btn[data-action="delete"] {
+            color: #ef4444;
+        }
+
+        .anno-btn[data-action="delete"]:hover {
+            background-color: #fef2f2;
         }
 
         .anno-color-row {
@@ -786,8 +782,8 @@
         #reader-search-drawer {
             position: fixed;
             right: 0;
-            top: var(--dedao-header-height);
-            bottom: var(--dedao-footer-height);
+            top: 0;
+            bottom: 0;
             width: 384px;
             background-color: var(--dedao-card);
             border-left: 1px solid var(--dedao-border);
@@ -929,12 +925,18 @@
         }
 
         /* AI Panel */
+        :root {
+            --ai-panel-width: 546px;
+            --ai-panel-min-width: 320px;
+            --ai-panel-max-width: 800px;
+        }
+
         #reader-ai-panel {
             position: fixed;
             right: 0;
-            top: var(--dedao-header-height);
-            bottom: var(--dedao-footer-height);
-            width: 420px;
+            top: 0;
+            bottom: 0;
+            width: var(--ai-panel-width);
             background-color: var(--dedao-card);
             border-left: 1px solid var(--dedao-border);
             transform: translateX(100%);
@@ -946,6 +948,165 @@
 
         #reader-ai-panel.is-open {
             transform: translateX(0);
+        }
+
+        /* AI Panel Resize Handle */
+        .ai-resize-handle {
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 6px;
+            background: transparent;
+            cursor: ew-resize;
+            z-index: 60;
+        }
+
+        .ai-resize-handle:hover {
+            background: var(--dedao-orange-light);
+        }
+
+        .ai-resize-handle.is-dragging,
+        .ai-resize-handle:active {
+            background: var(--dedao-orange);
+        }
+
+        /* Prevent text selection during resize */
+        body.is-resizing {
+            user-select: none;
+            cursor: ew-resize;
+        }
+
+        /* Font Settings Popup */
+        #font-settings-popup {
+            position: fixed;
+            display: none;
+            right: 68px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 280px;
+            background-color: var(--dedao-card);
+            border-radius: var(--dedao-radius-lg);
+            box-shadow: var(--dedao-shadow-lg);
+            z-index: 45;
+            padding: 20px;
+        }
+
+        #font-settings-popup.is-visible {
+            display: block;
+        }
+
+        .font-settings-section {
+            margin-bottom: 20px;
+        }
+
+        .font-settings-section:last-child {
+            margin-bottom: 0;
+        }
+
+        .font-settings-label {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--dedao-muted);
+            margin-bottom: 10px;
+        }
+
+        /* Theme selector (UI only for v1) */
+        .theme-options {
+            display: flex;
+            gap: 8px;
+        }
+
+        .theme-option {
+            flex: 1;
+            padding: 8px 4px;
+            font-size: 12px;
+            text-align: center;
+            border: 1px solid var(--dedao-border);
+            border-radius: var(--dedao-radius-md);
+            background-color: var(--dedao-bg);
+            color: var(--dedao-muted);
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .theme-option.is-active {
+            border-color: var(--dedao-orange);
+            color: var(--dedao-orange);
+            opacity: 1;
+        }
+
+        /* Size control */
+        .size-control {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .size-btn {
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: 500;
+            background-color: var(--dedao-bg);
+            border: 1px solid var(--dedao-border);
+            border-radius: var(--dedao-radius-md);
+            color: var(--dedao-muted);
+            cursor: pointer;
+            transition: all var(--dedao-transition-fast);
+        }
+
+        .size-btn:hover:not(:disabled) {
+            background-color: var(--dedao-bg-hover);
+            color: var(--dedao-text);
+        }
+
+        .size-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .size-value {
+            text-align: center;
+        }
+
+        .size-value-num {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--dedao-text);
+        }
+
+        .size-value-label {
+            font-size: 11px;
+            color: var(--dedao-light);
+        }
+
+        /* Font family selector (UI only for v1) */
+        .font-options {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .font-option {
+            padding: 10px;
+            font-size: 13px;
+            text-align: center;
+            border: 1px solid var(--dedao-border);
+            border-radius: var(--dedao-radius-md);
+            background-color: var(--dedao-bg);
+            color: var(--dedao-muted);
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .font-option.is-active {
+            border-color: var(--dedao-orange);
+            color: var(--dedao-orange);
+            opacity: 1;
         }
 
         .ai-header {
@@ -1176,13 +1337,6 @@
                 font-size: 16px;
             }
 
-            .header-center {
-                display: none;
-            }
-
-            .footer-center {
-                display: none;
-            }
 
             #right-toolbar {
                 right: 8px;
@@ -1191,6 +1345,37 @@
             .rt-btn {
                 width: 40px;
                 height: 40px;
+            }
+        }
+
+        /* Mobile fallback: disable pagination for small viewports */
+        @media (max-width: 599px) {
+            :root {
+                --reader-margin-x: 16px;
+            }
+
+            #reader {
+                overflow-y: auto;
+            }
+
+            .pagination-container {
+                overflow-x: visible !important;
+                overflow-y: auto !important;
+                height: auto !important;
+            }
+
+            .book-content {
+                column-width: auto !important;
+                height: auto !important;
+            }
+
+            .nav-zone-left,
+            .nav-zone-right {
+                display: none !important;
+            }
+
+            .reading-progress {
+                display: none !important;
             }
         }
     </style>
@@ -1214,43 +1399,7 @@
         </ul>
     {% endmacro %}
 
-    <!-- Header -->
-    <header class="reader-header">
-        <div class="header-left">
-            <a href="/" class="back-btn" title="Back to Library">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
-                    <path d="M19 12H5M12 19l-7-7 7-7"/>
-                </svg>
-            </a>
-            <div class="header-divider"></div>
-            <div class="header-info">
-                <div class="header-section">Section {{ chapter_index + 1 }}</div>
-                <div class="header-title">{{ book.metadata.title }}</div>
-            </div>
-        </div>
-        <div class="header-center">
-            <button type="button" class="header-btn" title="Decrease font size">
-                <span class="font-label">A</span>
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="14" height="14"><path d="M5 12h14"/></svg>
-            </button>
-            <button type="button" class="header-btn" title="Increase font size">
-                <span class="font-label-lg">A</span>
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="14" height="14"><path d="M12 5v14M5 12h14"/></svg>
-            </button>
-            <div class="header-divider"></div>
-            <button type="button" class="header-btn" id="header-toc-toggle" title="Table of Contents">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
-            </button>
-            <button type="button" class="header-btn" title="Bookmark">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
-            </button>
-        </div>
-        <div class="header-right">
-            <a href="/settings" class="header-btn" title="Settings">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-            </a>
-        </div>
-    </header>
+    <!-- Header removed - navigation moved to right toolbar -->
 
     <!-- Main Layout -->
     <div class="reader-layout">
@@ -1276,40 +1425,50 @@
         <div id="reader">
             <div id="main">
                 <div class="content-container">
-                    <div class="book-content">
-                        {{ current_chapter.content | safe }}
-                    </div>
+                    <div class="pagination-container" id="pagination-container">
+                        <div class="book-content" id="book-content">
+                            {{ current_chapter.content | safe }}
 
-                    <div class="chapter-nav">
-                        {% if prev_idx is not none %}
-                            <a href="/read/{{ book_id }}/{{ prev_idx }}" class="nav-btn">Previous</a>
-                        {% else %}
-                            <span class="nav-btn disabled">Previous</span>
-                        {% endif %}
+                            <!-- Chapter navigation at end of content -->
+                            <div class="chapter-nav">
+                                {% if prev_idx is not none %}
+                                    <a href="/read/{{ book_id }}/{{ prev_idx }}" class="nav-btn" id="prev-chapter-link">Previous</a>
+                                {% else %}
+                                    <span class="nav-btn disabled">Previous</span>
+                                {% endif %}
 
-                        <span class="nav-indicator">
-                            Section {{ chapter_index + 1 }} of {{ book.spine|length }}
-                        </span>
+                                <span class="nav-indicator">
+                                    Section {{ chapter_index + 1 }} of {{ book.spine|length }}
+                                </span>
 
-                        {% if next_idx is not none %}
-                            <a href="/read/{{ book_id }}/{{ next_idx }}" class="nav-btn">Next</a>
-                        {% else %}
-                            <span class="nav-btn disabled">Next</span>
-                        {% endif %}
+                                {% if next_idx is not none %}
+                                    <a href="/read/{{ book_id }}/{{ next_idx }}" class="nav-btn" id="next-chapter-link">Next</a>
+                                {% else %}
+                                    <span class="nav-btn disabled">Next</span>
+                                {% endif %}
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
+
+        <!-- Navigation Zones for page turning -->
+        <div class="nav-zone-left" id="nav-zone-left" title="Previous page"></div>
+        <div class="nav-zone-right" id="nav-zone-right" title="Next page"></div>
+
+        <!-- Reading Progress Indicator -->
+        <div class="reading-progress" id="reading-progress">当前阅读至 0%</div>
 
         <!-- Notes Panel -->
         <div id="notes-mode" aria-hidden="true">
             <div class="notes-shell">
                 <div class="notes-card">
                     <div class="notes-header">
-                        <div>
+                        <div class="notes-header-info">
                             <div class="notes-title" id="notes-title">{{ book.metadata.title }}</div>
                             <div class="notes-meta">
-                                <span id="notes-progress">0% read</span> · <span id="notes-count">0 notes</span>
+                                <span class="notes-meta-item"><span class="notes-meta-icon">→</span> <span id="notes-progress">已读到0%</span>·<span id="notes-count">共0条笔记</span></span>
                             </div>
                         </div>
                         <div class="notes-cover">
@@ -1321,6 +1480,10 @@
                         </div>
                     </div>
                     <div class="notes-body" id="notes-body"></div>
+                    <div class="notes-footer">
+                        <button type="button" class="notes-footer-btn" id="notes-review-btn">点评此书</button>
+                        <button type="button" class="notes-footer-btn notes-footer-btn-primary" id="notes-copy-btn">复制全部笔记·<span id="notes-copy-count">0</span></button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1328,6 +1491,9 @@
 
     <!-- Right Toolbar -->
     <div id="right-toolbar" aria-label="Reader tools">
+        <a href="/" class="rt-btn" title="Back to Library">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        </a>
         <button type="button" class="rt-btn" id="reader-toc-toggle" title="Table of Contents">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
         </button>
@@ -1335,11 +1501,61 @@
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
         </button>
         <button type="button" class="rt-btn" id="reader-ai-toggle" title="AI Assistant">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><circle cx="9" cy="10" r="2"/><circle cx="15" cy="10" r="2"/><path d="M9 16h6"/></svg>
+        </button>
+        <button type="button" class="rt-btn" id="reader-font-toggle" title="Font Settings">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><text x="4" y="18" font-size="14" font-weight="600" font-family="serif" fill="currentColor" stroke="none">Aa</text></svg>
         </button>
         <button type="button" class="rt-btn" id="reader-notes-toggle" title="Notes">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
         </button>
+    </div>
+
+    <!-- Font Settings Popup -->
+    <div id="font-settings-popup" aria-hidden="true">
+        <div class="font-settings-section">
+            <div class="font-settings-label">主题</div>
+            <div class="theme-options">
+                <div class="theme-option is-active">白色</div>
+                <div class="theme-option">黄色</div>
+                <div class="theme-option">护眼</div>
+                <div class="theme-option">夜间</div>
+            </div>
+        </div>
+
+        <div class="font-settings-section">
+            <div class="font-settings-label">文字</div>
+            <div class="size-control">
+                <button type="button" class="size-btn" id="font-size-decrease" title="减小字号">−</button>
+                <div class="size-value">
+                    <div class="size-value-num" id="font-size-value">17</div>
+                    <div class="size-value-label">当前字号</div>
+                </div>
+                <button type="button" class="size-btn" id="font-size-increase" title="放大字号">+</button>
+            </div>
+        </div>
+
+        <div class="font-settings-section">
+            <div class="font-settings-label">段落间距</div>
+            <div class="size-control">
+                <button type="button" class="size-btn" id="line-height-decrease" title="减小间距">−</button>
+                <div class="size-value">
+                    <div class="size-value-num" id="line-height-value">1.9</div>
+                    <div class="size-value-label">当前间距</div>
+                </div>
+                <button type="button" class="size-btn" id="line-height-increase" title="增大间距">+</button>
+            </div>
+        </div>
+
+        <div class="font-settings-section">
+            <div class="font-settings-label">字体</div>
+            <div class="font-options">
+                <div class="font-option is-active">系统字体</div>
+                <div class="font-option">得到今楷</div>
+                <div class="font-option">汉仪旗黑</div>
+                <div class="font-option">思源宋体</div>
+            </div>
+        </div>
     </div>
 
     <!-- Annotation Toolbar -->
@@ -1348,6 +1564,7 @@
         <button type="button" class="anno-btn" data-action="marker">Marker</button>
         <button type="button" class="anno-btn" data-action="wavy">Wavy</button>
         <button type="button" class="anno-btn" data-action="underline">Underline</button>
+        <button type="button" class="anno-btn" data-action="delete">Delete</button>
         <button type="button" class="anno-btn" data-action="note">Add Note</button>
         <button type="button" class="anno-btn" data-action="ask_ai">Ask AI</button>
         <div class="anno-color-row" id="anno-color-row" aria-label="Marker colors">
@@ -1401,6 +1618,7 @@
 
     <!-- AI Panel -->
     <div id="reader-ai-panel" aria-hidden="true">
+        <div class="ai-resize-handle" id="ai-resize-handle" title="Drag to resize"></div>
         <div class="ai-header">
             <div>
                 <div class="ai-title">AI Reading Assistant</div>
@@ -1441,39 +1659,7 @@
         </div>
     </div>
 
-    <!-- Footer -->
-    <footer class="reader-footer">
-        <div class="footer-left">
-            <button type="button" class="footer-btn" title="Go to page">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-                Go to page
-            </button>
-        </div>
-        <div class="footer-center">
-            <div class="progress-container">
-                <span class="progress-label">1</span>
-                <div class="progress-bar">
-                    <div class="progress-fill" style="width: {{ ((chapter_index + 1) / book.spine|length * 100)|round(1) }}%;"></div>
-                </div>
-                <span class="progress-label">{{ book.spine|length }}</span>
-            </div>
-        </div>
-        <div class="footer-right">
-            {% if prev_idx is not none %}
-                <a href="/read/{{ book_id }}/{{ prev_idx }}" class="footer-nav">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M15 18l-6-6 6-6"/></svg>
-                    Prev
-                </a>
-            {% endif %}
-            <span class="footer-indicator">{{ chapter_index + 1 }} / {{ book.spine|length }}</span>
-            {% if next_idx is not none %}
-                <a href="/read/{{ book_id }}/{{ next_idx }}" class="footer-nav">
-                    Next
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 18l6-6-6-6"/></svg>
-                </a>
-            {% endif %}
-        </div>
-    </footer>
+    <!-- Footer removed - navigation available in chapter-nav and right toolbar -->
 
     <script>
         window.Reader3Ctx = {
@@ -1501,11 +1687,6 @@
                 console.log("Could not find index for", filename);
             }
         }
-
-        // Header TOC toggle syncs with sidebar TOC toggle
-        document.getElementById('header-toc-toggle')?.addEventListener('click', function() {
-            document.getElementById('reader-toc-toggle')?.click();
-        });
     </script>
 
     <script src="/static/js/toc-panel.js"></script>
@@ -1514,5 +1695,251 @@
     <script src="/static/js/toolbar.js"></script>
     <script src="/static/search.js"></script>
     <script src="/static/ai.js"></script>
+    <script src="/static/js/pagination.js"></script>
+
+    <!-- AI Panel Resize Script -->
+    <script>
+    (function() {
+        'use strict';
+
+        const STORAGE_KEY = 'reader3-ai-panel-width';
+        const MIN_WIDTH = 320;
+        const MAX_WIDTH = 800;
+        const DEFAULT_WIDTH = 546;
+
+        const panel = document.getElementById('reader-ai-panel');
+        const handle = document.getElementById('ai-resize-handle');
+
+        if (!panel || !handle) return;
+
+        // Restore saved width from localStorage
+        const savedWidth = localStorage.getItem(STORAGE_KEY);
+        if (savedWidth) {
+            const width = parseInt(savedWidth, 10);
+            if (width >= MIN_WIDTH && width <= MAX_WIDTH) {
+                panel.style.width = width + 'px';
+            }
+        }
+
+        let isDragging = false;
+        let startX = 0;
+        let startWidth = 0;
+
+        function onMouseDown(e) {
+            e.preventDefault();
+            isDragging = true;
+            startX = e.clientX;
+            startWidth = panel.offsetWidth;
+
+            handle.classList.add('is-dragging');
+            document.body.classList.add('is-resizing');
+
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        }
+
+        function onMouseMove(e) {
+            if (!isDragging) return;
+
+            // Calculate new width (dragging left = increase width)
+            const deltaX = startX - e.clientX;
+            let newWidth = startWidth + deltaX;
+
+            // Clamp to min/max
+            newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, newWidth));
+
+            panel.style.width = newWidth + 'px';
+        }
+
+        function onMouseUp() {
+            if (!isDragging) return;
+
+            isDragging = false;
+            handle.classList.remove('is-dragging');
+            document.body.classList.remove('is-resizing');
+
+            // Save width to localStorage
+            const currentWidth = panel.offsetWidth;
+            localStorage.setItem(STORAGE_KEY, currentWidth.toString());
+
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+        }
+
+        handle.addEventListener('mousedown', onMouseDown);
+
+        // Also handle touch events for mobile
+        handle.addEventListener('touchstart', function(e) {
+            const touch = e.touches[0];
+            onMouseDown({ preventDefault: () => {}, clientX: touch.clientX });
+        }, { passive: false });
+
+        document.addEventListener('touchmove', function(e) {
+            if (!isDragging) return;
+            const touch = e.touches[0];
+            onMouseMove({ clientX: touch.clientX });
+        }, { passive: true });
+
+        document.addEventListener('touchend', onMouseUp);
+    })();
+    </script>
+
+    <!-- Font Settings Script -->
+    <script>
+    (function() {
+        'use strict';
+
+        const STORAGE_KEY = 'reader3-font-settings';
+        const MIN_FONT_SIZE = 14;
+        const MAX_FONT_SIZE = 24;
+        const DEFAULT_FONT_SIZE = 17;
+        const MIN_LINE_HEIGHT = 1.5;
+        const MAX_LINE_HEIGHT = 2.5;
+        const DEFAULT_LINE_HEIGHT = 1.9;
+
+        const popup = document.getElementById('font-settings-popup');
+        const toggleBtn = document.getElementById('reader-font-toggle');
+        const fontSizeValue = document.getElementById('font-size-value');
+        const lineHeightValue = document.getElementById('line-height-value');
+        const fontSizeDecrease = document.getElementById('font-size-decrease');
+        const fontSizeIncrease = document.getElementById('font-size-increase');
+        const lineHeightDecrease = document.getElementById('line-height-decrease');
+        const lineHeightIncrease = document.getElementById('line-height-increase');
+
+        if (!popup || !toggleBtn) return;
+
+        let fontSize = DEFAULT_FONT_SIZE;
+        let lineHeight = DEFAULT_LINE_HEIGHT;
+
+        // Load saved settings
+        function loadSettings() {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            if (saved) {
+                try {
+                    const settings = JSON.parse(saved);
+                    if (settings.fontSize >= MIN_FONT_SIZE && settings.fontSize <= MAX_FONT_SIZE) {
+                        fontSize = settings.fontSize;
+                    }
+                    if (settings.lineHeight >= MIN_LINE_HEIGHT && settings.lineHeight <= MAX_LINE_HEIGHT) {
+                        lineHeight = settings.lineHeight;
+                    }
+                } catch (e) {
+                    console.warn('Failed to load font settings:', e);
+                }
+            }
+        }
+
+        // Save settings
+        function saveSettings() {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({
+                fontSize: fontSize,
+                lineHeight: lineHeight
+            }));
+        }
+
+        // Apply settings to CSS
+        function applySettings() {
+            document.documentElement.style.setProperty('--reader-font-size', fontSize + 'px');
+            document.documentElement.style.setProperty('--reader-line-height', lineHeight.toString());
+
+            // Update UI
+            if (fontSizeValue) fontSizeValue.textContent = fontSize;
+            if (lineHeightValue) lineHeightValue.textContent = lineHeight.toFixed(1);
+
+            // Update button states
+            if (fontSizeDecrease) fontSizeDecrease.disabled = fontSize <= MIN_FONT_SIZE;
+            if (fontSizeIncrease) fontSizeIncrease.disabled = fontSize >= MAX_FONT_SIZE;
+            if (lineHeightDecrease) lineHeightDecrease.disabled = lineHeight <= MIN_LINE_HEIGHT;
+            if (lineHeightIncrease) lineHeightIncrease.disabled = lineHeight >= MAX_LINE_HEIGHT;
+
+            // Trigger pagination recalculation
+            if (window.Pagination && window.Pagination.recalculate) {
+                setTimeout(() => {
+                    window.Pagination.recalculate();
+                }, 100);
+            }
+        }
+
+        // Toggle popup
+        function togglePopup() {
+            const isOpen = popup.classList.contains('is-visible');
+            if (isOpen) {
+                popup.classList.remove('is-visible');
+                popup.setAttribute('aria-hidden', 'true');
+                toggleBtn.classList.remove('is-active');
+            } else {
+                popup.classList.add('is-visible');
+                popup.setAttribute('aria-hidden', 'false');
+                toggleBtn.classList.add('is-active');
+            }
+        }
+
+        // Close popup
+        function closePopup() {
+            popup.classList.remove('is-visible');
+            popup.setAttribute('aria-hidden', 'true');
+            toggleBtn.classList.remove('is-active');
+        }
+
+        // Event handlers
+        toggleBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            togglePopup();
+        });
+
+        // Close on outside click
+        document.addEventListener('click', (e) => {
+            if (!popup.contains(e.target) && e.target !== toggleBtn) {
+                closePopup();
+            }
+        });
+
+        // Font size controls
+        if (fontSizeDecrease) {
+            fontSizeDecrease.addEventListener('click', () => {
+                if (fontSize > MIN_FONT_SIZE) {
+                    fontSize--;
+                    applySettings();
+                    saveSettings();
+                }
+            });
+        }
+
+        if (fontSizeIncrease) {
+            fontSizeIncrease.addEventListener('click', () => {
+                if (fontSize < MAX_FONT_SIZE) {
+                    fontSize++;
+                    applySettings();
+                    saveSettings();
+                }
+            });
+        }
+
+        // Line height controls
+        if (lineHeightDecrease) {
+            lineHeightDecrease.addEventListener('click', () => {
+                if (lineHeight > MIN_LINE_HEIGHT) {
+                    lineHeight = Math.round((lineHeight - 0.1) * 10) / 10;
+                    applySettings();
+                    saveSettings();
+                }
+            });
+        }
+
+        if (lineHeightIncrease) {
+            lineHeightIncrease.addEventListener('click', () => {
+                if (lineHeight < MAX_LINE_HEIGHT) {
+                    lineHeight = Math.round((lineHeight + 0.1) * 10) / 10;
+                    applySettings();
+                    saveSettings();
+                }
+            });
+        }
+
+        // Initialize
+        loadSettings();
+        applySettings();
+    })();
+    </script>
 </body>
 </html>

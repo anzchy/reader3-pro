@@ -162,3 +162,28 @@ input[type="number"] {
   margin-top: 10px;
 }
 
+/* Collapsible provider cards */
+.provider-head {
+  cursor: pointer;
+  user-select: none;
+}
+
+.provider-chevron {
+  transition: transform 0.2s ease;
+  transform: rotate(-90deg);
+  color: #6b7280;
+}
+
+.provider-card.is-expanded .provider-chevron {
+  transform: rotate(0deg);
+}
+
+.provider-body {
+  display: none;
+  padding-top: 12px;
+}
+
+.provider-card.is-expanded .provider-body {
+  display: block;
+}
+

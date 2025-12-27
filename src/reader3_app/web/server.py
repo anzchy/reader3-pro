@@ -72,6 +72,7 @@ from ..notes_service import (
     delete_annotation as delete_note_annotation,
     load_annotations as load_note_annotations,
     save_annotations as save_note_annotations,
+    update_annotation as update_note_annotation,
 )
 from .. import collections_service
 
@@ -577,6 +578,10 @@ class CreateAnnotationRequest(BaseModel):
     note_text: Optional[str] = None
 
 
+class UpdateAnnotationRequest(BaseModel):
+    note_text: str = Field(..., description="Updated note text")
+
+
 @app.get("/api/notes/{book_id}")
 async def api_get_book_notes(book_id: str):
     safe_book_id = _validate_book_id(book_id)
@@ -745,6 +750,27 @@ async def api_delete_annotation(book_id: str, chapter_index: int, note_id: str):
     if not ok:
         raise HTTPException(status_code=404, detail="Annotation not found")
     return Response(status_code=204)
+
+
+@app.put("/api/notes/{book_id}/{chapter_index}/{note_id}")
+async def api_update_annotation(book_id: str, chapter_index: int, note_id: str, payload: UpdateAnnotationRequest):
+    safe_book_id = _validate_book_id(book_id)
+    book = load_book_cached(safe_book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+    if chapter_index < 0 or chapter_index >= len(book.spine):
+        raise HTTPException(status_code=400, detail="Invalid chapter_index")
+
+    note_text = str(payload.note_text or "").strip()
+    if not note_text:
+        raise HTTPException(status_code=400, detail="note_text is required")
+
+    note_text = html.escape(note_text)
+    updated = update_note_annotation(BOOKS_DIR, safe_book_id, note_id, note_text)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Annotation not found")
+
+    return {"id": updated.id, "note_text": updated.note_text, "message": "Annotation updated successfully"}
 
 
 @app.get("/api/search/library")
