@@ -164,6 +164,25 @@ pickle 是实际的迁移阻塞点与安全隐患（`pickle.load` 对不可信�
 
 顺序的全部意义在第 7、8 步：chapters 先就位、manifest 后就位，于是"manifest 指向半写文件"在任何时刻的崩溃点上都不可能出现。反过来的残留是良性的——只有 `chapters.jsonl` 没有 `manifest.json`，读取状态机判定为 `missing`，走旧格式；孤儿 tmp 文件下次运行覆盖即可。
 
+##### 两条协议缺口（Phase 0 的 P0-1 实施中撞出来，已在 `reader3.py` 落地）
+
+上面八步是按**一个数据文件 ＋ 一个 marker**写的。P0-1 真正要原子换掉的是**三件产物**（`book.pkl` ＋ `book.epub` ＋ `images/`），落地时发现协议在这两处不成立。Phase 3 把 pkl 换成 manifest + chapters 之后产物仍是三件（`manifest.json` ＋ `chapters.jsonl` ＋ `images/`），所以这两条同样适用，不要按八步原样照抄。
+
+**缺口 1：`os.replace` 换不动目录产物。** 第 7 步默认目标是普通文件——覆盖已存在的文件时 `os.replace` 是原子的，但目标是**非空目录**时它直接 `OSError: [Errno 39] ENOTEMPTY`。`images/` 就是目录。可行的补法只有一条：**先把旧目录 rename 到一边，再把新目录 rename 进来**。旧目录的落脚点必须与 `output_dir` 同文件系统（实现里就放 staging 目录内，staging 本来就与目标同盘），否则 rename 退化成跨设备拷贝，既不原子也不便宜。
+
+**缺口 2：三件产物时「marker 最后换」不足以保证一致性。** 八步协议里 marker 之外只有一件产物，所以"marker 最后"等价于"marker 在时其余都在"。三件产物时它只挡住了一个方向——挡不住**新 `book.epub` ＋ 新 `images/` 挨着旧 `book.pkl`**：marker 尚未翻，读取侧判为一致，实际拿到的是旧结构配新资源。协议必须补上失败路径的对称要求：**换 marker 之前的任何一步失败，都要把已经换进去的产物退回原样，按相反顺序退。**
+
+落地形态（`reader3.py:_commit_staged_artifacts`，49 条测试覆盖，含三轮故障注入）：
+
+1. 逐件把 live 产物 rename 进 staging（`book.epub.superseded` / `images.superseded`），同时记一条 undo 记录；**产物原本不存在时记 `(None, live)`** —— 这条最容易漏，漏了就只会「恢复存在过的」而不会「移除新加的」，中断后留下新产物挨着旧 marker，正是缺口 2 的反向失败
+2. 新 `book.epub`、新 `images/` rename 就位 → `fsync(dirfd)`
+3. **最后**换 `book.pkl`（marker）→ `fsync(dirfd)`
+4. marker 换成功之前的任何异常（含 `KeyboardInterrupt`，所以捕 `BaseException`）都倒序走 undo；undo 本身失败只能打 warning 到 stderr 并继续抛原异常——此时目录确实可能不一致，必须让人看见
+
+配套的两条测试性质，Phase 3 重跑时照抄：**回滚必须是 rename 不是 copy**（快照记 `inode` 与 `mtime_ns`，拷回一份字节相同的文件判 fail），以及**"保住用户数据"不许退化成"什么都没改"**（同时断言用户子树逐字节不变 **且** 新增文件集合恰好等于该次重新生成的那几件产物）。
+
+`--migrate` 不适用本节：它只**新增** manifest + chapters，不替换任何既有产物，走八步原文即可。
+
 #### 读取状态机（三态，禁止二态）
 
 `storage_format(book_id)` 不能只回答"新格式还是旧格式"，因为那把"没迁移"和"迁移坏了"归成了同一件事：
@@ -185,7 +204,7 @@ pickle 是实际的迁移阻塞点与安全隐患（`pickle.load` 对不可信�
 
 **进入条件**: Phase 2b 完成 **且** 1b 的标注 E2E 在主 CI 连绿 ≥10 次、跨度 ≥5 个工作日（soak 门槛，见合流计划 §7）。
 
-**验收**: 新处理的书完全不依赖 pickle 即可阅读/搜索/标注；存量书可一键迁移；**`--migrate` 原地读写，有一条测试证明迁移后 `notes.json` / `ai_meta.json` / `chroma_db/` 三者字节不变、且 `book_fingerprint(book_id)` 不变**；**有一条崩溃注入测试**：在提交协议第 7 步之后、第 8 步之前中断，重启后该书仍能正常打开（状态判为 `missing`，走 pkl），且下一次迁移能干净地重跑；S1–S4 在当时的 UI 里可见；**并跑至少一条真实 iframe 标注迁移 E2E**（理由见下文「最可能的失败模式」）。
+**验收**: 新处理的书完全不依赖 pickle 即可阅读/搜索/标注；存量书可一键迁移；**`--migrate` 原地读写，有一条测试证明迁移后 `notes.json` / `ai_meta.json` / `chroma_db/` 三者字节不变、且 `book_fingerprint(book_id)` 不变**；**有一条崩溃注入测试**：在提交协议第 7 步之后、第 8 步之前中断，重启后该书仍能正常打开（状态判为 `missing`，走 pkl），且下一次迁移能干净地重跑；**重写整本书的路径（非 `--migrate`）另需覆盖「两条协议缺口」那两条**——回滚是 rename 不是 copy（断言 inode）、中断后不留下新产物挨着旧 marker；S1–S4 在当时的 UI 里可见；**并跑至少一条真实 iframe 标注迁移 E2E**（理由见下文「最可能的失败模式」）。
 
 ### Phase 4 — 前端 TypeScript 化（增量，非大爆炸）
 
@@ -293,6 +312,7 @@ pickle 是实际的迁移阻塞点与安全隐患（`pickle.load` 对不可信�
 **P0-1 数据丢失：重新处理一本书会静默删光该书全部用户标注。**
 `reader3.py` 的 `process_epub()` 在写入任何内容前 `shutil.rmtree(output_dir)`，而 `output_dir` 即 `books/{name}_data/`，`notes.json` / `ai_meta.json` / `chroma_db/` 均在其中。无警告、无备份。叠加缓存不失效（三处 `lru_cache` 的 key 均不含 mtime），服务器还会继续供着旧 `Book`。
 → 改为 staging 目录 + 完整校验 + 原子切换，manifest 作为 commit marker（步骤见 Phase 3 的「两文件提交协议」——那是唯一定义处，Phase 0 先按同一顺序落 staging 切换）。**列入 Phase 0。**
+✅ **已完成**（`7a807c9`，分支 `007-hygiene-and-contracts`）。实施中发现八步协议覆盖不了三件产物，两条缺口已回写进该小节的「两条协议缺口」——Phase 3 动这块之前先读那里。缓存失效不在本项修复范围内，归 Phase 2a 的 `book_store.py`。
 
 **P0-2 发布损坏：打出的 wheel 阅读器不可用。**
 `pyproject.toml:34` 的 `"static/*"` 是 setuptools 非递归 glob，`static/js/`、`static/css/`、`static/vendor/` 三个子目录均未打包——`epub.min.js`、`annotations.js`、`reader.css` 全部缺失。本地 `uv run` 走源码树因而不可见。
