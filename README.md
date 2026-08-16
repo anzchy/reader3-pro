@@ -6,7 +6,7 @@ A lightweight, self-hosted EPUB reader that lets you read through EPUB books one
 
 This project is an enhanced version (thus add `pro` to repo name) of Andrie Karpathy's reader3 project.
 
-![ai](https://picbox-1313243162.cos.ap-nanjing.myqcloud.com/typora/ai.png)
+
 
 ## How It Works
 
