@@ -21,6 +21,7 @@
 | 0.2 wheel 打包漏 `static/js` | ❌ | 验收是「`uv build` 解包后文件在不在」，属打包脚本，不是单测 |
 | 0.4 四个 JS 文件 IIFE 化 | ❌ | 没有 JS 测试宿主（要到 013 才有）。护栏靠人工 smoke |
 | 0.5 testid 定名 ＋ 两条 lint | ❌ | 产物是 lint 规则本身。它的「测试」就是违规计数从 134 归零 |
+| 0.8 token 悬空引用 lint | ❌ | 同上，产物是 lint 本身。「测试」是差集为 0 |
 | 0.6 事实性修复 | ❌ | 改常量与示例配置 |
 | 0.7 删死代码 | ❌ | 删除动作。护栏是 0.1/0.3 的测试与人工 smoke |
 
@@ -40,7 +41,7 @@
 | 0.7 删死代码 `SearchIndex` / `BookIndex.from_book_pkl` / `SearchIndex.build_from_library` | ✅ 已删。`BookIndex` / `ChapterIndex` dataclass 仍在 `search_service.py`，**是活代码，不要动** |
 | spec-kit 退场、规划文档合并进本文件夹 | ✅ |
 
-还没动的：0.1、0.2、0.3、0.4、0.5，以及 0.6 剩下的两小项。
+还没动的：0.2、0.3、0.4、0.5、0.8，以及 0.6 剩下的两小项。0.1 与 0.7 已完成。
 
 ---
 
@@ -148,6 +149,26 @@ canonical 正则在 `plan-ui-migration-sequencing.md` §6 的「canonical 正则
 
 ---
 
+## 0.8 token 悬空引用 lint
+
+**这是第三条 lint，与 0.5 的两条并列**——0.5 管 testid 命名与选择器，本条管 CSS 自定义属性。合流计划 §6 步骤 0.8。
+
+`var(--typo)` **不报错**：CSS 自定义属性引用一个不存在的名字时静默回落到继承值，页面照常渲染，只是颜色/尺寸变成了别的东西。这一类缺陷靠人眼过规格是抓不住的——设计规格里实测到三处，全都是「看起来完全正常」的行：
+
+| 悬空引用 | 出处 | 后果 |
+|---|---|---|
+| `--r3-warn` / `--r3-danger` | 设计规格 §6.4 设计要求 1 | 五个降级横幅拿不到状态色，长得像普通提示。Codex 复审 #8 已记录 |
+| `--r3-sidebar-w` / `--r3-right-w` | 设计规格 §6.2 三栏 Grid | `grid-template-columns` 整条声明失效，三栏塌成默认布局 |
+| `--r3-text-quiet` | 只在 sepia / green / night 三个阅读主题里被赋值 | paper 主题（默认）下无定义 |
+
+**三处已在 007 修掉**（见 `spec-frontend-design.md` 的 §3.2 / §3.3 / §3.4 / §6.2 / §6.4）。本条要做的是**不让它再长出来**。
+
+实现约十行：扫 `designs/reader-pro-next/`、`static/css/`、`templates/*.html` 与设计规格里的 CSS 代码块，收集全部 `--x:` 定义与全部 `var(--x)` 引用，求差集；浏览器内置或第三方定义的走白名单。**验收：差集为空，且在 CI 里生效。**
+
+> 注意 `var(--x, fallback)` 的两义性：带 fallback 的引用**照样要判违规**。fallback 是给运行时降级用的，不是给拼错名字用的——一条永远走 fallback 的 `var()` 是死代码，而它看起来在正常工作。
+
+---
+
 ## 0.7 删除死代码
 
 ✅ 已完成。`SearchIndex`、`BookIndex.from_book_pkl`、`SearchIndex.build_from_library` 均已不在树中。
@@ -165,6 +186,7 @@ canonical 正则在 `plan-ui-migration-sequencing.md` §6 的「canonical 正则
 - [ ] 0.5 testid 两侧一致；两条 lint 在 CI 里生效且违规数为 0
 - [ ] 0.6 版本号对齐；示例配置补齐两个 provider
 - [x] 0.7 死代码已删
+- [ ] 0.8 token 悬空引用 lint 在 CI 里生效，差集为 0
 - [ ] 六项人工 smoke checklist 走一遍（技术栈计划 Phase 0）
 
 ---

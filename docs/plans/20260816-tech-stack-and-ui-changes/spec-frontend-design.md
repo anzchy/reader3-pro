@@ -123,13 +123,14 @@ Tier 2  Semantic（角色，逐主题重定义）     --r3-*
 ### 3.2 Tier 1 — Palette
 
 > **已确认 2026-08-16**：品牌色由暖橙 `#ff6b00` 改为蓝色 `#3b82f6`（决策 D-5，见 spec §0.3）。
-> 因此原 `--p-blue-500` 作为 status/info 与品牌撞色，info 改用青色 `#0891b2` 以保持可区分。
+> 因此原 `--p-blue-500` 作为 status/info 与品牌撞色，info 改用青色以保持可区分。
 > 纸色以原型实测值为准（原规格的 sepia/green/night 三值已被原型对比后调整）。
 
 ```css
 :root {
   /* Brand — 蓝，D-5 确认；与下方 status 的 info 刻意不同色相 */
-  --p-blue-50:#eff6ff; --p-blue-500:#3b82f6; --p-blue-600:#2563eb;
+  --p-blue-50:#eff6ff;  --p-blue-400:#60a5fa; --p-blue-500:#3b82f6;
+  --p-blue-600:#2563eb; --p-blue-950:#172554;
 
   /* Neutral — 中性灰阶，替代散落的 #333/#666/#999/#ccc */
   --p-gray-0:#ffffff;  --p-gray-50:#fafafa;  --p-gray-100:#f5f5f5;
@@ -141,9 +142,15 @@ Tier 2  Semantic（角色，逐主题重定义）     --r3-*
   --p-paper-white:#ffffff; --p-paper-sepia:#f6ecd8;
   --p-paper-green:#dcece0; --p-paper-night:#10151f;
 
-  /* Status — info 用青色，避开品牌蓝 */
-  --p-green-500:#22c55e; --p-amber-500:#f59e0b;
-  --p-red-500:#ef4444;   --p-cyan-500:#0891b2;
+  /* Status — 每色三档：700 亮色前景 / 400 夜间前景 / 100 亮色淡底。
+     原先每色只有 500 一档，亮色下四个全部不达 4.5:1，见 §3.3 下方实测表 */
+  --p-green-100:#dcfce7; --p-green-400:#4ade80; --p-green-700:#15803d;
+  --p-amber-100:#fef3c7; --p-amber-400:#fbbf24; --p-amber-700:#b45309;
+  --p-red-100:#fee2e2;   --p-red-400:#f87171;   --p-red-700:#b91c1c;
+  --p-cyan-100:#e0f2fe;  --p-cyan-400:#22d3ee;  --p-cyan-700:#0e7490;
+  /* 夜间淡底：100 档在深底上是白块，四个深色调另取（手调，不在 Tailwind 阶上） */
+  --p-green-950:#14321f; --p-amber-950:#3a2a08;
+  --p-red-950:#3b1717;   --p-cyan-950:#10283d;
 
   /* Annotation — 亮/暗两组，暗色下原色在深底上刺眼 */
   --p-hl-yellow:#fbbf24; --p-hl-green:#4ade80;
@@ -170,6 +177,7 @@ Tier 2  Semantic（角色，逐主题重定义）     --r3-*
   --r3-text-subtle:   var(--p-gray-500);
   --r3-text-disabled: var(--p-gray-400);
   --r3-text-on-accent:var(--p-gray-0);
+  --r3-text-quiet:    var(--p-gray-500);   /* 此前只在阅读主题里出现，:root 无定义 */
 
   --r3-border:        var(--p-gray-300);
   --r3-border-subtle: #f0f0f0;
@@ -180,8 +188,12 @@ Tier 2  Semantic（角色，逐主题重定义）     --r3-*
   --r3-accent-subtle: var(--p-blue-50);
   --r3-focus-ring:    var(--p-blue-500);
 
-  --r3-success:var(--p-green-500); --r3-warning:var(--p-amber-500);
-  --r3-error:var(--p-red-500);     --r3-info:var(--p-cyan-500);
+  /* 状态色两个角色：前景 ＋ 淡底。边框不另设 token——前景色直接当边框，
+     压在自己的淡底上 4.5–5.3:1，已过 WCAG 1.4.11 的 3:1 */
+  --r3-success:var(--p-green-700); --r3-warning:var(--p-amber-700);
+  --r3-error:var(--p-red-700);     --r3-info:var(--p-cyan-700);
+  --r3-success-subtle:var(--p-green-100); --r3-warning-subtle:var(--p-amber-100);
+  --r3-error-subtle:var(--p-red-100);     --r3-info-subtle:var(--p-cyan-100);
 
   --r3-hl-yellow:var(--p-hl-yellow); --r3-hl-green:var(--p-hl-green);
   --r3-hl-pink:var(--p-hl-pink);     --r3-hl-blue:var(--p-hl-blue);
@@ -192,14 +204,19 @@ Tier 2  Semantic（角色，逐主题重定义）     --r3-*
 }
 
 :root[data-reading-theme="night"] {
-  --r3-bg:#0f0f0f;  --r3-surface:#1a1a1a;
+  /* --r3-bg / --r3-surface / --r3-text 刻意不在这里定义：下面那组阅读主题里
+     同选择器的 night 规则会覆盖它们，写在这里是永远生效不了的死值 */
   --r3-surface-raised:#242424; --r3-surface-sunken:#141414;
   --r3-surface-hover:#2a2a2a;
-  --r3-text:#d4d4d4; --r3-text-muted:#8f8f8f;
+  --r3-text-muted:#8f8f8f;
   --r3-text-subtle:#6b6b6b; --r3-text-disabled:#4a4a4a;
   --r3-border:#2f2f2f; --r3-border-subtle:#242424; --r3-border-strong:#3f3f3f;
-  --r3-accent:#ff8534;             /* 提亮，深底上 #ff6b00 对比度不足 */
-  --r3-accent-subtle:#2a1a0d;
+  --r3-accent:var(--p-blue-400);   /* D-5 改蓝后同步；原值 #ff8534 是暖橙时代的残留 */
+  --r3-accent-subtle:var(--p-blue-950);
+  --r3-success:var(--p-green-400); --r3-warning:var(--p-amber-400);
+  --r3-error:var(--p-red-400);     --r3-info:var(--p-cyan-400);
+  --r3-success-subtle:var(--p-green-950); --r3-warning-subtle:var(--p-amber-950);
+  --r3-error-subtle:var(--p-red-950);     --r3-info-subtle:var(--p-cyan-950);
   --r3-hl-yellow:var(--p-hl-yellow-dk); --r3-hl-green:var(--p-hl-green-dk);
   --r3-hl-pink:var(--p-hl-pink-dk);     --r3-hl-blue:var(--p-hl-blue-dk);
   --r3-shadow-sm:0 1px 3px rgb(0 0 0 / .4);
@@ -213,6 +230,19 @@ Tier 2  Semantic（角色，逐主题重定义）     --r3-*
 :root[data-reading-theme="night"] { --r3-bg:#080b12; --r3-surface:var(--p-paper-night); --r3-text:#c2ccdb; --r3-text-quiet:#7e8ca3; }
 ```
 
+**状态色实测对比度**（2026-08-16，WCAG 2.1 相对亮度公式）——这四组不是挑好看的，是挑过线的：
+
+| 角色 | 亮色前景 / 白面 | 同前景 / 自己的淡底 | 夜间前景 / 纸夜底 |
+|---|---|---|---|
+| success | `#15803d` **5.02** | 4.57 | `#4ade80` **10.49** |
+| warning | `#b45309` **5.02** | 4.51 | `#fbbf24` **10.95** |
+| error | `#b91c1c` **6.47** | 5.30 | `#f87171` **6.61** |
+| info | `#0e7490` **5.36** | 4.67 | `#22d3ee` **10.11** |
+
+> **被换掉的 500 单档在亮色下全线不合格**：green-500 2.28、amber-500 2.15、red-500 3.76、cyan-600 3.68，全部低于 §8 要求的 4.5:1。夜间反而都过（4.86–8.51）。**这是个亮色缺陷，不是暗色缺陷**——与直觉相反，所以之前没人查。
+>
+> **淡底不能独自表达状态。** 四个 `-subtle` 压在页面底上只有 1.10–1.22:1（亮色）、1.15–1.32:1（夜间）。只染一层底色的横幅在两个主题下都近乎看不见。**横幅必须同时有边框或图标**，边框直接用状态前景色。
+
 > `paper`（默认）不设 `data-reading-theme`，直接继承 `:root` 的 light/dark semantic 值。上面三个主题的 `--r3-bg` 是纸色的略暗衬底，由纸色派生。
 
 **跟随系统**：`data-reading-theme` 未设置时，`@media (prefers-color-scheme: dark)` 套用 night 的 semantic 值。用户显式选择后写入 `localStorage.reader3_reading_theme` 并 stamp 到 `<html>`，显式选择优先。
@@ -222,6 +252,14 @@ Tier 2  Semantic（角色，逐主题重定义）     --r3-*
 ### 3.4 间距 / 圆角 / 字阶
 
 间距沿用现值（4/8/16/24/32/48），重命名为 `--r3-space-{xs,sm,md,lg,xl,2xl}`。圆角沿用（4/6/8/12/full）。
+
+布局宽度（§6.2 的三栏 Grid 引用，此前未定义）：
+
+```css
+--r3-sidebar-w:232px;  /* 书库左栏，取原型 --sidebar-width */
+--r3-right-w:336px;    /* 书库右栏，取原型 --insights-width */
+--r3-right-w-collapsed:48px;
+```
 
 字阶是**新增**——现状没有字号 token，全站硬编码 px：
 
@@ -247,6 +285,7 @@ Plan 的 Phase 1b 会写 Playwright E2E 并作为 Phase 4 的合并门槛。如�
 2. E2E **只允许**用 `data-testid` 和 ARIA role/name 定位。禁止 class 选择器、禁止 `nth-child`、禁止层级结构选择器。
 3. `data-testid` 命名 `{page}-{region}-{element}`，一经确定不随视觉改动而变。
 4. 重设计可以任意改 class、改嵌套、改标签——但**不得改 testid**。
+5. testid 的值必须是**字符串字面量**，不得由变量拼接或模板插值产生（原型的 `data-testid={"status-" + props.status}` 是错的，改静态映射表）。两条理由：命名 lint 扫的是字面量，拼出来的它看不见；且 testid 契约的价值有一半在**可 grep**——一个在仓库里搜不到的 testid，E2E 挂了没人找得到它是谁发的。
 
 命名约定：
 
@@ -290,6 +329,8 @@ Plan 的 Phase 1b 会写 Playwright E2E 并作为 Phase 4 的合并门槛。如�
 | `EmptyState` | 仅 library 有 `.empty-state` | 抽为共用；search / chat / notes 结果为空时统一使用 |
 | `Toast` | **不存在**，现用 `.status` `<span>` 就地显示 | 新增；破坏性操作反馈需要它 |
 | `Skeleton` | **不存在**，现为 `-` 或 `Loading...` 文本 | 新增；书库卡片与统计数字用骨架屏 |
+
+> ⚠️ **`Modal` 一行的"保留 `<dialog>`"说的是现有 Jinja 模板；原型 `components.jsx` 的 `Modal` 是 `div.overlay` ＋ `role="dialog"`，已经不是原生 `<dialog>` 了。** 两边选型未收敛。这条差异在 §6.4 的 S5 上会咬人（原生 `<dialog>` 的 Esc 关闭要靠 `cancel` 事件 `preventDefault()` 才拦得住，div 版只要不接 Esc 即可），由 Track D 裁定并回写本表。
 
 ---
 
@@ -456,7 +497,7 @@ function bodySignature(body) {
 
 设计要求（五条通用）：
 
-1. **色彩语义**：S1/S2/S4 用 `--r3-warn`，S3/S5 用 `--r3-danger`；一律不用 `--r3-accent`（品牌蓝），避免与普通提示混淆。
+1. **色彩语义**：S1/S2/S4 用 `--r3-warning`，S3/S5 用 `--r3-error`；底色用同名 `-subtle`，边框用前景色本身（§3.3 已验 ≥4.5:1，不另设 border token）。**只有底色的横幅不算数**——淡底与页面底只差 1.1–1.3:1，必须同时有边框或图标。一律不用 `--r3-accent`（品牌蓝），避免与普通提示混淆。
 2. **可访问性**：横幅与提示条挂 `role="status"` + `aria-live="polite"`；S5 的冲突对话框用 `role="alertdialog"`，因为它需要用户决策。
 3. **可关闭性**：S1/S2/S3/S4 允许本次会话内关闭（`sessionStorage`），**S5 不可关闭**——必须做出选择。
 4. **testid**：五个状态各自的容器与主操作按钮都要有 testid（§4），否则 E2E 无法断言"降级可见"。
@@ -492,7 +533,7 @@ function bodySignature(body) {
 ## 8. 可访问性契约
 
 1. 焦点可见：所有可交互元素 `:focus-visible` 显示 `--r3-focus-ring` 2px 轮廓。现状多处 `outline:none` 无替代。
-2. 对比度：正文 ≥ 4.5:1，大字 ≥ 3:1，**四个阅读主题各自验证**（sepia 与 green 底色最容易不达标）。
+2. 对比度：正文 ≥ 4.5:1，大字 ≥ 3:1，**四个阅读主题各自验证**（sepia 与 green 底色最容易不达标）。§3.3 的四组状态色同标准，**亮色档最容易漏**——原先的 500 档在白底上只有 2.15–3.76:1，已按实测换成 700 档。
 3. 键盘可达：§6.3 的 `.theme-option` / `.font-option` 现在是裸 `<div>`，完全不可聚焦——必须改 `role="radio"` + `tabindex`。
 4. 动态区域：搜索结果、AI 流式输出、索引进度用 `aria-live="polite"`（`#aria-live` 已存在，扩大使用）。
 5. 尊重 `prefers-reduced-motion`：面板动效降级为瞬时。
