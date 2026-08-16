@@ -41,7 +41,8 @@ Implement search functionality for Reader3 Pro in three layers: (P1) in-book key
 
 ### I. Data Structures First
 **Status**: ✅ PASS
-- Will define `@dataclass` for: `SearchResult`, `SearchQuery`, `SearchIndex`, `HighlightRange`
+- Will define `@dataclass` for: `SearchResult`, `SearchQuery`, ~~`SearchIndex`~~, `HighlightRange`
+  - ⚠️ `SearchIndex` **SUPERSEDED 2026-08-16**：已作为死代码删除，改为 per-book 惰性加载 `load_book_index()`。`BookIndex` / `ChapterIndex` 保留为活代码。见 `specs/001-search-features/data-model.md` 文首说明
 - All search entities have explicit type annotations
 - ChromaDB integration abstracted behind `BookVectorIndex` class
 - Clear separation: search logic in `search_service.py`, vector storage in `vector_search.py`

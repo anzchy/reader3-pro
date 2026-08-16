@@ -151,9 +151,19 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 > | lint | 约束谁 | 规则 |
 > |---|---|---|
 > | **选择器 lint** | 测试代码（`tests/e2e/`） | 只允许 `data-testid` 与 ARIA role/name；禁止 class 选择器、`nth-child`、层级结构选择器 |
-> | **命名 lint** | 模板与原型（`templates/*.html`、`designs/reader-pro-next/`） | 每个 `data-testid` 必须匹配 `^(lib\|rd\|set)-[a-z0-9]+(-[a-z0-9]+)*$`（前缀方案见设计规格 §4） |
+> | **命名 lint** | 模板与原型（`templates/*.html`、`designs/reader-pro-next/`） | 每个 `data-testid` 必须匹配**下方的 canonical 正则**（前缀方案见设计规格 §4） |
 >
 > 只有前者不足以保住契约：选择器 lint 全绿，模板里照样可以新增 `reader-search-hit` 这种名字，命名方案随即失守。命名 lint 必须**显式点名设计规格 §4.1 那 24 个带 `reader-` / `library-` 前缀的 testid**——它们形似合规，批量改名时最容易被当成「已经对了」跳过，而正则会把它们判为不合规，正是要的效果。134 个全部需要改名，lint 的初始状态就是「134 条违规」，改完归零。
+
+#### canonical 正则（唯一真相源）
+
+配置 lint 时**从这个代码块复制，不要从上面的表格里复制**：Markdown 表格单元格内的 `|` 必须写成 `\|`，直接复制出去会得到 `^(lib\|rd\|set)-…`，它匹配的是**字面的反斜杠加竖线**，永远不会命中任何 testid——lint 会全绿，而命名方案毫无约束。
+
+```regex
+^(?:lib|rd|set)-[a-z0-9]+(?:-[a-z0-9]+)*$
+```
+
+改用非捕获组 `(?:…)` 是因为这里只做匹配、不取分组；捕获组在部分 lint 工具里会被当作提取意图。
 
 ### 并行区间（Phase 0 之后）
 
@@ -199,22 +209,24 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 
 | 阶段 | 进入条件 | 退出条件 |
 |---|---|---|
-| Phase 0 | — | P0-1/P0-2 修复并人工 smoke；`--port` 与 `/api/health` 可用；testid 在原型与模板两侧一致；**两条 lint 都在 CI 里生效**——选择器 lint（约束 `tests/e2e/`）与命名 lint（约束模板与原型，正则 `^(lib\|rd\|set)-…`，违规数归零） |
+| Phase 0 | — | P0-1/P0-2 修复并人工 smoke；`--port` 与 `/api/health` 可用；testid 在原型与模板两侧一致；**两条 lint 都在 CI 里生效**——选择器 lint（约束 `tests/e2e/`）与命名 lint（约束模板与原型，正则以 §6 步骤 0.5 的 **canonical 代码块**为准，违规数归零） |
 | Phase 1a | Phase 0 | CI 绿灯成为合并门槛；42 路由契约测试通过；**API v1 形状冻结**；性能基准记录在案 |
-| Phase 1b | 0.3 + 0.5 | 标注 iframe E2E 在**主 CI**（非 nightly）绿灯；**用例覆盖写路径**（四类型创建 / 改色 / 删除 / 笔记保存，断言为刷新后回到同一段文字）；K1–K6 与 S1–S4 各一条正向证据；连续 3 次全量运行零 flaky。清单见 [`specs/009-e2e-annotations/tasks.md`](../../specs/009-e2e-annotations/tasks.md) |
+| Phase 1b | 0.3 + 0.5 | **`baseline-1b` 组**在**主 CI**（非 nightly）绿灯；**用例覆盖写路径**（四类型创建 / 改色 / 删除 / 笔记保存，断言为刷新后回到同一段文字）；K2–K5 与 K1/K6 的**现状特征化**条各一条正向证据；连续 3 次全量运行零 flaky；其余组**用例写完并 review**，以 skip 形态存在。⚠️ K1/K6 的新行为与 S1–S4 的横幅**不在本阶段门槛内**——它们要到 4B.1 / Phase 3 / 4A.4 才存在，写进 1b 会形成依赖环。分组见 [`specs/009-e2e-annotations/tasks.md`](../../specs/009-e2e-annotations/tasks.md) §0.5 |
 | Track D | Phase 0 | S1–S5 设计完成并回写设计规格 §6.4；合同 2 剩余两项收口；loading 骨架屏补齐 |
 | Phase 2a | 1a | 每个 router < 500 行；`book_store` **三处** loader 合并（第四处已作为死代码删除，见 A5）；**notes 乐观并发落地**；行为不变由 1a 证明 |
 | Phase 2b | 2a | 跨库搜索性能相对基准可量化改善；`_normalize_with_map` 差分测试通过 |
-| Phase 3 | 2b + Track D **且 soak 门槛达标** | 新书完全不依赖 pickle；存量可一键迁移；**`--migrate` 原地读写，不复用摄取路径**；**S1–S4 在当时的 UI 里可见**；真实 iframe 标注迁移 E2E 通过 |
-| Phase 4A | 1b | wheel 内容测试通过；settings 与 library 切换后 E2E **零改动**全绿；Classic 已删除 |
-| Phase 4B | Phase 3 **且** 4A.4 | 拆分后 E2E 全绿；各模块 ≤400 行；依赖方向机器可验；**iframe 内部改动不超出设计规格 §6.0 允许的范围**（判据：`document.body.textContent` 与所有文本节点偏移逐字节不变）；**三个浮层过 `containingBlockAncestor() === null`，且工具条位置用矩形几何断言**（4B.2 硬门槛，K3）；**K1–K6 各有一条能失败的断言**；进度值全站一致 |
+| Phase 3 | 2b + Track D **且 soak 门槛达标** | 新书完全不依赖 pickle；存量可一键迁移；**`--migrate` 原地读写，不复用摄取路径**；**S1–S4 在当时的 UI 里可见**——即 **`acceptance-p3` 组解开 skip 并绿灯**（朴素横幅形态）；真实 iframe 标注迁移 E2E 通过 |
+| Phase 4A | 1b | wheel 内容测试通过；settings 与 library 切换后 `baseline-1b` **零改动**全绿；**4A.4 另需 `acceptance-4a4` 组解开 skip 并绿灯**（S1–S4 改版形态）；Classic 已删除 |
+| Phase 4B | Phase 3 **且** 4A.4 | 拆分后 `baseline-1b` 全绿；**4B.1 另需 `acceptance-4b1` 组解开 skip 并绿灯**（K1 响亮失败、K6 抛错——这两条行为本阶段才产生）；各模块 ≤400 行；依赖方向机器可验（`dependency-cruiser` 四条规则，见 [`specs/014-ts-frontend-reader/tasks.md`](../../specs/014-ts-frontend-reader/tasks.md) 4B.1「依赖规则」）；**iframe 内部改动不超出设计规格 §6.0 允许的范围**（判据：`document.body.textContent` 与所有文本节点偏移逐字节不变）；**三个浮层过 `containingBlockAncestor() === null`，且工具条位置用矩形几何断言**（4B.2 硬门槛，K3）；**K1–K6 各有一条能失败的断言**；进度值全站一致 |
 | Phase 5 | 4B | 单命令进入阅读；PWA 版本切换不撕裂 |
 
 ### soak 门槛（Phase 3 专用）
 
 §4 论证 1 的原话是「在一套**已经跑绿一段时间**的 E2E 下迁移」。这句话不量化就是空话——一套只跑过一次的 E2E 和一套跑绿两周的 E2E，保护力不是一个量级，而本仓库今天**零 CI 历史**。
 
-**Phase 3 开工前，1b 的标注 E2E 必须在主 CI 上连续绿 ≥ 10 次，且跨度 ≥ 5 个工作日。**
+**Phase 3 开工前，`baseline-1b` 组必须在主 CI 上连续绿 ≥ 10 次，且跨度 ≥ 5 个工作日。**
+
+> 数的只是 `baseline-1b`。其余组在 Phase 3 之前尚未激活（它们测的行为还不存在），把它们算进来就会让 soak 门槛永远无法达标——分组定义见 [`specs/009-e2e-annotations/tasks.md`](../../specs/009-e2e-annotations/tasks.md) §0.5。
 
 - 「连续」指中途任何一次红都清零重计——flaky 与 broken 在这里不做区分，一条会偶发失败的 E2E 当不了数据迁移的验收基准。
 - 跨度条款是为了逼出**时间维度**的不稳定（缓存、时区、依赖漂移、并发），这类问题在同一天连跑十次是照不出来的。
@@ -542,7 +554,21 @@ JSONL 工件：`docs/plans/20260816-eng-review-tasks.jsonl`
 | **R6** | 技术栈计划性能章节新增 **C5**（置于 C4 之后，章节标题改为 C1–C5）：`library_view` 为读元数据反序列化了全书正文，是全站最高频路径，而 C1 的跨库搜索是低频路径——**优先级排反了**；修法与 A5 的 `load_book_metadata()` 同源。落点阶段待裁决 |
 | **R7** | C1 阈值订正：原文按 `load_book_cached` 的 `maxsize=10` 写「库超 10 本」，真正的约束是 `load_book_index` 的 **`maxsize=4`**（第 5 本就开始颠簸），且 `case_sensitive` 编进了 `lru_cache` key，**有效容量再折半到 2 本**。Phase 1a 基准加「首页冷启动 TTFB × 书库规模」，并要求造 20 本合成 fixture |
 | **R8** | `tests/conftest.py` docstring 去掉 `reader3.py:187` 改用符号名；删除 stale pyc（含一个源文件已不存在的 `test_probe_tmp`）与 `tests/.DS_Store`；`.gitignore` 清掉残留的 merge 冲突标记 |
-| **R11** | 本文 §6 步骤 0.5 新增两条 lint 的对照表（**选择器 lint 约束测试代码，命名 lint 约束模板与原型**，此前只有前者），命名 lint 给出正则 `^(lib\|rd\|set)-…` 并要求显式点名设计规格 §4.1 那 24 个带前缀但不合规的 testid；§7 Phase 0 退出条件改为「两条 lint 都在 CI 里生效」 |
+| **R11** | 本文 §6 步骤 0.5 新增两条 lint 的对照表（**选择器 lint 约束测试代码，命名 lint 约束模板与原型**，此前只有前者），命名 lint 给出正则（现已收敛为 §6 步骤 0.5 的 canonical 代码块，见下方 R13）并要求显式点名设计规格 §4.1 那 24 个带前缀但不合规的 testid；§7 Phase 0 退出条件改为「两条 lint 都在 CI 里生效」 |
+
+### 第二轮 Codex 评审的落地记录（2026-08-16 晚）
+
+评审报告全文见 [`20260816-review-codex-ui-migration-sequencing.md`](./20260816-review-codex-ui-migration-sequencing.md)（`gpt-5.6-sol` / `xhigh` / read-only，threadId `01a0094b-e03a-7243-8d66-77706193c9b3`）。共 19 条发现，以下三条已落地。
+
+| 任务 | 落地内容 |
+|---|---|
+| **R13**（原报告第 4 条，CRITICAL） | **修复 R12 引入的依赖环。** R12 把 K1/K6 的新行为与 S1–S4 的横幅写进了 Phase 1b 的退出门槛，但这些行为分别要到 4B.1 / Phase 3 / 4A.4 才存在，而那些阶段又都以 1b 通过为前置——按原文的顺序跑不通。修法是把「写下来」与「计入门槛」分开：`specs/009-*/tasks.md` 新增 **§0.5 用例分组与激活阶段**（`baseline-1b` / `acceptance-4b1` / `acceptance-p3` / `acceptance-4a4` / `acceptance-2a` 五组），§4 契约表加「组」列并把 K-1 / K-6 各拆成 baseline 现状特征化条与 4B.1 行为变更条，§5 整节移出 1b 门槛，§8 退出门槛重写为「仅 `baseline-1b`」；`specs/014-*/tasks.md` 4B.1 / 4B.2 门槛改为「`baseline-1b` 零改动全绿 ＋ `acceptance-4b1` 解开 skip」；本文 §7 的 Phase 1b / 3 / 4A / 4B 四行与 soak 门槛同步 |
+| **R14**（原报告第 16 条，MEDIUM） | **命名 lint 正则不可直接复制。** 原文三处（§6 步骤 0.5 的表格、§7 Phase 0 行、R11 记录）都把正则写成 `^(lib\|rd\|set)-…`——Markdown 表格单元格里 `\|` 是必需的转义，但复制进 lint 配置就变成匹配**字面反斜杠加竖线**，永远不命中，lint 会全绿而命名方案毫无约束。§6 步骤 0.5 新增 **canonical 正则代码块**（`^(?:lib\|rd\|set)-[a-z0-9]+(?:-[a-z0-9]+)*$`，非捕获组），其余三处一律改为引用它。同时 `specs/014-*/tasks.md` 4B.1 的依赖校验从「ESLint 或 dependency-cruiser 二选一」**定为 `dependency-cruiser`**，并补齐四条规则：`no-circular`（原文缺失）、`commands-no-upward`、**`interactions-no-bypass`**（原文只禁反向 import，挡不住 `interactions` 直连 `notes-api` 这种正向绕过，而那恰是最省事的走法）、`notes-api-leaf` |
+| **R15**（原报告第 2 条，MEDIUM） | **R4 删掉的代码，001 的设计文档仍在要求实现。** 运行时代码的删除边界是对的（`src/` 已零引用），但 `specs/001-search-features/` 四份文档仍把 `SearchIndex` / `from_book_pkl()` / `build_from_library()` 列为待办——任何人照 tasks.md 往下做都会把死代码重新引入。`tasks.md` 的 T027 / T029 / T030 标注为 SUPERSEDED 并划除（T028 与 `BookIndex` dataclass 本身保留，是活代码），`data-model.md`（文首 ＋ §4）、`research.md`（Indexing Strategy 节）、`plan.md`（宪法门槛清单）各加醒目说明并指向 per-book 的 `load_book_index()` |
+
+> 其余 16 条尚未处理，其中三条 HIGH 值得优先看：**第 14 条**（`manifest.json` + `chapters.jsonl` 是两文件提交却没有事务协议，崩溃会留下 manifest 指向半写文件）、**第 15 条**（iframe 门槛「`textContent` 与偏移不变」是必要非充分条件，包裹/拆分文本节点可保持扁平文本相同却改变 DOM path，不足以保护 CFI）、**第 18 条**（§6 说 1b 与 Track D 不阻塞任何人，§7 却让 Phase 3 同时依赖二者——M3 实为三路汇合点）。另有**第 1 条**指出「`commands.ts` 不得碰 DOM」与「纯拆分」无法同时机械满足，已作为未裁决项记入 `specs/014-*/tasks.md`。
+
+---
 
 **执行 R2 时抓到一条新事实**：`search.js` 也消费 K5（`getContentRoot` / `onContentsReady`），而契约表原先只写了 annotations。这意味着 **K5 的爆炸半径比 4B.1 大** —— 改接口会同时打断阅读页内搜索。已写进契约与 4B.1 的 K5 产出行。这条正是 Codex「枚举全部活成员」那条规则的直接产物：不逐个核对消费方，就发现不了。
 

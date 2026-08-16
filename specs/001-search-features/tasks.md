@@ -7,6 +7,16 @@
 
 **Organization**: Tasks are grouped by user story (P1: In-Book Keyword Search, P2: Cross-Book Library Search, P3: Semantic Search) to enable independent implementation and testing of each story.
 
+> ## ⚠️ SUPERSEDED —— T027 / T029 / T030 已取消（2026-08-16）
+>
+> **不要实现 T027、T029、T030。** 它们要求的 `SearchIndex` 类、`BookIndex.from_book_pkl()` 与 `SearchIndex.build_from_library()` 曾经存在于 `search_service.py`，已于 2026-08-16 作为**死代码删除**（773 → 734 行）。照本文实现会把它们重新引入。
+>
+> **删除理由**：`from_book_pkl()` 用裸 `pickle.load()`，绕过了 `_Reader3Unpickler` 兼容垫片，加载会失败；而 `build_from_library()` 把这个失败吞进一个没人读的 `failed` 列表。全库预建索引的路径从未被任何 endpoint 调用。
+>
+> **当前真相源**：per-book 惰性加载 `load_book_index()`（`search_service.py`），带 `lru_cache`。`BookIndex` 与 `ChapterIndex` 两个 dataclass **仍是活代码**——T028 有效，保留。
+>
+> 详见 `docs/plans/20260816-plan-ui-migration-sequencing.md` 的 R4 落地记录与 Phase 0 步骤 0.7。
+
 ## Format: `[ID] [P?] [Story] Description`
 
 - **[P]**: Can run in parallel (different files, no dependencies)
@@ -83,10 +93,10 @@
 
 ### Backend Implementation (User Story 2)
 
-- [ ] T027 [P] [US2] Implement SearchIndex dataclass in search_service.py with books dict and last_updated timestamp
-- [ ] T028 [P] [US2] Implement ChapterIndex dataclass in search_service.py (normalized_text for fast matching, original_text for context extraction)
-- [ ] T029 [P] [US2] Implement BookIndex dataclass in search_service.py with from_book_pkl() classmethod (loads book.pkl, builds ChapterIndex list)
-- [ ] T030 [US2] Implement SearchIndex.build_from_library() classmethod in search_service.py (FR-014: scan *_data/ directories, build index for all books, handle partial failures per FR-022a)
+- [~] ~~T027 [P] [US2] Implement SearchIndex dataclass in search_service.py with books dict and last_updated timestamp~~ — **SUPERSEDED 2026-08-16，不要实现**（类已作为死代码删除，见文首说明）
+- [ ] T028 [P] [US2] Implement ChapterIndex dataclass in search_service.py (normalized_text for fast matching, original_text for context extraction) — **仍有效**，`ChapterIndex` 是活代码
+- [~] ~~T029 [P] [US2] Implement BookIndex dataclass in search_service.py with from_book_pkl() classmethod (loads book.pkl, builds ChapterIndex list)~~ — **部分 SUPERSEDED 2026-08-16**：`BookIndex` dataclass 本身**仍需要**（活代码），但 `from_book_pkl()` classmethod 已删除，**不要实现**；构造走 `load_book_index()`
+- [~] ~~T030 [US2] Implement SearchIndex.build_from_library() classmethod in search_service.py (FR-014: scan *_data/ directories, build index for all books, handle partial failures per FR-022a)~~ — **SUPERSEDED 2026-08-16，不要实现**（全库预建索引路径已删除，改为 per-book 惰性加载）
 - [x] T031 [US2] Implement search_library() function in search_service.py (FR-013 to FR-022a: search across all indexed books, group results by book_id, apply max_results_per_book limit, sort by relevance/title/author)
 - [x] T032 [US2] Add GET /api/search/library endpoint in server.py (accepts q, mode, max_results_per_book, max_total_results, sort_by query params, returns SearchResultSet with grouped_by_book populated)
 - [x] T033 [US2] Implement relevance scoring for library search (FR-022: exact phrase hits desc, total hit count desc, earliest occurrence position asc) in search_library() function

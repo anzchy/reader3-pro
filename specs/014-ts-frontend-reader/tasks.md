@@ -76,11 +76,23 @@ createAnnotation         （含 fetch）
 
 ### 4B.1 退出门槛
 
-- 1b 的标注 E2E **零改动**全绿（拆分不改行为，测试不该动）。前提：1b 的用例已覆盖写入路径——四类型各创建一次、改色、删除、笔记保存，断言方式为「刷新后高亮回到同一段文字」而非「`fetch` 被调用过」
+- **`baseline-1b` 组零改动全绿**（拆分不改行为，测试不该动）。前提：该组已覆盖写入路径——四类型各创建一次、改色、删除、笔记保存，断言方式为「刷新后高亮回到同一段文字」而非「`fetch` 被调用过」
+- **`acceptance-4b1` 组解开 skip 并绿灯**：K-1b（移除宿主元素后响亮失败）与 K-6b（`Reader3Ctx` 缺失时抛错）。这两条断言的是 4B.1 **本阶段新产生**的行为，因此归属在这里而不是 1b——分组定义见 [`specs/009-e2e-annotations/tasks.md`](../009-e2e-annotations/tasks.md) §0.5
 - 各模块 ≤400 行
 - K1–K6 六项产出全部落地
-- **依赖方向机器可验**：`commands.ts` 不 import `interactions.ts` / `note-editor.ts` / `overlays.ts`；`notes-api.ts` 不 import 除类型外的任何本目录模块。用 ESLint `import/no-restricted-paths` 或 `dependency-cruiser` 落成 CI 检查，不靠人盯
+- **依赖方向机器可验**：工具**选定 `dependency-cruiser`**（不是二选一——两套配置语言会让规则漂移），规则至少四条，见下方「依赖规则」
 - `anchoring.ts` 有单测覆盖（它现在是纯函数，这是顺手拿到的收益）
+
+### 依赖规则（`dependency-cruiser`，CI 强制）
+
+| 规则 | 约束 | 为什么 |
+|---|---|---|
+| `no-circular` | 本目录任意模块间**不得成环** | 八模块拆分的全部价值就在于有向无环；缺这条，其余三条只是局部补丁 |
+| `commands-no-upward` | `commands.ts` 不得 import `interactions.ts` / `note-editor.ts` / `overlays.ts` | 命令层不得反向依赖调用方 |
+| `interactions-no-bypass` | `interactions.ts` **不得直接 import `notes-api.ts`** | 单向链是 `interactions → commands → notes-api`。只禁反向 import 挡不住**正向绕过**——`interactions` 直连 `notes-api` 会让 `commands.ts` 这一层名存实亡，而这恰恰是拆分中最省事、也最容易发生的走法 |
+| `notes-api-leaf` | `notes-api.ts` 不得 import 本目录任何模块的**运行时**导出（`import type` 允许） | 传输层保持叶子节点，否则会长成 god service（见上文落选方案 (b)） |
+
+> `commands.ts` **不得直接碰 DOM** 这条**不列入机器校验**——`dependency-cruiser` 看的是模块图，看不见 `document.*` 调用。它作为 code review 检查项保留。⚠️ 注意六个方法当前直接读取 `Range` / `contentEl` / textarea，「纯拆分」与「不碰 DOM」不能同时机械满足；若要保留这条硬门槛，需先定义 `SelectionSnapshot` 与 ports 由 `interactions` / `note-editor` 注入。**该冲突尚未裁决**（Codex review 2026-08-16 第 1 条）。
 
 ---
 
@@ -104,7 +116,7 @@ createAnnotation         （含 fetch）
 - **结构断言**：三个浮层各跑一次 `containingBlockAncestor(el) === null`。这条必须在**每个** E2E 用例的 `afterEach` 或一条独立的结构测试里跑，不能只在 happy path 跑一次
 - **几何断言**：iframe 内划词后，工具条矩形与选区矩形（已换算到视口坐标）的相对位置落在容差内——横向与选区中心对齐 ±N px、纵向紧贴选区上/下沿。**禁止**用 `toBeVisible()` / `toBeAttached()` 充当本条
 - 上面两条对 `note-editor` 与 `note-tooltip` 同样各来一遍（tooltip 走 hover 触发）
-- 1b 的标注 E2E **零改动**全绿（与 4B.1 同一条门槛）
+- **`baseline-1b` 组零改动全绿**（与 4B.1 同一条门槛）；`acceptance-4b1` 组保持绿灯
 - iframe 内部改动不超出 spec §6.0 允许范围（`document.body.textContent` 与所有文本节点偏移逐字节不变）
 
 ## 4B.3 —— 阅读设置面板

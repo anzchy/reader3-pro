@@ -181,6 +181,12 @@ def search_text(text: str, query: str, case_sensitive: bool = False, max_results
 
 ### Indexing Strategy for Cross-Book Search
 
+> ⚠️ **SUPERSEDED 2026-08-16 —— 本节的 `SearchIndex` / `build_from_library()` 方案未被采纳为最终实现，且已从代码中删除，不要照抄。**
+>
+> 实际落地的是 **per-book 惰性加载 + `lru_cache`**（`load_book_index()`），不是「服务启动时构建全库内存索引」。原方案的 `build_from_library()` 用裸 `pickle.load()` 绕过了 `_Reader3Unpickler` 兼容垫片，加载必然失败，而失败被吞进一个没人读的 `failed` 列表。
+>
+> 见 `docs/plans/20260816-plan-ui-migration-sequencing.md` 的 R4 落地记录。
+
 **Approach**: In-memory index built on server start
 
 ```python

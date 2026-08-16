@@ -1,9 +1,9 @@
 # 009-e2e-annotations —— 任务
 
-- **对应阶段**: Phase 1b（Playwright E2E）
+- **对应阶段**: Phase 1b（Playwright E2E）起写，后续阶段逐组激活
 - **进入条件**: Phase 0 的 0.3（`--port` + `/api/health`）与 0.5（`data-testid` 全量补齐）完成。见 `docs/plans/20260816-plan-ui-migration-sequencing.md` §6
-- **退出条件**: 本文全部用例在**主 CI**（非 nightly）绿灯
-- **下游**: Phase 4A / 4B 的进入条件；Phase 3 的 soak 门槛（连绿 ≥10 次、跨度 ≥5 个工作日）数的就是这一套
+- **退出条件**: **`baseline-1b` 组**在**主 CI**（非 nightly）绿灯。其余组各自在所属阶段的出口生效，见 §0.5
+- **下游**: Phase 4A / 4B 的进入条件；Phase 3 的 soak 门槛（连绿 ≥10 次、跨度 ≥5 个工作日）数的就是 **`baseline-1b`** 这一组
 - **契约**: K1–K6 见 `specs/007-hygiene-and-contracts/contracts/annotation-host-contracts.md`；降级状态 S1–S5 见 `docs/plans/20260815-spec-frontend-design.md` §6.4
 
 > **引用规则**：用**符号名**与 **testid** 定位，不写代码行号。
@@ -23,6 +23,41 @@
 | **降级正向证据** | 断言「没有出现错误横幅」 | **主动制造** stale，断言横幅出现且文案匹配 |
 
 > 上游技术栈计划原写「断言 `POST /api/notes/*` → 刷新 → 断言 iframe 内重现 `<mark>`」。**后半句才是门槛**；前半句留作失败时的诊断信息，不单独构成通过条件。
+
+---
+
+## 0.5 用例分组与激活阶段
+
+> **为什么需要分组**：本文最初把全部用例塞进 Phase 1b 的退出门槛，这构成一个**依赖环**——
+>
+> - K-1 的「响亮失败」与 K-6 的「`Reader3Ctx` 缺失时抛错」是 **4B.1 才产生的行为**（见 `specs/014-ts-frontend-reader/tasks.md` §4B.1 契约产出表 K1/K6 行，K6 明写「本次拆分中唯一**故意的行为变更**」）；
+> - S1–S4 的横幅要到 **Phase 3 / 4A.4** 才存在（本文 §5 注已承认这点）；
+> - 而 Phase 3 的进入条件含 1b 的 soak 门槛，Phase 4A 的进入条件是 1b 绿灯，Phase 4B 的进入条件是 Phase 3 + 4A.4。
+>
+> 于是「1b 全绿」要求先有 4B.1 和 Phase 3 的产物，而它们又都排在 1b 之后。**按原文的顺序跑不通。**
+>
+> 修法不是删用例，而是把「**写下来**」与「**计入门槛**」分开：用例照写，但每组只在其被测行为存在的那个阶段才激活并计入退出条件。
+
+| 组 | 内容 | 激活阶段 | 计入 1b 退出门槛 | 计入 Phase 3 soak |
+|---|---|---|:--:|:--:|
+| **`baseline-1b`** | §2 读路径 R-1…R-5、§3 写路径 W-1…W-10、§4 的 K-2 / K-3 / K-4 / K-5、§6 X-1 / X-2 | Phase 1b | ✅ | ✅ |
+| **`acceptance-4b1`** | §4 的 K-1（响亮失败）与 K-6 的抛错断言 | 4B.1 | ❌ | ❌ |
+| **`acceptance-p3`** | §5 的 S1–S4，**朴素横幅形态** | Phase 3 出口 | ❌ | ❌ |
+| **`acceptance-4a4`** | §5 的 S1–S4，**设计规格形态**（只改 testid 映射，断言语义不变） | 4A.4 | ❌ | ❌ |
+| **`acceptance-2a`** | S5 写冲突（本文 §7 已列为不在 1b） | Phase 2a | ❌ | ❌ |
+
+**落地方式**：用 pytest marker（`@pytest.mark.baseline_1b` 等），CI 按组选择。未激活的组以 `skip` 而非删除的形式存在，理由是它们必须在写的时候就被 review——**一条到期才第一次被人读的断言，等于没写。**
+
+### `baseline-1b` 对 K1 / K6 的现状特征化
+
+这两条契约在 1b 阶段仍要有护栏，只是断言的是**今天的行为**，不是 4B.1 之后的行为：
+
+| 契约 | `baseline-1b` 断言（现状特征化） | `acceptance-4b1` 断言（行为变更后） |
+|---|---|---|
+| **K1** | 七个宿主元素在模板中齐备，标注 UI 正常 init（**前置条件成立**的正向证据） | 移除 `annotation-toolbar` 后重载 → 明确 `console.error` 且降级标记置位 |
+| **K6** | 在 `/read/{bookId}/{chapterIndex}` 创建标注，`notes.json` 的 `chapter_index` 等于 URL 里那个数 | 删掉 `location.pathname` 回退后，`window.Reader3Ctx` 缺失时**抛错**而非静默猜测 |
+
+K1 的 baseline 条是有价值的：它会在**任何人改模板删掉那七个 id 之一时**变红，而这正是 4B.2 外壳重写最可能干的事——不必等到 4B.1 才有护栏。
 
 ---
 
@@ -63,7 +98,7 @@ child frame 内 document.createRange() → 写入 iframe 的 Selection
 
 ## 3. 写路径用例（本文的重点）
 
-> 4B.1 的退出门槛写的是「1b 的标注 E2E **零改动**全绿」。**这条只有在写路径被覆盖时才成立**——`commands.ts` 那六个方法（`toggleMarkerAnnotation` / `toggleAnnotation` / `deleteCurrentAnnotation` / `saveNote` / `deleteAnnotations` / `createAnnotation`）恰恰是最容易漏的一层：读侧渲染肉眼可见，写侧只在刷新后才暴露。
+> 组：**`baseline-1b`**。4B.1 的退出门槛写的是「`baseline-1b` **零改动**全绿」。**这条只有在写路径被覆盖时才成立**——`commands.ts` 那六个方法（`toggleMarkerAnnotation` / `toggleAnnotation` / `deleteCurrentAnnotation` / `saveNote` / `deleteAnnotations` / `createAnnotation`）恰恰是最容易漏的一层：读侧渲染肉眼可见，写侧只在刷新后才暴露。
 
 **每条用例的收尾动作统一为：刷新页面 → 断言高亮/笔记回到同一段文字上。** 没有这一步的用例不算数。
 
@@ -86,18 +121,22 @@ child frame 内 document.createRange() → 写入 iframe 的 Selection
 
 ## 4. K1–K6 各一条能失败的断言
 
-| 契约 | 用例 | 断言 |
-|---|---|---|
-| **K1** | K-1 | 用 `page.evaluate` 移除 `annotation-toolbar` 后重载标注 UI → 断言控制台出现明确 `console.error` 且降级标记置位。**不能只断言"工具条不见了"**——契约的价值在于把静默变响亮 |
-| **K2** | K-2 | 工具条每个 `data-action` 逐个点一遍，断言**结果**（标注真的产生/删除/改色），不是断言按钮存在 |
-| **K3** | K-3 | ①三个浮层各跑 `containingBlockAncestor(el) === null`；②工具条矩形与选区矩形相对位置在容差内。判据与参考实现见契约文件 |
-| **K4** | R-4 | 见读路径 R-4（翻章后新章高亮正确、旧章不残留） |
-| **K5** | R-5 + W-1 | `search.js` 与 `annotations.js` 两个消费方各至少一条 |
-| **K6** | K-6 | 在 `/read/{bookId}/{chapterIndex}` 上创建标注，断言 `notes.json` 里的 `chapter_index` **等于 URL 里那个数**。4B.1 删掉 `location.pathname` 回退后，另加一条：`window.Reader3Ctx` 缺失时抛错而非静默猜测 |
+| 契约 | 用例 | 组 | 断言 |
+|---|---|---|---|
+| **K1** | K-1a | `baseline-1b` | 七个宿主元素齐备且标注 UI 正常 init（前置条件的正向证据） |
+| **K1** | K-1b | `acceptance-4b1` | 用 `page.evaluate` 移除 `annotation-toolbar` 后重载标注 UI → 断言控制台出现明确 `console.error` 且降级标记置位。**不能只断言"工具条不见了"**——契约的价值在于把静默变响亮。⚠️ 该行为 4B.1 才实现，不计入 1b 门槛 |
+| **K2** | K-2 | `baseline-1b` | 工具条每个 `data-action` 逐个点一遍，断言**结果**（标注真的产生/删除/改色），不是断言按钮存在 |
+| **K3** | K-3 | `baseline-1b` | ①三个浮层各跑 `containingBlockAncestor(el) === null`；②工具条矩形与选区矩形相对位置在容差内。判据与参考实现见契约文件 |
+| **K4** | R-4 | `baseline-1b` | 见读路径 R-4（翻章后新章高亮正确、旧章不残留） |
+| **K5** | R-5 + W-1 | `baseline-1b` | `search.js` 与 `annotations.js` 两个消费方各至少一条 |
+| **K6** | K-6a | `baseline-1b` | 在 `/read/{bookId}/{chapterIndex}` 上创建标注，断言 `notes.json` 里的 `chapter_index` **等于 URL 里那个数** |
+| **K6** | K-6b | `acceptance-4b1` | 删掉 `location.pathname` 回退后：`window.Reader3Ctx` 缺失时**抛错**而非静默猜测。⚠️ 该行为 4B.1 才实现，不计入 1b 门槛 |
 
 ---
 
 ## 5. S1–S4 降级状态各一条正向证据
+
+> **组：`acceptance-p3`（朴素形态）→ `acceptance-4a4`（设计规格形态）。整节都不计入 Phase 1b 的退出门槛**，因为横幅本身要到 Phase 3 / 4A.4 才存在。用例在 1b 阶段就写好并挂 skip，到期解开。
 
 每条都要**主动制造**降级条件，再断言 UI 明确显示——「没有横幅」不是证据。
 
@@ -134,7 +173,21 @@ child frame 内 document.createRange() → 写入 iframe 的 Selection
 
 ## 8. 退出门槛
 
-- 上面所有用例在**主 CI** 绿灯（非 nightly）
-- 选择器 lint 通过：全套用例零 class / 结构选择器
-- **零 flaky**：连续 3 次全量运行无偶发失败才算达标。理由见 soak 门槛——一条会偶发失败的 E2E 当不了 Phase 3 数据迁移的验收基准，而 flaky 会让计数反复清零
+### Phase 1b 的退出门槛 = 仅 `baseline-1b` 组
+
+- **`baseline-1b` 组**在**主 CI** 绿灯（非 nightly）
+- 选择器 lint 通过：全套用例（含尚未激活的组）零 class / 结构选择器
+- **零 flaky**：`baseline-1b` 连续 3 次全量运行无偶发失败才算达标。理由见 soak 门槛——一条会偶发失败的 E2E 当不了 Phase 3 数据迁移的验收基准，而 flaky 会让计数反复清零
 - 单次全量运行时长记录在案（后续 soak 期间要跑十次以上，时长本身就是可行性约束）
+- 其余各组**用例已写完并通过 review**，以 skip 形态存在——写完是 1b 的门槛，跑绿不是
+
+### 其余各组的门槛归属
+
+| 组 | 归属阶段的退出门槛 |
+|---|---|
+| `acceptance-4b1` | 4B.1 退出门槛（见 `specs/014-ts-frontend-reader/tasks.md`） |
+| `acceptance-p3` | Phase 3 出口 |
+| `acceptance-4a4` | 4A.4 出口 |
+| `acceptance-2a` | Phase 2a 出口 |
+
+> **不要把未激活组的 skip 当成永久豁免。** 每个阶段的出口 checklist 里都要有一行「本阶段应激活的组已解开 skip 且绿灯」，否则 skip 会一路带到 Phase 5。

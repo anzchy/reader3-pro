@@ -2,7 +2,23 @@
 
 **Feature**: 001-search-features
 **Date**: 2025-12-17
-**Status**: Design Phase
+**Status**: Design Phase — **部分条目已 SUPERSEDED，见下方说明**
+
+> ## ⚠️ SUPERSEDED —— `SearchIndex` 与 `BookIndex.from_book_pkl()`（2026-08-16）
+>
+> 本文档描述的以下三项**已不存在于代码中**，2026-08-16 作为死代码删除，**不要照本文实现**：
+>
+> | 本文条目 | 状态 |
+> |---|---|
+> | `SearchIndex` dataclass（§4 及后续各处） | ❌ 已删除 |
+> | `BookIndex.from_book_pkl()` classmethod | ❌ 已删除 |
+> | `SearchIndex.build_from_library()` classmethod | ❌ 已删除 |
+> | `BookIndex` dataclass 本身 | ✅ **保留，活代码** |
+> | `ChapterIndex` dataclass | ✅ **保留，活代码** |
+>
+> **当前真相源**：per-book 惰性加载 `load_book_index()`（`search_service.py`），带 `lru_cache`。没有全库级的索引容器；跨库搜索由 `search_library()` 逐本调用 `load_book_index()` 完成。
+>
+> 删除理由与边界见 `docs/plans/20260816-plan-ui-migration-sequencing.md` 的 R4 落地记录。
 
 ## Overview
 
@@ -194,6 +210,8 @@ class SearchResultSet:
 ---
 
 ### 4. SearchIndex
+
+> ⚠️ **SUPERSEDED 2026-08-16 —— 本节整节作废，不要实现。** `SearchIndex` 与 `build_from_library()` 已作为死代码从 `search_service.py` 删除。当前用 per-book 惰性加载 `load_book_index()`。见文首说明。
 
 **Purpose**: In-memory index for keyword search
 
