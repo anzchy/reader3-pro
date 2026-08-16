@@ -1,0 +1,6 @@
+{
+  "enabledPlugins": {
+    "docs-guardian@xiaolai": true,
+    "tdd-guardian@xiaolai": true
+  }
+}

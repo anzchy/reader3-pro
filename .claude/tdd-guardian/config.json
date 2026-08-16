@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 2,
+  "enabled": true,
+  "enforceOnTaskCompleted": false,
+  "blockCommitWithoutFreshGate": false,
+  "staleGateAction": "deny",
+  "gateFreshnessMinutes": 120,
+  "smartStaleness": true,
+  "bypassEnv": "TDD_GUARD_BYPASS",
+  "preflightCommand": "",
+  "lanes": [
+    {
+      "name": "unit",
+      "description": "In-process pytest over tests/unit and tests/contract. Contract tests use FastAPI TestClient (httpx, already a transitive dep) against the real router tree, so they stay in-process and need no port.",
+      "command": "uv run pytest tests/unit tests/contract --cov=src/reader3_app --cov-report=json:coverage-unit.json --cov-report=term",
+      "gateOn": ["taskCompleted", "commit"],
+      "coverage": "include",
+      "coverageSummaryPath": "coverage-unit.json",
+      "probeCommand": "uv run pytest tests/unit tests/contract --collect-only -q",
+      "timeoutMs": 600000
+    },
+    {
+      "name": "e2e",
+      "description": "Playwright via pytest-playwright against a live reader3-server. Needs a live_server fixture in tests/e2e/conftest.py — not written yet, so no setupCommand is configured.",
+      "command": "uv run pytest tests/e2e --browser chromium",
+      "gateOn": ["push"],
+      "coverage": "none",
+      "probeCommand": "uv run pytest tests/e2e --collect-only -q",
+      "timeoutMs": 1800000
+    }
+  ],
+  "coverageThresholds": {
+    "lines": 70,
+    "functions": 0,
+    "branches": 60,
+    "statements": 70
+  },
+  "coverageMode": "no-decrease",
+  "requireMutation": false,
+  "mutationCommand": "",
+  "mutationGateOn": ["push"]
+}

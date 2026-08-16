@@ -33,3 +33,29 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "reader3_app.web" = ["templates/*.html", "static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Lanes are directory-split (see .claude/tdd-guardian/config.json):
+#   tests/unit + tests/contract -> unit lane   (taskCompleted, commit)
+#   tests/e2e                   -> e2e lane    (push)
+# The unit lane excludes tests/e2e explicitly; do not add addopts that
+# re-include it, or the tight loop starts driving a browser.
+markers = [
+    "slow: takes more than a second; excluded from the tight loop",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["src/reader3_app"]
+omit = ["*/__init__.py"]
+
+[dependency-groups]
+dev = [
+    "hypothesis>=6.165.9",
+    "mypy>=2.3.1",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "pytest-playwright>=0.9.0",
+    "ruff>=0.16.3",
+]
