@@ -114,6 +114,7 @@ TS + ES modules + Vite 正好对症；构建产物仍是静态文件，FastAPI `
   - `routers/ai.py`（对话 + RAG + 摘要 + 问答）
   - `routers/settings.py`
 - [ ] 新建共享 `book_store.py`：合并 `server.py` / `search_service.py` / `vector_search.py` 三处重复的 `_Reader3Unpickler` 与 `lru_cache` loader（消除同一本书 3 份内存缓存与漂移风险）。粒度接口与「为什么是三处不是四处」见 A5
+  - **同时解决缓存失效**：三处 `lru_cache` 的 key 都不含 mtime，重新处理一本书之后服务端仍然供旧 `Book`。Phase 0 的 P0-1 只保住了用户数据，**没有**让缓存知道盘上的东西变了；这一项在此之前无家可归，现在归 `book_store.py`
 - [ ] chromadb + sentence-transformers 移入可选依赖组 `[project.optional-dependencies] semantic`（与 README"语义依赖可选"的描述对齐）
 - [ ] 修复 `ai/config.py` 设置写入改为原子替换（`.tmp` + `os.replace`，与 notes/collections 一致）
 - [ ] **notes 乐观并发控制**：notes 是 load→modify→save 全覆盖，`os.replace` 只保证单次写入原子，不防两个并发请求互相覆盖——自托管单用户开两个标签页即可触发。加 revision/ETag（或 per-file lock），冲突时返回 409 而非静默丢写。前端侧的冲突 UI 是设计规格 §6.4 的 **S5**

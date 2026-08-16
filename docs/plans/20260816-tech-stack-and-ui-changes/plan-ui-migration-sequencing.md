@@ -21,6 +21,8 @@
 | **标注宿主契约 K1–K6** | [`contracts/annotation-host-contracts.md`](contracts/annotation-host-contracts.md) |
 | **`annotations.js` 八模块拆分**与 4B 各子阶段任务 | [`tasks/014-ts-frontend-reader.md`](tasks/014-ts-frontend-reader.md) |
 | **Phase 1b E2E 用例清单**（读路径 / 写路径 / K1–K6 / S1–S4） | [`tasks/009-e2e-annotations.md`](tasks/009-e2e-annotations.md) |
+| **Phase 0 七项的现状实测**与哪几项适合交给 `/tdd-guardian:workflow` | [`tasks/007-hygiene-and-contracts.md`](tasks/007-hygiene-and-contracts.md) |
+| **覆盖率门槛策略**、42 条路由契约的三层组织、异常处理规则 | [`tasks/008-test-safety-net.md`](tasks/008-test-safety-net.md) |
 
 ---
 
@@ -278,10 +280,16 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 
 M1b 与 MD 可与 M1/M2 交错推进；M4a 可与 M2/M3 交错推进；**M3 与 M4b 严格串行**。
 
-每个分支的任务清单放在本文件夹的 `tasks/{分支名}.md`，不写进本文。今天存在的只有
-[`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) 与
-[`tasks/014-ts-frontend-reader.md`](./tasks/014-ts-frontend-reader.md)；其余七个里程碑
-开工前需要补骨架（评审第 9 条，未处置）。
+每个分支的任务清单放在本文件夹的 `tasks/{分支名}.md`，不写进本文。今天存在四个：
+[`007-hygiene-and-contracts.md`](./tasks/007-hygiene-and-contracts.md)、
+[`008-test-safety-net.md`](./tasks/008-test-safety-net.md)、
+[`009-e2e-annotations.md`](./tasks/009-e2e-annotations.md)、
+[`014-ts-frontend-reader.md`](./tasks/014-ts-frontend-reader.md)。
+
+其余五个（010 / 011 / 012 / 013 / 015）**故意还没写**。评审第 9 条要求补齐骨架，
+处置方式是**领先一个分支即时补**，不是现在一次写完七份：骨架的价值来自它写下的
+事实（哪些代码还在、哪些已经被上一个分支改掉了），而 011 的事实要等 008 和 010
+落地才成立。提前写只会得到一份开工时已经过期的清单。开某个分支前补它自己那份。
 
 ### 9.1 依赖图（canonical）
 
