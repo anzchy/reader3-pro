@@ -221,9 +221,9 @@ Do not invent a new number without updating that table.
 | Milestone | Branch | Status |
 |---|---|---|
 | M0 — Phase 0 contracts + hygiene | `007-hygiene-and-contracts` | 🚧 In progress |
-| M1 — tests + CI + API freeze | `008-test-safety-net` | Allocated |
+| M1 — tests + CI + API freeze | `008-test-safety-net` | Tasks drafted |
 | M1b — Playwright E2E | `009-e2e-annotations` | Tasks drafted |
-| MD — design degradation states | `010-design-degradation-states` | Allocated |
+| MD — design degradation states | `010-design-degradation-states` | Tasks drafted |
 | M2 — backend refactor | `011-backend-refactor` | Allocated |
 | M3 — storage migration | `012-storage-format` | Allocated |
 | M4a — TS shell + settings + library | `013-ts-frontend-shell` | Allocated |

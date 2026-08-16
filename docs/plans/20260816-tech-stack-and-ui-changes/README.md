@@ -31,14 +31,16 @@
 
 ## `tasks/`
 
-一个分支一个文件，`tasks/{分支名}.md`。目前写好四个：
+一个分支一个文件，`tasks/{分支名}.md`。目前写好五个：
 
-- [`tasks/007-hygiene-and-contracts.md`](./tasks/007-hygiene-and-contracts.md) —— Phase 0 七项止血，含现状实测（0.7 已完成、0.6 部分完成）与哪几项适合交给 `/tdd-guardian:workflow`
+- [`tasks/007-hygiene-and-contracts.md`](./tasks/007-hygiene-and-contracts.md) —— Phase 0 七项止血，含现状实测（0.1 / 0.7 已完成、0.6 部分完成）与哪几项适合交给 `/tdd-guardian:workflow`
 - [`tasks/008-test-safety-net.md`](./tasks/008-test-safety-net.md) —— Phase 1a 的测试网：覆盖率门槛策略、42 条路由契约、异常处理规则、性能基准、CI
 - [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) —— Phase 1b 的 E2E 用例清单（读路径 / 写路径 / K1–K6 / S1–S4），含 `baseline-1b` 与按阶段激活的 acceptance 分组
+- [`tasks/010-design-degradation-states.md`](./tasks/010-design-degradation-states.md) —— Track D：S1–S5 降级状态、原型现有地基的实测盘点、合同 2 剩余两项收口、loading 骨架屏
 - [`tasks/014-ts-frontend-reader.md`](./tasks/014-ts-frontend-reader.md) —— `annotations.js` 八模块拆分与 4B 各子阶段任务
 
-010 / 011 / 012 / 013 / 015 **故意还没写**——骨架**领先一个分支即时补**，理由见
+011 / 012 / 013 / 015 **故意还没写**——骨架**领先一个分支即时补**，且「领先一个」按
+**依赖顺序**数而非编号顺序，理由见
 [`plan-ui-migration-sequencing.md` §9](./plan-ui-migration-sequencing.md#9-里程碑与分支唯一真相源)。
 这是 Codex 评审第 9 条的处置方式。
 

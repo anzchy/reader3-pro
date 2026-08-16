@@ -23,6 +23,7 @@
 | **Phase 1b E2E 用例清单**（读路径 / 写路径 / K1–K6 / S1–S4） | [`tasks/009-e2e-annotations.md`](tasks/009-e2e-annotations.md) |
 | **Phase 0 七项的现状实测**与哪几项适合交给 `/tdd-guardian:workflow` | [`tasks/007-hygiene-and-contracts.md`](tasks/007-hygiene-and-contracts.md) |
 | **覆盖率门槛策略**、42 条路由契约的三层组织、异常处理规则 | [`tasks/008-test-safety-net.md`](tasks/008-test-safety-net.md) |
+| **S1–S5 降级状态的原型现状实测**与合同 2 剩余两项的收口 | [`tasks/010-design-degradation-states.md`](tasks/010-design-degradation-states.md) |
 
 ---
 
@@ -178,8 +179,9 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 - **线 1 后端**：`1a → 2a → 2b → 3`。1a 是全局阻塞（也在这里冻结合同 3 与性能基准）。
 - **线 2 E2E**：`1b`。依赖 0.3（端口/健康探针）与 0.5（testid）。用例清单见 [`tasks/009-e2e-annotations.md`](tasks/009-e2e-annotations.md)——**必须含写路径**，否则 4B.1 的「零改动全绿」门槛是空的。
   **1b 阻塞两处，不是一处**：直接阻塞 4A，同时通过 §7 的 soak 门槛阻塞 Phase 3。它不阻塞 2a / 2b，但"不阻塞后端"是错的说法——2b 做完之后，Phase 3 还要等 1b 攒够 10 次连绿、跨度 5 个工作日。
-- **线 3 Track D 设计**：产出 = 设计规格 §6.4 的 S1–S5 落进原型（本轨最大的一块）＋ §4.1 的 testid 批量改名（喂给 0.5）＋ loading 骨架屏 ＋ §3 合同 2 剩余两项。
+- **线 3 Track D 设计**：产出 = 设计规格 §6.4 的 S1–S5 落进原型（本轨最大的一块）＋ loading 骨架屏 ＋ §3 合同 2 剩余两项。任务清单见 [`tasks/010-design-degradation-states.md`](tasks/010-design-degradation-states.md)。
   **Track D 阻塞 Phase 3**：Phase 3 要求 S1–S4 在 UI 里可见（技术栈计划 Phase 3 验收），S1–S5 的原型是 Track D 的产出。
+  **§4.1 的 testid 批量改名不属于本轨，属于 0.5。** 此处原先把它记成 Track D 的产出并注明「喂给 0.5」，是**重复记账**——0.5 的验收本来就是「134 条违规归零」，而它写死的顺序「先改原型、再回贴模板」里，改原型那一半就是同一件事。两处都声称拥有它，会读出一个假依赖环：0.5 → Phase 0 完成 → Track D → 0.5。Track D 与 testid 的真实关系只有一条：**本轨新建的元素按 canonical 正则命名**。
 
 > **这三条线为什么值得单独盯**：单人维护者按状态切换时，最容易发生的失败是"后端一路推到 Phase 3 门口，才发现 1b 的 soak 计时还没开始、S1–S5 的原型还没画"。soak 是**日历时间**，补不回来——1b 必须尽早开始连绿，不能留到 2b 做完再启动。
 
@@ -280,16 +282,22 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 
 M1b 与 MD 可与 M1/M2 交错推进；M4a 可与 M2/M3 交错推进；**M3 与 M4b 严格串行**。
 
-每个分支的任务清单放在本文件夹的 `tasks/{分支名}.md`，不写进本文。今天存在四个：
+每个分支的任务清单放在本文件夹的 `tasks/{分支名}.md`，不写进本文。今天存在五个：
 [`007-hygiene-and-contracts.md`](./tasks/007-hygiene-and-contracts.md)、
 [`008-test-safety-net.md`](./tasks/008-test-safety-net.md)、
 [`009-e2e-annotations.md`](./tasks/009-e2e-annotations.md)、
+[`010-design-degradation-states.md`](./tasks/010-design-degradation-states.md)、
 [`014-ts-frontend-reader.md`](./tasks/014-ts-frontend-reader.md)。
 
-其余五个（010 / 011 / 012 / 013 / 015）**故意还没写**。评审第 9 条要求补齐骨架，
+其余四个（011 / 012 / 013 / 015）**故意还没写**。评审第 9 条要求补齐骨架，
 处置方式是**领先一个分支即时补**，不是现在一次写完七份：骨架的价值来自它写下的
 事实（哪些代码还在、哪些已经被上一个分支改掉了），而 011 的事实要等 008 和 010
 落地才成立。提前写只会得到一份开工时已经过期的清单。开某个分支前补它自己那份。
+
+> **「领先一个分支」按依赖顺序数，不按编号顺序数。** 010 先于 011 补，是因为
+> §9.1 把 Track D 与 1b 标为「Phase 0 一结束就动」——它们是 Phase 3 的前置，
+> 而 1b 那份等待是 soak 的日历时间。另外「事实会过期」这条理由对 010 恰好不成立：
+> Track D 只改 `designs/` 与设计规格，不读一行生产代码，它的事实不随 007 / 008 漂移。
 
 ### 9.1 依赖图（canonical）
 
