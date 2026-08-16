@@ -51,10 +51,11 @@ This project is an enhanced version (thus add `pro` to repo name) of Andrie Karp
 ├── config/
 │   └── ai_settings.example.json    # Example AI config (copy to ai_settings.json)
 ├── docs/
-│   ├── contracts/          # Cross-branch interface contracts (annotation host K1-K6)
-│   └── plans/              # Design + migration plans
-├── specs/                  # Task lists for active branches (specs/{branch}/tasks.md)
-│   └── _archive/           # Historical spec-kit records for shipped features
+│   └── plans/
+│       └── 20260816-tech-stack-and-ui-changes/   # Active effort: plans, specs,
+│                                                 # contracts, review, branch tasks
+├── specs/
+│   └── _archive/           # Historical spec-kit records for shipped features (frozen)
 └── books/                  # Generated per-book folders (ignored by git)
     └── *_data/             # One folder per book (book.pkl, book.epub, images/, chroma_db/)
 ```

@@ -8,11 +8,11 @@
 >
 > **本文权威**：双层 token 体系（§3）、`data-testid` 命名（§4）、组件清单（§5）、逐页规格（§6）、**iframe 边界与其例外（§6.0）**、降级状态设计（§6.4）、响应式断点（§7）、可访问性契约（§8）。
 >
-> **本文不权威**：实施顺序、阶段划分、分支编号 —— 见 [`20260816-plan-ui-migration-sequencing.md`](./20260816-plan-ui-migration-sequencing.md)。技术栈选型与后端架构 —— 见 [`20260815-plan-tech-stack-migration.md`](./20260815-plan-tech-stack-migration.md)。原型 → 生产的翻译规则 —— 见 [`designs/reader-pro-next/README.md`](../../designs/reader-pro-next/README.md)。
+> **本文不权威**：实施顺序、阶段划分、分支编号 —— 见 [`plan-ui-migration-sequencing.md`](./plan-ui-migration-sequencing.md)。技术栈选型与后端架构 —— 见 [`plan-tech-stack-migration.md`](./plan-tech-stack-migration.md)。原型 → 生产的翻译规则 —— 见 [`designs/reader-pro-next/README.md`](../../../designs/reader-pro-next/README.md)。
 >
 > 要改上面任何一项，改它的权威文档，不要在这里加一份副本。
 - **参考**: `designs/reader-pro-next/spec/reader-pro-spec.md`（现状实现审计，**设计风格基准**）、`docs/design-reference/feeddock-frontend-spec.md`（结构模板）、`lightwhale-website-analysis/`（视觉方向）
-- **现状证据**: [`designs/reader-pro-next/spec/screenshots/`](../../designs/reader-pro-next/spec/screenshots/) —— 11 个界面 × 桌面/移动双视口共 22 张实测截图（2026-08-15），对应 spec §14；由此新增的缺陷见 §1.5（D5–D7）与 spec §14.1（G-10–G-17）
+- **现状证据**: [`designs/reader-pro-next/spec/screenshots/`](../../../designs/reader-pro-next/spec/screenshots/) —— 11 个界面 × 桌面/移动双视口共 22 张实测截图（2026-08-15），对应 spec §14；由此新增的缺陷见 §1.5（D5–D7）与 spec §14.1（G-10–G-17）
 
 ---
 
@@ -67,7 +67,7 @@
 
 ### 1.5 浏览器实测补充的三个缺陷（D5–D7）
 
-D1–D4 来自读代码。以下三条来自 2026-08-15 的真实浏览器复核，截图证据见 [`designs/reader-pro-next/spec/screenshots/`](../../designs/reader-pro-next/spec/screenshots/) 与 spec §14.1。它们同样属于"设计前必须拍板"，因为每一条都改变某一页的规格。
+D1–D4 来自读代码。以下三条来自 2026-08-15 的真实浏览器复核，截图证据见 [`designs/reader-pro-next/spec/screenshots/`](../../../designs/reader-pro-next/spec/screenshots/) 与 spec §14.1。它们同样属于"设计前必须拍板"，因为每一条都改变某一页的规格。
 
 #### D5 🔴 正文没有最大宽度约束
 
@@ -315,7 +315,7 @@ Plan 的 Phase 1b 会写 Playwright E2E 并作为 Phase 4 的合并门槛。如�
 
 #### 判定标准（canonical，全仓库唯一定义处）
 
-> **本小节是 iframe 边界判据的唯一定义处。** 主计划 §7 的 Phase 4B 门槛、`specs/014-ts-frontend-reader/tasks.md` §4B.2、技术栈计划 Phase 4 的主题项**只引用本小节，不复述判据**——复述会漂移。
+> **本小节是 iframe 边界判据的唯一定义处。** 主计划 §7 的 Phase 4B 门槛、`docs/plans/20260816-tech-stack-and-ui-changes/tasks/014-ts-frontend-reader.md` §4B.2、技术栈计划 Phase 4 的主题项**只引用本小节，不复述判据**——复述会漂移。
 
 原判据是「`document.body.textContent` 与所有文本节点的偏移量逐字节不变」。这条**必要但不充分**，且"逐字节"对 JS DOMString 不是可执行定义：
 
@@ -359,13 +359,13 @@ function bodySignature(body) {
 
 取一条既有标注的 CFI，在改动前后各解析一次，`range.toString()` 必须等于存储的 `quote`。A 与 B 是静态护栏，C 是真正的证明——A、B 只能说明"没做已知会破坏 CFI 的事"，C 说明"CFI 确实没坏"。
 
-**落点分工**：A + B 是**机械门槛**，对每一次 `themes.override()` 改动都要跑（结构测试，不需要完整 E2E）；C 是 **E2E**，见 `specs/009-e2e-annotations/tasks.md` 的 R-6。
+**落点分工**：A + B 是**机械门槛**，对每一次 `themes.override()` 改动都要跑（结构测试，不需要完整 E2E）；C 是 **E2E**，见 `docs/plans/20260816-tech-stack-and-ui-changes/tasks/009-e2e-annotations.md` 的 R-6。
 
 不满足任何一条的改动，一律划归 Phase 4B 的行为变更，不属于设计。
 
 > ⚠️ 即便如此，栏宽变化会改变**分页位置**。CFI 锚定理论上不受影响（CFI 基于 DOM 路径而非视觉位置），但这要被**断言**，不能被假定——即上面的断言 C。
 >
-> 落点：断言 C 由 `specs/009-e2e-annotations/tasks.md` **R-6** 承担。R-6 在 Phase 1b 覆盖今天已存在的三个参数（主题 / 字号 / 行距）；**栏宽是 D5 的产物，要到 4B.3 才存在**，届时作为 R-6 的第四个参数加入，并计入 4B.3 的退出门槛。本节此前写的是"Phase 1b 的 E2E 必须覆盖改栏宽后…"——那在顺序上不可能成立，栏宽那时还没做。
+> 落点：断言 C 由 `docs/plans/20260816-tech-stack-and-ui-changes/tasks/009-e2e-annotations.md` **R-6** 承担。R-6 在 Phase 1b 覆盖今天已存在的三个参数（主题 / 字号 / 行距）；**栏宽是 D5 的产物，要到 4B.3 才存在**，届时作为 R-6 的第四个参数加入，并计入 4B.3 的退出门槛。本节此前写的是"Phase 1b 的 E2E 必须覆盖改栏宽后…"——那在顺序上不可能成立，栏宽那时还没做。
 
 ### 6.1 设置页（试点，先做）
 

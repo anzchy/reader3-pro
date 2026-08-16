@@ -13,14 +13,14 @@
 
 | 需要知道 | 去哪里 |
 |---|---|
-| 技术栈选型、后端架构、存储格式、各阶段做什么、A1–A5 / B1–B4 / C1–C5 | [`20260815-plan-tech-stack-migration.md`](./20260815-plan-tech-stack-migration.md) |
-| 双层 token、`data-testid` 命名、组件清单、逐页规格、**iframe 边界（§6.0）**、**降级状态 S1–S5（§6.4）**、响应式、可访问性 | [`20260815-spec-frontend-design.md`](./20260815-spec-frontend-design.md) |
-| 原型的性质、**原型 → 生产的翻译规则**、文档分工总表 | [`designs/reader-pro-next/README.md`](../../designs/reader-pro-next/README.md) |
-| 现状审计（是什么样）＋ 已拍板的五条产品决策 | [`designs/reader-pro-next/spec/reader-pro-spec.md`](../../designs/reader-pro-next/spec/reader-pro-spec.md) |
-| 原型相对现状补齐了什么、还差什么 | [`designs/reader-pro-next/spec/reader-pro-next-parity.md`](../../designs/reader-pro-next/spec/reader-pro-next-parity.md) |
-| **标注宿主契约 K1–K6** | [`docs/contracts/annotation-host-contracts.md`](../contracts/annotation-host-contracts.md) |
-| **`annotations.js` 八模块拆分**与 4B 各子阶段任务 | [`specs/014-ts-frontend-reader/tasks.md`](../../specs/014-ts-frontend-reader/tasks.md) |
-| **Phase 1b E2E 用例清单**（读路径 / 写路径 / K1–K6 / S1–S4） | [`specs/009-e2e-annotations/tasks.md`](../../specs/009-e2e-annotations/tasks.md) |
+| 技术栈选型、后端架构、存储格式、各阶段做什么、A1–A5 / B1–B4 / C1–C5 | [`plan-tech-stack-migration.md`](./plan-tech-stack-migration.md) |
+| 双层 token、`data-testid` 命名、组件清单、逐页规格、**iframe 边界（§6.0）**、**降级状态 S1–S5（§6.4）**、响应式、可访问性 | [`spec-frontend-design.md`](./spec-frontend-design.md) |
+| 原型的性质、**原型 → 生产的翻译规则**、文档分工总表 | [`designs/reader-pro-next/README.md`](../../../designs/reader-pro-next/README.md) |
+| 现状审计（是什么样）＋ 已拍板的五条产品决策 | [`designs/reader-pro-next/spec/reader-pro-spec.md`](../../../designs/reader-pro-next/spec/reader-pro-spec.md) |
+| 原型相对现状补齐了什么、还差什么 | [`designs/reader-pro-next/spec/reader-pro-next-parity.md`](../../../designs/reader-pro-next/spec/reader-pro-next-parity.md) |
+| **标注宿主契约 K1–K6** | [`contracts/annotation-host-contracts.md`](contracts/annotation-host-contracts.md) |
+| **`annotations.js` 八模块拆分**与 4B 各子阶段任务 | [`tasks/014-ts-frontend-reader.md`](tasks/014-ts-frontend-reader.md) |
+| **Phase 1b E2E 用例清单**（读路径 / 写路径 / K1–K6 / S1–S4） | [`tasks/009-e2e-annotations.md`](tasks/009-e2e-annotations.md) |
 
 ---
 
@@ -174,7 +174,7 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 三条线**开工时**彼此不阻塞——但它们**不是各自跑到底**：三条线全都是 Phase 3 的前置，Phase 3 是一个三路汇合点。完整依赖图见 §9.1。
 
 - **线 1 后端**：`1a → 2a → 2b → 3`。1a 是全局阻塞（也在这里冻结合同 3 与性能基准）。
-- **线 2 E2E**：`1b`。依赖 0.3（端口/健康探针）与 0.5（testid）。用例清单见 [`specs/009-e2e-annotations/tasks.md`](../../specs/009-e2e-annotations/tasks.md)——**必须含写路径**，否则 4B.1 的「零改动全绿」门槛是空的。
+- **线 2 E2E**：`1b`。依赖 0.3（端口/健康探针）与 0.5（testid）。用例清单见 [`tasks/009-e2e-annotations.md`](tasks/009-e2e-annotations.md)——**必须含写路径**，否则 4B.1 的「零改动全绿」门槛是空的。
   **1b 阻塞两处，不是一处**：直接阻塞 4A，同时通过 §7 的 soak 门槛阻塞 Phase 3。它不阻塞 2a / 2b，但"不阻塞后端"是错的说法——2b 做完之后，Phase 3 还要等 1b 攒够 10 次连绿、跨度 5 个工作日。
 - **线 3 Track D 设计**：产出 = 设计规格 §6.4 的 S1–S5 落进原型（本轨最大的一块）＋ §4.1 的 testid 批量改名（喂给 0.5）＋ loading 骨架屏 ＋ §3 合同 2 剩余两项。
   **Track D 阻塞 Phase 3**：Phase 3 要求 S1–S4 在 UI 里可见（技术栈计划 Phase 3 验收），S1–S5 的原型是 Track D 的产出。
@@ -203,9 +203,9 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 
 进入条件：**Phase 3 完成** 且 **4A.4 完成**（工具链已在两页上验证过）。
 
-四个子阶段 4B.1–4B.4 的任务清单见 [`specs/014-ts-frontend-reader/tasks.md`](../../specs/014-ts-frontend-reader/tasks.md)。顺序上只有一条硬约束：**4B.1（`annotations.js` 拆分）必须在 4B.2（外壳重写）之前**——外壳重写会移动工具条 DOM，而工具条 UI 目前就长在 `annotations.js` 里；先拆分，外壳就只与一个有文档的模块边界打交道，而不是散落在 1127 行里的七个 `getElementById` 和一处隐式的 `position: fixed` 假设。
+四个子阶段 4B.1–4B.4 的任务清单见 [`tasks/014-ts-frontend-reader.md`](tasks/014-ts-frontend-reader.md)。顺序上只有一条硬约束：**4B.1（`annotations.js` 拆分）必须在 4B.2（外壳重写）之前**——外壳重写会移动工具条 DOM，而工具条 UI 目前就长在 `annotations.js` 里；先拆分，外壳就只与一个有文档的模块边界打交道，而不是散落在 1127 行里的七个 `getElementById` 和一处隐式的 `position: fixed` 假设。
 
-外壳与标注之间只有六个接触面（K1–K6），**其中四条坏了不报错**。契约与验收见 [`annotation-host-contracts.md`](../contracts/annotation-host-contracts.md)。
+外壳与标注之间只有六个接触面（K1–K6），**其中四条坏了不报错**。契约与验收见 [`annotation-host-contracts.md`](contracts/annotation-host-contracts.md)。
 
 ### Phase 5 —— launch + PWA
 
@@ -219,13 +219,13 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 |---|---|---|
 | Phase 0 | — | P0-1/P0-2 修复并人工 smoke；`--port` 与 `/api/health` 可用；testid 在原型与模板两侧一致；**两条 lint 都在 CI 里生效**——选择器 lint（约束 `tests/e2e/`）与命名 lint（约束模板与原型，正则以 §6 步骤 0.5 的 **canonical 代码块**为准，违规数归零） |
 | Phase 1a | Phase 0 | CI 绿灯成为合并门槛；42 路由契约测试通过；**API v1 形状冻结**；性能基准记录在案 |
-| Phase 1b | 0.3 + 0.5 | **`baseline-1b` 组**在**主 CI**（非 nightly）绿灯；**用例覆盖写路径**（四类型创建 / 改色 / 删除 / 笔记保存，断言为刷新后回到同一段文字）；K2–K5 与 K1/K6 的**现状特征化**条各一条正向证据；连续 3 次全量运行零 flaky；其余组**用例写完并 review**，以 skip 形态存在。⚠️ K1/K6 的新行为与 S1–S4 的横幅**不在本阶段门槛内**——它们要到 4B.1 / Phase 3 / 4A.4 才存在，写进 1b 会形成依赖环。分组见 [`specs/009-e2e-annotations/tasks.md`](../../specs/009-e2e-annotations/tasks.md) §0.5 |
+| Phase 1b | 0.3 + 0.5 | **`baseline-1b` 组**在**主 CI**（非 nightly）绿灯；**用例覆盖写路径**（四类型创建 / 改色 / 删除 / 笔记保存，断言为刷新后回到同一段文字）；K2–K5 与 K1/K6 的**现状特征化**条各一条正向证据；连续 3 次全量运行零 flaky；其余组**用例写完并 review**，以 skip 形态存在。⚠️ K1/K6 的新行为与 S1–S4 的横幅**不在本阶段门槛内**——它们要到 4B.1 / Phase 3 / 4A.4 才存在，写进 1b 会形成依赖环。分组见 [`tasks/009-e2e-annotations.md`](tasks/009-e2e-annotations.md) §0.5 |
 | Track D | Phase 0 | S1–S5 设计完成并回写设计规格 §6.4；合同 2 剩余两项收口；loading 骨架屏补齐 |
 | Phase 2a | 1a | 每个 router < 500 行；`book_store` **三处** loader 合并（第四处已作为死代码删除，见 A5）；**notes 乐观并发落地**；行为不变由 1a 证明 |
 | Phase 2b | 2a | 跨库搜索性能相对基准可量化改善；`_normalize_with_map` 差分测试通过 |
 | Phase 3 | 2b + Track D **且 soak 门槛达标**（三路汇合，见 §9.1） | 新书完全不依赖 pickle；存量可一键迁移；**`--migrate` 原地读写，不复用摄取路径**；**S1–S4 在当时的 UI 里可见**——即 **`acceptance-p3` 组解开 skip 并绿灯**（朴素横幅形态）；真实 iframe 标注迁移 E2E 通过 |
 | Phase 4A | 1b | wheel 内容测试通过；settings 与 library 切换后 `baseline-1b` **零改动**全绿；**4A.4 另需 `acceptance-4a4` 组解开 skip 并绿灯**（S1–S4 改版形态）；Classic 已删除 |
-| Phase 4B | Phase 3 **且** 4A.4 | 拆分后 `baseline-1b` 全绿；**4B.1 另需 `acceptance-4b1` 组解开 skip 并绿灯**（K1 响亮失败、K6 抛错——这两条行为本阶段才产生）；各模块 ≤400 行；依赖方向机器可验（`dependency-cruiser` 四条规则，见 [`specs/014-ts-frontend-reader/tasks.md`](../../specs/014-ts-frontend-reader/tasks.md) 4B.1「依赖规则」）；**iframe 内部改动不超出设计规格 §6.0 允许的范围**（判据以 §6.0「判定标准（canonical）」为准的**三重断言 A/B/C**，本表不复述）；**三个浮层过 `containingBlockAncestor() === null`，且工具条位置用矩形几何断言**（4B.2 硬门槛，K3）；**K1–K6 各有一条能失败的断言**；进度值全站一致 |
+| Phase 4B | Phase 3 **且** 4A.4 | 拆分后 `baseline-1b` 全绿；**4B.1 另需 `acceptance-4b1` 组解开 skip 并绿灯**（K1 响亮失败、K6 抛错——这两条行为本阶段才产生）；各模块 ≤400 行；依赖方向机器可验（`dependency-cruiser` 四条规则，见 [`tasks/014-ts-frontend-reader.md`](tasks/014-ts-frontend-reader.md) 4B.1「依赖规则」）；**iframe 内部改动不超出设计规格 §6.0 允许的范围**（判据以 §6.0「判定标准（canonical）」为准的**三重断言 A/B/C**，本表不复述）；**三个浮层过 `containingBlockAncestor() === null`，且工具条位置用矩形几何断言**（4B.2 硬门槛，K3）；**K1–K6 各有一条能失败的断言**；进度值全站一致 |
 | Phase 5 | 4B | 单命令进入阅读；PWA 版本切换不撕裂 |
 
 ### soak 门槛（Phase 3 专用）
@@ -234,7 +234,7 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 
 **Phase 3 开工前，`baseline-1b` 组必须在主 CI 上连续绿 ≥ 10 次，且跨度 ≥ 5 个工作日。**
 
-> 数的只是 `baseline-1b`。其余组在 Phase 3 之前尚未激活（它们测的行为还不存在），把它们算进来就会让 soak 门槛永远无法达标——分组定义见 [`specs/009-e2e-annotations/tasks.md`](../../specs/009-e2e-annotations/tasks.md) §0.5。
+> 数的只是 `baseline-1b`。其余组在 Phase 3 之前尚未激活（它们测的行为还不存在），把它们算进来就会让 soak 门槛永远无法达标——分组定义见 [`tasks/009-e2e-annotations.md`](tasks/009-e2e-annotations.md) §0.5。
 
 - 「连续」指中途任何一次红都清零重计——flaky 与 broken 在这里不做区分，一条会偶发失败的 E2E 当不了数据迁移的验收基准。
 - 跨度条款是为了逼出**时间维度**的不稳定（缓存、时区、依赖漂移、并发），这类问题在同一天连跑十次是照不出来的。
@@ -278,7 +278,10 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 
 M1b 与 MD 可与 M1/M2 交错推进；M4a 可与 M2/M3 交错推进；**M3 与 M4b 严格串行**。
 
-每个分支的任务清单放在 `specs/{分支名}/tasks.md`，不写进本文。
+每个分支的任务清单放在本文件夹的 `tasks/{分支名}.md`，不写进本文。今天存在的只有
+[`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) 与
+[`tasks/014-ts-frontend-reader.md`](./tasks/014-ts-frontend-reader.md)；其余七个里程碑
+开工前需要补骨架（评审第 9 条，未处置）。
 
 ### 9.1 依赖图（canonical）
 
@@ -318,7 +321,7 @@ M1b 与 MD 可与 M1/M2 交错推进；M4a 可与 M2/M3 交错推进；**M3 与 
 
 #### A-1 [CRITICAL] 4B.1 的模块划分漏掉整条标注写入路径 —— 置信度 **9/10**
 
-`specs/014-ts-frontend-reader/tasks.md` 的七模块表把 `interactions.ts` 描述为：
+`docs/plans/20260816-tech-stack-and-ui-changes/tasks/014-ts-frontend-reader.md` 的七模块表把 `interactions.ts` 描述为：
 
 > `constructor`（减去七行 `qs()`）`init` `onAnnotationClick` `getExistingMarkerIds` `onSelection` … `copySelection` `askAi` ＋ `initAnnotations`
 
@@ -328,7 +331,7 @@ M1b 与 MD 可与 M1/M2 交错推进；M4a 可与 M2/M3 交错推进；**M3 与 
 
 **裁定：采用方案 (a)，新增第八个模块 `commands.ts`**，依赖方向 `interactions → commands → notes-api` 单向。Codex 独立给出同一结论，并点名两个落选项的失败模式：(b) 折进 `notes-api` 是**层级塌缩**，传输层被 UI 状态与渲染污染，最终长成 god service；(c) 只做文件切分不做职责切分是**装饰性模块化**，667 行的隐式耦合与过宽的可变权限原样保留，拿不到单测边界。
 
-> `specs/014-*/tasks.md` 的「⚠️ 待评审」块与 `contracts/annotation-host-contracts.md` 均指向本报告，**此项就此关闭**。
+> `tasks/014-ts-frontend-reader.md` 的「⚠️ 待评审」块与 `contracts/annotation-host-contracts.md` 均指向本报告，**此项就此关闭**。
 
 #### A-2 [HIGH] K5 冻结范围只覆盖「今天这个消费者用到的」成员 —— **8/10**
 
@@ -478,7 +481,7 @@ C1 说：
 | 关键词 + 语义搜索、RAG、多 provider AI | `search_service.py` / `vector_search.py` / `ai/` | 可用 |
 | 三页 UI + classic library | `templates/` 4 个模板 | 可用，`data-testid` 为 0 |
 | 高保真目标原型（三屏 + 错误态） | `designs/reader-pro-next/` | 可跑，134 个 testid 待改名 |
-| K1–K6 宿主契约 | `docs/contracts/` | 已成文，本报告后需改 K5 |
+| K1–K6 宿主契约 | `contracts/annotation-host-contracts.md` | 已成文，本报告后需改 K5 |
 | 双层 token 体系、逐页规格、S1–S5 降级态 | 设计规格 §3 / §5–6 | 已成文，两项 token 待收口 |
 | 测试基建 | `tests/` | **只有 conftest.py 骨架，零用例，零 CI** |
 
@@ -548,20 +551,20 @@ Phase 1b ── R12 标注 E2E（含写入路径 + 位置断言 + S1–S4）
 
 | ID | 任务 | 落点 | 阶段 | 优先级 |
 |---|---|---|---|---|
-| **R1** ✅ | 4B.1 采用方案 (a)，新增 `commands.ts` 承载六个写入方法；写死 `interactions → commands → notes-api` 单向依赖；删除 tasks.md 的「⚠️ 待评审」块 | `specs/014-*/tasks.md` | Phase 0 | P0 |
-| **R2** ✅ | K5 扩展到 `Reader3Epub` 全部 9 个成员，每个落到「纳入 / deprecate+移除阶段 / 收窄契约名义」三类之一；`applyThemeSettings` 与 `displaySectionIndex` 纳入 | `docs/contracts/annotation-host-contracts.md` | Phase 0 | P0 |
+| **R1** ✅ | 4B.1 采用方案 (a)，新增 `commands.ts` 承载六个写入方法；写死 `interactions → commands → notes-api` 单向依赖；删除 tasks.md 的「⚠️ 待评审」块 | `tasks/014-ts-frontend-reader.md` | Phase 0 | P0 |
+| **R2** ✅ | K5 扩展到 `Reader3Epub` 全部 9 个成员，每个落到「纳入 / deprecate+移除阶段 / 收窄契约名义」三类之一；`applyThemeSettings` 与 `displaySectionIndex` 纳入 | `docs/plans/20260816-tech-stack-and-ui-changes/contracts/annotation-host-contracts.md` | Phase 0 | P0 |
 | **R3** ✅ | K1 补一句：缺任一元素 → `init()` 静默 return → 整个标注 UI 不启动（已改，本项为复核） | 同上 | Phase 0 | P2 |
 | **R4** ✅ | 删除死代码 `SearchIndex` / `BookIndex.from_book_pkl` / `SearchIndex.build_from_library`；技术栈计划 A5 改为「三处合并」 | `search_service.py` + A5 | Phase 0 | P1 |
-| **R5** ✅ | 4B.2 增加门槛：三浮层保持 `<body>` 直接子元素（或 `<dialog>` top-layer）；E2E 断言祖先链无 containing-block 属性、且浮层矩形与选区矩形相对位置正确 | `specs/014-*/tasks.md` + 本文 §7 | Phase 0（写门槛）/ 4B.2（执行） | P0 |
+| **R5** ✅ | 4B.2 增加门槛：三浮层保持 `<body>` 直接子元素（或 `<dialog>` top-layer）；E2E 断言祖先链无 containing-block 属性、且浮层矩形与选区矩形相对位置正确 | `tasks/014-ts-frontend-reader.md` + 本文 §7 | Phase 0（写门槛）/ 4B.2（执行） | P0 |
 | **R6** ✅ | 新增 **C5**：`library_view` 改为只读 `manifest.json`，不反序列化正文 | 技术栈计划 §性能 + Phase 2b | Phase 2b | P1 |
 | **R7** ✅ | C1 阈值订正为「第 5 本」并说明 `case_sensitive` 进 key 使有效容量再半；Phase 1a 基准加「首页冷启动 TTFB × 书库规模」；造 20 本合成书库 fixture | 技术栈计划 §性能 + Phase 1a | Phase 1a | P1 |
 | **R8** ✅ | 修 `tests/conftest.py` 的 `reader3.py:187` → 改用符号名；删除 stale pyc 与 `tests/.DS_Store`；`.gitignore` 清掉残留冲突标记（~~加 `tests/**/__pycache__` 与 `.DS_Store`~~ —— 本建议有误，见落地记录） | `tests/` + `.gitignore` | Phase 0 | P2 |
 | **R9** ✅ | 本文 §4 论证 1（不可逆性）改写为「派生数据 + 双写回退 ⇒ 可逆，真正的理由是论证 2 与 3」；§7 增加 soak 门槛：Phase 3 开工前 1b E2E 在 CI 连绿 ≥10 次且跨 ≥5 个工作日 | 本文 §4 / §7 | Phase 0 | P1 |
 | **R10** ✅ | Phase 3 验收增加：`reader3 --migrate` 原地读写，**禁止**复用摄取路径（`shutil.rmtree` 会抹掉 `notes.json` / `ai_meta.json` / `chroma_db/`） | 技术栈计划 Phase 3 | Phase 0（写约束）/ Phase 3（执行） | P0 |
 | **R11** ✅ | testid 命名的机器校验：一条正则 + CI 检查，覆盖原型 134 个与生产模板新增项；显式点名那 24 个带前缀但不合规的，防止被当成「已经对了」跳过 | `designs/` + CI | Phase 0.5 | P1 |
-| **R12** ✅ | 1b 用例清单显式包含写入路径：四类型各创建一次、改色、删除、笔记保存；断言方式为「刷新后高亮回到同一段文字」而非「fetch 被调用」；S1–S4 各一条正向证据 | `specs/009-*/tasks.md` | Phase 1b | P0 |
+| **R12** ✅ | 1b 用例清单显式包含写入路径：四类型各创建一次、改色、删除、笔记保存；断言方式为「刷新后高亮回到同一段文字」而非「fetch 被调用」；S1–S4 各一条正向证据 | `tasks/009-e2e-annotations.md` | Phase 1b | P0 |
 
-JSONL 工件：`docs/plans/20260816-eng-review-tasks.jsonl`
+JSONL 工件：`docs/plans/20260816-tech-stack-and-ui-changes/eng-review-tasks.jsonl`
 
 ---
 
@@ -571,13 +574,13 @@ JSONL 工件：`docs/plans/20260816-eng-review-tasks.jsonl`
 
 | 任务 | 改了哪里 |
 |---|---|
-| **R1** | `specs/014-*/tasks.md`：七模块 → 八模块，新增 `commands.ts`（175 行，六个写入方法）；「⚠️ 待评审」块替换为裁定记录含两个落选方案的失败模式；退出门槛新增**依赖方向机器可验**（`dependency-cruiser` / ESLint `import/no-restricted-paths`，不靠人盯） |
-| **R2** | `docs/contracts/annotation-host-contracts.md` K5：先立三类处置规则，再全量枚举 9 个成员 —— **7 个纳入**，`book` 与 `getContentDocument()` 标 deprecate 并定于 4B.2 结束移除（两者实测零消费方）。`4B.3` 的 K5 待评审注记同步改为「已确认纳入」 |
+| **R1** | `tasks/014-ts-frontend-reader.md`：七模块 → 八模块，新增 `commands.ts`（175 行，六个写入方法）；「⚠️ 待评审」块替换为裁定记录含两个落选方案的失败模式；退出门槛新增**依赖方向机器可验**（`dependency-cruiser` / ESLint `import/no-restricted-paths`，不靠人盯） |
+| **R2** | `docs/plans/20260816-tech-stack-and-ui-changes/contracts/annotation-host-contracts.md` K5：先立三类处置规则，再全量枚举 9 个成员 —— **7 个纳入**，`book` 与 `getContentDocument()` 标 deprecate 并定于 4B.2 结束移除（两者实测零消费方）。`4B.3` 的 K5 待评审注记同步改为「已确认纳入」 |
 | **R9** | 本文 §4 删除论证 1 并记录其被证伪的经过；§7 新增 **soak 门槛**小节 |
 | **R10** | 技术栈计划 Phase 3：`--migrate` 硬约束写进任务项，验收新增「迁移后 `notes.json` / `ai_meta.json` / `chroma_db/` 三者字节不变」的测试；本文 §7 门槛表同步 |
 | **R3** | 复核确认，无改动 |
-| **R5** | K3 的挂载规则从「必须挂在 `.reader-shell` 直下」改为**属性判据 + 两种安全挂法**（`<body>` 直接子元素 / `<dialog>` top layer），并补 `containingBlockAncestor()` 参考实现；属性清单补齐 `perspective` 与 `will-change: filter\|perspective`。`specs/014-*/tasks.md` 4B.2 新增「硬约束 2」与退出门槛（结构断言 + 几何断言，三个浮层各一遍）；本文 §7 Phase 4B 行同步 |
-| **R12** | 新建 `specs/009-e2e-annotations/tasks.md`：读路径 5 条、**写路径 10 条**、K1–K6 各一条能失败的断言、S1–S4 各一条正向证据；统一收尾动作为「刷新后断言高亮回到同一段文字」。本文 §6/§7、技术栈计划 Phase 1 均改为引用它 |
+| **R5** | K3 的挂载规则从「必须挂在 `.reader-shell` 直下」改为**属性判据 + 两种安全挂法**（`<body>` 直接子元素 / `<dialog>` top layer），并补 `containingBlockAncestor()` 参考实现；属性清单补齐 `perspective` 与 `will-change: filter\|perspective`。`tasks/014-ts-frontend-reader.md` 4B.2 新增「硬约束 2」与退出门槛（结构断言 + 几何断言，三个浮层各一遍）；本文 §7 Phase 4B 行同步 |
+| **R12** | 新建 `docs/plans/20260816-tech-stack-and-ui-changes/tasks/009-e2e-annotations.md`：读路径 5 条、**写路径 10 条**、K1–K6 各一条能失败的断言、S1–S4 各一条正向证据；统一收尾动作为「刷新后断言高亮回到同一段文字」。本文 §6/§7、技术栈计划 Phase 1 均改为引用它 |
 | **R4** | **代码已删**（用户裁决）：`search_service.py` 移除 `SearchIndex` 类与 `BookIndex.from_book_pkl`，773 → 734 行；`BookIndex` / `ChapterIndex` 两个 dataclass 保留（活代码）。技术栈计划 A5 改写为「合并范围为**三处**」并把删除理由与边界收进引用块；Phase 0 新增 0.7、Phase 2a 退出条件「四处 → 三处」、审查发现表的「四处」标注为已消解 |
 | **R6** | 技术栈计划性能章节新增 **C5**（置于 C4 之后，章节标题改为 C1–C5）：`library_view` 为读元数据反序列化了全书正文，是全站最高频路径，而 C1 的跨库搜索是低频路径——**优先级排反了**；修法与 A5 的 `load_book_metadata()` 同源。落点阶段待裁决 |
 | **R7** | C1 阈值订正：原文按 `load_book_cached` 的 `maxsize=10` 写「库超 10 本」，真正的约束是 `load_book_index` 的 **`maxsize=4`**（第 5 本就开始颠簸），且 `case_sensitive` 编进了 `lru_cache` key，**有效容量再折半到 2 本**。Phase 1a 基准加「首页冷启动 TTFB × 书库规模」，并要求造 20 本合成 fixture |
@@ -586,15 +589,15 @@ JSONL 工件：`docs/plans/20260816-eng-review-tasks.jsonl`
 
 ### 第二轮 Codex 评审的落地记录（2026-08-16 晚）
 
-评审报告全文见 [`20260816-review-codex-ui-migration-sequencing.md`](./20260816-review-codex-ui-migration-sequencing.md)（`gpt-5.6-sol` / `xhigh` / read-only，threadId `01a0094b-e03a-7243-8d66-77706193c9b3`）。共 19 条发现，以下三条已落地。
+评审报告全文见 [`review-codex.md`](./review-codex.md)（`gpt-5.6-sol` / `xhigh` / read-only，threadId `01a0094b-e03a-7243-8d66-77706193c9b3`）。共 19 条发现，以下三条已落地。
 
 | 任务 | 落地内容 |
 |---|---|
-| **R13**（原报告第 4 条，CRITICAL） | **修复 R12 引入的依赖环。** R12 把 K1/K6 的新行为与 S1–S4 的横幅写进了 Phase 1b 的退出门槛，但这些行为分别要到 4B.1 / Phase 3 / 4A.4 才存在，而那些阶段又都以 1b 通过为前置——按原文的顺序跑不通。修法是把「写下来」与「计入门槛」分开：`specs/009-*/tasks.md` 新增 **§0.5 用例分组与激活阶段**（`baseline-1b` / `acceptance-4b1` / `acceptance-p3` / `acceptance-4a4` / `acceptance-2a` 五组），§4 契约表加「组」列并把 K-1 / K-6 各拆成 baseline 现状特征化条与 4B.1 行为变更条，§5 整节移出 1b 门槛，§8 退出门槛重写为「仅 `baseline-1b`」；`specs/014-*/tasks.md` 4B.1 / 4B.2 门槛改为「`baseline-1b` 零改动全绿 ＋ `acceptance-4b1` 解开 skip」；本文 §7 的 Phase 1b / 3 / 4A / 4B 四行与 soak 门槛同步 |
-| **R14**（原报告第 16 条，MEDIUM） | **命名 lint 正则不可直接复制。** 原文三处（§6 步骤 0.5 的表格、§7 Phase 0 行、R11 记录）都把正则写成 `^(lib\|rd\|set)-…`——Markdown 表格单元格里 `\|` 是必需的转义，但复制进 lint 配置就变成匹配**字面反斜杠加竖线**，永远不命中，lint 会全绿而命名方案毫无约束。§6 步骤 0.5 新增 **canonical 正则代码块**（`^(?:lib\|rd\|set)-[a-z0-9]+(?:-[a-z0-9]+)*$`，非捕获组），其余三处一律改为引用它。同时 `specs/014-*/tasks.md` 4B.1 的依赖校验从「ESLint 或 dependency-cruiser 二选一」**定为 `dependency-cruiser`**，并补齐四条规则：`no-circular`（原文缺失）、`commands-no-upward`、**`interactions-no-bypass`**（原文只禁反向 import，挡不住 `interactions` 直连 `notes-api` 这种正向绕过，而那恰是最省事的走法）、`notes-api-leaf` |
+| **R13**（原报告第 4 条，CRITICAL） | **修复 R12 引入的依赖环。** R12 把 K1/K6 的新行为与 S1–S4 的横幅写进了 Phase 1b 的退出门槛，但这些行为分别要到 4B.1 / Phase 3 / 4A.4 才存在，而那些阶段又都以 1b 通过为前置——按原文的顺序跑不通。修法是把「写下来」与「计入门槛」分开：`tasks/009-e2e-annotations.md` 新增 **§0.5 用例分组与激活阶段**（`baseline-1b` / `acceptance-4b1` / `acceptance-p3` / `acceptance-4a4` / `acceptance-2a` 五组），§4 契约表加「组」列并把 K-1 / K-6 各拆成 baseline 现状特征化条与 4B.1 行为变更条，§5 整节移出 1b 门槛，§8 退出门槛重写为「仅 `baseline-1b`」；`tasks/014-ts-frontend-reader.md` 4B.1 / 4B.2 门槛改为「`baseline-1b` 零改动全绿 ＋ `acceptance-4b1` 解开 skip」；本文 §7 的 Phase 1b / 3 / 4A / 4B 四行与 soak 门槛同步 |
+| **R14**（原报告第 16 条，MEDIUM） | **命名 lint 正则不可直接复制。** 原文三处（§6 步骤 0.5 的表格、§7 Phase 0 行、R11 记录）都把正则写成 `^(lib\|rd\|set)-…`——Markdown 表格单元格里 `\|` 是必需的转义，但复制进 lint 配置就变成匹配**字面反斜杠加竖线**，永远不命中，lint 会全绿而命名方案毫无约束。§6 步骤 0.5 新增 **canonical 正则代码块**（`^(?:lib\|rd\|set)-[a-z0-9]+(?:-[a-z0-9]+)*$`，非捕获组），其余三处一律改为引用它。同时 `tasks/014-ts-frontend-reader.md` 4B.1 的依赖校验从「ESLint 或 dependency-cruiser 二选一」**定为 `dependency-cruiser`**，并补齐四条规则：`no-circular`（原文缺失）、`commands-no-upward`、**`interactions-no-bypass`**（原文只禁反向 import，挡不住 `interactions` 直连 `notes-api` 这种正向绕过，而那恰是最省事的走法）、`notes-api-leaf` |
 | **R15**（原报告第 2 条，MEDIUM） | **R4 删掉的代码，001 的设计文档仍在要求实现。** 运行时代码的删除边界是对的（`src/` 已零引用），但 `specs/_archive/001-search-features/` 四份文档仍把 `SearchIndex` / `from_book_pkl()` / `build_from_library()` 列为待办——任何人照 tasks.md 往下做都会把死代码重新引入。`tasks.md` 的 T027 / T029 / T030 标注为 SUPERSEDED 并划除（T028 与 `BookIndex` dataclass 本身保留，是活代码），`data-model.md`（文首 ＋ §4）、`research.md`（Indexing Strategy 节）、`plan.md`（宪法门槛清单）各加醒目说明并指向 per-book 的 `load_book_index()` |
 
-> 其余 16 条尚未处理，其中三条 HIGH 值得优先看：**第 14 条**（`manifest.json` + `chapters.jsonl` 是两文件提交却没有事务协议，崩溃会留下 manifest 指向半写文件）、**第 15 条**（iframe 门槛「`textContent` 与偏移不变」是必要非充分条件，包裹/拆分文本节点可保持扁平文本相同却改变 DOM path，不足以保护 CFI）、**第 18 条**（§6 说 1b 与 Track D 不阻塞任何人，§7 却让 Phase 3 同时依赖二者——M3 实为三路汇合点）。另有**第 1 条**指出「`commands.ts` 不得碰 DOM」与「纯拆分」无法同时机械满足，已作为未裁决项记入 `specs/014-*/tasks.md`。
+> 其余 16 条尚未处理，其中三条 HIGH 值得优先看：**第 14 条**（`manifest.json` + `chapters.jsonl` 是两文件提交却没有事务协议，崩溃会留下 manifest 指向半写文件）、**第 15 条**（iframe 门槛「`textContent` 与偏移不变」是必要非充分条件，包裹/拆分文本节点可保持扁平文本相同却改变 DOM path，不足以保护 CFI）、**第 18 条**（§6 说 1b 与 Track D 不阻塞任何人，§7 却让 Phase 3 同时依赖二者——M3 实为三路汇合点）。另有**第 1 条**指出「`commands.ts` 不得碰 DOM」与「纯拆分」无法同时机械满足，已作为未裁决项记入 `tasks/014-ts-frontend-reader.md`。
 
 ---
 

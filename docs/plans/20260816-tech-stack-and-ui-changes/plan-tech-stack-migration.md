@@ -10,11 +10,11 @@
 > **本文权威**：技术栈选型（§1/§2）、各阶段**做什么**（§3 的任务内容）、明确不做的事（§4）、风险（§5）、以及文末 GSTACK REVIEW REPORT 的 A1–A5 / B1–B4 / C1–C5 架构与性能决策。
 >
 > **本文不权威**：
-> - **实施顺序、阶段划分、门槛、分支编号** → [`20260816-plan-ui-migration-sequencing.md`](./20260816-plan-ui-migration-sequencing.md)。本文正文按 Phase 组织只是为了归类任务，**顺序以合流计划为准**，冲突时以它为准。
-> - **UI 设计、token、testid 命名、逐页规格、iframe 边界、降级状态** → [`20260815-spec-frontend-design.md`](./20260815-spec-frontend-design.md)。
-> - **原型 → 生产的翻译规则** → [`designs/reader-pro-next/README.md`](../../designs/reader-pro-next/README.md)。
-> - **标注宿主契约 K1–K6** → [`docs/contracts/annotation-host-contracts.md`](../contracts/annotation-host-contracts.md)。
-> - **`annotations.js` 的模块划分** → [`specs/014-ts-frontend-reader/tasks.md`](../../specs/014-ts-frontend-reader/tasks.md)。
+> - **实施顺序、阶段划分、门槛、分支编号** → [`plan-ui-migration-sequencing.md`](./plan-ui-migration-sequencing.md)。本文正文按 Phase 组织只是为了归类任务，**顺序以合流计划为准**，冲突时以它为准。
+> - **UI 设计、token、testid 命名、逐页规格、iframe 边界、降级状态** → [`spec-frontend-design.md`](./spec-frontend-design.md)。
+> - **原型 → 生产的翻译规则** → [`designs/reader-pro-next/README.md`](../../../designs/reader-pro-next/README.md)。
+> - **标注宿主契约 K1–K6** → [`contracts/annotation-host-contracts.md`](contracts/annotation-host-contracts.md)。
+> - **`annotations.js` 的模块划分** → [`tasks/014-ts-frontend-reader.md`](tasks/014-ts-frontend-reader.md)。
 >
 > 要改上面任何一项，改它的权威文档，不要在这里加一份副本。**本文不写代码行号**——行号会漂移，用符号名。
 
@@ -33,7 +33,7 @@
 
 > 一句话：语言不是瓶颈，工程化才是。全栈 TS 重写估算 8–16 全职工程周且最终退化为 "Node 编排 + Python worker" 三运行时架构；Electron 是在为不存在的分发需求付 500MB+ 的税。
 
-> 📸 **现状证据**：[`designs/reader-pro-next/spec/screenshots/`](../../designs/reader-pro-next/spec/screenshots/) —— 22 张实测截图（2026-08-15），对应 `reader-pro-spec.md` §14。其中 §7.4b（端口硬编码）与 §7.4c（进度不一致）两条修订直接由这次复核发现。
+> 📸 **现状证据**：[`designs/reader-pro-next/spec/screenshots/`](../../../designs/reader-pro-next/spec/screenshots/) —— 22 张实测截图（2026-08-15），对应 `reader-pro-spec.md` §14。其中 §7.4b（端口硬编码）与 §7.4c（进度不一致）两条修订直接由这次复核发现。
 
 ## 2. 决策依据
 
@@ -98,7 +98,7 @@ TS + ES modules + Vite 正好对症；构建产物仍是静态文件，FastAPI `
 - [ ] 引入 pytest + dev 依赖组（`uv add --dev pytest ruff mypy`）
 - [ ] 单测覆盖：EPUB 摄取（`process_epub`）、JSON 持久化（notes/collections/conversations）、Unicode 搜索偏移映射（`_normalize_with_map`）、AI 路由（`choose_routing`/`estimate_tokens`）、API 契约（FastAPI TestClient）
 - [ ] Fixture EPUB 语料：EPUB2 / EPUB3 / CJK 内容 / 变音符 / 含图片 / 畸形或缺失 TOC / 空书
-- [ ] Playwright E2E（= Phase 1b）：书库导航、epub.js 渲染、iframe 内标注**创建与恢复**、AI SSE 流式。**完整用例清单见 [`specs/009-e2e-annotations/tasks.md`](../../specs/009-e2e-annotations/tasks.md)**——含写路径（四类型创建 / 改色 / 删除 / 笔记保存）、K1–K6 与 S1–S4 的正向证据，以及「断言刷新后高亮回到同一段文字」这条统一收尾
+- [ ] Playwright E2E（= Phase 1b）：书库导航、epub.js 渲染、iframe 内标注**创建与恢复**、AI SSE 流式。**完整用例清单见 [`tasks/009-e2e-annotations.md`](tasks/009-e2e-annotations.md)**——含写路径（四类型创建 / 改色 / 删除 / 笔记保存）、K1–K6 与 S1–S4 的正向证据，以及「断言刷新后高亮回到同一段文字」这条统一收尾
 - [ ] ruff + mypy 配置写入 `pyproject.toml`
 - [ ] GitHub Actions：lint + type-check + pytest（Playwright 可 nightly）
 
@@ -214,7 +214,7 @@ pickle 是实际的迁移阻塞点与安全隐患（`pickle.load` 对不可信�
 
 **`annotations.js` 的拆分**
 
-先纯拆分不改逻辑，再逐个转 TS（B3）。⚠️ 原文写的 `anchoring` / `renderer` / `ui` 三分法**在代码面前不成立**——`getReaderContext()` 与四处 `/api/notes` 的 `fetch` 横跨 `AnnotationRenderer` 与 `AnnotationUI` 两个类，无法归入任何一边；且 `AnnotationUI` 单类就超过 ≤400 行上限。**实际划分见 [`specs/014-ts-frontend-reader/tasks.md`](../../specs/014-ts-frontend-reader/tasks.md)**，外壳与标注之间的六份契约见 [`annotation-host-contracts.md`](../contracts/annotation-host-contracts.md)。
+先纯拆分不改逻辑，再逐个转 TS（B3）。⚠️ 原文写的 `anchoring` / `renderer` / `ui` 三分法**在代码面前不成立**——`getReaderContext()` 与四处 `/api/notes` 的 `fetch` 横跨 `AnnotationRenderer` 与 `AnnotationUI` 两个类，无法归入任何一边；且 `AnnotationUI` 单类就超过 ≤400 行上限。**实际划分见 [`tasks/014-ts-frontend-reader.md`](tasks/014-ts-frontend-reader.md)**，外壳与标注之间的六份契约见 [`annotation-host-contracts.md`](contracts/annotation-host-contracts.md)。
 
 **阅读设置面板（新增功能）**
 
@@ -266,7 +266,7 @@ pickle 是实际的迁移阻塞点与安全隐患（`pickle.load` 对不可信�
 
 ## 6. 里程碑与分支
 
-见合流计划 [`20260816-plan-ui-migration-sequencing.md`](./20260816-plan-ui-migration-sequencing.md) **§9**，它是分支编号的唯一真相源。
+见合流计划 [`plan-ui-migration-sequencing.md`](./plan-ui-migration-sequencing.md) **§9**，它是分支编号的唯一真相源。
 
 > 本节此前列过一份 `007-test-safety-net` … `011-launch-experience` 的编号表，与合流计划 §9 的编号**冲突**（同一个编号指向不同工作）。已删除，避免两套编号并存。
 
@@ -346,7 +346,7 @@ Phase 1b 从 Phase 1 中拆出并降级为「仅阻塞 Phase 4」，使 Phase 2/
   → Phase 0 将 `search.js` / `ai.js` / `settings.js` / `library-search.js` 四个文件包进 IIFE（仓库另外八个 JS 文件本就是 IIFE，这四个是落后者），falsy 语义统一为 `String(v ?? "")`。
   **附带发现（正面）**：真正的跨文件全局契约只有 `window.Reader3Epub` 一个（`epub-renderer.js` 定义，annotations.js / search.js 经 `?.` 消费）；`annotations.js` 的 `getReaderContext` 在 IIFE 内不构成冲突。ES module 化的爆炸半径远小于「5818 行裸 JS」的直觉。
 - **B2** 67 处 `except Exception`、4 处裸 `pass`。Phase 1a 开头先写死三级规则：外部数据读取可降级但必须 `logging.warning` 带上下文；数据完整性校验禁止捕获必须上抛；禁止裸 `pass`。ruff 开 `BLE`/`S110`，存量入白名单逐步清理。已知四处（`_parse_summary_payload()`、`api_ai_question()` 内的 `push()` 闭包、`ai/books.ensure_book_uuid()`、`ai/conversations.list_conversations_combined()`）在 Phase 1a 修（**不放 Phase 0**——这是行为变更，需与测试同步）。
-- **B3** Phase 2 对 Python 写了「不改行为」，Phase 4 对 JS 无对称约束。补上该约束，并把第 5 步拆为 **5a**（纯 JS 拆 `annotations.js`，不动一行逻辑，验收：1b 标注 E2E 全绿）与 **5b**（拆出的文件逐个转 TS，同一套 E2E 再全绿）。⚠️ 本条原写的 anchoring/renderer/ui 三分法已被证伪，实际划分见 [`specs/014-ts-frontend-reader/tasks.md`](../../specs/014-ts-frontend-reader/tasks.md)。CFI/DOM Range 这类脆弱代码，多一个 PR 的成本远低于混在一起后的调试成本。
+- **B3** Phase 2 对 Python 写了「不改行为」，Phase 4 对 JS 无对称约束。补上该约束，并把第 5 步拆为 **5a**（纯 JS 拆 `annotations.js`，不动一行逻辑，验收：1b 标注 E2E 全绿）与 **5b**（拆出的文件逐个转 TS，同一套 E2E 再全绿）。⚠️ 本条原写的 anchoring/renderer/ui 三分法已被证伪，实际划分见 [`tasks/014-ts-frontend-reader.md`](tasks/014-ts-frontend-reader.md)。CFI/DOM Range 这类脆弱代码，多一个 PR 的成本远低于混在一起后的调试成本。
 - **B4** 42 处 `console.log`（annotations.js 33 / epub-renderer.js 9）换成 `debug.ts` 分层，由 `localStorage.reader3_debug` 控制（默认关），ESLint 开 `no-console` 放行 warn/error。
 
 ### 性能（C1–C5，计划原本无此章节）
@@ -380,7 +380,7 @@ Phase 1b 从 Phase 1 中拆出并降级为「仅阻塞 Phase 4」，使 Phase 2/
 
 iframe 标注 E2E 可行：Selection 本就不能跨 browsing context，实际需求是「iframe 内建选区 → 操作外层工具栏」。路径为 child frame 内 `document.createRange()` → 写入 iframe Selection → iframe document 上派发 `mouseup` → 点外层工具栏 → 断言 `POST /api/notes/*` → 刷新 → 断言 iframe 内重现 `<mark>`。`window.Reader3Epub` 已提供所需可测性桥。真实鼠标拖选只保留一条 smoke。
 
-> **2026-08-16 修正**：这条链里**只有最后一段构成通过条件**——「刷新后 `<mark>` 回到同一段文字上」。断言 `POST` 发生过属于 wiring-only，仅留作失败时的诊断信息。见 `specs/009-e2e-annotations/tasks.md` §0。
+> **2026-08-16 修正**：这条链里**只有最后一段构成通过条件**——「刷新后 `<mark>` 回到同一段文字上」。断言 `POST` 发生过属于 wiring-only，仅留作失败时的诊断信息。见 `docs/plans/20260816-tech-stack-and-ui-changes/tasks/009-e2e-annotations.md` §0。
 
 工件：`~/.gstack/projects/anzchy-reader3-pro/jackcheng-master-eng-review-test-plan-20260815-151717.md`
 任务：`~/.gstack/projects/anzchy-reader3-pro/tasks-eng-review-20260815-151717.jsonl`（30 项）

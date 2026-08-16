@@ -45,11 +45,11 @@ open http://127.0.0.1:8125/index.html
 | `README.md`（本文件） | 原型的性质、原型 → 生产的翻译规则 | 目标设计、实施顺序 |
 | `spec/reader-pro-spec.md` | **现在**是什么样（现状审计、路由、组件、已知缺口）＋ §0.3 五条已拍板的产品决策 | 目标设计、实施顺序 |
 | `spec/reader-pro-next-parity.md` | 原型相对现状**补齐了什么、还差什么** | 同上 |
-| `docs/plans/20260815-spec-frontend-design.md` | **应该**变成什么样：双层 token、testid 命名、逐页规格、iframe 边界（§6.0）、降级状态设计（§6.4） | 实施顺序、分支编号 |
-| `docs/plans/20260815-plan-tech-stack-migration.md` | 技术栈选型、后端架构、存储格式、A1–A5 架构决策 | 实施顺序、分支编号 |
-| `docs/plans/20260816-plan-ui-migration-sequencing.md` | **实施顺序**：阶段划分、门槛、分支编号、耦合点 | 设计细节、架构细节 |
-| `docs/contracts/annotation-host-contracts.md` | 标注宿主契约 K1–K6 | — |
-| `specs/{n}-{name}/tasks.md` | 各分支的任务清单 | — |
+| `docs/plans/20260816-tech-stack-and-ui-changes/spec-frontend-design.md` | **应该**变成什么样：双层 token、testid 命名、逐页规格、iframe 边界（§6.0）、降级状态设计（§6.4） | 实施顺序、分支编号 |
+| `docs/plans/20260816-tech-stack-and-ui-changes/plan-tech-stack-migration.md` | 技术栈选型、后端架构、存储格式、A1–A5 架构决策 | 实施顺序、分支编号 |
+| `docs/plans/20260816-tech-stack-and-ui-changes/plan-ui-migration-sequencing.md` | **实施顺序**：阶段划分、门槛、分支编号、耦合点 | 设计细节、架构细节 |
+| `docs/plans/20260816-tech-stack-and-ui-changes/contracts/annotation-host-contracts.md` | 标注宿主契约 K1–K6 | — |
+| `docs/plans/20260816-tech-stack-and-ui-changes/tasks/{分支名}.md` | 各分支的任务清单 | — |
 
 ## 原型的性质（重要）
 

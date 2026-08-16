@@ -15,7 +15,7 @@
 >
 > **当前真相源**：per-book 惰性加载 `load_book_index()`（`search_service.py`），带 `lru_cache`。`BookIndex` 与 `ChapterIndex` 两个 dataclass **仍是活代码**——T028 有效，保留。
 >
-> 详见 `docs/plans/20260816-plan-ui-migration-sequencing.md` 的 R4 落地记录与 Phase 0 步骤 0.7。
+> 详见 `docs/plans/20260816-tech-stack-and-ui-changes/plan-ui-migration-sequencing.md` 的 R4 落地记录与 Phase 0 步骤 0.7。
 
 ## Format: `[ID] [P?] [Story] Description`
 

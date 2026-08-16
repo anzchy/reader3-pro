@@ -1,10 +1,10 @@
 # 009-e2e-annotations —— 任务
 
 - **对应阶段**: Phase 1b（Playwright E2E）起写，后续阶段逐组激活
-- **进入条件**: Phase 0 的 0.3（`--port` + `/api/health`）与 0.5（`data-testid` 全量补齐）完成。见 `docs/plans/20260816-plan-ui-migration-sequencing.md` §6
+- **进入条件**: Phase 0 的 0.3（`--port` + `/api/health`）与 0.5（`data-testid` 全量补齐）完成。见 `docs/plans/20260816-tech-stack-and-ui-changes/plan-ui-migration-sequencing.md` §6
 - **退出条件**: **`baseline-1b` 组**在**主 CI**（非 nightly）绿灯。其余组各自在所属阶段的出口生效，见 §0.5
 - **下游**: Phase 4A / 4B 的进入条件；Phase 3 的 soak 门槛（连绿 ≥10 次、跨度 ≥5 个工作日）数的就是 **`baseline-1b`** 这一组
-- **契约**: K1–K6 见 `docs/contracts/annotation-host-contracts.md`；降级状态 S1–S5 见 `docs/plans/20260815-spec-frontend-design.md` §6.4
+- **契约**: K1–K6 见 `docs/plans/20260816-tech-stack-and-ui-changes/contracts/annotation-host-contracts.md`；降级状态 S1–S5 见 `docs/plans/20260816-tech-stack-and-ui-changes/spec-frontend-design.md` §6.4
 
 > **引用规则**：用**符号名**与 **testid** 定位，不写代码行号。
 
@@ -30,7 +30,7 @@
 
 > **为什么需要分组**：本文最初把全部用例塞进 Phase 1b 的退出门槛，这构成一个**依赖环**——
 >
-> - K-1 的「响亮失败」与 K-6 的「`Reader3Ctx` 缺失时抛错」是 **4B.1 才产生的行为**（见 `specs/014-ts-frontend-reader/tasks.md` §4B.1 契约产出表 K1/K6 行，K6 明写「本次拆分中唯一**故意的行为变更**」）；
+> - K-1 的「响亮失败」与 K-6 的「`Reader3Ctx` 缺失时抛错」是 **4B.1 才产生的行为**（见 `docs/plans/20260816-tech-stack-and-ui-changes/tasks/014-ts-frontend-reader.md` §4B.1 契约产出表 K1/K6 行，K6 明写「本次拆分中唯一**故意的行为变更**」）；
 > - S1–S4 的横幅要到 **Phase 3 / 4A.4** 才存在（本文 §5 注已承认这点）；
 > - 而 Phase 3 的进入条件含 1b 的 soak 门槛，Phase 4A 的进入条件是 1b 绿灯，Phase 4B 的进入条件是 Phase 3 + 4A.4。
 >
@@ -192,11 +192,11 @@ child frame 内 document.createRange() → 写入 iframe 的 Selection
 
 | 组 | 归属阶段的退出门槛 |
 |---|---|
-| `acceptance-4b1` | 4B.1 退出门槛（见 `specs/014-ts-frontend-reader/tasks.md`） |
+| `acceptance-4b1` | 4B.1 退出门槛（见 `docs/plans/20260816-tech-stack-and-ui-changes/tasks/014-ts-frontend-reader.md`） |
 | `acceptance-p3` | Phase 3 出口 |
 | `acceptance-4a4` | 4A.4 出口 |
 | `acceptance-2a` | Phase 2a 出口 |
 
-**一个不成组的例外**：R-6 属 `baseline-1b`，但它的**栏宽参数**要到 4B.3 才有对象可测。这是往既有用例上加参数，不是新开一组，因此不进上表；它的门槛写在 `specs/014-ts-frontend-reader/tasks.md` §4B.3 退出门槛里。
+**一个不成组的例外**：R-6 属 `baseline-1b`，但它的**栏宽参数**要到 4B.3 才有对象可测。这是往既有用例上加参数，不是新开一组，因此不进上表；它的门槛写在 `docs/plans/20260816-tech-stack-and-ui-changes/tasks/014-ts-frontend-reader.md` §4B.3 退出门槛里。
 
 > **不要把未激活组的 skip 当成永久豁免。** 每个阶段的出口 checklist 里都要有一行「本阶段应激活的组已解开 skip 且绿灯」，否则 skip 会一路带到 Phase 5。

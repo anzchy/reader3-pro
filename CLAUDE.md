@@ -192,21 +192,30 @@ removed on 2026-08-16. Do not attempt to invoke them.
 
 | Directory | Contents | Lifecycle |
 |---|---|---|
-| `docs/plans/` | Design and migration plans | Living |
-| `docs/contracts/` | Cross-branch interface contracts (annotation host K1–K6) | Living, single source of truth |
-| `specs/{branch}/tasks.md` | Task list for one active branch | Living, deleted or archived when the branch lands |
+| `docs/plans/{date}-{topic}/` | One self-contained body of planning work: plans, specs, contracts, review records, per-branch task lists | Living until the work ships |
+| `docs/plans/*.md` | Standalone plans that aren't part of a larger effort | Living |
 | `specs/_archive/` | Historical spec-kit records for shipped features | **Frozen. Code is authoritative. Never implement from here.** |
-| `designs/` | Design references and prototypes | Living |
+| `designs/` | Design references and executable prototypes | Living |
 
-`specs/_archive/` holds 171 unchecked `- [ ]` items that all describe already-shipped or
-abandoned work. See [`specs/_archive/README.md`](specs/_archive/README.md) before reading anything
-in there — `003-add-book-notes` in particular describes an annotation system that was never built
-that way (the shipped one came from `006-hot-fix`).
+**A planning effort is one folder.** Everything a plan needs to be read and executed —
+the plan itself, its design spec, its interface contracts, its review record, and the
+task list for each branch it spawns — lives together under one dated folder. Don't scatter
+these across `docs/`, `specs/`, and `docs/contracts/`; a reader who opens the folder should
+need nothing outside it except the code and `designs/`.
+
+The one active effort today is
+[`docs/plans/20260816-tech-stack-and-ui-changes/`](docs/plans/20260816-tech-stack-and-ui-changes/README.md) —
+the tech-stack migration and UI redesign (branches 007–015). Start at its `README.md`.
+
+`specs/` now contains only `_archive/`. It holds 171 unchecked `- [ ]` items that all describe
+already-shipped or abandoned work. See [`specs/_archive/README.md`](specs/_archive/README.md)
+before reading anything in there — `003-add-book-notes` in particular describes an annotation
+system that was never built that way (the shipped one came from `006-hot-fix`).
 
 ### Branch naming
 
 `{number}-{short-name}`. **Numbers are allocated in one place only**: §9 of
-[`docs/plans/20260816-plan-ui-migration-sequencing.md`](docs/plans/20260816-plan-ui-migration-sequencing.md).
+[`plan-ui-migration-sequencing.md`](docs/plans/20260816-tech-stack-and-ui-changes/plan-ui-migration-sequencing.md).
 Do not invent a new number without updating that table.
 
 | Milestone | Branch | Status |
@@ -221,7 +230,8 @@ Do not invent a new number without updating that table.
 | M4b — TS reader | `014-ts-frontend-reader` | Tasks drafted |
 | M5 — launch + PWA | `015-launch-experience` | Allocated |
 
-"Allocated" means the number is reserved but no branch or `specs/` directory exists yet.
+"Allocated" means the number is reserved but no branch exists yet. "Tasks drafted" means
+`docs/plans/20260816-tech-stack-and-ui-changes/tasks/{branch}.md` exists.
 
 ### Shipped features (implemented; see code, not specs)
 

@@ -1,9 +1,9 @@
 # 014-ts-frontend-reader —— 任务
 
 - **对应阶段**: Phase 4B（阅读器）
-- **进入条件**: Phase 3 完成 **且** 4A.4 完成。见 `docs/plans/20260816-plan-ui-migration-sequencing.md` §6 与 §7
-- **契约**: K1–K6 见 `docs/contracts/annotation-host-contracts.md`（唯一真相源，本文只引用编号）
-- **设计**: 阅读器外壳规格见 `docs/plans/20260815-spec-frontend-design.md` §6.0 / §6.3
+- **进入条件**: Phase 3 完成 **且** 4A.4 完成。见 `docs/plans/20260816-tech-stack-and-ui-changes/plan-ui-migration-sequencing.md` §6 与 §7
+- **契约**: K1–K6 见 `docs/plans/20260816-tech-stack-and-ui-changes/contracts/annotation-host-contracts.md`（唯一真相源，本文只引用编号）
+- **设计**: 阅读器外壳规格见 `docs/plans/20260816-tech-stack-and-ui-changes/spec-frontend-design.md` §6.0 / §6.3
 
 > **引用规则**：本文用**符号名**定位代码，不写行号。行号会漂移——上游计划里三处行号引用在 2026-08-16 复核时已全部失效。
 
@@ -54,7 +54,7 @@ createAnnotation         （含 fetch）
 
 入口 `handleAction` 在 `interactions.ts`，出口三处 `fetch` 在 `notes-api.ts`——**中间这一段原本无主**。按行号区间机械切分会把它们冲进 `note-editor.ts`，于是 `createAnnotation`（四种标注类型共用的唯一写入口）住进一个叫「笔记编辑器」的模块，同时 `notes-api.ts` 与 `note-editor.ts` 双双声称拥有那三处 `fetch`。
 
-**裁定：新增第八个模块 `commands.ts`**（eng-review 2026-08-16，Codex 独立同结论；见 `docs/plans/20260816-plan-ui-migration-sequencing.md` 的 GSTACK REVIEW REPORT A-1）。这六个方法是**应用命令**——它们协调 UI 意图、状态、渲染与持久化，三样都沾，所以哪一层都装不下，必须自成一层。得到的测试接缝是干净的三段：`interactions` 翻译事件 / `commands` 执行标注工作流 / `notes-api` 只管 HTTP。
+**裁定：新增第八个模块 `commands.ts`**（eng-review 2026-08-16，Codex 独立同结论；见 `docs/plans/20260816-tech-stack-and-ui-changes/plan-ui-migration-sequencing.md` 的 GSTACK REVIEW REPORT A-1）。这六个方法是**应用命令**——它们协调 UI 意图、状态、渲染与持久化，三样都沾，所以哪一层都装不下，必须自成一层。得到的测试接缝是干净的三段：`interactions` 翻译事件 / `commands` 执行标注工作流 / `notes-api` 只管 HTTP。
 
 两个落选方案的失败模式，写在这里以免日后重开：
 
@@ -63,7 +63,7 @@ createAnnotation         （含 fetch）
 
 ### 每份契约在 4B.1 的产出
 
-全部为"拆分即完成"，不改行为（K6 除外）。契约正文见 `docs/contracts/annotation-host-contracts.md`。
+全部为"拆分即完成"，不改行为（K6 除外）。契约正文见 `docs/plans/20260816-tech-stack-and-ui-changes/contracts/annotation-host-contracts.md`。
 
 | 契约 | 4B.1 必须产出 |
 |---|---|
@@ -77,7 +77,7 @@ createAnnotation         （含 fetch）
 ### 4B.1 退出门槛
 
 - **`baseline-1b` 组零改动全绿**（拆分不改行为，测试不该动）。前提：该组已覆盖写入路径——四类型各创建一次、改色、删除、笔记保存，断言方式为「刷新后高亮回到同一段文字」而非「`fetch` 被调用过」
-- **`acceptance-4b1` 组解开 skip 并绿灯**：K-1b（移除宿主元素后响亮失败）与 K-6b（`Reader3Ctx` 缺失时抛错）。这两条断言的是 4B.1 **本阶段新产生**的行为，因此归属在这里而不是 1b——分组定义见 [`specs/009-e2e-annotations/tasks.md`](../009-e2e-annotations/tasks.md) §0.5
+- **`acceptance-4b1` 组解开 skip 并绿灯**：K-1b（移除宿主元素后响亮失败）与 K-6b（`Reader3Ctx` 缺失时抛错）。这两条断言的是 4B.1 **本阶段新产生**的行为，因此归属在这里而不是 1b——分组定义见 [`tasks/009-e2e-annotations.md`](009-e2e-annotations.md) §0.5
 - 各模块 ≤400 行
 - K1–K6 六项产出全部落地
 - **依赖方向机器可验**：工具**选定 `dependency-cruiser`**（不是二选一——两套配置语言会让规则漂移），规则至少四条，见下方「依赖规则」
@@ -98,7 +98,7 @@ createAnnotation         （含 fetch）
 
 ## 4B.2 —— 阅读器外壳垂直切片
 
-- **硬约束 1**：绝不触碰 epub.js iframe 内部 DOM。边界判定标准以 `docs/plans/20260815-spec-frontend-design.md` §6.0「判定标准（canonical）」为准——**三重断言 A/B/C**（文本序列不变 ＋ body 结构签名不变 ＋ CFI 往返解析到同一段文字），含其允许的 `themes.override` 例外。**本文不复述判据**：原先那条「文本节点偏移逐字节不变」已被证明必要但不充分（包裹或拆分文本节点可保持扁平文本不变却改掉 CFI 的 DOM path）。
+- **硬约束 1**：绝不触碰 epub.js iframe 内部 DOM。边界判定标准以 `docs/plans/20260816-tech-stack-and-ui-changes/spec-frontend-design.md` §6.0「判定标准（canonical）」为准——**三重断言 A/B/C**（文本序列不变 ＋ body 结构签名不变 ＋ CFI 往返解析到同一段文字），含其允许的 `themes.override` 例外。**本文不复述判据**：原先那条「文本节点偏移逐字节不变」已被证明必要但不充分（包裹或拆分文本节点可保持扁平文本不变却改掉 CFI 的 DOM path）。
 - **硬约束 2（K3 浮层挂载）**：见下。
 - 落 S1（标注 stale 横幅），设计见 spec §6.4。
 - 落三条翻页行为（见 `designs/reader-pro-next/README.md` 的「原型验证出来的三条行为」）。
@@ -108,7 +108,7 @@ createAnnotation         （含 fetch）
 外壳重写唯一一处**会静默打断标注**的改动就是把浮层挪进新的页面容器。`annotation-toolbar` / `note-editor` / `note-tooltip` 用 `position: fixed` + 视口坐标定位；祖先链上任何一个包含块制造者都会让它们**照常出现但位置错**，而 `toBeVisible()` 照样绿。
 
 - **允许的挂法只有两种**：`<body>` 直接子元素（生产现状，零改动即合规），或 `<dialog>` + `showModal()` 走 top layer。挂进 `.reader-shell` 之类的页面容器**不是禁止，但要靠断言逐次证明**——容器今天干净不代表明天干净。
-- 属性判据与 `containingBlockAncestor()` 参考实现见 [`annotation-host-contracts.md`](../../docs/contracts/annotation-host-contracts.md) K3，**不在本文复述**。
+- 属性判据与 `containingBlockAncestor()` 参考实现见 [`annotation-host-contracts.md`](../contracts/annotation-host-contracts.md) K3，**不在本文复述**。
 - 新外壳若为翻页动画给容器加了 `transform` / `will-change`，**先确认浮层不在其下**再加。原型的 `.page-flow` 就带 `will-change: transform`，是这条风险的现成样板。
 
 ### 4B.2 退出门槛
@@ -117,7 +117,7 @@ createAnnotation         （含 fetch）
 - **几何断言**：iframe 内划词后，工具条矩形与选区矩形（已换算到视口坐标）的相对位置落在容差内——横向与选区中心对齐 ±N px、纵向紧贴选区上/下沿。**禁止**用 `toBeVisible()` / `toBeAttached()` 充当本条
 - 上面两条对 `note-editor` 与 `note-tooltip` 同样各来一遍（tooltip 走 hover 触发）
 - **`baseline-1b` 组零改动全绿**（与 4B.1 同一条门槛）；`acceptance-4b1` 组保持绿灯
-- iframe 内部改动不超出 spec §6.0 允许范围：**三重断言 A/B/C 全部通过**（判据见 spec §6.0「判定标准（canonical）」，本文不复述）。A/B 走结构测试，C 走 `specs/009-e2e-annotations/tasks.md` R-6
+- iframe 内部改动不超出 spec §6.0 允许范围：**三重断言 A/B/C 全部通过**（判据见 spec §6.0「判定标准（canonical）」，本文不复述）。A/B 走结构测试，C 走 `docs/plans/20260816-tech-stack-and-ui-changes/tasks/009-e2e-annotations.md` R-6
 
 ## 4B.3 —— 阅读设置面板
 
@@ -132,7 +132,7 @@ createAnnotation         （含 fetch）
 ### 4B.3 退出门槛
 
 - **三重断言 A/B/C 对栏宽这条注入路径全部通过**（判据见 spec §6.0「判定标准（canonical）」）。栏宽改的是视觉分页而非 DOM，A/B 应当天然通过；**真正要证明的是 C**——栏宽变化会移动"标注在第几屏"，CFI 不应受影响，但这必须被断言，不能被假定
-- **`specs/009-e2e-annotations/tasks.md` R-6 的栏宽参数已启用并绿灯**。R-6 在 1b 阶段只覆盖主题/字号/行距三个参数（那时栏宽还不存在），栏宽是本阶段才加进去的第四个参数
+- **`docs/plans/20260816-tech-stack-and-ui-changes/tasks/009-e2e-annotations.md` R-6 的栏宽参数已启用并绿灯**。R-6 在 1b 阶段只覆盖主题/字号/行距三个参数（那时栏宽还不存在），栏宽是本阶段才加进去的第四个参数
 - `baseline-1b` 组零改动全绿
 
 ## 4B.4 —— 阅读进度单一数据源
