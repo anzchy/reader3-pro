@@ -98,7 +98,7 @@ createAnnotation         （含 fetch）
 
 ## 4B.2 —— 阅读器外壳垂直切片
 
-- **硬约束 1**：绝不触碰 epub.js iframe 内部 DOM。边界判定标准以 `docs/plans/20260815-spec-frontend-design.md` §6.0 为准（含其允许的 `themes.override` 例外与"文本节点偏移逐字节不变"的判据）。
+- **硬约束 1**：绝不触碰 epub.js iframe 内部 DOM。边界判定标准以 `docs/plans/20260815-spec-frontend-design.md` §6.0「判定标准（canonical）」为准——**三重断言 A/B/C**（文本序列不变 ＋ body 结构签名不变 ＋ CFI 往返解析到同一段文字），含其允许的 `themes.override` 例外。**本文不复述判据**：原先那条「文本节点偏移逐字节不变」已被证明必要但不充分（包裹或拆分文本节点可保持扁平文本不变却改掉 CFI 的 DOM path）。
 - **硬约束 2（K3 浮层挂载）**：见下。
 - 落 S1（标注 stale 横幅），设计见 spec §6.4。
 - 落三条翻页行为（见 `designs/reader-pro-next/README.md` 的「原型验证出来的三条行为」）。
@@ -117,7 +117,7 @@ createAnnotation         （含 fetch）
 - **几何断言**：iframe 内划词后，工具条矩形与选区矩形（已换算到视口坐标）的相对位置落在容差内——横向与选区中心对齐 ±N px、纵向紧贴选区上/下沿。**禁止**用 `toBeVisible()` / `toBeAttached()` 充当本条
 - 上面两条对 `note-editor` 与 `note-tooltip` 同样各来一遍（tooltip 走 hover 触发）
 - **`baseline-1b` 组零改动全绿**（与 4B.1 同一条门槛）；`acceptance-4b1` 组保持绿灯
-- iframe 内部改动不超出 spec §6.0 允许范围（`document.body.textContent` 与所有文本节点偏移逐字节不变）
+- iframe 内部改动不超出 spec §6.0 允许范围：**三重断言 A/B/C 全部通过**（判据见 spec §6.0「判定标准（canonical）」，本文不复述）。A/B 走结构测试，C 走 `specs/009-e2e-annotations/tasks.md` R-6
 
 ## 4B.3 —— 阅读设置面板
 
@@ -128,6 +128,12 @@ createAnnotation         （含 fetch）
 同时落 spec §1.5 的 **D5（正文栏宽）**：`max-width` / `margin` / `text-align` / `font-size` / `line-height`，走 `themes.override`，属 spec §6.0 明列的两类例外之一。
 
 删除三款未授权商业中文字体选项。
+
+### 4B.3 退出门槛
+
+- **三重断言 A/B/C 对栏宽这条注入路径全部通过**（判据见 spec §6.0「判定标准（canonical）」）。栏宽改的是视觉分页而非 DOM，A/B 应当天然通过；**真正要证明的是 C**——栏宽变化会移动"标注在第几屏"，CFI 不应受影响，但这必须被断言，不能被假定
+- **`specs/009-e2e-annotations/tasks.md` R-6 的栏宽参数已启用并绿灯**。R-6 在 1b 阶段只覆盖主题/字号/行距三个参数（那时栏宽还不存在），栏宽是本阶段才加进去的第四个参数
+- `baseline-1b` 组零改动全绿
 
 ## 4B.4 —— 阅读进度单一数据源
 

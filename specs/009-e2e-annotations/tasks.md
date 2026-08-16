@@ -40,7 +40,7 @@
 
 | 组 | 内容 | 激活阶段 | 计入 1b 退出门槛 | 计入 Phase 3 soak |
 |---|---|---|:--:|:--:|
-| **`baseline-1b`** | §2 读路径 R-1…R-5、§3 写路径 W-1…W-10、§4 的 K-2 / K-3 / K-4 / K-5、§6 X-1 / X-2 | Phase 1b | ✅ | ✅ |
+| **`baseline-1b`** | §2 读路径 R-1…R-6、§3 写路径 W-1…W-10、§4 的 K-2 / K-3 / K-4 / K-5、§6 X-1 / X-2 | Phase 1b | ✅ | ✅ |
 | **`acceptance-4b1`** | §4 的 K-1（响亮失败）与 K-6 的抛错断言 | 4B.1 | ❌ | ❌ |
 | **`acceptance-p3`** | §5 的 S1–S4，**朴素横幅形态** | Phase 3 出口 | ❌ | ❌ |
 | **`acceptance-4a4`** | §5 的 S1–S4，**设计规格形态**（只改 testid 映射，断言语义不变） | 4A.4 | ❌ | ❌ |
@@ -93,6 +93,13 @@ child frame 内 document.createRange() → 写入 iframe 的 Selection
 | R-3 | 既有标注恢复 | 预置 `notes.json` → 打开章节 → `<mark>` 出现在**预期的那段文字**上（比对 `textContent`，不是数量） |
 | R-4 | 翻章后重绘 | 换章 → 新章高亮数量正确 **且** 旧章高亮不残留（K4 的可失败断言） |
 | R-5 | 阅读页内搜索 | 命中高亮出现——**K5 的第二个消费方是 `search.js`**，这条用例是它唯一的护栏 |
+| R-6 | **改主题/字号/行距后既有标注仍锚定同一段文字** | 设计规格 §6.0 判定标准的**断言 C**。预置标注 → 记录其 CFI → 逐项切换主题、字号、行距 → 每次都重新解析同一条 CFI，`range.toString()` 等于存储的 `quote`；同时 `<mark>` 覆盖的 `textContent` 不变 |
+
+> **R-6 为什么必须存在**：设计规格 §6.0 从一开始就写着「Phase 1b 的 E2E 必须覆盖『改栏宽后既有标注仍能正确高亮』」，但本文此前**没有对应用例**——一条只写在设计文档里、没有落到用例表的门槛等于没有。
+>
+> **参数会随功能增长**：主题、字号、行距三项**今天就存在**（`reader.html` 的 Font Settings + `applyThemeSettings()`），所以 R-6 属 `baseline-1b`。D5 的**正文栏宽**要到 4B.3 才有，届时它作为 R-6 的**第四个参数**加入，而不是新开一组；**4B.3 的退出门槛需包含「R-6 的栏宽参数已启用并绿灯」**。
+
+
 
 ---
 
@@ -189,5 +196,7 @@ child frame 内 document.createRange() → 写入 iframe 的 Selection
 | `acceptance-p3` | Phase 3 出口 |
 | `acceptance-4a4` | 4A.4 出口 |
 | `acceptance-2a` | Phase 2a 出口 |
+
+**一个不成组的例外**：R-6 属 `baseline-1b`，但它的**栏宽参数**要到 4B.3 才有对象可测。这是往既有用例上加参数，不是新开一组，因此不进上表；它的门槛写在 `specs/014-ts-frontend-reader/tasks.md` §4B.3 退出门槛里。
 
 > **不要把未激活组的 skip 当成永久豁免。** 每个阶段的出口 checklist 里都要有一行「本阶段应激活的组已解开 skip 且绿灯」，否则 skip 会一路带到 Phase 5。

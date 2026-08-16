@@ -313,9 +313,59 @@ Plan 的 Phase 1b 会写 Playwright E2E 并作为 Phase 4 的合并门槛。如�
 1. §6.3 的阅读主题（背景/前景色）。
 2. **D5 的正文栏宽**（`max-width` / `margin` / `text-align` / `font-size` / `line-height`）。
 
-判定标准：**改了之后 `document.body.textContent` 与所有文本节点的偏移量必须逐字节不变**。满足这条，标注锚定（CFI 与 text-offset 双路）就不受影响；不满足的一律划归 Phase 4B 的行为变更，不属于设计。
+#### 判定标准（canonical，全仓库唯一定义处）
 
-> ⚠️ 即便如此，栏宽变化会改变**分页位置**。CFI 锚定不受影响（CFI 基于 DOM 路径而非视觉位置），但"标注在第几屏"会变。Phase 1b 的 E2E 必须覆盖"改栏宽后既有标注仍能正确高亮"这一条。
+> **本小节是 iframe 边界判据的唯一定义处。** 主计划 §7 的 Phase 4B 门槛、`specs/014-ts-frontend-reader/tasks.md` §4B.2、技术栈计划 Phase 4 的主题项**只引用本小节，不复述判据**——复述会漂移。
+
+原判据是「`document.body.textContent` 与所有文本节点的偏移量逐字节不变」。这条**必要但不充分**，且"逐字节"对 JS DOMString 不是可执行定义：
+
+- **不充分**：把一个文本节点包进 `<span>`，或把它拆成两个相邻文本节点，扁平文本与偏移量完全不变，但 **CFI 变了**——CFI 编码的是 DOM path 上的子节点序号，不是扁平文本位置。标注的 CFI 路会静默锚错，而 text-offset 路照常工作，于是两路不一致且只有 CFI 那路坏。
+- **不可执行**："逐字节"取决于编码；JS 字符串是 UTF-16 code unit 序列，没有"字节"这个层级。
+
+改为**三重断言，全部通过才算落在允许范围内**：
+
+**A — 文本序列不变**
+
+```js
+// JS 的 === 就是 UTF-16 code unit 序列比较，这一条本身即精确定义
+before.body.textContent === after.body.textContent
+```
+
+**B — body 结构签名不变**（这条是 A 补不上的那半）
+
+```js
+// 捕获元素嵌套、子节点序号、文本节点切分点与长度 —— 即 CFI 依赖的全部信息
+function bodySignature(body) {
+  const parts = [];
+  (function walk(node, path) {
+    const kids = node.childNodes;
+    for (let i = 0; i < kids.length; i++) {
+      const n = kids[i];
+      if (n.nodeType === 1) {            // ELEMENT_NODE
+        parts.push(`${path}/${i}:${n.tagName}`);
+        walk(n, `${path}/${i}`);
+      } else if (n.nodeType === 3) {     // TEXT_NODE
+        parts.push(`${path}/${i}:#text(${n.data.length})`);
+      }
+    }
+  })(body, '');
+  return parts.join('|');
+}
+```
+
+签名**只覆盖 `<body>`**：`themes.override()` 注入的是 `<head>` 里的 `<style>`，不进 body；把 head 算进签名会让每次主题切换都判失败。签名**不含属性**：CSS 类与 style 属性的变化不影响 CFI，允许。
+
+**C — CFI 往返解析到同一段文字**（唯一直接证明目标属性的断言）
+
+取一条既有标注的 CFI，在改动前后各解析一次，`range.toString()` 必须等于存储的 `quote`。A 与 B 是静态护栏，C 是真正的证明——A、B 只能说明"没做已知会破坏 CFI 的事"，C 说明"CFI 确实没坏"。
+
+**落点分工**：A + B 是**机械门槛**，对每一次 `themes.override()` 改动都要跑（结构测试，不需要完整 E2E）；C 是 **E2E**，见 `specs/009-e2e-annotations/tasks.md` 的 R-6。
+
+不满足任何一条的改动，一律划归 Phase 4B 的行为变更，不属于设计。
+
+> ⚠️ 即便如此，栏宽变化会改变**分页位置**。CFI 锚定理论上不受影响（CFI 基于 DOM 路径而非视觉位置），但这要被**断言**，不能被假定——即上面的断言 C。
+>
+> 落点：断言 C 由 `specs/009-e2e-annotations/tasks.md` **R-6** 承担。R-6 在 Phase 1b 覆盖今天已存在的三个参数（主题 / 字号 / 行距）；**栏宽是 D5 的产物，要到 4B.3 才存在**，届时作为 R-6 的第四个参数加入，并计入 4B.3 的退出门槛。本节此前写的是"Phase 1b 的 E2E 必须覆盖改栏宽后…"——那在顺序上不可能成立，栏宽那时还没做。
 
 ### 6.1 设置页（试点，先做）
 

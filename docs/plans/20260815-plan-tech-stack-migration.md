@@ -142,16 +142,53 @@ pickle 是实际的迁移阻塞点与安全隐患（`pickle.load` 对不可信�
   ├── ai_meta.json
   └── chroma_db/
   ```
-- [ ] 摄取时双写（新格式 + book.pkl）；读取优先新格式，回退 pkl
+- [ ] 摄取时双写（新格式 + book.pkl）；读取优先新格式，pkl 的地位见下方「读取状态机」
 - [ ] `book_store.py` 封装格式判断，调用方无感知
+- [ ] **落地下方的「两文件提交协议」与「读取状态机」**——`manifest.json` + `chapters.jsonl` 是一次**两文件提交**，没有协议就会出现 manifest 指向半写 chapters 的状态
 - [ ] 提供 `reader3 --migrate <book_id>` 将存量书库转换为新格式。
       **硬约束：`--migrate` 原地读写，禁止复用摄取路径。** 摄取路径在写入任何内容前 `shutil.rmtree(output_dir)`（见 A1），而 `notes.json` / `ai_meta.json` / `chroma_db/` 全在 `output_dir` 里——`--migrate` 一旦借道摄取，就会在"迁移成功"的同时抹掉用户标注、AI 会话与向量索引。实现上 `--migrate` 只允许：读 `book.pkl`（或 `book.epub`）→ 写 `manifest.json` + `chapters.jsonl` → 校验 → 结束，全程不删任何既有文件
 - [ ] 稳定一个大版本后移除 pickle 写入路径
 - [ ] **降级状态在 UI 里可见**：A1 的分级降级（notes stale / 索引 stale）与 A2 的 pickle 回退告警一旦无 UI，就是静默的用户数据损坏。设计规格 §6.4 的 **S1–S4** 必须在本阶段可见——哪怕先落成现有 Jinja 模板里的朴素横幅，Phase 4 再按规格重做
 
+#### 两文件提交协议（canonical，全仓库唯一定义处）
+
+> **本小节是 `manifest.json` + `chapters.jsonl` 写入顺序的唯一定义处。** 合流计划 §4 的回滚条目、A2 的 pickle 回退条款只引用本小节，不复述步骤。
+
+把一本书的存储从一个文件（`book.pkl`）拆成两个，就引入了一个 pickle 时代不存在的失败态：**manifest 已落盘、chapters 只写了一半**。此时 `manifest.json` 里的 `offset_bytes` / `length_bytes` 指向文件尾之后，`load_chapter()` seek 过去读到的是截断数据或空串——而 `manifest.json` 本身格式完好，任何「文件在不在 / JSON 解不解得开」的检查都会判它健康。摄取、`--migrate`、未来任何重写存储的路径都必须走同一套顺序：
+
+1. 写 `chapters.jsonl.tmp`（同目录，保证与目标同一文件系统，`os.replace` 才是原子的）
+2. `f.flush()` + `os.fsync(f.fileno())` — 数据落到盘，不只是落到 page cache
+3. 边写边记录每章的 `offset_bytes` / `length_bytes` / 内容 hash；写完再记全文件 `size_bytes` 与 `sha256`
+4. 写 `manifest.json.tmp`，把第 3 步的全部数字嵌进去
+5. `flush()` + `fsync()` manifest.tmp
+6. **在任何 `os.replace` 之前**做一次全量回读校验：按 manifest 里的 offset 逐章 seek `chapters.jsonl.tmp`，每章 JSON 解得开、`id`/`order` 对得上、hash 相符。校验失败就删两个 tmp 文件退出，目录里的旧状态一个字节没动
+7. `os.replace("chapters.jsonl.tmp", "chapters.jsonl")` → `os.fsync(dirfd)`
+8. `os.replace("manifest.json.tmp", "manifest.json")` → `os.fsync(dirfd)` — **manifest 是 commit marker，必须最后一个换**
+
+顺序的全部意义在第 7、8 步：chapters 先就位、manifest 后就位，于是"manifest 指向半写文件"在任何时刻的崩溃点上都不可能出现。反过来的残留是良性的——只有 `chapters.jsonl` 没有 `manifest.json`，读取状态机判定为 `missing`，走旧格式；孤儿 tmp 文件下次运行覆盖即可。
+
+#### 读取状态机（三态，禁止二态）
+
+`storage_format(book_id)` 不能只回答"新格式还是旧格式"，因为那把"没迁移"和"迁移坏了"归成了同一件事：
+
+| 状态 | 判定 | 处置 |
+|---|---|---|
+| `missing` | `manifest.json` 不存在 | 读 `book.pkl`。这是双写期与未迁移存量书的**正常**状态，不告警 |
+| `corrupt` | manifest 存在，但 JSON 解不开 / 格式版本不认识 / `sha256` 或 `size_bytes` 与 `chapters.jsonl` 对不上 | **大声失败**：抛错、写日志、UI 出 S1–S4 横幅。**不静默回退 pkl** |
+| `valid` | manifest 存在且自洽 | 读新格式 |
+
+`corrupt` 之所以不回退，是因为上面的提交协议已经排掉了"写坏"这条路径——协议走完还 corrupt，意味着磁盘损坏、外部程序改文件、或者协议本身有 bug。这三种都需要人看见。静默回退 pkl 只会把它们藏到 pkl 也被删掉的那一天。
+
+这同时消掉了 A2 与本阶段的一处表面矛盾：A2 说 pickle 回退"默认关闭，需显式 `READER3_ALLOW_PICKLE=1`"，本阶段又说"读取优先新格式，回退 pkl"。两句话说的不是同一个时间窗——
+
+- **双写期**（移除 pkl 写入路径之前）：pkl 是与新格式**同期产出的对等产物**，不是遗留数据。`missing` 走 pkl 属正常流程，**不需要环境变量**。
+- **停写 pkl 之后**：目录里还剩的 pkl 才是真正的遗留数据，`missing` 走 pkl 才需要 `READER3_ALLOW_PICKLE=1` 显式开启并每次启动告警。
+
+**`--migrate` 不得改变 `book_fingerprint()`。** A1 的指纹涵盖原 EPUB hash、spine href/order、每个 XHTML 原始内容 hash、解析器版本——纯粹的存储格式转换一样都不碰。若迁移后指纹变了，A1 的分级降级会立刻生效，**全库用户标注一次性判 stale**。因此 Phase 3 的验收里那条"`notes.json` 三者字节不变"的测试要再加一句断言：迁移前后 `book_fingerprint(book_id)` 相等。
+
 **进入条件**: Phase 2b 完成 **且** 1b 的标注 E2E 在主 CI 连绿 ≥10 次、跨度 ≥5 个工作日（soak 门槛，见合流计划 §7）。
 
-**验收**: 新处理的书完全不依赖 pickle 即可阅读/搜索/标注；存量书可一键迁移；**`--migrate` 原地读写，有一条测试证明迁移后 `notes.json` / `ai_meta.json` / `chroma_db/` 三者字节不变**；S1–S4 在当时的 UI 里可见；**并跑至少一条真实 iframe 标注迁移 E2E**（理由见下文「最可能的失败模式」）。
+**验收**: 新处理的书完全不依赖 pickle 即可阅读/搜索/标注；存量书可一键迁移；**`--migrate` 原地读写，有一条测试证明迁移后 `notes.json` / `ai_meta.json` / `chroma_db/` 三者字节不变、且 `book_fingerprint(book_id)` 不变**；**有一条崩溃注入测试**：在提交协议第 7 步之后、第 8 步之前中断，重启后该书仍能正常打开（状态判为 `missing`，走 pkl），且下一次迁移能干净地重跑；S1–S4 在当时的 UI 里可见；**并跑至少一条真实 iframe 标注迁移 E2E**（理由见下文「最可能的失败模式」）。
 
 ### Phase 4 — 前端 TypeScript 化（增量，非大爆炸）
 
@@ -181,7 +218,7 @@ pickle 是实际的迁移阻塞点与安全隐患（`pickle.load` 对不可信�
 
 **阅读设置面板（新增功能）**
 
-- [ ] 四主题 × 字体 × 字号 × 行距，统一 `data-reading-theme` 契约：同时驱动 app chrome（semantic token）与 iframe 正文（epub.js `themes.override`）。**注入 iframe 的 CSS 属性范围以设计规格 §6.0 为准**——判据是「改后 `document.body.textContent` 与所有文本节点偏移逐字节不变」，`max-width` / `margin` / `text-align` / `font-size` / `line-height` 均在允许之列
+- [ ] 四主题 × 字体 × 字号 × 行距，统一 `data-reading-theme` 契约：同时驱动 app chrome（semantic token）与 iframe 正文（epub.js `themes.override`）。**注入 iframe 的 CSS 属性范围以设计规格 §6.0「判定标准（canonical）」为准**——判据是**三重断言 A/B/C**（文本序列 ＋ body 结构签名 ＋ CFI 往返），本文不复述；`max-width` / `margin` / `text-align` / `font-size` / `line-height` 均在允许之列
 - [ ] 删除三款未授权且未打包的商业中文字体选项
 
 **行为变更（不得混入设计工作）**
@@ -258,7 +295,7 @@ pickle 是实际的迁移阻塞点与安全隐患（`pickle.load` 对不可信�
 
 **P0-1 数据丢失：重新处理一本书会静默删光该书全部用户标注。**
 `reader3.py` 的 `process_epub()` 在写入任何内容前 `shutil.rmtree(output_dir)`，而 `output_dir` 即 `books/{name}_data/`，`notes.json` / `ai_meta.json` / `chroma_db/` 均在其中。无警告、无备份。叠加缓存不失效（三处 `lru_cache` 的 key 均不含 mtime），服务器还会继续供着旧 `Book`。
-→ 改为 staging 目录 + 完整校验 + 原子切换，manifest 作为 commit marker。**列入 Phase 0。**
+→ 改为 staging 目录 + 完整校验 + 原子切换，manifest 作为 commit marker（步骤见 Phase 3 的「两文件提交协议」——那是唯一定义处，Phase 0 先按同一顺序落 staging 切换）。**列入 Phase 0。**
 
 **P0-2 发布损坏：打出的 wheel 阅读器不可用。**
 `pyproject.toml:34` 的 `"static/*"` 是 setuptools 非递归 glob，`static/js/`、`static/css/`、`static/vendor/` 三个子目录均未打包——`epub.min.js`、`annotations.js`、`reader.css` 全部缺失。本地 `uv run` 走源码树因而不可见。
@@ -291,6 +328,7 @@ Phase 1b 从 Phase 1 中拆出并降级为「仅阻塞 Phase 4」，使 Phase 2/
 - **A1 隐式契约显式化**：`manifest.json` 记录 `spine_fingerprint`。指纹须涵盖原 EPUB hash、spine href/order、每个 XHTML 的**原始内容** hash 与解析器版本——只 hash `chapter.text`（`extract_plain_text()` 的空白折叠产物）检测不到影响 CFI 的 HTML 结构变化。`notes.json` 与 chroma `meta.json` 各自存所绑定的指纹。
   **指纹不匹配按消费方分级降级，不阻断 `load_book()`**：notes 不匹配 → 停止套用标注并返回 stale；chroma 不匹配 → 索引标记 stale 提示重建。坏索引不得导致书打不开。
 - **A2 pickle 读取回退**保留但默认关闭，需显式 `READER3_ALLOW_PICKLE=1`，pkl 文件不删除。**须补退出机制**：写明停止 pkl 写入的版本号、删除 runtime fallback 的版本号、启用时每次启动明确告警、提供 `--migrate-all` 与未迁移库存清单；`--migrate` 使用专用 legacy loader，不要求用户先开全局环境变量。
+  > **环境变量只管停写 pkl 之后的时间窗**，双写期的 pkl 是对等产物不是遗留数据，无需开关；三态判定与两个时间窗的分界见 Phase 3 的「读取状态机」。
 - **A3 `static/dist/` 提交进 git**，Node/Vite 仅作构建期工具。须配 lockfile、固定 Node/Vite 版本、可重复构建 CI 检查，以及 wheel 内容测试（见 P0-2）。
 - **A4 PWA 缓存策略写死**：HTML 与 `/api/*` 一律 network-first 不缓存；只缓存内容哈希过的 `dist/` 资源与 vendor bundle；SW 内嵌 build version。**`skipWaiting()` + `clients.claim()` + activate 立即清旧缓存三者同用会撕裂版本**——仍打开的旧页面加载旧 hash chunk 会失败；改为保留前一代缓存（清 N-2），或强制提示并刷新全部 client。
 - **A5 `book_store.py` 先定接口契约再写实现**：
