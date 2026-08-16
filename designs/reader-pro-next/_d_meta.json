@@ -1,0 +1,24 @@
+{
+  "type": "design",
+  "designSystems": [],
+  "primaryDesignSystem": null,
+  "assets": {
+    "Reader3 Pro · Blue Reading Workspace": {
+      "versions": [
+        {
+          "path": "index.html",
+          "createdAt": "2026-08-15T14:47:45.448Z",
+          "status": "needs-review",
+          "subtitle": "Library, reader, search, notes, AI and settings prototype",
+          "viewport": {
+            "width": 1440,
+            "height": 900
+          },
+          "section": "Core flow"
+        }
+      ]
+    }
+  },
+  "createdAt": "2026-08-15T14:47:45.449Z",
+  "updatedAt": "2026-08-15T14:51:13.386Z"
+}
