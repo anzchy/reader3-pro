@@ -31,9 +31,18 @@ wheels/
 
 .codex/
 
-<<<<<<< Updated upstream
-.moat/
-=======
 # Moat task system
 .moat/
->>>>>>> Stashed changes
+
+# tdd-guardian generated artifacts
+.claude/tdd-guardian/state.json
+.claude/tdd-guardian/receipts.json
+
+# pytest / coverage artifacts
+.pytest_cache/
+coverage-unit.json
+.coverage
+.gstack/
+
+# vmark editor locks
+.vmark/
