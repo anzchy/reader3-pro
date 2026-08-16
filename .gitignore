@@ -37,6 +37,9 @@ wheels/
 # tdd-guardian generated artifacts
 .claude/tdd-guardian/state.json
 .claude/tdd-guardian/receipts.json
+# one timestamped pair per workflow run; keep config.json, drop the run logs
+.claude/tdd-guardian/plan-*.md
+.claude/tdd-guardian/tests-*.md
 
 # pytest / coverage artifacts
 .pytest_cache/

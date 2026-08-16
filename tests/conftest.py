@@ -15,6 +15,10 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 
+# Make tests/fixtures/*.py importable as plain modules (epub_builder, ...).
+if str(FIXTURES_DIR) not in sys.path:
+    sys.path.insert(0, str(FIXTURES_DIR))
+
 
 @pytest.fixture(scope="session")
 def repo_root() -> Path:
