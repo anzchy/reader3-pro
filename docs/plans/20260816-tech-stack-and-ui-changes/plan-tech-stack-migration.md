@@ -84,7 +84,7 @@ TS + ES modules + Vite 正好对症；构建产物仍是静态文件，FastAPI `
 - [ ] **新增 `GET /api/health`**：Phase 1b 的 Playwright `webServer` 需要就绪探针，没有它只能轮询 HTML 页面，慢且易误判。两行代码，放在这里最省事（Phase 5 的 `reader3 launch` 直接复用）
 - [ ] **四个落后 JS 文件 IIFE 化**（`search.js` / `ai.js` / `settings.js` / `library-search.js`），`escapeHtml` 全局覆盖修正——见 B1
 - [ ] **`data-testid` 全量补齐**，命名与前缀方案见设计规格 §4，改名顺序「先原型、后模板」见合流计划 §4.1。规则写入 CI lint：**E2E 只允许 `data-testid` 与 ARIA role/name**，禁止 class 选择器、`nth-child`、层级结构选择器。契约是「重设计可任意改 class / 嵌套 / 标签，**不得改 testid**」
-- [ ] 事实性修复：`.gitignore` 末尾遗留的 merge 冲突标记、`pyproject.toml` 版本号对齐 git tag、`ai_settings.example.json` 补齐 openai / openrouter provider
+- [ ] 事实性修复（**三项都归这里**，Phase 2 不再重复）：`.gitignore` 末尾遗留的 merge 冲突标记、`pyproject.toml` 版本号对齐 git tag、`ai_settings.example.json` 补齐 openai / openrouter provider。三项都只改常量与示例文件，不碰运行时行为，所以放在 Phase 0。**`max_retries` 不在此列**——删它或接通它都是行为变更，见 Phase 2
 - [ ] **删除死代码** `SearchIndex` / `BookIndex.from_book_pkl` / `SearchIndex.build_from_library`（零调用方，且是 A5 里那个带裸 `pickle.load` 的「第四处」）——先删再谈合并，否则 `book_store.py` 会把一个静默失败分支收编成现役设计。**只删这两个符号，`BookIndex` / `ChapterIndex` dataclass 是活的**
 
 **验收**: 两个 P0 修复并人工 smoke；`--port` 与 `/api/health` 可用；testid 在原型与模板两侧一致且 lint 生效。
@@ -118,11 +118,7 @@ TS + ES modules + Vite 正好对症；构建产物仍是静态文件，FastAPI `
 - [ ] chromadb + sentence-transformers 移入可选依赖组 `[project.optional-dependencies] semantic`（与 README"语义依赖可选"的描述对齐）
 - [ ] 修复 `ai/config.py` 设置写入改为原子替换（`.tmp` + `os.replace`，与 notes/collections 一致）
 - [ ] **notes 乐观并发控制**：notes 是 load→modify→save 全覆盖，`os.replace` 只保证单次写入原子，不防两个并发请求互相覆盖——自托管单用户开两个标签页即可触发。加 revision/ETag（或 per-file lock），冲突时返回 409 而非静默丢写。前端侧的冲突 UI 是设计规格 §6.4 的 **S5**
-- [ ] 修复事实性问题：
-  - `pyproject.toml` 版本 0.1.0 → 与 git tag v1.4.0 对齐
-  - `.gitignore` 末尾遗留的 merge 冲突标记（`<<<<<<< Updated upstream`）
-  - `ai_settings.example.json` 补齐 openai / openrouter provider
-  - 删除或接通从未被使用的 `max_retries` 配置项
+- [ ] **`max_retries` 定性**：这个配置项能在设置页填、能存进 `ai_settings.json`、能从 `GET /api/settings` 读回、`settings.js` 也在渲染它——但**全链路没有任何 provider 消费它**。删掉它还是接通它，二选一。留在 Phase 2 而不是 Phase 0，是因为两种选法都是行为变更：接通改的是重试语义，删掉改的是设置页可见字段
 - [ ] 路由启发式修正：`estimate_tokens()` 对 CJK 按 ~1.5 字符/token 估算；Anthropic 默认上下文窗口 1M → 200k
 - [ ] 修订 `CLAUDE.md` § Constitution Principles（原 `.specify/memory/constitution.md` 已随 spec-kit 工具链于 2026-08-16 删除，CLAUDE.md 的摘要版成为唯一权威）：保留简单性原则，修订已过时的实现禁令（"除 FastAPI/BeautifulSoup 外不加抽象"已不能描述含 Chroma、5 provider、异步队列、42 路由的系统）；"测试可选"条款删除
 

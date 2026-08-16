@@ -144,6 +144,8 @@ canonical 正则在 `plan-ui-migration-sequencing.md` §6 的「canonical 正则
 | `pyproject.toml` 版本号对齐 git tag | ⬜ 现在是 `0.1.0`，最新 tag 是 `v1.4.0` |
 | `ai_settings.example.json` 补齐 provider | ⬜ 现有 `anthropic` / `gemini` / `ollama`，缺 `openai` / `openrouter`——而这两个 provider 的代码是实现了的 |
 
+**`max_retries` 不在 0.6 里。** 它能填、能存、能读回、`settings.js` 也在渲染，但没有任何 provider 消费它。删掉还是接通都是行为变更，归 Phase 2——技术栈计划 Phase 2 有专门一条。别顺手在 007 里处理掉。
+
 ---
 
 ## 0.7 删除死代码
