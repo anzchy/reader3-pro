@@ -166,7 +166,7 @@ These demos demonstrate the foundation for the upcoming **002-ai-assistant** fea
 
 ## 📖 Further Reading
 
-- **Feature Spec**: `../specs/002-ai-assistant/spec.md`
+- **Feature Spec**: `../specs/_archive/002-ai-assistant/spec.md`
 - **Search Implementation**: `../search_service.py`
 - **Book Processing**: `../reader3.py`
 - **Project Guide**: `../CLAUDE.md`

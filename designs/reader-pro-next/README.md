@@ -48,7 +48,7 @@ open http://127.0.0.1:8125/index.html
 | `docs/plans/20260815-spec-frontend-design.md` | **应该**变成什么样：双层 token、testid 命名、逐页规格、iframe 边界（§6.0）、降级状态设计（§6.4） | 实施顺序、分支编号 |
 | `docs/plans/20260815-plan-tech-stack-migration.md` | 技术栈选型、后端架构、存储格式、A1–A5 架构决策 | 实施顺序、分支编号 |
 | `docs/plans/20260816-plan-ui-migration-sequencing.md` | **实施顺序**：阶段划分、门槛、分支编号、耦合点 | 设计细节、架构细节 |
-| `specs/007-hygiene-and-contracts/contracts/annotation-host-contracts.md` | 标注宿主契约 K1–K6 | — |
+| `docs/contracts/annotation-host-contracts.md` | 标注宿主契约 K1–K6 | — |
 | `specs/{n}-{name}/tasks.md` | 各分支的任务清单 | — |
 
 ## 原型的性质（重要）

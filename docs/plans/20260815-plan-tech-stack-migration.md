@@ -13,7 +13,7 @@
 > - **实施顺序、阶段划分、门槛、分支编号** → [`20260816-plan-ui-migration-sequencing.md`](./20260816-plan-ui-migration-sequencing.md)。本文正文按 Phase 组织只是为了归类任务，**顺序以合流计划为准**，冲突时以它为准。
 > - **UI 设计、token、testid 命名、逐页规格、iframe 边界、降级状态** → [`20260815-spec-frontend-design.md`](./20260815-spec-frontend-design.md)。
 > - **原型 → 生产的翻译规则** → [`designs/reader-pro-next/README.md`](../../designs/reader-pro-next/README.md)。
-> - **标注宿主契约 K1–K6** → [`specs/007-hygiene-and-contracts/contracts/annotation-host-contracts.md`](../../specs/007-hygiene-and-contracts/contracts/annotation-host-contracts.md)。
+> - **标注宿主契约 K1–K6** → [`docs/contracts/annotation-host-contracts.md`](../contracts/annotation-host-contracts.md)。
 > - **`annotations.js` 的模块划分** → [`specs/014-ts-frontend-reader/tasks.md`](../../specs/014-ts-frontend-reader/tasks.md)。
 >
 > 要改上面任何一项，改它的权威文档，不要在这里加一份副本。**本文不写代码行号**——行号会漂移，用符号名。
@@ -123,7 +123,7 @@ TS + ES modules + Vite 正好对症；构建产物仍是静态文件，FastAPI `
   - `ai_settings.example.json` 补齐 openai / openrouter provider
   - 删除或接通从未被使用的 `max_retries` 配置项
 - [ ] 路由启发式修正：`estimate_tokens()` 对 CJK 按 ~1.5 字符/token 估算；Anthropic 默认上下文窗口 1M → 200k
-- [ ] 修订 `.specify/memory/constitution.md`：保留简单性原则，修订已过时的实现禁令（"除 FastAPI/BeautifulSoup 外不加抽象"已不能描述含 Chroma、5 provider、异步队列、42 路由的系统）；"测试可选"条款删除
+- [ ] 修订 `CLAUDE.md` § Constitution Principles（原 `.specify/memory/constitution.md` 已随 spec-kit 工具链于 2026-08-16 删除，CLAUDE.md 的摘要版成为唯一权威）：保留简单性原则，修订已过时的实现禁令（"除 FastAPI/BeautifulSoup 外不加抽象"已不能描述含 Chroma、5 provider、异步队列、42 路由的系统）；"测试可选"条款删除
 
 **验收**: Phase 1 测试全绿（行为不变的证明）；`server.py` 每个 router < 500 行。
 
@@ -177,7 +177,7 @@ pickle 是实际的迁移阻塞点与安全隐患（`pickle.load` 对不可信�
 
 **`annotations.js` 的拆分**
 
-先纯拆分不改逻辑，再逐个转 TS（B3）。⚠️ 原文写的 `anchoring` / `renderer` / `ui` 三分法**在代码面前不成立**——`getReaderContext()` 与四处 `/api/notes` 的 `fetch` 横跨 `AnnotationRenderer` 与 `AnnotationUI` 两个类，无法归入任何一边；且 `AnnotationUI` 单类就超过 ≤400 行上限。**实际划分见 [`specs/014-ts-frontend-reader/tasks.md`](../../specs/014-ts-frontend-reader/tasks.md)**，外壳与标注之间的六份契约见 [`annotation-host-contracts.md`](../../specs/007-hygiene-and-contracts/contracts/annotation-host-contracts.md)。
+先纯拆分不改逻辑，再逐个转 TS（B3）。⚠️ 原文写的 `anchoring` / `renderer` / `ui` 三分法**在代码面前不成立**——`getReaderContext()` 与四处 `/api/notes` 的 `fetch` 横跨 `AnnotationRenderer` 与 `AnnotationUI` 两个类，无法归入任何一边；且 `AnnotationUI` 单类就超过 ≤400 行上限。**实际划分见 [`specs/014-ts-frontend-reader/tasks.md`](../../specs/014-ts-frontend-reader/tasks.md)**，外壳与标注之间的六份契约见 [`annotation-host-contracts.md`](../contracts/annotation-host-contracts.md)。
 
 **阅读设置面板（新增功能）**
 

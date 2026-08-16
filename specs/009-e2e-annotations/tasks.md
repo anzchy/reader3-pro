@@ -4,7 +4,7 @@
 - **进入条件**: Phase 0 的 0.3（`--port` + `/api/health`）与 0.5（`data-testid` 全量补齐）完成。见 `docs/plans/20260816-plan-ui-migration-sequencing.md` §6
 - **退出条件**: **`baseline-1b` 组**在**主 CI**（非 nightly）绿灯。其余组各自在所属阶段的出口生效，见 §0.5
 - **下游**: Phase 4A / 4B 的进入条件；Phase 3 的 soak 门槛（连绿 ≥10 次、跨度 ≥5 个工作日）数的就是 **`baseline-1b`** 这一组
-- **契约**: K1–K6 见 `specs/007-hygiene-and-contracts/contracts/annotation-host-contracts.md`；降级状态 S1–S5 见 `docs/plans/20260815-spec-frontend-design.md` §6.4
+- **契约**: K1–K6 见 `docs/contracts/annotation-host-contracts.md`；降级状态 S1–S5 见 `docs/plans/20260815-spec-frontend-design.md` §6.4
 
 > **引用规则**：用**符号名**与 **testid** 定位，不写代码行号。
 

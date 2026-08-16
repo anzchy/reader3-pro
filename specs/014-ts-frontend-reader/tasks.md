@@ -2,7 +2,7 @@
 
 - **对应阶段**: Phase 4B（阅读器）
 - **进入条件**: Phase 3 完成 **且** 4A.4 完成。见 `docs/plans/20260816-plan-ui-migration-sequencing.md` §6 与 §7
-- **契约**: K1–K6 见 `specs/007-hygiene-and-contracts/contracts/annotation-host-contracts.md`（唯一真相源，本文只引用编号）
+- **契约**: K1–K6 见 `docs/contracts/annotation-host-contracts.md`（唯一真相源，本文只引用编号）
 - **设计**: 阅读器外壳规格见 `docs/plans/20260815-spec-frontend-design.md` §6.0 / §6.3
 
 > **引用规则**：本文用**符号名**定位代码，不写行号。行号会漂移——上游计划里三处行号引用在 2026-08-16 复核时已全部失效。
@@ -63,7 +63,7 @@ createAnnotation         （含 fetch）
 
 ### 每份契约在 4B.1 的产出
 
-全部为"拆分即完成"，不改行为（K6 除外）。契约正文见 `specs/007-hygiene-and-contracts/contracts/annotation-host-contracts.md`。
+全部为"拆分即完成"，不改行为（K6 除外）。契约正文见 `docs/contracts/annotation-host-contracts.md`。
 
 | 契约 | 4B.1 必须产出 |
 |---|---|
@@ -108,7 +108,7 @@ createAnnotation         （含 fetch）
 外壳重写唯一一处**会静默打断标注**的改动就是把浮层挪进新的页面容器。`annotation-toolbar` / `note-editor` / `note-tooltip` 用 `position: fixed` + 视口坐标定位；祖先链上任何一个包含块制造者都会让它们**照常出现但位置错**，而 `toBeVisible()` 照样绿。
 
 - **允许的挂法只有两种**：`<body>` 直接子元素（生产现状，零改动即合规），或 `<dialog>` + `showModal()` 走 top layer。挂进 `.reader-shell` 之类的页面容器**不是禁止，但要靠断言逐次证明**——容器今天干净不代表明天干净。
-- 属性判据与 `containingBlockAncestor()` 参考实现见 [`annotation-host-contracts.md`](../007-hygiene-and-contracts/contracts/annotation-host-contracts.md) K3，**不在本文复述**。
+- 属性判据与 `containingBlockAncestor()` 参考实现见 [`annotation-host-contracts.md`](../../docs/contracts/annotation-host-contracts.md) K3，**不在本文复述**。
 - 新外壳若为翻页动画给容器加了 `transform` / `will-change`，**先确认浮层不在其下**再加。原型的 `.page-flow` 就带 `will-change: transform`，是这条风险的现成样板。
 
 ### 4B.2 退出门槛

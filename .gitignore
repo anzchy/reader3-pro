@@ -46,3 +46,6 @@ coverage-unit.json
 
 # vmark editor locks
 .vmark/
+
+# Codex CLI byproduct (contains account id)
+error.log

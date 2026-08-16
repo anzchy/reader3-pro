@@ -18,7 +18,7 @@
 | 原型的性质、**原型 → 生产的翻译规则**、文档分工总表 | [`designs/reader-pro-next/README.md`](../../designs/reader-pro-next/README.md) |
 | 现状审计（是什么样）＋ 已拍板的五条产品决策 | [`designs/reader-pro-next/spec/reader-pro-spec.md`](../../designs/reader-pro-next/spec/reader-pro-spec.md) |
 | 原型相对现状补齐了什么、还差什么 | [`designs/reader-pro-next/spec/reader-pro-next-parity.md`](../../designs/reader-pro-next/spec/reader-pro-next-parity.md) |
-| **标注宿主契约 K1–K6** | [`specs/007-hygiene-and-contracts/contracts/annotation-host-contracts.md`](../../specs/007-hygiene-and-contracts/contracts/annotation-host-contracts.md) |
+| **标注宿主契约 K1–K6** | [`docs/contracts/annotation-host-contracts.md`](../contracts/annotation-host-contracts.md) |
 | **`annotations.js` 八模块拆分**与 4B 各子阶段任务 | [`specs/014-ts-frontend-reader/tasks.md`](../../specs/014-ts-frontend-reader/tasks.md) |
 | **Phase 1b E2E 用例清单**（读路径 / 写路径 / K1–K6 / S1–S4） | [`specs/009-e2e-annotations/tasks.md`](../../specs/009-e2e-annotations/tasks.md) |
 
@@ -197,7 +197,7 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 
 四个子阶段 4B.1–4B.4 的任务清单见 [`specs/014-ts-frontend-reader/tasks.md`](../../specs/014-ts-frontend-reader/tasks.md)。顺序上只有一条硬约束：**4B.1（`annotations.js` 拆分）必须在 4B.2（外壳重写）之前**——外壳重写会移动工具条 DOM，而工具条 UI 目前就长在 `annotations.js` 里；先拆分，外壳就只与一个有文档的模块边界打交道，而不是散落在 1127 行里的七个 `getElementById` 和一处隐式的 `position: fixed` 假设。
 
-外壳与标注之间只有六个接触面（K1–K6），**其中四条坏了不报错**。契约与验收见 [`annotation-host-contracts.md`](../../specs/007-hygiene-and-contracts/contracts/annotation-host-contracts.md)。
+外壳与标注之间只有六个接触面（K1–K6），**其中四条坏了不报错**。契约与验收见 [`annotation-host-contracts.md`](../contracts/annotation-host-contracts.md)。
 
 ### Phase 5 —— launch + PWA
 
@@ -316,7 +316,7 @@ K5 冻结 `window.Reader3Epub` 9 个成员中的 5 个。被略过的 4 个里�
 
 > 合并范围为**四处** `_Reader3Unpickler` / cached-loader 定义：`server.py` 一处、`search_service.py` 两处、`vector_search.py` 一处
 
-第四处 —— `SearchIndex`、`BookIndex.from_book_pkl`、`SearchIndex.build_from_library` —— 全仓库 grep 确认**从未被调用**，唯一提及在 `specs/001-search-features/` 的文档里。它来自 001 的 T027/T029/T030：实现了但没接线，`search_library()` 后来走的是 per-book `load_book_index` 这条路。
+第四处 —— `SearchIndex`、`BookIndex.from_book_pkl`、`SearchIndex.build_from_library` —— 全仓库 grep 确认**从未被调用**，唯一提及在 `specs/_archive/001-search-features/` 的文档里。它来自 001 的 T027/T029/T030：实现了但没接线，`search_library()` 后来走的是 per-book `load_book_index` 这条路。
 
 它还带着两处分歧：用**裸 `pickle.load`，没有 `_Reader3Unpickler` shim**（另外三处都有），且包在 `except Exception: failed.append(book_id)` 里 —— 一本 legacy `__main__.Book` 的 pkl 在阅读器里能开，在这个索引里会**无声消失**；同时它整段复制了 `load_book_index` 的 `BookIndex` 构造体。
 
@@ -450,7 +450,7 @@ C1 说：
 | 关键词 + 语义搜索、RAG、多 provider AI | `search_service.py` / `vector_search.py` / `ai/` | 可用 |
 | 三页 UI + classic library | `templates/` 4 个模板 | 可用，`data-testid` 为 0 |
 | 高保真目标原型（三屏 + 错误态） | `designs/reader-pro-next/` | 可跑，134 个 testid 待改名 |
-| K1–K6 宿主契约 | `specs/007-*/contracts/` | 已成文，本报告后需改 K5 |
+| K1–K6 宿主契约 | `docs/contracts/` | 已成文，本报告后需改 K5 |
 | 双层 token 体系、逐页规格、S1–S5 降级态 | 设计规格 §3 / §5–6 | 已成文，两项 token 待收口 |
 | 测试基建 | `tests/` | **只有 conftest.py 骨架，零用例，零 CI** |
 
@@ -521,7 +521,7 @@ Phase 1b ── R12 标注 E2E（含写入路径 + 位置断言 + S1–S4）
 | ID | 任务 | 落点 | 阶段 | 优先级 |
 |---|---|---|---|---|
 | **R1** ✅ | 4B.1 采用方案 (a)，新增 `commands.ts` 承载六个写入方法；写死 `interactions → commands → notes-api` 单向依赖；删除 tasks.md 的「⚠️ 待评审」块 | `specs/014-*/tasks.md` | Phase 0 | P0 |
-| **R2** ✅ | K5 扩展到 `Reader3Epub` 全部 9 个成员，每个落到「纳入 / deprecate+移除阶段 / 收窄契约名义」三类之一；`applyThemeSettings` 与 `displaySectionIndex` 纳入 | `specs/007-*/contracts/annotation-host-contracts.md` | Phase 0 | P0 |
+| **R2** ✅ | K5 扩展到 `Reader3Epub` 全部 9 个成员，每个落到「纳入 / deprecate+移除阶段 / 收窄契约名义」三类之一；`applyThemeSettings` 与 `displaySectionIndex` 纳入 | `docs/contracts/annotation-host-contracts.md` | Phase 0 | P0 |
 | **R3** ✅ | K1 补一句：缺任一元素 → `init()` 静默 return → 整个标注 UI 不启动（已改，本项为复核） | 同上 | Phase 0 | P2 |
 | **R4** ✅ | 删除死代码 `SearchIndex` / `BookIndex.from_book_pkl` / `SearchIndex.build_from_library`；技术栈计划 A5 改为「三处合并」 | `search_service.py` + A5 | Phase 0 | P1 |
 | **R5** ✅ | 4B.2 增加门槛：三浮层保持 `<body>` 直接子元素（或 `<dialog>` top-layer）；E2E 断言祖先链无 containing-block 属性、且浮层矩形与选区矩形相对位置正确 | `specs/014-*/tasks.md` + 本文 §7 | Phase 0（写门槛）/ 4B.2（执行） | P0 |
@@ -544,7 +544,7 @@ JSONL 工件：`docs/plans/20260816-eng-review-tasks.jsonl`
 | 任务 | 改了哪里 |
 |---|---|
 | **R1** | `specs/014-*/tasks.md`：七模块 → 八模块，新增 `commands.ts`（175 行，六个写入方法）；「⚠️ 待评审」块替换为裁定记录含两个落选方案的失败模式；退出门槛新增**依赖方向机器可验**（`dependency-cruiser` / ESLint `import/no-restricted-paths`，不靠人盯） |
-| **R2** | `specs/007-*/contracts/annotation-host-contracts.md` K5：先立三类处置规则，再全量枚举 9 个成员 —— **7 个纳入**，`book` 与 `getContentDocument()` 标 deprecate 并定于 4B.2 结束移除（两者实测零消费方）。`4B.3` 的 K5 待评审注记同步改为「已确认纳入」 |
+| **R2** | `docs/contracts/annotation-host-contracts.md` K5：先立三类处置规则，再全量枚举 9 个成员 —— **7 个纳入**，`book` 与 `getContentDocument()` 标 deprecate 并定于 4B.2 结束移除（两者实测零消费方）。`4B.3` 的 K5 待评审注记同步改为「已确认纳入」 |
 | **R9** | 本文 §4 删除论证 1 并记录其被证伪的经过；§7 新增 **soak 门槛**小节 |
 | **R10** | 技术栈计划 Phase 3：`--migrate` 硬约束写进任务项，验收新增「迁移后 `notes.json` / `ai_meta.json` / `chroma_db/` 三者字节不变」的测试；本文 §7 门槛表同步 |
 | **R3** | 复核确认，无改动 |
@@ -564,7 +564,7 @@ JSONL 工件：`docs/plans/20260816-eng-review-tasks.jsonl`
 |---|---|
 | **R13**（原报告第 4 条，CRITICAL） | **修复 R12 引入的依赖环。** R12 把 K1/K6 的新行为与 S1–S4 的横幅写进了 Phase 1b 的退出门槛，但这些行为分别要到 4B.1 / Phase 3 / 4A.4 才存在，而那些阶段又都以 1b 通过为前置——按原文的顺序跑不通。修法是把「写下来」与「计入门槛」分开：`specs/009-*/tasks.md` 新增 **§0.5 用例分组与激活阶段**（`baseline-1b` / `acceptance-4b1` / `acceptance-p3` / `acceptance-4a4` / `acceptance-2a` 五组），§4 契约表加「组」列并把 K-1 / K-6 各拆成 baseline 现状特征化条与 4B.1 行为变更条，§5 整节移出 1b 门槛，§8 退出门槛重写为「仅 `baseline-1b`」；`specs/014-*/tasks.md` 4B.1 / 4B.2 门槛改为「`baseline-1b` 零改动全绿 ＋ `acceptance-4b1` 解开 skip」；本文 §7 的 Phase 1b / 3 / 4A / 4B 四行与 soak 门槛同步 |
 | **R14**（原报告第 16 条，MEDIUM） | **命名 lint 正则不可直接复制。** 原文三处（§6 步骤 0.5 的表格、§7 Phase 0 行、R11 记录）都把正则写成 `^(lib\|rd\|set)-…`——Markdown 表格单元格里 `\|` 是必需的转义，但复制进 lint 配置就变成匹配**字面反斜杠加竖线**，永远不命中，lint 会全绿而命名方案毫无约束。§6 步骤 0.5 新增 **canonical 正则代码块**（`^(?:lib\|rd\|set)-[a-z0-9]+(?:-[a-z0-9]+)*$`，非捕获组），其余三处一律改为引用它。同时 `specs/014-*/tasks.md` 4B.1 的依赖校验从「ESLint 或 dependency-cruiser 二选一」**定为 `dependency-cruiser`**，并补齐四条规则：`no-circular`（原文缺失）、`commands-no-upward`、**`interactions-no-bypass`**（原文只禁反向 import，挡不住 `interactions` 直连 `notes-api` 这种正向绕过，而那恰是最省事的走法）、`notes-api-leaf` |
-| **R15**（原报告第 2 条，MEDIUM） | **R4 删掉的代码，001 的设计文档仍在要求实现。** 运行时代码的删除边界是对的（`src/` 已零引用），但 `specs/001-search-features/` 四份文档仍把 `SearchIndex` / `from_book_pkl()` / `build_from_library()` 列为待办——任何人照 tasks.md 往下做都会把死代码重新引入。`tasks.md` 的 T027 / T029 / T030 标注为 SUPERSEDED 并划除（T028 与 `BookIndex` dataclass 本身保留，是活代码），`data-model.md`（文首 ＋ §4）、`research.md`（Indexing Strategy 节）、`plan.md`（宪法门槛清单）各加醒目说明并指向 per-book 的 `load_book_index()` |
+| **R15**（原报告第 2 条，MEDIUM） | **R4 删掉的代码，001 的设计文档仍在要求实现。** 运行时代码的删除边界是对的（`src/` 已零引用），但 `specs/_archive/001-search-features/` 四份文档仍把 `SearchIndex` / `from_book_pkl()` / `build_from_library()` 列为待办——任何人照 tasks.md 往下做都会把死代码重新引入。`tasks.md` 的 T027 / T029 / T030 标注为 SUPERSEDED 并划除（T028 与 `BookIndex` dataclass 本身保留，是活代码），`data-model.md`（文首 ＋ §4）、`research.md`（Indexing Strategy 节）、`plan.md`（宪法门槛清单）各加醒目说明并指向 per-book 的 `load_book_index()` |
 
 > 其余 16 条尚未处理，其中三条 HIGH 值得优先看：**第 14 条**（`manifest.json` + `chapters.jsonl` 是两文件提交却没有事务协议，崩溃会留下 manifest 指向半写文件）、**第 15 条**（iframe 门槛「`textContent` 与偏移不变」是必要非充分条件，包裹/拆分文本节点可保持扁平文本相同却改变 DOM path，不足以保护 CFI）、**第 18 条**（§6 说 1b 与 Track D 不阻塞任何人，§7 却让 Phase 3 同时依赖二者——M3 实为三路汇合点）。另有**第 1 条**指出「`commands.ts` 不得碰 DOM」与「纯拆分」无法同时机械满足，已作为未裁决项记入 `specs/014-*/tasks.md`。
 

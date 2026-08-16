@@ -170,7 +170,8 @@ JavaScript uses vanilla ES6+ (no frameworks). CSS is plain CSS (no preprocessors
 
 ## Constitution Principles (Summary)
 
-Reader3 Pro follows 7 core principles in `.specify/memory/constitution.md`:
+Reader3 Pro follows 7 core principles. This list is the authority — the former
+`.specify/memory/constitution.md` was removed with the spec-kit toolchain (2026-08-16):
 
 1. **Data Structures First**: All entities as `@dataclass` with type annotations
 2. **Simplicity Over Engineering**: YAGNI - no abstractions beyond FastAPI/BeautifulSoup
@@ -184,30 +185,48 @@ Reader3 Pro follows 7 core principles in `.specify/memory/constitution.md`:
 
 ## Feature Development Workflow
 
-Uses spec-driven development with numbered feature branches:
+**The spec-kit framework is no longer used.** `.specify/` and the `/speckit.*` commands were
+removed on 2026-08-16. Do not attempt to invoke them.
 
-**Branch naming**: `{number}-{short-name}` (e.g., `001-search-features`, `002-ai-assistant`)
+### Where documents live
 
-**Specs directory**: `specs/{number}-{short-name}/` contains:
-- `spec.md` - User stories, requirements, success criteria
-- `plan.md` - Technical design, architecture decisions
-- `tasks.md` - Implementation tasks organized by user story
-- `data-model.md` - Entity definitions
-- `contracts/` - API specifications (OpenAPI YAML)
+| Directory | Contents | Lifecycle |
+|---|---|---|
+| `docs/plans/` | Design and migration plans | Living |
+| `docs/contracts/` | Cross-branch interface contracts (annotation host K1–K6) | Living, single source of truth |
+| `specs/{branch}/tasks.md` | Task list for one active branch | Living, deleted or archived when the branch lands |
+| `specs/_archive/` | Historical spec-kit records for shipped features | **Frozen. Code is authoritative. Never implement from here.** |
+| `designs/` | Design references and prototypes | Living |
 
-**Feature status**:
-- `001-search-features`: Keyword + semantic search (✅ Completed)
-- `002-ai-assistant`: Multi-provider AI with RAG (✅ Completed)
-- `003-add-book-notes`: Book annotation system (📋 Spec phase)
-- `004-library-bulk-indexing`: 3-pane UI, collections, bulk indexing (✅ Completed)
-- `005-dedao-style-ui-reorganization`: Dedao-style UI for library and reader (✅ Completed)
-- `006-hot-fix`: Full-screen paginated reader with annotations (🚧 In progress)
+`specs/_archive/` holds 171 unchecked `- [ ]` items that all describe already-shipped or
+abandoned work. See [`specs/_archive/README.md`](specs/_archive/README.md) before reading anything
+in there — `003-add-book-notes` in particular describes an annotation system that was never built
+that way (the shipped one came from `006-hot-fix`).
 
-**Speckit commands**:
-- `/speckit.specify` - Create feature specification
-- `/speckit.clarify` - Resolve ambiguous requirements
-- `/speckit.plan` - Generate technical implementation plan
-- `/speckit.tasks` - Generate implementation task breakdown
+### Branch naming
+
+`{number}-{short-name}`. **Numbers are allocated in one place only**: §9 of
+[`docs/plans/20260816-plan-ui-migration-sequencing.md`](docs/plans/20260816-plan-ui-migration-sequencing.md).
+Do not invent a new number without updating that table.
+
+| Milestone | Branch | Status |
+|---|---|---|
+| M0 — Phase 0 contracts + hygiene | `007-hygiene-and-contracts` | 🚧 In progress |
+| M1 — tests + CI + API freeze | `008-test-safety-net` | Allocated |
+| M1b — Playwright E2E | `009-e2e-annotations` | Tasks drafted |
+| MD — design degradation states | `010-design-degradation-states` | Allocated |
+| M2 — backend refactor | `011-backend-refactor` | Allocated |
+| M3 — storage migration | `012-storage-format` | Allocated |
+| M4a — TS shell + settings + library | `013-ts-frontend-shell` | Allocated |
+| M4b — TS reader | `014-ts-frontend-reader` | Tasks drafted |
+| M5 — launch + PWA | `015-launch-experience` | Allocated |
+
+"Allocated" means the number is reserved but no branch or `specs/` directory exists yet.
+
+### Shipped features (implemented; see code, not specs)
+
+Keyword + semantic search · multi-provider AI with RAG · 3-pane library with collections and bulk
+indexing · Dedao-style UI · full-screen paginated reader with annotations.
 
 ## Data Flow
 

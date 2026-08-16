@@ -50,7 +50,11 @@ This project is an enhanced version (thus add `pro` to repo name) of Andrie Karp
 │           └── static/             # JS/CSS assets (library.js/css, search.css, library-search.js)
 ├── config/
 │   └── ai_settings.example.json    # Example AI config (copy to ai_settings.json)
-├── specs/                  # Feature specs + tasks (search lives in specs/001-search-features/)
+├── docs/
+│   ├── contracts/          # Cross-branch interface contracts (annotation host K1-K6)
+│   └── plans/              # Design + migration plans
+├── specs/                  # Task lists for active branches (specs/{branch}/tasks.md)
+│   └── _archive/           # Historical spec-kit records for shipped features
 └── books/                  # Generated per-book folders (ignored by git)
     └── *_data/             # One folder per book (book.pkl, book.epub, images/, chroma_db/)
 ```
