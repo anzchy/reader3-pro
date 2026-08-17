@@ -185,7 +185,7 @@ def search_text(text: str, query: str, case_sensitive: bool = False, max_results
 >
 > 实际落地的是 **per-book 惰性加载 + `lru_cache`**（`load_book_index()`），不是「服务启动时构建全库内存索引」。原方案的 `build_from_library()` 用裸 `pickle.load()` 绕过了 `_Reader3Unpickler` 兼容垫片，加载必然失败，而失败被吞进一个没人读的 `failed` 列表。
 >
-> 见 `docs/plans/20260816-tech-stack-and-ui-changes/plan-ui-migration-sequencing.md` 的 R4 落地记录。
+> 见 `docs/plans/20260816-tech-stack-migration/plan-tech-stack-migration.md` 的 R4 落地记录。
 
 **Approach**: In-memory index built on server start
 

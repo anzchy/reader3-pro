@@ -52,8 +52,9 @@ This project is an enhanced version (thus add `pro` to repo name) of Andrie Karp
 │   └── ai_settings.example.json    # Example AI config (copy to ai_settings.json)
 ├── docs/
 │   └── plans/
-│       └── 20260816-tech-stack-and-ui-changes/   # Active effort: plans, specs,
-│                                                 # contracts, review, branch tasks
+│       ├── 20260816-tech-stack-migration/   # Backend half: plans, review, branch tasks
+│       └── 20260817-frontend-ui-refactor/   # Frontend half: plan (WI-1..WI-20),
+│                                            #   design spec, host contracts
 ├── specs/
 │   └── _archive/           # Historical spec-kit records for shipped features (frozen)
 └── books/                  # Generated per-book folders (ignored by git)

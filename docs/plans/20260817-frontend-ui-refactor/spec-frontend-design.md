@@ -8,7 +8,7 @@
 >
 > **本文权威**：双层 token 体系（§3）、`data-testid` 命名（§4）、组件清单（§5）、逐页规格（§6）、**iframe 边界与其例外（§6.0）**、降级状态设计（§6.4）、响应式断点（§7）、可访问性契约（§8）。
 >
-> **本文不权威**：实施顺序、阶段划分、分支编号 —— 见 [`plan-ui-migration-sequencing.md`](./plan-ui-migration-sequencing.md)。技术栈选型与后端架构 —— 见 [`plan-tech-stack-migration.md`](./plan-tech-stack-migration.md)。原型 → 生产的翻译规则 —— 见 [`designs/reader-pro-next/README.md`](../../../designs/reader-pro-next/README.md)。
+> **本文不权威**：实施顺序、阶段划分、分支编号、技术栈选型与后端架构 —— 见 [`plan-tech-stack-migration.md`](../20260816-tech-stack-migration/plan-tech-stack-migration.md)。原型 → 生产的翻译规则 —— 见 [`designs/reader-pro-next/README.md`](../../../designs/reader-pro-next/README.md)。
 >
 > 要改上面任何一项，改它的权威文档，不要在这里加一份副本。
 - **参考**: `designs/reader-pro-next/spec/reader-pro-spec.md`（现状实现审计，**设计风格基准**）、`docs/design-reference/feeddock-frontend-spec.md`（结构模板）、`lightwhale-website-analysis/`（视觉方向）
@@ -330,7 +330,7 @@ Plan 的 Phase 1b 会写 Playwright E2E 并作为 Phase 4 的合并门槛。如�
 | `Toast` | **不存在**，现用 `.status` `<span>` 就地显示 | 新增；破坏性操作反馈需要它 |
 | `Skeleton` | **不存在**，现为 `-` 或 `Loading...` 文本 | 新增；书库卡片与统计数字用骨架屏 |
 
-> ⚠️ **`Modal` 一行的"保留 `<dialog>`"说的是现有 Jinja 模板；原型 `components.jsx` 的 `Modal` 是 `div.overlay` ＋ `role="dialog"`，已经不是原生 `<dialog>` 了。** 两边选型未收敛。这条差异在 §6.4 的 S5 上会咬人（原生 `<dialog>` 的 Esc 关闭要靠 `cancel` 事件 `preventDefault()` 才拦得住，div 版只要不接 Esc 即可），由 Track D 裁定并回写本表。
+> ⚠️ **`Modal` 一行的"保留 `<dialog>`"说的是现有 Jinja 模板；原型 `components.jsx` 的 `Modal` 是 `div.overlay` ＋ `role="dialog"`，已经不是原生 `<dialog>` 了。** 两边选型未收敛。这条差异在 §6.4 的 DEG-S5 上会咬人（原生 `<dialog>` 的 Esc 关闭要靠 `cancel` 事件 `preventDefault()` 才拦得住，div 版只要不接 Esc 即可），由 Track D 裁定并回写本表。
 
 ---
 
@@ -356,7 +356,7 @@ Plan 的 Phase 1b 会写 Playwright E2E 并作为 Phase 4 的合并门槛。如�
 
 #### 判定标准（canonical，全仓库唯一定义处）
 
-> **本小节是 iframe 边界判据的唯一定义处。** 主计划 §7 的 Phase 4B 门槛、`docs/plans/20260816-tech-stack-and-ui-changes/tasks/014-ts-frontend-reader.md` §4B.2、技术栈计划 Phase 4 的主题项**只引用本小节，不复述判据**——复述会漂移。
+> **本小节是 iframe 边界判据的唯一定义处。** 主计划 §7 的 Phase 4B 门槛、[前端计划](./plan-frontend-ui-refactor.md) 的 WI-14 / WI-16 / WI-18、技术栈计划 Phase 4 的主题项**只引用本小节，不复述判据**——复述会漂移。
 
 原判据是「`document.body.textContent` 与所有文本节点的偏移量逐字节不变」。这条**必要但不充分**，且"逐字节"对 JS DOMString 不是可执行定义：
 
@@ -400,13 +400,13 @@ function bodySignature(body) {
 
 取一条既有标注的 CFI，在改动前后各解析一次，`range.toString()` 必须等于存储的 `quote`。A 与 B 是静态护栏，C 是真正的证明——A、B 只能说明"没做已知会破坏 CFI 的事"，C 说明"CFI 确实没坏"。
 
-**落点分工**：A + B 是**机械门槛**，对每一次 `themes.override()` 改动都要跑（结构测试，不需要完整 E2E）；C 是 **E2E**，见 `docs/plans/20260816-tech-stack-and-ui-changes/tasks/009-e2e-annotations.md` 的 R-6。
+**落点分工**：A + B 是**机械门槛**，对每一次 `themes.override()` 改动都要跑（结构测试，不需要完整 E2E）；C 是 **E2E**，见 `docs/plans/20260816-tech-stack-migration/tasks/009-e2e-annotations.md` 的 R-6。
 
 不满足任何一条的改动，一律划归 Phase 4B 的行为变更，不属于设计。
 
 > ⚠️ 即便如此，栏宽变化会改变**分页位置**。CFI 锚定理论上不受影响（CFI 基于 DOM 路径而非视觉位置），但这要被**断言**，不能被假定——即上面的断言 C。
 >
-> 落点：断言 C 由 `docs/plans/20260816-tech-stack-and-ui-changes/tasks/009-e2e-annotations.md` **R-6** 承担。R-6 在 Phase 1b 覆盖今天已存在的三个参数（主题 / 字号 / 行距）；**栏宽是 D5 的产物，要到 4B.3 才存在**，届时作为 R-6 的第四个参数加入，并计入 4B.3 的退出门槛。本节此前写的是"Phase 1b 的 E2E 必须覆盖改栏宽后…"——那在顺序上不可能成立，栏宽那时还没做。
+> 落点：断言 C 由 `docs/plans/20260816-tech-stack-migration/tasks/009-e2e-annotations.md` **R-6** 承担。R-6 在 Phase 1b 覆盖今天已存在的三个参数（主题 / 字号 / 行距）；**栏宽是 D5 的产物，要到 4B.3 才存在**，届时作为 R-6 的第四个参数加入，并计入 4B.3 的退出门槛。本节此前写的是"Phase 1b 的 E2E 必须覆盖改栏宽后…"——那在顺序上不可能成立，栏宽那时还没做。
 
 ### 6.1 设置页（试点，先做）
 
@@ -483,25 +483,27 @@ function bodySignature(body) {
 
 **标注工具条**：7 个动作（Copy / Marker / Wavy / Underline / Delete / Add Note / Ask AI）+ 4 个颜色。文案改中文（§0）；颜色按钮补 `aria-pressed`；`Delete` 与其余动作之间加分隔，避免误触。
 
-### 6.4 降级状态（S1–S5）
+### 6.4 降级状态（DEG-S1–DEG-S5）
+
+> **编号约定（2026-08-17 起生效）**：降级状态一律写作 `DEG-S1`…`DEG-S5`。加 `DEG-` 前缀是为了和 `/tdd-guardian:workflow` 的规格层级编号 `S1`–`S6` 区分开——两套编号原先都叫 `S1`，在同一份计划里同时出现会指错对象。本仓库内凡出现裸 `S1`–`S5` 且语境是降级态的，均指本表；`20260816-tech-stack-migration/` 的 GSTACK 评审原文与 `eng-review-tasks.jsonl` 保留写作当时的裸编号，不追改。
 
 技术栈迁移引入了五条降级路径，**现状 UI 与原型里一个都没有**——原型只做了 collection 级别的 `stale`，书籍级与全局级全缺。没有 UI 就等于静默失败。
 
 | # | 状态 | 触发 | UI 规格 | 落在哪一页 |
 |---|---|---|---|---|
-| **S1** | 标注 stale | `notes.json` 的指纹 ≠ 当前 spine 指纹 | 阅读器顶部横幅 + Notes 面板逐条标记。文案必须明说「标注暂停套用，**未删除**」，并给一个「查看原文摘录」入口 | 阅读器（§6.3） |
-| **S2** | 索引 stale | chroma 指纹不匹配 | 书卡第**五**态（`STATUS_META` 现在只有四态）+ 搜索面板顶部「索引已过期，结果可能不全」提示条与重建按钮 | 书库（§6.2）＋ 搜索面板 |
-| **S3** | pickle 回退告警 | `READER3_ALLOW_PICKLE=1` 启动 | 全局告警条（书库与阅读器都显示），点击展开未迁移书目清单 | 全局 chrome |
-| **S4** | 存储格式 / 迁移进度 | `--migrate` / `--migrate-all` | 每本书卡上的 `storage_format` 角标；迁移中显示进度与失败项，失败项可单独重试 | 书库（§6.2） |
-| **S5** | 多标签页写冲突 | notes 并发覆盖（乐观并发失败） | 冲突提示 + 「保留我的 / 采用远端」二选一，**不得静默丢写**。这是唯一一条会真正丢用户数据的降级 | 阅读器（§6.3） |
+| **DEG-S1** | 标注 stale | `notes.json` 的指纹 ≠ 当前 spine 指纹 | 阅读器顶部横幅 + Notes 面板逐条标记。文案必须明说「标注暂停套用，**未删除**」，并给一个「查看原文摘录」入口 | 阅读器（§6.3） |
+| **DEG-S2** | 索引 stale | chroma 指纹不匹配 | 书卡第**五**态（`STATUS_META` 现在只有四态）+ 搜索面板顶部「索引已过期，结果可能不全」提示条与重建按钮 | 书库（§6.2）＋ 搜索面板 |
+| **DEG-S3** | pickle 回退告警 | `READER3_ALLOW_PICKLE=1` 启动 | 全局告警条（书库与阅读器都显示），点击展开未迁移书目清单 | 全局 chrome |
+| **DEG-S4** | 存储格式 / 迁移进度 | `--migrate` / `--migrate-all` | 每本书卡上的 `storage_format` 角标；迁移中显示进度与失败项，失败项可单独重试 | 书库（§6.2） |
+| **DEG-S5** | 多标签页写冲突 | notes 并发覆盖（乐观并发失败） | 冲突提示 + 「保留我的 / 采用远端」二选一，**不得静默丢写**。这是唯一一条会真正丢用户数据的降级 | 阅读器（§6.3） |
 
 设计要求（五条通用）：
 
-1. **色彩语义**：S1/S2/S4 用 `--r3-warning`，S3/S5 用 `--r3-error`；底色用同名 `-subtle`，边框用前景色本身（§3.3 已验 ≥4.5:1，不另设 border token）。**只有底色的横幅不算数**——淡底与页面底只差 1.1–1.3:1，必须同时有边框或图标。一律不用 `--r3-accent`（品牌蓝），避免与普通提示混淆。
-2. **可访问性**：横幅与提示条挂 `role="status"` + `aria-live="polite"`；S5 的冲突对话框用 `role="alertdialog"`，因为它需要用户决策。
-3. **可关闭性**：S1/S2/S3/S4 允许本次会话内关闭（`sessionStorage`），**S5 不可关闭**——必须做出选择。
+1. **色彩语义**：DEG-S1/DEG-S2/DEG-S4 用 `--r3-warning`，DEG-S3/DEG-S5 用 `--r3-error`；底色用同名 `-subtle`，边框用前景色本身（§3.3 已验 ≥4.5:1，不另设 border token）。**只有底色的横幅不算数**——淡底与页面底只差 1.1–1.3:1，必须同时有边框或图标。一律不用 `--r3-accent`（品牌蓝），避免与普通提示混淆。
+2. **可访问性**：横幅与提示条挂 `role="status"` + `aria-live="polite"`；DEG-S5 的冲突对话框用 `role="alertdialog"`，因为它需要用户决策。
+3. **可关闭性**：DEG-S1/DEG-S2/DEG-S3/DEG-S4 允许本次会话内关闭（`sessionStorage`），**DEG-S5 不可关闭**——必须做出选择。
 4. **testid**：五个状态各自的容器与主操作按钮都要有 testid（§4），否则 E2E 无法断言"降级可见"。
-5. **朴素优先**：Phase 3 的退出门槛只要求 S1–S4 **可见**，哪怕是先落到现有 Jinja 模板的朴素横幅；Phase 4 再按本节重做。
+5. **朴素优先**：Phase 3 的退出门槛只要求 DEG-S1–DEG-S4 **可见**，哪怕是先落到现有 Jinja 模板的朴素横幅；Phase 4 再按本节重做。
 
 ---
 
@@ -543,7 +545,7 @@ function bodySignature(body) {
 
 ## 9. 本规格各节落在哪个阶段
 
-阶段划分与分支编号的权威在 `20260816-plan-ui-migration-sequencing.md` §9；本表只说明**本规格的产出**被哪个阶段消费。
+阶段划分与分支编号的权威在 [`20260816-tech-stack-migration/plan-tech-stack-migration.md`](../20260816-tech-stack-migration/plan-tech-stack-migration.md) §9；本表只说明**本规格的产出**被哪个阶段消费。
 
 | 本规格产出 | 消费阶段 |
 |---|---|
@@ -554,8 +556,8 @@ function bodySignature(body) {
 | §6.0 iframe 边界 | 约束 Phase 4B.1 / 4B.2 的改动范围 |
 | §6.3 阅读器外壳 | Phase 4B.2 |
 | §6.3 阅读设置面板（D1）＋ 正文栏宽（D5） | Phase 4B.3 |
-| §6.4 S1 / S5 | S1 → Phase 4B.2；S5 → Phase 2a（与 notes 乐观并发同批） |
-| §6.4 S2 / S3 / S4 | Phase 4A.4；Phase 3 退出门槛要求它们**先以朴素形态可见** |
+| §6.4 DEG-S1 / DEG-S5 | DEG-S1 → Phase 4B.2；DEG-S5 → Phase 2a（与 notes 乐观并发同批） |
+| §6.4 DEG-S2 / DEG-S3 / DEG-S4 | Phase 4A.4；Phase 3 退出门槛要求它们**先以朴素形态可见** |
 | §7 响应式（D4） | 随各页垂直切片一同落地，不单独成阶段 |
 | §8 可访问性 | 同上，每页切片的验收项 |
 

@@ -2,8 +2,9 @@
 
 - **对应阶段**: Phase 0（合同与止血）
 - **进入条件**: 无。这是整个迁移的第一个分支
-- **退出条件**: 两个 P0 修复并人工 smoke；`--port` 与 `/api/health` 可用；testid 在原型与模板两侧一致且两条 lint 在 CI 里生效（违规数归零）。见 `docs/plans/20260816-tech-stack-and-ui-changes/plan-ui-migration-sequencing.md` §7
+- **退出条件**: 两个 P0 修复并人工 smoke；`--port` 与 `/api/health` 可用；testid 在原型与模板两侧一致且两条 lint 在 CI 里生效（违规数归零）。见 `docs/plans/20260816-tech-stack-migration/plan-tech-stack-migration.md` §7
 - **下游**: 0.3 与 0.5 阻塞 Phase 1b（009）；0.7 收敛 `book_store` 的合并范围，阻塞 Phase 2a；整个 Phase 0 阻塞其余一切
+- **跨计划**: **0.4 / 0.5 / 0.8 三项的产物是[前端计划](../../20260817-frontend-ui-refactor/README.md)的前置契约**——0.4 的 `escapeHtml` 收敛决定 4A.3 `escape.ts` 的形状，0.5 的 canonical 正则与两条 lint 是前端全部测试矩阵的选择器基础，0.8 的 token 悬空 lint 是 DEG-S1–DEG-S5 横幅不静默失色的保证。三项**在本分支实施**，前端计划只引用不重述
 - **节奏**: 每项独立 PR，目标一周内合完
 
 > **引用规则**：用**符号名**定位，不写代码行号。
@@ -125,9 +126,9 @@ uv build → 解包 wheel → 断言 templates/、static/js/、static/css/、sta
 
 **顺序是先改原型、后回贴模板**（合流计划 §4.1）。134 个唯一 testid，**0 个合规**，全部需要改名。
 
-**这是两条不同的 lint，不是一条**——对照表见 `plan-ui-migration-sequencing.md` §6 步骤 0.5 下方的注。一句话概括：**选择器 lint 约束测试代码，命名 lint 约束模板与原型**。只有前者的话，模板里照样可以新增 `reader-search-hit` 这种名字，命名方案随即失守。
+**这是两条不同的 lint，不是一条**——对照表见 `plan-tech-stack-migration.md` §6 步骤 0.5 下方的注。一句话概括：**选择器 lint 约束测试代码，命名 lint 约束模板与原型**。只有前者的话，模板里照样可以新增 `reader-search-hit` 这种名字，命名方案随即失守。
 
-canonical 正则在 `plan-ui-migration-sequencing.md` §6 的「canonical 正则（唯一真相源）」代码块里。**从那个代码块复制，不要从任何表格里复制**——表格单元格内 `|` 必须转义成 `\|`，复制出去会得到一条永不命中的正则，lint 全绿而命名方案毫无约束。本文不复述那个正则，正是为了不制造第二个复制源。
+canonical 正则在 `plan-tech-stack-migration.md` §6 的「canonical 正则（唯一真相源）」代码块里。**从那个代码块复制，不要从任何表格里复制**——表格单元格内 `|` 必须转义成 `\|`，复制出去会得到一条永不命中的正则，lint 全绿而命名方案毫无约束。本文不复述那个正则，正是为了不制造第二个复制源。
 
 命名 lint 必须**显式点名设计规格 §4.1 那 24 个带 `reader-` / `library-` 前缀的 testid**：它们形似合规，批量改名时最容易被当成「已经对了」跳过，而正则会把它们判为不合规——正是要的效果。
 
@@ -161,7 +162,7 @@ canonical 正则在 `plan-ui-migration-sequencing.md` §6 的「canonical 正则
 | `--r3-sidebar-w` / `--r3-right-w` | 设计规格 §6.2 三栏 Grid | `grid-template-columns` 整条声明失效，三栏塌成默认布局 |
 | `--r3-text-quiet` | 只在 sepia / green / night 三个阅读主题里被赋值 | paper 主题（默认）下无定义 |
 
-**三处已在 007 修掉**（见 `spec-frontend-design.md` 的 §3.2 / §3.3 / §3.4 / §6.2 / §6.4）。本条要做的是**不让它再长出来**。
+**三处已在 007 修掉**（见 [`spec-frontend-design.md`](../../20260817-frontend-ui-refactor/spec-frontend-design.md) 的 §3.2 / §3.3 / §3.4 / §6.2 / §6.4）。本条要做的是**不让它再长出来**。
 
 实现约十行：扫 `designs/reader-pro-next/`、`static/css/`、`templates/*.html` 与设计规格里的 CSS 代码块，收集全部 `--x:` 定义与全部 `var(--x)` 引用，求差集；浏览器内置或第三方定义的走白名单。**验收：差集为空，且在 CI 里生效。**
 
@@ -198,7 +199,7 @@ canonical 正则在 `plan-ui-migration-sequencing.md` §6 的「canonical 正则
 **0.1**：
 
 ```
-/tdd-guardian:workflow Fix a data-loss bug in src/reader3_app/reader3.py: process_epub calls shutil.rmtree on its output directory books/NAME_data before writing anything, and user-owned files live in that same directory - notes.json, ai_meta.json, ai_conversations/ and chroma_db/ - so reprocessing an EPUB silently destroys every annotation for that book and changes its book_uuid. Replace the rmtree with a staging directory plus full validation plus atomic switch: write the regenerated artifacts (book.pkl, book.epub, images/) into a staging directory under the same parent so the final swap is atomic, validate them, then swap into place while preserving every user-owned file byte for byte. Follow the step ordering of the two-file commit protocol defined in docs/plans/20260816-tech-stack-and-ui-changes/plan-tech-stack-migration.md Phase 3 - read that section first, it is the canonical definition. Out of scope: lru_cache invalidation, and any change to the Book dataclass or the pickle format. Put tests in tests/unit and use the books_dir fixture from tests/conftest.py, never the real books/ directory.
+/tdd-guardian:workflow Fix a data-loss bug in src/reader3_app/reader3.py: process_epub calls shutil.rmtree on its output directory books/NAME_data before writing anything, and user-owned files live in that same directory - notes.json, ai_meta.json, ai_conversations/ and chroma_db/ - so reprocessing an EPUB silently destroys every annotation for that book and changes its book_uuid. Replace the rmtree with a staging directory plus full validation plus atomic switch: write the regenerated artifacts (book.pkl, book.epub, images/) into a staging directory under the same parent so the final swap is atomic, validate them, then swap into place while preserving every user-owned file byte for byte. Follow the step ordering of the two-file commit protocol defined in docs/plans/20260816-tech-stack-migration/plan-tech-stack-migration.md Phase 3 - read that section first, it is the canonical definition. Out of scope: lru_cache invalidation, and any change to the Book dataclass or the pickle format. Put tests in tests/unit and use the books_dir fixture from tests/conftest.py, never the real books/ directory.
 ```
 
 **0.3**（0.1 合入后再跑）：

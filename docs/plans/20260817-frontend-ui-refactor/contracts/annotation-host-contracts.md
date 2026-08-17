@@ -2,7 +2,7 @@
 
 - **状态**: Phase 0 冻结，Phase 4B 验收
 - **权威范围**: 本文是 K1–K6 六份契约的**唯一真相源**。任何计划文档只许引用编号，不许复述内容。
-- **消费方**: `docs/plans/20260816-tech-stack-and-ui-changes/plan-ui-migration-sequencing.md` §7（阶段门槛）、`docs/plans/20260816-tech-stack-and-ui-changes/tasks/014-ts-frontend-reader.md`（4B.1 拆分）
+- **消费方**: [`20260816-tech-stack-migration/plan-tech-stack-migration.md`](../../20260816-tech-stack-migration/plan-tech-stack-migration.md) §7（阶段门槛）、[前端计划](../plan-frontend-ui-refactor.md) 的 **WI-14**（八模块拆分）与 **WI-15**（K1–K6 契约交付物）
 - **被约束的代码**: `src/reader3_app/web/static/js/annotations.js`、`js/epub-renderer.js`、`web/templates/reader.html`
 
 ---
@@ -92,7 +92,7 @@ function containingBlockAncestor(el) {
 
 **4B.1 验收**：`offsetRect()` 移入 `overlays.ts` 并注释说明它产出的是**视口坐标**；前置条件写成模块头注释。`containingBlockAncestor()` 作为调试断言放进 `overlays.ts` 的 init（dev 构建下命中即 `console.error`）。
 
-**4B.2 门槛（硬）**：见 `docs/plans/20260816-tech-stack-and-ui-changes/tasks/014-ts-frontend-reader.md` 4B.2 —— 三个浮层的挂载位置在重写前后都必须过上面这条判据，且 E2E 用**矩形几何**断言而非 `toBeVisible()`。
+**4B.2 门槛（硬）**：见[前端计划](../plan-frontend-ui-refactor.md) **WI-16** —— 三个浮层的挂载位置在重写前后都必须过上面这条判据，且 E2E 用**矩形几何**断言而非 `toBeVisible()`。
 
 ---
 

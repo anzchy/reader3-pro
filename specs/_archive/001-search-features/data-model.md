@@ -18,7 +18,7 @@
 >
 > **当前真相源**：per-book 惰性加载 `load_book_index()`（`search_service.py`），带 `lru_cache`。没有全库级的索引容器；跨库搜索由 `search_library()` 逐本调用 `load_book_index()` 完成。
 >
-> 删除理由与边界见 `docs/plans/20260816-tech-stack-and-ui-changes/plan-ui-migration-sequencing.md` 的 R4 落地记录。
+> 删除理由与边界见 `docs/plans/20260816-tech-stack-migration/plan-tech-stack-migration.md` 的 R4 落地记录。
 
 ## Overview
 

@@ -198,14 +198,29 @@ removed on 2026-08-16. Do not attempt to invoke them.
 | `designs/` | Design references and executable prototypes | Living |
 
 **A planning effort is one folder.** Everything a plan needs to be read and executed —
-the plan itself, its design spec, its interface contracts, its review record, and the
-task list for each branch it spawns — lives together under one dated folder. Don't scatter
-these across `docs/`, `specs/`, and `docs/contracts/`; a reader who opens the folder should
-need nothing outside it except the code and `designs/`.
+the plan itself, its design spec, its interface contracts, its review record, and its work
+items — lives together under one dated folder. Don't scatter these across `docs/`, `specs/`,
+and `docs/contracts/`; a reader who opens the folder should need nothing outside it except
+the code and `designs/`.
 
-The one active effort today is
-[`docs/plans/20260816-tech-stack-and-ui-changes/`](docs/plans/20260816-tech-stack-and-ui-changes/README.md) —
-the tech-stack migration and UI redesign (branches 007–015). Start at its `README.md`.
+**Two folders may split one effort, but never one fact.** When an effort is large enough to
+split (as the 007–015 work is), each folder carries a 「权威范围」 table naming the facts it
+defines. The tables must not overlap, and every other mention of a fact links to its one
+definition instead of restating it — restating is how the two copies drift apart.
+
+There are two active efforts today, and they are two halves of one program:
+
+| Folder | Half | Branches |
+|---|---|---|
+| [`docs/plans/20260816-tech-stack-migration/`](docs/plans/20260816-tech-stack-migration/README.md) | Backend layering, storage format, test net + CI, **branch numbering** | 007, 008, 009, 011, 012, 015 (CLI) |
+| [`docs/plans/20260817-frontend-ui-refactor/`](docs/plans/20260817-frontend-ui-refactor/README.md) | Design system, degradation states, `annotations.js` split, frontend TDD matrix | 010, 013, 014, 015 (PWA) |
+
+Start at either `README.md`. Each folder holds **exactly one plan document** —
+`plan-tech-stack-migration.md` and `plan-frontend-ui-refactor.md` respectively. (The migration
+folder used to carry a second plan, `plan-ui-migration-sequencing.md`; it was merged into
+`plan-tech-stack-migration.md` on 2026-08-17 with its section numbers preserved, and deleted.)
+The frontend folder has **no `tasks/` directory** — its work items are `### WI-N:` headings
+inside `plan-frontend-ui-refactor.md` so that `/tdd-guardian:workflow` can consume them directly.
 
 `specs/` now contains only `_archive/`. It holds 171 unchecked `- [ ]` items that all describe
 already-shipped or abandoned work. See [`specs/_archive/README.md`](specs/_archive/README.md)
@@ -215,23 +230,25 @@ system that was never built that way (the shipped one came from `006-hot-fix`).
 ### Branch naming
 
 `{number}-{short-name}`. **Numbers are allocated in one place only**: §9 of
-[`plan-ui-migration-sequencing.md`](docs/plans/20260816-tech-stack-and-ui-changes/plan-ui-migration-sequencing.md).
+[`plan-tech-stack-migration.md`](docs/plans/20260816-tech-stack-migration/plan-tech-stack-migration.md).
 Do not invent a new number without updating that table.
 
-| Milestone | Branch | Status |
-|---|---|---|
-| M0 — Phase 0 contracts + hygiene | `007-hygiene-and-contracts` | 🚧 In progress |
-| M1 — tests + CI + API freeze | `008-test-safety-net` | Tasks drafted |
-| M1b — Playwright E2E | `009-e2e-annotations` | Tasks drafted |
-| MD — design degradation states | `010-design-degradation-states` | Tasks drafted |
-| M2 — backend refactor | `011-backend-refactor` | Allocated |
-| M3 — storage migration | `012-storage-format` | Allocated |
-| M4a — TS shell + settings + library | `013-ts-frontend-shell` | Allocated |
-| M4b — TS reader | `014-ts-frontend-reader` | Tasks drafted |
-| M5 — launch + PWA | `015-launch-experience` | Allocated |
+| Milestone | Branch | Plan folder | Status |
+|---|---|---|---|
+| M0 — Phase 0 contracts + hygiene | `007-hygiene-and-contracts` | migration | 🚧 In progress |
+| M1 — tests + CI + API freeze | `008-test-safety-net` | migration | Tasks drafted |
+| M1b — Playwright E2E | `009-e2e-annotations` | migration | Tasks drafted |
+| MD — design degradation states | `010-design-degradation-states` | **frontend** | WI-1 – WI-8 |
+| M2 — backend refactor | `011-backend-refactor` | migration | Allocated |
+| M3 — storage migration | `012-storage-format` | migration | Allocated |
+| M4a — TS shell + settings + library | `013-ts-frontend-shell` | **frontend** | WI-9 – WI-13 |
+| M4b — TS reader | `014-ts-frontend-reader` | **frontend** | WI-14 – WI-19 |
+| M5 — launch + PWA | `015-launch-experience` | migration (CLI) ＋ **frontend** (PWA) | Allocated / WI-20 |
 
 "Allocated" means the number is reserved but no branch exists yet. "Tasks drafted" means
-`docs/plans/20260816-tech-stack-and-ui-changes/tasks/{branch}.md` exists.
+`docs/plans/20260816-tech-stack-migration/tasks/{branch}.md` exists. "WI-n – WI-m" means the
+work items live in `docs/plans/20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md` §4;
+frontend branches have no task files.
 
 ### Shipped features (implemented; see code, not specs)
 

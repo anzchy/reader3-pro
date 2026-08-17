@@ -1,30 +1,53 @@
-# Reader3 Pro 技术栈演进综合计划
+# Reader3 Pro 技术栈迁移 —— 唯一实施指南
 
-- **日期**: 2026-08-15
+- **日期**: 2026-08-15 起草 · 2026-08-16 合流排序 · 2026-08-17 拆分前端 · 2026-08-17 两份计划合并
 - **状态**: 提议（待批准）
 - **决策来源**: Claude（Fable 5）全仓库分析 + Codex（gpt-5.6-sol）独立推演，两方独立收敛于同一结论
 - **Codex 会话**: `/cc-suite:continue 01a00400-4fa0-7d60-9cb9-4a82c843cf0f`（任务 `consult-mstytiy0-43aczt`）
 
+> ### 本文是什么
+>
+> **技术栈迁移的唯一计划文档。** 此前这半边是两份：`plan-tech-stack-migration.md`（做什么）与
+> `plan-ui-migration-sequencing.md`（什么顺序做）。两份文档反复互相引用「本文不权威，见对方 §X」，
+> 读一遍要来回跳七八次，而"做什么"和"什么顺序做"在实施时从来不分开看。**2026-08-17 合并为本文，
+> `plan-ui-migration-sequencing.md` 已删除**，它的全部内容在这里，章节编号（§3 合同 / §4 汇合点 /
+> §6 阶段分解 / §7 门槛表 / §9 分支编号 / §9.1 依赖图）**原样保留**，外部引用不必改。
+
 > ### 权威范围
 >
-> **本文权威**：技术栈选型（§1/§2）、各阶段**做什么**（§3 的任务内容）、明确不做的事（§4）、风险（§5）、以及文末 GSTACK REVIEW REPORT 的 A1–A5 / B1–B4 / C1–C5 架构与性能决策。
+> **本文权威**：
+> - 技术栈选型（§1.1、§10）、各阶段**做什么**（§6）、明确不做的事（§11）、风险（§8）
+> - **顺序**——阶段划分、并行/串行关系、耦合点（§2）、四份合同（§3）、阶段门槛（§7）、**分支编号**（§9）、依赖图（§9.1）
+> - 附录 A 的 A1–A5 / B1–B4 / C1–C5 架构与性能决策，附录 B 的 R1–R15 处置台账
 >
-> **本文不权威**：
-> - **实施顺序、阶段划分、门槛、分支编号** → [`plan-ui-migration-sequencing.md`](./plan-ui-migration-sequencing.md)。本文正文按 Phase 组织只是为了归类任务，**顺序以合流计划为准**，冲突时以它为准。
-> - **UI 设计、token、testid 命名、逐页规格、iframe 边界、降级状态** → [`spec-frontend-design.md`](./spec-frontend-design.md)。
-> - **原型 → 生产的翻译规则** → [`designs/reader-pro-next/README.md`](../../../designs/reader-pro-next/README.md)。
-> - **标注宿主契约 K1–K6** → [`contracts/annotation-host-contracts.md`](contracts/annotation-host-contracts.md)。
-> - **`annotations.js` 的模块划分** → [`tasks/014-ts-frontend-reader.md`](tasks/014-ts-frontend-reader.md)。
+> **本文不权威**（**只索引不复述**——凡是能在下表里找到家的事实，本文只写一句话加链接）：
 >
-> 要改上面任何一项，改它的权威文档，不要在这里加一份副本。**本文不写代码行号**——行号会漂移，用符号名。
+> | 需要知道 | 去哪里 |
+> |---|---|
+> | 双层 token、`data-testid` 前缀方案、组件清单、逐页规格、**iframe 边界（§6.0）**、**降级状态 DEG-S1–DEG-S5（§6.4）**、响应式、可访问性 | [`spec-frontend-design.md`](../20260817-frontend-ui-refactor/spec-frontend-design.md) |
+> | **前端全部工作项 WI-1–WI-20 与前端测试矩阵**、`annotations.js` 八模块拆分 | [`20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md`](../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) |
+> | **标注宿主契约 K1–K6** | [`contracts/annotation-host-contracts.md`](../20260817-frontend-ui-refactor/contracts/annotation-host-contracts.md) |
+> | 原型的性质、**原型 → 生产的翻译规则**、文档分工总表 | [`designs/reader-pro-next/README.md`](../../../designs/reader-pro-next/README.md) |
+> | 现状审计（是什么样）＋ 已拍板的五条产品决策 | [`designs/reader-pro-next/spec/reader-pro-spec.md`](../../../designs/reader-pro-next/spec/reader-pro-spec.md) |
+> | 原型相对现状补齐了什么、还差什么 | [`designs/reader-pro-next/spec/reader-pro-next-parity.md`](../../../designs/reader-pro-next/spec/reader-pro-next-parity.md) |
+> | **Phase 1b E2E 用例清单**（读路径 / 写路径 / K1–K6 / DEG-S1–DEG-S4） | [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) |
+> | **Phase 0 七项的现状实测**与哪几项适合交给 `/tdd-guardian:workflow` | [`tasks/007-hygiene-and-contracts.md`](./tasks/007-hygiene-and-contracts.md) |
+> | **覆盖率门槛策略**、42 条路由契约的三层组织、异常处理规则 | [`tasks/008-test-safety-net.md`](./tasks/008-test-safety-net.md) |
+>
+> 之所以立"只索引不复述"这条规矩：此前三份计划各自复述对方的内容，其中三处代码行号引用在
+> 2026-08-16 复核时已全部失效，`annotations.js` 的模块划分与 `data-testid` 的统计数字在两处出现不一致。
+> **每条事实只有一个家。** 要改上面任何一项，改它的权威文档，不要在这里加一份副本。
+> **本文不写代码行号**——行号会漂移，用符号名。
 
 ---
 
-## 1. 最终决策（TL;DR）
+## 1. TL;DR
+
+### 1.1 最终决策
 
 | 维度 | 决策 |
 |---|---|
-| 后端 | **保留 Python 3.12 + FastAPI + uv**，不迁移 TypeScript |
+| 后端 | **保留 Python 3.10+ + FastAPI + uv**，不迁移 TypeScript |
 | ML/RAG | 保留 sentence-transformers + 嵌入式 ChromaDB，改为可选依赖组 |
 | 前端 | **迁移到严格 TypeScript + Vite 多页构建**，不引入 SPA 框架 |
 | 存储 | 文件系统优先不变；**`book.pkl` → 版本化 JSON/JSONL 格式** |
@@ -35,76 +58,218 @@
 
 > 📸 **现状证据**：[`designs/reader-pro-next/spec/screenshots/`](../../../designs/reader-pro-next/spec/screenshots/) —— 22 张实测截图（2026-08-15），对应 `reader-pro-spec.md` §14。其中 §7.4b（端口硬编码）与 §7.4c（进度不一致）两条修订直接由这次复核发现。
 
-## 2. 决策依据
+### 1.2 顺序总览
 
-### 2.1 为什么后端留在 Python
+**先把合同钉死，再让三条线分头跑；它们在 Phase 3 三路汇合，而 Phase 3 与 Phase 4B 必须串行。**
 
-核心价值链三个环节 Python 生态强绑定：
+```
+Phase 0  合同 + P0 止血  ← 所有事情的前置
+   │
+   ├──────────────────────────────┬───────────────────────────┐
+   ↓                              ↓                           ↓
+Phase 1a Python 测试 + CI      Track D 设计补齐            （0.5 完成即可开工）
+（阻塞所有后端改动）            DEG-S1–DEG-S5 + 合同对账            Phase 1b Playwright E2E
+   ↓                              （阻塞 Phase 3）            （阻塞 4A；经 soak 阻塞 Phase 3）
+Phase 2a router + book_store         │                           │
+   ↓                                 │                           ├──────────┐
+Phase 2b 性能                        │                           │          │
+   ↓                                 ↓                           ↓          │
+Phase 3  JSONL + 指纹 + generation swap  ←── 三路汇合 ───────────┘          │
+   │                                                                        │
+   │        ┌───────────────────────────────────────────────────────────────┘
+   │        ↓
+   │   Phase 4A 前端底座与非阅读页（settings → library）
+   │        │        ※ 完全不碰 annotations.js 与 reader.html
+   └────┬───┘
+        ↓
+   Phase 4B 阅读器（拆分 → 外壳重写 → 主题面板 → 进度收敛）
+        ↓
+   Phase 5  launch + PWA
+```
 
-| 能力 | 现状 | TS 替代 | 迁移代价 |
+**唯一的强制串行**：`Phase 3` 与 `Phase 4B` 都改动标注锚定的上下游，必须一前一后，**且 Phase 3 在前**（§4）。
+
+**唯一的汇合点**：`Phase 3` 同时等 2b、Track D、1b 的 soak——完整依赖图见 §9.1。
+
+**最容易做错的事**：把原型当成待移植的代码。它是可执行的规格——翻译规则见 `designs/reader-pro-next/README.md`。
+
+---
+
+## 2. 两条线在哪里真的耦合
+
+大部分"前后端耦合"的担心在本项目里不成立——API 形状在 Phase 2a（纯重构）里不变，前端不依赖 Python 内部结构。真正的耦合只有五处：
+
+| # | 耦合点 | 方向 | 后果 |
 |---|---|---|---|
-| 语义嵌入 | sentence-transformers（本地多语言模型） | transformers.js（ONNX/WASM，性能与模型覆盖差一档；量化模型无法保证 embedding 一致，需全量重建索引） | 高 |
-| 向量库 | ChromaDB `PersistentClient`（进程内嵌入式，`vector_search.py`） | Chroma JS SDK 仅为 HTTP client，必须外置 Chroma server；或换 LanceDB/sqlite-vec 重写 | 中-高 |
-| EPUB 解析 | ebooklib + BeautifulSoup（spine/TOC 回退/图片重写/文本抽取，`reader3.py`） | Node 库存在但整套摄取管线需带 fixture 语料做行为对等验证（EPUB2/3、CJK、畸形 TOC） | 高 |
-| 搜索偏移映射 | `search_service.py` 的 Unicode casefold + 仅限拉丁文的变音符剥离 + 偏移回映 | JS Unicode 细节差异会导致高亮/标注错位 | 中 |
+| C1 | **`data-testid` 契约** | 设计 → 后端测试 | Phase 1b 的 E2E 用什么选择器，决定 Phase 4 改布局时 E2E 是否整套报废。testid 必须**早于** 1b 写完 |
+| C2 | **标注锚定** | Phase 3 ↔ Phase 4B | Phase 3 改锚定依赖的**数据**（spine 指纹、章节内容 hash），Phase 4B 改锚定依赖的**宿主 DOM**（工具条、面板）。同期动两边出问题无法归因，而标注是用户产生的、错了不能重新生成的数据 |
+| C3 | **降级状态** | 后端 → 前端 | 指纹不匹配时 notes/索引分级降级，五个状态（设计规格 §6.4 的 DEG-S1–DEG-S5）**原型里一个都没有**。没有 UI 就等于静默失败 |
+| C4 | **API 形状演进** | 后端 → 前端 | Phase 3 给响应加字段。坚持**加法式演进**则前端永不阻塞；一旦改名或改语义，两条线立刻锁死 |
+| C5 | **阅读进度单一数据源** | 行为变更 | 三个消费方跨 4A 与 4B 两个阶段，必须先定义再分头消费 |
 
-当前真正的问题（零测试、零 CI、pickle 序列化、三处重复的 loader/unpickler、2400 行 server.py）**没有一个是换语言能解决的**。
+除此之外前后端**没有**硬依赖。这就是为什么下面的顺序可以让两条线大段并行。
 
-### 2.2 为什么前端迁 TypeScript
+> ⚠️ 本节的 C1–C5 是**耦合点**编号，与附录 A「性能」节的 C1–C5 是两套不相干的编号，别串。
 
-现有 ~5,800 行 vanilla JS 的病灶全部源于"无模块系统 + 无类型"：
+---
 
-- SSE 解析器在 `ai.js` 与 `library-chat.js` 复制两份
-- `escapeHtml()` 四处重复（ai.js / search.js / library-search.js / settings.js）
-- IndexedDB 样板在 `ai.js` 与 `settings.js` 重复
-- `annotations.js` 1,127 行巨石文件（CFI 解析 + 文本锚定 + 工具栏 UI + 笔记编辑器混杂）
-- `pagination.js`（336 行）为死代码；`library.css`/`ai.css` 疑似孤儿文件
-- reader.html / library.html 各含 1,000+ 行内联 CSS
+## 3. 开工前必须冻结的四份合同
 
-TS + ES modules + Vite 正好对症；构建产物仍是静态文件，FastAPI `StaticFiles` 挂载方式不变，部署零改动。
+四份合同都很便宜，但任何一份晚定，后面都是成建制返工。
 
-### 2.3 为什么暂不做 Electron/Tauri
+| # | 合同 | 内容在哪 | 冻结时点 |
+|---|---|---|---|
+| **合同 1** | `data-testid` | 命名与前缀方案：设计规格 §4；实测对账（134 个唯一 testid，**0 个合规**）：同 §4.1 | Phase 0.5 |
+| **合同 2** | Design token | 双层体系与全部取值：设计规格 §3。剩余两项待定见下 | Phase 4A.1 |
+| **合同 3** | API 形状 v1 | Phase 1a 的 42 路由契约测试即其可执行形式 | Phase 1a |
+| **合同 4** | 消息表 key | 英文为默认 locale（D-2）；key 命名建议 `{page}.{region}.{element}`，与 testid 同构便于对照。原型英文文案即 `en` 初值 | Phase 4A |
 
-- 本项目是自托管单用户工具，无分发需求；Python 后端无法消失，只能 PyInstaller sidecar，架构复杂度翻倍。
-- 包体瓶颈在 Python ML 栈（本机 venv 实测 ~1.1GB，Torch 单项 368MB），不在壳；Tauri 的小壳省不掉这块。
-- **将来若确需桌面分发，选 Electron 而非 Tauri**（Codex 修正意见，已采纳）：epub.js 的 iframe 渲染、Selection API、CFI 标注对浏览器引擎高度敏感，Tauri 在 macOS/Linux 用 WebKit 会把跨引擎差异打在阅读器最脆弱的部位；Electron 统一 Chromium 是刚需。
-- 近期体验替代方案：`reader3 launch` 命令（起服务 → 健康检查 → 打开 PWA/Chrome `--app` 无边框窗口），零成本获得 90% 桌面感。
+**合同 1 的顺序要点**：testid **先在原型里定名，再回贴现有 Jinja 模板**，不能反过来。理由见设计规格 §4.1。这是整套迁移的 strangler-fig 接缝——testid 是唯一横跨新旧两套实现的不变量。
 
-## 3. 分阶段实施计划
+**合同 2 尚未收口的两项**（其余已于 2026-08-16 并入设计规格 §3）：
 
-> 阶段的**先后关系、门槛与分支编号**见合流计划 §6–§9。本节只写每个阶段**做什么**。
+| 冲突 | 二选一 | 建议 | 落点 |
+|---|---|---|---|
+| 标注暗色变体 | 规格的 `--p-hl-*-dk` 四个显式值 vs 原型的 `color-mix(… 45%, transparent)` | 取显式值——`color-mix` 在旧 Safari 上要 fallback，而这是标注可读性 | Track D |
+| 原型的单层 token 名 | `--canvas` / `--surface` / `--text` / `--anno-*` / `--page-*` 映射到规格的两层 | 以规格的两层为准，一次性映射 | 4A.1 |
 
-### Phase 0 — 合同与止血
+> 这两项的**实测结论与收口方案**在前端计划的 WI-7 / WI-10 里（第一项实测后发现是 **alpha 问题不是颜色问题**，九处而非八处）。本表只持有「它们尚未冻结」这个顺序事实。
 
-评审补入的两个 P0 与三项便宜但会阻塞后面的前置工作。每项独立 PR。
+**合同 3 的规则**：Phase 2a / 2b 不得改变任何响应形状（纯重构，契约测试即证明）；Phase 3 只能**新增**字段，不得改名、不得改语义、不得改默认值。这是 expand–migrate–contract 的标准做法，也是两条线不互相阻塞的全部秘诀。
 
-- [ ] **P0-1**：`process_epub()` 里的 `shutil.rmtree(output_dir)` 会连同 `notes.json` 一起删除——改为写 staging 目录 + 校验 + 原子切换
-- [ ] **P0-2**：`pyproject.toml` 的 `"static/*"` 非递归，打出的 wheel 缺 `static/js` / `static/css` / vendor
-- [ ] **端口可配置**：`run_server()` 硬编码 `port=8123`，无 env / CLI 覆盖。加 `READER3_PORT` env + `--port` CLI（CLI 优先）。这在截图复核中已造成实际阻塞：为采集 classic UI 必须绕过 `reader3-server` 入口直接调 uvicorn。对 Phase 1b 的影响更直接——Playwright 要起自己的实例，固定端口会与开发者本地的 8123 冲突，CI 并发跑也会抢端口
-- [ ] **新增 `GET /api/health`**：Phase 1b 的 Playwright `webServer` 需要就绪探针，没有它只能轮询 HTML 页面，慢且易误判。两行代码，放在这里最省事（Phase 5 的 `reader3 launch` 直接复用）
-- [ ] **四个落后 JS 文件 IIFE 化**（`search.js` / `ai.js` / `settings.js` / `library-search.js`），`escapeHtml` 全局覆盖修正——见 B1
-- [ ] **`data-testid` 全量补齐**，命名与前缀方案见设计规格 §4，改名顺序「先原型、后模板」见合流计划 §4.1。规则写入 CI lint：**E2E 只允许 `data-testid` 与 ARIA role/name**，禁止 class 选择器、`nth-child`、层级结构选择器。契约是「重设计可任意改 class / 嵌套 / 标签，**不得改 testid**」
-- [ ] 事实性修复（**三项都归这里**，Phase 2 不再重复）：`.gitignore` 末尾遗留的 merge 冲突标记、`pyproject.toml` 版本号对齐 git tag、`ai_settings.example.json` 补齐 openai / openrouter provider。三项都只改常量与示例文件，不碰运行时行为，所以放在 Phase 0。**`max_retries` 不在此列**——删它或接通它都是行为变更，见 Phase 2
-- [ ] **删除死代码** `SearchIndex` / `BookIndex.from_book_pkl` / `SearchIndex.build_from_library`（零调用方，且是 A5 里那个带裸 `pickle.load` 的「第四处」）——先删再谈合并，否则 `book_store.py` 会把一个静默失败分支收编成现役设计。**只删这两个符号，`BookIndex` / `ChapterIndex` dataclass 是活的**
+---
 
-**验收**: 两个 P0 修复并人工 smoke；`--port` 与 `/api/health` 可用；testid 在原型与模板两侧一致且 lint 生效。
+## 4. 汇合点：为什么 Phase 3 必须在 Phase 4B 之前
+
+Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在标注锚定周围施工：Phase 3 改锚定**依赖的数据**，Phase 4B 改锚定**依赖的宿主 DOM**。两者同期进行时，"标注恢复到错误位置"这类问题**无法归因**。方向由两条论证定：
+
+1. **测试可信度**：先重写阅读器则标注 E2E 也随之重写，然后在一套刚出生、尚未被时间检验的测试下迁移用户数据。反过来则是在一套已经跑绿一段时间的 E2E 下迁移。这条要能兑现，前提是**真的等它跑绿一段时间**——见 §7 的 soak 门槛。
+2. **已点名的失败模式**：「等价性测试通过，但真实标注已经坏了」要求迁移验收必须跑真实 iframe 标注 E2E。那条 E2E 只有在阅读器 DOM 还没变的时候才是"真实"的基准。
+
+> **原本还有第三条「不可逆性」，已删除——它站不住。** Phase 3 迁移的是 `book.pkl → manifest.json + chapters.jsonl`，属**派生数据**：源头 `book.epub` 就在同一目录且不在变更范围内，`notes.json` / `ai_meta.json` / `chroma_db/` 同样不动；叠加计划已有的双写 + 回退读，回滚动作就是删掉两个新文件。Phase 3 是**可逆**的。
+>
+> **但"删掉两个新文件"是必要不充分的**，两点补充：(1) 删之前必须确认 `book.pkl` 存在且读得开——`--migrate` 原地读写、不删任何既有文件，正是这个前提的保证条款；(2) 一旦走到 Phase 3 里"稳定一个大版本后移除 pickle 写入路径"那一步，pkl 不再新增，此后新处理的书**没有可回退的对象**，回滚动作变成「按 `book.epub` 重新摄取」——而摄取路径会 `rmtree`，所以那时的回滚同样受"原地"约束。可逆性是有保质期的，别把它当成永久属性。写入顺序本身的保证见 §6 Phase 3 的「两文件提交协议」。
+>
+> 这条是 2026-08-16 eng-review 里 Codex 反向挑战本排序时暴露的：它据此主张把 Phase 3 挪到 4B 之后，前提被源码核验证伪，**排序维持不变，但论据换成上面两条**。
+>
+> 辩论的副产品是一条真的不可逆风险，与格式无关：`reader3.py` 在写入前 `shutil.rmtree(output_dir)`，而 `notes.json` / `ai_meta.json` / `chroma_db/` 全在 `output_dir` 里。因此 **`reader3 --migrate` 必须原地读写，禁止复用摄取路径**——已写进 §6 Phase 3 的验收。
+
+**但这不意味着前端要干等**——Phase 4A 完全不碰 `annotations.js` 与 `reader.html`，可与后端线全程并行。
+
+---
+
+## 5. 采用的工程实践
+
+| 实践 | 在本项目的落点 |
+|---|---|
+| Contract-first | §3 的四份合同先于任何实现 |
+| Characterization tests before refactor | Phase 1a/1b 先固化现状行为，再动结构 |
+| Strangler fig（逐页替换） | Phase 4 按页垂直切片，testid 作为跨新旧的不变量 |
+| Branch by abstraction | `book_store.py` 的粒度接口先定契约，pkl / JSONL 两套实现藏在后面 |
+| Expand–migrate–contract | API 加法式演进（合同 3）；存储双写 + 回退读 + `--migrate` |
+| 脆弱子系统一次只动一个变量 | Phase 3 与 Phase 4B 严格串行（§4） |
+| 垂直切片优于水平分层 | 每页一个 PR 含 markup + TS + CSS，而不是"先全站改 CSS 再全站改 JS" |
+
+---
+
+## 6. 分阶段实施计划
+
+本节同时持有每个阶段**做什么**与**怎么分解、谁能并行**。门槛在 §7，依赖图在 §9.1。
+
+### Phase 0 —— 合同与止血（目标：一周内，每项独立 PR）
+
+评审补入的两个 P0 与几项便宜但会阻塞后面的前置工作。每项独立 PR。
+
+| 编号 | 内容 |
+|---|---|
+| 0.1 | P0-1：`process_epub()` 的 `shutil.rmtree` 会连 `notes.json` 一起删 |
+| 0.2 | P0-2：wheel 打包漏 `static/js` / `static/css` / vendor |
+| 0.3 | `--port` / `READER3_PORT` ＋ 新增 `GET /api/health` |
+| 0.4 | 四个落后 JS 文件 IIFE 化，`escapeHtml` 全局覆盖修正 |
+| 0.5 | **testid 定名：先改原型，再回贴模板**；规则写入 CI lint（**两条不同的 lint**，见下） |
+| 0.6 | 事实性修复：`.gitignore` 冲突标记、版本号、`ai_settings.example.json` |
+| 0.7 | 删除死代码 `SearchIndex` / `BookIndex.from_book_pkl` / `SearchIndex.build_from_library`（A5 的「第四处」），使 `book_store.py` 的合并范围收敛到三处 |
+| 0.8 | **token 悬空引用 lint**：`var(--x)` 里的 `x` 必须有定义（与 0.5 的两条 lint 是**第三条**，管的是 CSS 变量不是 testid） |
+
+各项的具体内容：
+
+- **0.1 P0-1**：`process_epub()` 里的 `shutil.rmtree(output_dir)` 会连同 `notes.json` 一起删除——改为写 staging 目录 + 校验 + 原子切换
+- **0.2 P0-2**：`pyproject.toml` 的 `"static/*"` 非递归，打出的 wheel 缺 `static/js` / `static/css` / vendor
+- **0.3 端口可配置 ＋ 健康探针**：`run_server()` 硬编码 `port=8123`，无 env / CLI 覆盖。加 `READER3_PORT` env + `--port` CLI（CLI 优先）。这在截图复核中已造成实际阻塞：为采集 classic UI 必须绕过 `reader3-server` 入口直接调 uvicorn。对 Phase 1b 的影响更直接——Playwright 要起自己的实例，固定端口会与开发者本地的 8123 冲突，CI 并发跑也会抢端口。
+  同时新增 **`GET /api/health`**：Phase 1b 的 Playwright 需要就绪探针，没有它只能轮询 HTML 页面，慢且易误判。两行代码，放在这里最省事（Phase 5 的 `reader3 launch` 直接复用）
+- **0.4 四个落后 JS 文件 IIFE 化**（`search.js` / `ai.js` / `settings.js` / `library-search.js`），`escapeHtml` 全局覆盖修正——见附录 A 的 B1
+- **0.5 `data-testid` 全量补齐**，命名与前缀方案见设计规格 §4，改名顺序「先原型、后模板」见设计规格 §4.1。规则写入 CI lint：**E2E 只允许 `data-testid` 与 ARIA role/name**，禁止 class 选择器、`nth-child`、层级结构选择器。契约是「重设计可任意改 class / 嵌套 / 标签，**不得改 testid**」
+- **0.6 事实性修复**（**三项都归这里**，Phase 2 不再重复）：`.gitignore` 末尾遗留的 merge 冲突标记、`pyproject.toml` 版本号对齐 git tag、`ai_settings.example.json` 补齐 openai / openrouter provider。三项都只改常量与示例文件，不碰运行时行为，所以放在 Phase 0。**`max_retries` 不在此列**——删它或接通它都是行为变更，见 Phase 2
+- **0.7 删除死代码** `SearchIndex` / `BookIndex.from_book_pkl` / `SearchIndex.build_from_library`（零调用方，且是附录 A 的 A5 里那个带裸 `pickle.load` 的「第四处」）——先删再谈合并，否则 `book_store.py` 会把一个静默失败分支收编成现役设计。**只删这两个符号，`BookIndex` / `ChapterIndex` dataclass 是活的**
+- **0.8 token 悬空引用 lint**，见下方专门说明
+
+> **0.5 是两条 lint，不是一条。** 计划此前只写了前者，后者一直没有归宿：
+>
+> | lint | 约束谁 | 规则 |
+> |---|---|---|
+> | **选择器 lint** | 测试代码（`tests/e2e/`） | 只允许 `data-testid` 与 ARIA role/name；禁止 class 选择器、`nth-child`、层级结构选择器 |
+> | **命名 lint** | 模板与原型（`templates/*.html`、`designs/reader-pro-next/`） | 每个 `data-testid` 必须匹配**下方的 canonical 正则**（前缀方案见设计规格 §4） |
+>
+> 只有前者不足以保住契约：选择器 lint 全绿，模板里照样可以新增 `reader-search-hit` 这种名字，命名方案随即失守。命名 lint 必须**显式点名设计规格 §4.1 那 24 个带 `reader-` / `library-` 前缀的 testid**——它们形似合规，批量改名时最容易被当成「已经对了」跳过，而正则会把它们判为不合规，正是要的效果。134 个全部需要改名，lint 的初始状态就是「134 条违规」，改完归零。
+
+#### canonical 正则（唯一真相源）
+
+配置 lint 时**从这个代码块复制，不要从上面的表格里复制**：Markdown 表格单元格内的 `|` 必须写成 `\|`，直接复制出去会得到 `^(lib\|rd\|set)-…`，它匹配的是**字面的反斜杠加竖线**，永远不会命中任何 testid——lint 会全绿，而命名方案毫无约束。
+
+```regex
+^(?:lib|rd|set)-[a-z0-9]+(?:-[a-z0-9]+)*$
+```
+
+改用非捕获组 `(?:…)` 是因为这里只做匹配、不取分组；捕获组在部分 lint 工具里会被当作提取意图。
+
+> **0.8 为什么值得单列一条。** CSS 自定义属性引用不存在的名字**不报错**——`var(--typo)` 静默回落到继承值，页面照常渲染，只是颜色变成了别的东西。降级横幅正是最不能出这个错的地方（长得像普通提示 = 降级没被看见）。设计规格里实测到过三处：§6.4 引用的 `--r3-warn` / `--r3-danger` 从未定义（Codex 复审 #8），§6.2 引用的 `--r3-sidebar-w` / `--r3-right-w` 从未定义，`--r3-text-quiet` 只在三个阅读主题里被赋值、`:root` 无定义。**三处都已在 007 修掉**，但没有 lint 就会再长出来。
+>
+> 实现约十行：扫 `designs/reader-pro-next/`、`static/css/`、`templates/*.html` 与设计规格里的 CSS 块，收集所有 `--x:` 定义与所有 `var(--x)` 引用，求差集。定义在别处（如浏览器内置或第三方）的走白名单。
+
+**验收**: 两个 P0 修复并人工 smoke；`--port` 与 `/api/health` 可用；testid 在原型与模板两侧一致且三条 lint 生效。完整门槛见 §7。
 
 > testid 必须早于 Phase 1b 动笔。本计划已把「Phase 1b 的标注 E2E 在主 CI 绿灯」写为 Phase 4 的前置条件，却没有规定 E2E 用什么定位元素；若用 class 或结构选择器，Phase 4 的任何布局改动都会推翻整套 E2E。这是全篇最便宜也最容易漏的一条。
 
-### Phase 1 — 建立安全网（最高优先级，其他阶段的前置条件）
+### 并行区间（Phase 0 之后）
 
-任何迁移动作之前先做。没有特征化测试，迁移成本"不可知"。
+三条线**开工时**彼此不阻塞——但它们**不是各自跑到底**：三条线全都是 Phase 3 的前置，Phase 3 是一个三路汇合点。完整依赖图见 §9.1。
+
+- **线 1 后端**：`1a → 2a → 2b → 3`。1a 是全局阻塞（也在这里冻结合同 3 与性能基准）。
+- **线 2 E2E**：`1b`。依赖 0.3（端口/健康探针）与 0.5（testid）。用例清单见 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md)——**必须含写路径**，否则 4B.1 的「零改动全绿」门槛是空的。
+  **1b 阻塞两处，不是一处**：直接阻塞 4A，同时通过 §7 的 soak 门槛阻塞 Phase 3。它不阻塞 2a / 2b，但"不阻塞后端"是错的说法——2b 做完之后，Phase 3 还要等 1b 攒够 10 次连绿、跨度 5 个工作日。
+- **线 3 Track D 设计**：产出 = 设计规格 §6.4 的 DEG-S1–DEG-S5 落进原型（本轨最大的一块）＋ loading 骨架屏 ＋ §3 合同 2 剩余两项。任务清单见 [前端计划](../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) 的 WI-1 – WI-8。
+  **Track D 阻塞 Phase 3**：Phase 3 要求 DEG-S1–DEG-S4 在 UI 里可见（见下方 Phase 3 验收），DEG-S1–DEG-S5 的原型是 Track D 的产出。
+  **§4.1 的 testid 批量改名不属于本轨，属于 0.5。** 此处原先把它记成 Track D 的产出并注明「喂给 0.5」，是**重复记账**——0.5 的验收本来就是「134 条违规归零」，而它写死的顺序「先改原型、再回贴模板」里，改原型那一半就是同一件事。两处都声称拥有它，会读出一个假依赖环：0.5 → Phase 0 完成 → Track D → 0.5。Track D 与 testid 的真实关系只有一条：**本轨新建的元素按 canonical 正则命名**。
+
+> **这三条线为什么值得单独盯**：单人维护者按状态切换时，最容易发生的失败是"后端一路推到 Phase 3 门口，才发现 1b 的 soak 计时还没开始、DEG-S1–DEG-S5 的原型还没画"。soak 是**日历时间**，补不回来——1b 必须尽早开始连绿，不能留到 2b 做完再启动。
+
+> **单人维护者说明**：这里的"并行"不是要同时开三个窗口，而是三条线之间无阻塞，可按状态自由切换、随时暂停。
+
+### Phase 1 —— 建立安全网（最高优先级，其他阶段的前置条件）
+
+任何迁移动作之前先做。没有特征化测试，迁移成本"不可知"。拆为 **1a**（Python 单测 + CI，全局阻塞）与 **1b**（Playwright E2E，仅阻塞 4A 与经 soak 阻塞 Phase 3）。
+
+**Phase 1a**
 
 - [ ] 引入 pytest + dev 依赖组（`uv add --dev pytest ruff mypy`）
 - [ ] 单测覆盖：EPUB 摄取（`process_epub`）、JSON 持久化（notes/collections/conversations）、Unicode 搜索偏移映射（`_normalize_with_map`）、AI 路由（`choose_routing`/`estimate_tokens`）、API 契约（FastAPI TestClient）
 - [ ] Fixture EPUB 语料：EPUB2 / EPUB3 / CJK 内容 / 变音符 / 含图片 / 畸形或缺失 TOC / 空书
-- [ ] Playwright E2E（= Phase 1b）：书库导航、epub.js 渲染、iframe 内标注**创建与恢复**、AI SSE 流式。**完整用例清单见 [`tasks/009-e2e-annotations.md`](tasks/009-e2e-annotations.md)**——含写路径（四类型创建 / 改色 / 删除 / 笔记保存）、K1–K6 与 S1–S4 的正向证据，以及「断言刷新后高亮回到同一段文字」这条统一收尾
-- [ ] ruff + mypy 配置写入 `pyproject.toml`
-- [ ] GitHub Actions：lint + type-check + pytest（Playwright 可 nightly）
+- [ ] ruff + mypy 配置写入 `pyproject.toml`；异常处理三级规则（见附录 A 的 B2）
+- [ ] GitHub Actions：lint + type-check + pytest
+- [ ] **性能基准记录在案**，含「首页冷启动 TTFB × 书库规模」；需要 20 本规模的合成书库 fixture
 
-**验收**: CI 绿灯成为合并门槛；核心路径（摄取/搜索/笔记/路由）有回归保护。
+**Phase 1b**
 
-### Phase 2 — Python 内部重构（不改行为）
+- [ ] Playwright E2E：书库导航、epub.js 渲染、iframe 内标注**创建与恢复**、AI SSE 流式。**完整用例清单见 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md)**——含写路径（四类型创建 / 改色 / 删除 / 笔记保存）、K1–K6 与 DEG-S1–DEG-S4 的正向证据，以及「断言刷新后高亮回到同一段文字」这条统一收尾
+- [ ] E2E 必须在**主 CI** 里跑，不得放 nightly——Phase 4 的前置条件依赖它
+
+**验收**: CI 绿灯成为合并门槛；核心路径（摄取/搜索/笔记/路由）有回归保护。完整门槛见 §7。
+
+### Phase 2 —— Python 内部重构（不改行为）
+
+拆为 **2a**（结构，纯重构）与 **2b**（性能）。**性能工作单列 2b**：塞进 2a 会让结构变化与缓存算法变化混淆；塞进 Phase 3 会让序列化格式、加载策略、搜索性能三者同变，等价性证明失去可信度。
+
+**Phase 2a**
 
 - [ ] `web/server.py`（~2,400 行）拆分为 FastAPI routers 六组：
   - `routers/library.py`（library + collections + stats）
@@ -113,18 +278,24 @@ TS + ES modules + Vite 正好对症；构建产物仍是静态文件，FastAPI `
   - `routers/search.py`（搜索 + 语义索引）
   - `routers/ai.py`（对话 + RAG + 摘要 + 问答）
   - `routers/settings.py`
-- [ ] 新建共享 `book_store.py`：合并 `server.py` / `search_service.py` / `vector_search.py` 三处重复的 `_Reader3Unpickler` 与 `lru_cache` loader（消除同一本书 3 份内存缓存与漂移风险）。粒度接口与「为什么是三处不是四处」见 A5
+- [ ] 新建共享 `book_store.py`：合并 `server.py` / `search_service.py` / `vector_search.py` 三处重复的 `_Reader3Unpickler` 与 `lru_cache` loader（消除同一本书 3 份内存缓存与漂移风险）。粒度接口与「为什么是三处不是四处」见附录 A 的 A5
   - **同时解决缓存失效**：三处 `lru_cache` 的 key 都不含 mtime，重新处理一本书之后服务端仍然供旧 `Book`。Phase 0 的 P0-1 只保住了用户数据，**没有**让缓存知道盘上的东西变了；这一项在此之前无家可归，现在归 `book_store.py`
 - [ ] chromadb + sentence-transformers 移入可选依赖组 `[project.optional-dependencies] semantic`（与 README"语义依赖可选"的描述对齐）
 - [ ] 修复 `ai/config.py` 设置写入改为原子替换（`.tmp` + `os.replace`，与 notes/collections 一致）
-- [ ] **notes 乐观并发控制**：notes 是 load→modify→save 全覆盖，`os.replace` 只保证单次写入原子，不防两个并发请求互相覆盖——自托管单用户开两个标签页即可触发。加 revision/ETag（或 per-file lock），冲突时返回 409 而非静默丢写。前端侧的冲突 UI 是设计规格 §6.4 的 **S5**
+- [ ] **notes 乐观并发控制**：notes 是 load→modify→save 全覆盖，`os.replace` 只保证单次写入原子，不防两个并发请求互相覆盖——自托管单用户开两个标签页即可触发。加 revision/ETag（或 per-file lock），冲突时返回 409 而非静默丢写。前端侧的冲突 UI 是设计规格 §6.4 的 **DEG-S5**
 - [ ] **`max_retries` 定性**：这个配置项能在设置页填、能存进 `ai_settings.json`、能从 `GET /api/settings` 读回、`settings.js` 也在渲染它——但**全链路没有任何 provider 消费它**。删掉它还是接通它，二选一。留在 Phase 2 而不是 Phase 0，是因为两种选法都是行为变更：接通改的是重试语义，删掉改的是设置页可见字段
 - [ ] 路由启发式修正：`estimate_tokens()` 对 CJK 按 ~1.5 字符/token 估算；Anthropic 默认上下文窗口 1M → 200k
 - [ ] 修订 `CLAUDE.md` § Constitution Principles（原 `.specify/memory/constitution.md` 已随 spec-kit 工具链于 2026-08-16 删除，CLAUDE.md 的摘要版成为唯一权威）：保留简单性原则，修订已过时的实现禁令（"除 FastAPI/BeautifulSoup 外不加抽象"已不能描述含 Chroma、5 provider、异步队列、42 路由的系统）；"测试可选"条款删除
 
-**验收**: Phase 1 测试全绿（行为不变的证明）；`server.py` 每个 router < 500 行。
+**Phase 2b**
 
-### Phase 3 — 存储去 pickle 化
+- [ ] C1 跨库搜索缓存颠簸（weighted LRU，key 纳入 mtime/指纹）
+- [ ] C2 `_normalize_with_map()` 换 `array('I')`，须做差分测试
+- [ ] C5 书库首页只读元数据，不反序列化正文——**落点待裁决**，见附录 B 文末 UNRESOLVED DECISIONS
+
+**验收**: Phase 1 测试全绿（行为不变的证明）；`server.py` 每个 router < 500 行。完整门槛见 §7。
+
+### Phase 3 —— 存储去 pickle 化
 
 pickle 是实际的迁移阻塞点与安全隐患（`pickle.load` 对不可信输入等于任意代码执行；现有 `_Reader3Unpickler` 只是兼容 shim，非受限反序列化器）。
 
@@ -143,13 +314,14 @@ pickle 是实际的迁移阻塞点与安全隐患（`pickle.load` 对不可信�
 - [ ] `book_store.py` 封装格式判断，调用方无感知
 - [ ] **落地下方的「两文件提交协议」与「读取状态机」**——`manifest.json` + `chapters.jsonl` 是一次**两文件提交**，没有协议就会出现 manifest 指向半写 chapters 的状态
 - [ ] 提供 `reader3 --migrate <book_id>` 将存量书库转换为新格式。
-      **硬约束：`--migrate` 原地读写，禁止复用摄取路径。** 摄取路径在写入任何内容前 `shutil.rmtree(output_dir)`（见 A1），而 `notes.json` / `ai_meta.json` / `chroma_db/` 全在 `output_dir` 里——`--migrate` 一旦借道摄取，就会在"迁移成功"的同时抹掉用户标注、AI 会话与向量索引。实现上 `--migrate` 只允许：读 `book.pkl`（或 `book.epub`）→ 写 `manifest.json` + `chapters.jsonl` → 校验 → 结束，全程不删任何既有文件
+      **硬约束：`--migrate` 原地读写，禁止复用摄取路径。** 摄取路径在写入任何内容前 `shutil.rmtree(output_dir)`（见附录 A 的 A1），而 `notes.json` / `ai_meta.json` / `chroma_db/` 全在 `output_dir` 里——`--migrate` 一旦借道摄取，就会在"迁移成功"的同时抹掉用户标注、AI 会话与向量索引。实现上 `--migrate` 只允许：读 `book.pkl`（或 `book.epub`）→ 写 `manifest.json` + `chapters.jsonl` → 校验 → 结束，全程不删任何既有文件
+- [ ] Chroma 索引重建改为 **generation swap**（见附录 A「其余未讨论但会咬人的问题」）
 - [ ] 稳定一个大版本后移除 pickle 写入路径
-- [ ] **降级状态在 UI 里可见**：A1 的分级降级（notes stale / 索引 stale）与 A2 的 pickle 回退告警一旦无 UI，就是静默的用户数据损坏。设计规格 §6.4 的 **S1–S4** 必须在本阶段可见——哪怕先落成现有 Jinja 模板里的朴素横幅，Phase 4 再按规格重做
+- [ ] **降级状态在 UI 里可见**：A1 的分级降级（notes stale / 索引 stale）与 A2 的 pickle 回退告警一旦无 UI，就是静默的用户数据损坏。设计规格 §6.4 的 **DEG-S1–DEG-S4** 必须在本阶段可见——哪怕先落成现有 Jinja 模板里的朴素横幅，Phase 4 再按规格重做
 
 #### 两文件提交协议（canonical，全仓库唯一定义处）
 
-> **本小节是 `manifest.json` + `chapters.jsonl` 写入顺序的唯一定义处。** 合流计划 §4 的回滚条目、A2 的 pickle 回退条款只引用本小节，不复述步骤。
+> **本小节是 `manifest.json` + `chapters.jsonl` 写入顺序的唯一定义处。** §4 的回滚条目、附录 A 中 A2 的 pickle 回退条款只引用本小节，不复述步骤。
 
 把一本书的存储从一个文件（`book.pkl`）拆成两个，就引入了一个 pickle 时代不存在的失败态：**manifest 已落盘、chapters 只写了一半**。此时 `manifest.json` 里的 `offset_bytes` / `length_bytes` 指向文件尾之后，`load_chapter()` seek 过去读到的是截断数据或空串——而 `manifest.json` 本身格式完好，任何「文件在不在 / JSON 解不解得开」的检查都会判它健康。摄取、`--migrate`、未来任何重写存储的路径都必须走同一套顺序：
 
@@ -190,79 +362,225 @@ pickle 是实际的迁移阻塞点与安全隐患（`pickle.load` 对不可信�
 | 状态 | 判定 | 处置 |
 |---|---|---|
 | `missing` | `manifest.json` 不存在 | 读 `book.pkl`。这是双写期与未迁移存量书的**正常**状态，不告警 |
-| `corrupt` | manifest 存在，但 JSON 解不开 / 格式版本不认识 / `sha256` 或 `size_bytes` 与 `chapters.jsonl` 对不上 | **大声失败**：抛错、写日志、UI 出 S1–S4 横幅。**不静默回退 pkl** |
+| `corrupt` | manifest 存在，但 JSON 解不开 / 格式版本不认识 / `sha256` 或 `size_bytes` 与 `chapters.jsonl` 对不上 | **大声失败**：抛错、写日志、UI 出 DEG-S1–DEG-S4 横幅。**不静默回退 pkl** |
 | `valid` | manifest 存在且自洽 | 读新格式 |
 
 `corrupt` 之所以不回退，是因为上面的提交协议已经排掉了"写坏"这条路径——协议走完还 corrupt，意味着磁盘损坏、外部程序改文件、或者协议本身有 bug。这三种都需要人看见。静默回退 pkl 只会把它们藏到 pkl 也被删掉的那一天。
 
-这同时消掉了 A2 与本阶段的一处表面矛盾：A2 说 pickle 回退"默认关闭，需显式 `READER3_ALLOW_PICKLE=1`"，本阶段又说"读取优先新格式，回退 pkl"。两句话说的不是同一个时间窗——
+这同时消掉了附录 A 中 A2 与本阶段的一处表面矛盾：A2 说 pickle 回退"默认关闭，需显式 `READER3_ALLOW_PICKLE=1`"，本阶段又说"读取优先新格式，回退 pkl"。两句话说的不是同一个时间窗——
 
 - **双写期**（移除 pkl 写入路径之前）：pkl 是与新格式**同期产出的对等产物**，不是遗留数据。`missing` 走 pkl 属正常流程，**不需要环境变量**。
 - **停写 pkl 之后**：目录里还剩的 pkl 才是真正的遗留数据，`missing` 走 pkl 才需要 `READER3_ALLOW_PICKLE=1` 显式开启并每次启动告警。
 
 **`--migrate` 不得改变 `book_fingerprint()`。** A1 的指纹涵盖原 EPUB hash、spine href/order、每个 XHTML 原始内容 hash、解析器版本——纯粹的存储格式转换一样都不碰。若迁移后指纹变了，A1 的分级降级会立刻生效，**全库用户标注一次性判 stale**。因此 Phase 3 的验收里那条"`notes.json` 三者字节不变"的测试要再加一句断言：迁移前后 `book_fingerprint(book_id)` 相等。
 
-**进入条件**: Phase 2b 完成 **且** 1b 的标注 E2E 在主 CI 连绿 ≥10 次、跨度 ≥5 个工作日（soak 门槛，见合流计划 §7）。
+**进入条件**: Phase 2b 完成 **且** Track D 完成 **且** 1b 的标注 E2E 在主 CI 连绿 ≥10 次、跨度 ≥5 个工作日（soak 门槛，见 §7）。三路汇合，见 §9.1。
 
-**验收**: 新处理的书完全不依赖 pickle 即可阅读/搜索/标注；存量书可一键迁移；**`--migrate` 原地读写，有一条测试证明迁移后 `notes.json` / `ai_meta.json` / `chroma_db/` 三者字节不变、且 `book_fingerprint(book_id)` 不变**；**有一条崩溃注入测试**：在提交协议第 7 步之后、第 8 步之前中断，重启后该书仍能正常打开（状态判为 `missing`，走 pkl），且下一次迁移能干净地重跑；**重写整本书的路径（非 `--migrate`）另需覆盖「两条协议缺口」那两条**——回滚是 rename 不是 copy（断言 inode）、中断后不留下新产物挨着旧 marker；S1–S4 在当时的 UI 里可见；**并跑至少一条真实 iframe 标注迁移 E2E**（理由见下文「最可能的失败模式」）。
+**验收**: 新处理的书完全不依赖 pickle 即可阅读/搜索/标注；存量书可一键迁移；**`--migrate` 原地读写，有一条测试证明迁移后 `notes.json` / `ai_meta.json` / `chroma_db/` 三者字节不变、且 `book_fingerprint(book_id)` 不变**；**有一条崩溃注入测试**：在提交协议第 7 步之后、第 8 步之前中断，重启后该书仍能正常打开（状态判为 `missing`，走 pkl），且下一次迁移能干净地重跑；**重写整本书的路径（非 `--migrate`）另需覆盖「两条协议缺口」那两条**——回滚是 rename 不是 copy（断言 inode）、中断后不留下新产物挨着旧 marker；DEG-S1–DEG-S4 在当时的 UI 里可见；**并跑至少一条真实 iframe 标注迁移 E2E**（理由见附录 A 的「最可能的失败模式」）。
 
-### Phase 4 — 前端 TypeScript 化（增量，非大爆炸）
+### Phase 4 —— 前端 TypeScript 化（增量，非大爆炸）
 
-> **两个前提**：(1) 本阶段与前端重设计是**同一块地**，CSS 与 markup 一次到位，不做两遍；(2) 阶段拆为 4A（底座 + 非阅读页）与 4B（阅读器），拆法与顺序见合流计划 §6。**Phase 3 必须早于 4B**。
+> **两个前提**：(1) 本阶段与前端重设计是**同一块地**，CSS 与 markup 一次到位，不做两遍；(2) 阶段拆为 4A（底座 + 非阅读页）与 4B（阅读器）。**Phase 3 必须早于 4B**（§4）。
 >
 > 计划原文隐含假设「UI 是完好的，只需 TS 化」——**该假设不成立**。`#font-settings-popup` 里 12 个控件（主题 ×4、字号 ±、行距 ±、字体 ×4）全部没有事件处理器，字号显示恒为 `17`、行距恒为 `1.9`；全仓库 `*.css` 对 `prefers-color-scheme` / `data-theme` 零命中，「夜间」主题没有可切换的对象。因此 Phase 4 除 TS 化之外还含**新功能**（阅读设置面板）。
 
-**工具链与底座**
+> **📦 本阶段的清单整体在前端计划里。** 工具链与底座、逐页垂直切片、`annotations.js` 八模块拆分、阅读设置面板、进度单一数据源、清理项——全部展开在
+> [`20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md`](../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md)
+> 的 `### WI-N:` 工作项里，每项带验收判据与测试矩阵。本节只持有**顺序**、**与后端打包耦合的两条**，以及范围边界。
 
-- [ ] 引入 Node LTS + `package.json` + Vite + 严格 `tsconfig`（`strict: true`），仅作为构建期工具
-- [ ] Vite 多页构建：`library` / `reader` / `settings` 三入口；产物输出到 `static/dist/`，Jinja 模板只换 `<script>` 引用
-- [ ] epub.js / JSZip 从 vendored 改为 npm 依赖（版本可追踪）
-- [ ] 双层 token 落地 + `data-theme` 主题基础设施 + `<head>` 内嵌同步 inline script 读 `localStorage` 并 stamp 主题，避免首屏闪白。现有 `--dedao-*` 降级为弃用别名，Phase 4 结束时删除
-- [ ] 共享模块：`api.ts`（fetch 封装 + 错误处理）、`sse.ts`（统一 SSE 解析器）、`escape.ts`、`idb.ts`（IndexedDB 封装）、`debug.ts`、`messages.ts`
-- [ ] 建立 `en` / `zh-CN` 类型化消息表（简单 TS 对象即可，无需 i18n 框架），替代硬编码中英混排。**英文为默认 locale**（决策 D-2）；消息表用于收敛现有中英混排，而非立刻交付双语
+#### Phase 4A —— 前端底座与非阅读页
 
-**逐页垂直切片**（由低风险到高风险；每页一个 PR 含 markup + TS + CSS）
+进入条件：`1b` 主 CI 绿灯。与 `2a / 2b / 3` 并行。
 
-- [ ] `settings` 页 —— 试点，无 JS 耦合，用来验证工具链与 testid 不变量
-- [ ] `library` 页（含 `library-search` / `library-chat`，chat 复用共享 `sse.ts` 消灭复制）**＋ 删除 Classic Library**：删除 `library_classic.html`、`READER3_LIBRARY_UI=classic` 分支及其未初始化的搜索表单（决策 D-4）
-- [ ] reader 面板类：`toolbar` / `toc-panel` / `notes-panel` / `search`
-- [ ] **最后**：`annotations.js` 与 `epub-renderer.js` 桥接层
+子阶段 **4A.0 → 4A.1 → 4A.3 → 4A.2 → 4A.4**（工具链 → token 与主题基础设施 → 共享模块 → settings 试点 → library ＋ 删除 Classic）。**每个子阶段做什么、验收什么，展开在
+[前端计划](../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) 的 WI-9 – WI-13 里**；本文只持有顺序与门槛（§7）。
 
-**`annotations.js` 的拆分**
+> **为什么把主题基础设施提前到 4A.1**：token 与 `data-theme` 是全站的，settings 与 library 也要用。放到最后意味着前两页先用旧色、再回头改一遍。拆开之后「主题**能力**」在 4A.1，「阅读主题**面板**」在 4B.3。
 
-先纯拆分不改逻辑，再逐个转 TS（B3）。⚠️ 原文写的 `anchoring` / `renderer` / `ui` 三分法**在代码面前不成立**——`getReaderContext()` 与四处 `/api/notes` 的 `fetch` 横跨 `AnnotationRenderer` 与 `AnnotationUI` 两个类，无法归入任何一边；且 `AnnotationUI` 单类就超过 ≤400 行上限。**实际划分见 [`tasks/014-ts-frontend-reader.md`](tasks/014-ts-frontend-reader.md)**，外壳与标注之间的六份契约见 [`annotation-host-contracts.md`](contracts/annotation-host-contracts.md)。
+> **每页切片的内部顺序**：markup（testid 已由 0.5 冻结）→ TS 模块 → 新 CSS，一个 PR 两个 commit。E2E 全程不改——它就是这次切换正确性的证明。
 
-**阅读设置面板（新增功能）**
+#### Phase 4B —— 阅读器
 
-- [ ] 四主题 × 字体 × 字号 × 行距，统一 `data-reading-theme` 契约：同时驱动 app chrome（semantic token）与 iframe 正文（epub.js `themes.override`）。**注入 iframe 的 CSS 属性范围以设计规格 §6.0「判定标准（canonical）」为准**——判据是**三重断言 A/B/C**（文本序列 ＋ body 结构签名 ＋ CFI 往返），本文不复述；`max-width` / `margin` / `text-align` / `font-size` / `line-height` 均在允许之列
-- [ ] 删除三款未授权且未打包的商业中文字体选项
+进入条件：**Phase 3 完成** 且 **4A.4 完成**（工具链已在两页上验证过）。
 
-**行为变更（不得混入设计工作）**
+四个子阶段 4B.1–4B.4 的任务展开在 [前端计划](../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) 的 WI-14 – WI-19。顺序上只有一条硬约束：**4B.1（`annotations.js` 拆分）必须在 4B.2（外壳重写）之前**——外壳重写会移动工具条 DOM，而工具条 UI 目前就长在 `annotations.js` 里；先拆分，外壳就只与一个有文档的模块边界打交道，而不是散落在 1127 行里的七个 `getElementById` 和一处隐式的 `position: fixed` 假设。
 
-- [ ] **阅读进度单一数据源**：实测同屏出现两个矛盾进度值（Notes 面板「已读到 26%」vs 页脚「当前阅读至 20%」），且打开纯封面 spine 0 时页脚显示「当前阅读至 100%」。收敛为单一数据源（epub.js location 计算），页脚 / Notes 面板 / 书库卡片读同一个值，封面等非正文 spine 项不计入分母
+外壳与标注之间只有六个接触面（K1–K6），**其中四条坏了不报错**。契约与验收见 [`annotation-host-contracts.md`](../20260817-frontend-ui-refactor/contracts/annotation-host-contracts.md)。
 
-**清理**
+#### 与后端耦合的两条（留在本计划）
 
-- [ ] 删除死代码：`js/pagination.js`、reader.html 中 `.book-content` 遗留 CSS、确认后删除孤儿 `library.css` / `ai.css`
-- [ ] 内联 CSS **按设计规格重写**（不是机械外移）：`library.html` 1075 行 + `reader.html` 1403 行内联 CSS 在重设计中本就要重写，先外移再重写等于做两遍。把 CSS 提取当作重设计的**产物**，不是它前面的独立任务
-- [ ] 清理 `annotations.js` 33 处 + `epub-renderer.js` 9 处 `console.log`，换成 `debug.ts` 分层
-- [ ] （可选）Vitest 覆盖共享模块与锚定逻辑
+- [ ] epub.js / JSZip 从 vendored 改为 npm 依赖后，`pyproject.toml` 的 `package-data` 必须跟着改——vendored 文件从 `static/js/vendor/` 换成 Vite 产物，0.2 修好的非递归 glob 会再次失配
+- [ ] Vite 产物 `static/dist/` **提交进 git**（决策：不在 CI 里现构建）。它是 wheel 内容测试的对象——`008-test-safety-net` 的打包测试要断言 `dist/` 进了 wheel
 
-**范围边界**：`reader.html` 的重设计**只覆盖外壳**（工具栏 / TOC / 笔记 / 搜索 / AI / 标注工具条 / 章节导航），**绝不触碰 epub.js iframe 内部 DOM**。理由与下文「最可能的失败模式」一致。完整判据见设计规格 §6.0。
+**范围边界**：`reader.html` 的重设计**只覆盖外壳**（工具栏 / TOC / 笔记 / 搜索 / AI / 标注工具条 / 章节导航），**绝不触碰 epub.js iframe 内部 DOM**。理由与附录 A 的「最可能的失败模式」一致。完整判据见设计规格 §6.0（三重断言 A/B/C）。
 
-**明确不做**: 不引入 React/Vue/Svelte——现有 UI 不需要客户端路由或全局 SPA 状态，TS 模块以小得多的架构扰动解决全部现存问题。
+**明确不做**: 不引入 React/Vue/Svelte——现有 UI 不需要客户端路由或全局 SPA 状态，TS 模块以小得多的架构扰动解决全部现存问题。**原型用 React 18 + 浏览器内 Babel，那是可执行规格的实现手段，不是生产选型**。
 
-**验收**: 无重复工具函数；`annotations` 拆为 ≤400 行的模块；每页切换后 E2E **零改动**全绿；Playwright 全绿。
+**验收**（本计划侧）: wheel 内容测试通过；每页切换后 E2E **零改动**全绿。其余验收见前端计划。
 
-### Phase 5 — 启动体验与（远期）桌面化
+### Phase 5 —— 启动体验与（远期）桌面化
 
-- [ ] 新增 `reader3 launch` 命令：起 FastAPI → 轮询健康检查 → 打开 PWA / Chrome `--app=http://127.0.0.1:8123` 窗口 / 默认浏览器 → 启动失败清晰报错（含端口冲突处理）
-- [ ] 添加 PWA manifest + service worker（可安装、独立窗口）
+**本计划侧（Python CLI）**
+
+- [ ] 新增 `reader3 launch` 命令：起 FastAPI → 轮询健康检查（复用 0.3 的 `/api/health`）→ 打开 PWA / Chrome `--app=http://127.0.0.1:8123` 窗口 / 默认浏览器 → 启动失败清晰报错（含端口冲突处理）
 - [ ] **仅当**确证有非技术用户需要安装包时：单平台 Electron PoC——PyInstaller Python sidecar、首次使用语义搜索时下载模型（不打包数百 MB 模型）、OS 应用数据目录（弃用仓库相对路径）、sidecar 生命周期/崩溃恢复、签名与公证
+
+**前端侧（在前端计划）**：PWA manifest + service worker（可安装、独立窗口、版本切换不撕裂）见
+[`plan-frontend-ui-refactor.md`](../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) 的 WI-20。
 
 **验收**: 双击/单命令即可进入阅读，无需手动起服务开浏览器。
 
-## 4. 明确不做的事（Non-goals）
+---
+
+## 7. 阶段门槛表
+
+| 阶段 | 进入条件 | 退出条件 |
+|---|---|---|
+| Phase 0 | — | P0-1/P0-2 修复并人工 smoke；`--port` 与 `/api/health` 可用；testid 在原型与模板两侧一致；**两条 lint 都在 CI 里生效**——选择器 lint（约束 `tests/e2e/`）与命名 lint（约束模板与原型，正则以 §6 步骤 0.5 的 **canonical 代码块**为准，违规数归零）；**0.8 的 token 悬空引用 lint 在 CI 里生效且为 0** |
+| Phase 1a | Phase 0 | CI 绿灯成为合并门槛；42 路由契约测试通过；**API v1 形状冻结**；性能基准记录在案 |
+| Phase 1b | 0.3 + 0.5 | **`baseline-1b` 组**在**主 CI**（非 nightly）绿灯；**用例覆盖写路径**（四类型创建 / 改色 / 删除 / 笔记保存，断言为刷新后回到同一段文字）；K2–K5 与 K1/K6 的**现状特征化**条各一条正向证据；连续 3 次全量运行零 flaky；其余组**用例写完并 review**，以 skip 形态存在。⚠️ K1/K6 的新行为与 DEG-S1–DEG-S4 的横幅**不在本阶段门槛内**——它们要到 4B.1 / Phase 3 / 4A.4 才存在，写进 1b 会形成依赖环。分组见 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) §0.5 |
+| Track D | Phase 0 | DEG-S1–DEG-S5 设计完成并回写设计规格 §6.4；合同 2 剩余两项收口；loading 骨架屏补齐 |
+| Phase 2a | 1a | 每个 router < 500 行；`book_store` **三处** loader 合并（第四处已作为死代码删除，见附录 A 的 A5）；**notes 乐观并发落地**；行为不变由 1a 证明 |
+| Phase 2b | 2a | 跨库搜索性能相对基准可量化改善；`_normalize_with_map` 差分测试通过 |
+| Phase 3 | 2b + Track D **且 soak 门槛达标**（三路汇合，见 §9.1） | 新书完全不依赖 pickle；存量可一键迁移；**`--migrate` 原地读写，不复用摄取路径**；**DEG-S1–DEG-S4 在当时的 UI 里可见**——即 **`acceptance-p3` 组解开 skip 并绿灯**（朴素横幅形态）；真实 iframe 标注迁移 E2E 通过 |
+| Phase 4A | 1b | wheel 内容测试通过；settings 与 library 切换后 `baseline-1b` **零改动**全绿；**4A.4 另需 `acceptance-4a4` 组解开 skip 并绿灯**（DEG-S1–DEG-S4 改版形态）；Classic 已删除 |
+| Phase 4B | Phase 3 **且** 4A.4 | 拆分后 `baseline-1b` 全绿；**4B.1 另需 `acceptance-4b1` 组解开 skip 并绿灯**（K1 响亮失败、K6 抛错——这两条行为本阶段才产生）；各模块 ≤400 行；依赖方向机器可验（`dependency-cruiser` 四条规则，见[前端计划](../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) 的 WI-14）；**iframe 内部改动不超出设计规格 §6.0 允许的范围**（判据以 §6.0「判定标准（canonical）」为准的**三重断言 A/B/C**，本表不复述）；**三个浮层过 `containingBlockAncestor() === null`，且工具条位置用矩形几何断言**（4B.2 硬门槛，K3）；**K1–K6 各有一条能失败的断言**；进度值全站一致 |
+| Phase 5 | 4B | 单命令进入阅读；PWA 版本切换不撕裂 |
+
+### soak 门槛（Phase 3 专用）
+
+§4 论证 1 的原话是「在一套**已经跑绿一段时间**的 E2E 下迁移」。这句话不量化就是空话——一套只跑过一次的 E2E 和一套跑绿两周的 E2E，保护力不是一个量级，而本仓库今天**零 CI 历史**。
+
+**Phase 3 开工前，`baseline-1b` 组必须在主 CI 上连续绿 ≥ 10 次，且跨度 ≥ 5 个工作日。**
+
+> 数的只是 `baseline-1b`。其余组在 Phase 3 之前尚未激活（它们测的行为还不存在），把它们算进来就会让 soak 门槛永远无法达标——分组定义见 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) §0.5。
+
+- 「连续」指中途任何一次红都清零重计——flaky 与 broken 在这里不做区分，一条会偶发失败的 E2E 当不了数据迁移的验收基准。
+- 跨度条款是为了逼出**时间维度**的不稳定（缓存、时区、依赖漂移、并发），这类问题在同一天连跑十次是照不出来的。
+- 这道门槛只卡 Phase 3。Phase 4A 不受影响，可继续并行推进。
+
+> 来源：2026-08-16 eng-review 的 Outside Voice。Codex 主张把 Phase 3 整体挪到 4B 之后，理由之一是「Phase 1 的测试尚无 CI 历史，保护力未经检验」。排序未采纳（见 §4），但这半句成立，转为本门槛。
+
+---
+
+## 8. 风险与对应
+
+| 风险 | 对应 |
+|---|---|
+| 迁移引入回归（尤其标注锚定与搜索高亮） | Phase 1 安全网先行；`annotations.js` 放在最后迁移 |
+| 存量书库 pkl 不兼容 | 双写 + 回退读取 + `--migrate` 命令，跨版本过渡 |
+| **有人直接把原型 React 代码搬进生产** | 翻译规则写死在 `designs/reader-pro-next/README.md`，并在原型显眼处标注其性质 |
+| **testid 定名拖到 1b 之后** | 头号返工源。0.5 是 Phase 0 的硬门槛，不得顺延 |
+| **Phase 3 与 4B 抢跑** | §4 的串行是硬约束；4B 的进入条件写死为"Phase 3 完成" |
+| **外壳重写静默打断标注** | K1–K6 各配一条**能失败**的断言，而不是断言"元素存在"。K3（`position: fixed` 被祖先 transform 击穿）与 K6（URL 回退解析出错章号）最隐蔽 |
+| **降级状态没有 UI** | 写成 Phase 3 的退出门槛，先用朴素横幅落到旧模板，Phase 4 再按设计重做 |
+| **API 悄悄改形状导致两条线互锁** | 合同 3 的加法式演进；契约测试是可执行的护栏 |
+| Vite 构建破坏"无构建即改即用"的开发体验 | `vite dev` 提供 HMR，比现状更好；产物提交策略已定（提交 dist，见附录 A 的 A3） |
+| Chroma 相似度换算假设（`1 − L2` clamp）与实际距离度量不符 | Phase 1 补一条针对已知语料的检索质量测试固化现状 |
+| **文档互相复述导致漂移** | 本文顶部的权威范围表；每条事实只有一个家；**任何文档都不写代码行号** |
+| 单人维护者时间碎片化 | 三条线开工时互不阻塞；每个子阶段独立可交付、可暂停。**但三条线都在 Phase 3 汇合**（§9.1），碎片化的代价会在那里一次性结算 |
+| **1b / Track D 被排到后端线之后** | 二者都是 Phase 3 的前置，且 1b 的 soak 是**日历时间**、补不回来。§9.1 把它们标为「Phase 0 一结束就动」 |
+
+---
+
+## 9. 里程碑与分支（唯一真相源）
+
+沿用 `{number}-{short-name}` 惯例。**这是全仓库分支编号的唯一定义处。** 拆分成前后端两份计划、又把后端两份合并成本文之后，**编号表仍然只有这一份**，前端计划引用本表、不另建编号。
+
+「归属」列指该分支的**任务展开写在哪个计划里**：**A** = 本文件夹 `20260816-tech-stack-migration/`；**B** = [`20260817-frontend-ui-refactor/`](../20260817-frontend-ui-refactor/README.md)。
+
+| 里程碑 | 内容 | 分支 | 归属 |
+|---|---|---|---|
+| M0 | Phase 0 合同与止血 | `007-hygiene-and-contracts` | A（0.4 / 0.5 / 0.8 同时是 B 的前置契约） |
+| M1 | Phase 1a 测试 + CI + API 冻结 | `008-test-safety-net` | A |
+| M1b | Phase 1b Playwright E2E | `009-e2e-annotations` | A（B 的测试矩阵引用其用例 ID） |
+| MD | Track D 设计补齐（仅改 `designs/` 与规格） | `010-design-degradation-states` | **B**（WI-1 – WI-8） |
+| M2 | Phase 2a + 2b | `011-backend-refactor` | A |
+| M3 | Phase 3 存储迁移 | `012-storage-format` | A |
+| M4a | Phase 4A 底座 + settings + library | `013-ts-frontend-shell` | **B**（WI-9 – WI-13） |
+| M4b | Phase 4B 阅读器 | `014-ts-frontend-reader` | **B**（WI-14 – WI-19） |
+| M5 | Phase 5 launch + PWA | `015-launch-experience` | A（`reader3 launch`）＋ **B**（PWA，WI-20） |
+
+M1b 与 MD 可与 M1/M2 交错推进；M4a 可与 M2/M3 交错推进；**M3 与 M4b 严格串行**。
+
+**后端分支**的任务清单放在本文件夹的 `tasks/{分支名}.md`，不写进本文。今天存在三个：
+[`007-hygiene-and-contracts.md`](./tasks/007-hygiene-and-contracts.md)、
+[`008-test-safety-net.md`](./tasks/008-test-safety-net.md)、
+[`009-e2e-annotations.md`](./tasks/009-e2e-annotations.md)。
+
+**前端分支（010 / 013 / 014 与 015 的 PWA 部分）不再有独立任务文件**——它们的工作项以
+`### WI-N:` 的形式直接写在 [前端计划正文](../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) 里，
+这样 `/tdd-guardian:workflow` 能把整份计划当成单一输入来跑。
+
+其余三个（011 / 012 / 015 的后端部分）**故意还没写**。评审第 9 条要求补齐骨架，
+处置方式是**领先一个分支即时补**，不是现在一次写完：骨架的价值来自它写下的
+事实（哪些代码还在、哪些已经被上一个分支改掉了），而 011 的事实要等 008 落地才成立。
+提前写只会得到一份开工时已经过期的清单。开某个分支前补它自己那份。
+
+> **「领先一个分支」按依赖顺序数，不按编号顺序数。** Track D（010）先于 011 成文，是因为
+> §9.1 把 Track D 与 1b 标为「Phase 0 一结束就动」——它们是 Phase 3 的前置，
+> 而 1b 那份等待是 soak 的日历时间。另外「事实会过期」这条理由对 Track D 恰好不成立：
+> 它只改 `designs/` 与设计规格，不读一行生产代码，它的事实不随 007 / 008 漂移。
+
+### 9.1 依赖图（canonical）
+
+§6「并行区间」讲的是**能同时开工的三条线**，本表讲的是**每个阶段真正等谁**。两者视角不同，冲突时以本表为准。
+
+| 阶段 | 前置（全部满足才能进） | 它阻塞谁 |
+|---|---|---|
+| Phase 0 | — | 全部 |
+| Phase 1a | 0 | 2a |
+| Phase 1b | 0.3 + 0.5 | 4A；**Phase 3**（经 soak 门槛） |
+| Track D | 0 | **Phase 3**（DEG-S1–DEG-S5 原型） |
+| Phase 2a | 1a | 2b |
+| Phase 2b | 2a | Phase 3 |
+| **Phase 3** | **2b ＋ Track D ＋ 1b 的 soak** ——三路汇合 | 4B |
+| Phase 4A | 1b | 4B（其中 4A.4 项） |
+| Phase 4B | Phase 3 ＋ 4A.4 | 5 |
+| Phase 5 | 4B | — |
+
+关键路径：`0 → 1a → 2a → 2b → 3 → 4B → 5`。1b 与 Track D 不在关键路径上，**但它们的完成时间必须早于 2b 结束**，否则 Phase 3 干等——而 1b 那份等待是 soak 的日历时间，无法压缩。结论是：**1b 与 Track D 要在 Phase 0 一结束就动，不能排到 2a/2b 之后**。
+
+---
+
+## 10. 决策依据
+
+### 10.1 为什么后端留在 Python
+
+核心价值链三个环节 Python 生态强绑定：
+
+| 能力 | 现状 | TS 替代 | 迁移代价 |
+|---|---|---|---|
+| 语义嵌入 | sentence-transformers（本地多语言模型） | transformers.js（ONNX/WASM，性能与模型覆盖差一档；量化模型无法保证 embedding 一致，需全量重建索引） | 高 |
+| 向量库 | ChromaDB `PersistentClient`（进程内嵌入式，`vector_search.py`） | Chroma JS SDK 仅为 HTTP client，必须外置 Chroma server；或换 LanceDB/sqlite-vec 重写 | 中-高 |
+| EPUB 解析 | ebooklib + BeautifulSoup（spine/TOC 回退/图片重写/文本抽取，`reader3.py`） | Node 库存在但整套摄取管线需带 fixture 语料做行为对等验证（EPUB2/3、CJK、畸形 TOC） | 高 |
+| 搜索偏移映射 | `search_service.py` 的 Unicode casefold + 仅限拉丁文的变音符剥离 + 偏移回映 | JS Unicode 细节差异会导致高亮/标注错位 | 中 |
+
+当前真正的问题（零测试、零 CI、pickle 序列化、三处重复的 loader/unpickler、2400 行 server.py）**没有一个是换语言能解决的**。
+
+### 10.2 为什么前端迁 TypeScript
+
+现有 ~5,800 行 vanilla JS 的病灶全部源于"无模块系统 + 无类型"：
+
+- SSE 解析器在 `ai.js` 与 `library-chat.js` 复制两份
+- `escapeHtml()` 四处重复（ai.js / search.js / library-search.js / settings.js）
+- IndexedDB 样板在 `ai.js` 与 `settings.js` 重复
+- `annotations.js` 1,127 行巨石文件（CFI 解析 + 文本锚定 + 工具栏 UI + 笔记编辑器混杂）
+- `pagination.js`（336 行）为死代码；`library.css`/`ai.css` 疑似孤儿文件
+- reader.html / library.html 各含 1,000+ 行内联 CSS
+
+TS + ES modules + Vite 正好对症；构建产物仍是静态文件，FastAPI `StaticFiles` 挂载方式不变，部署零改动。
+
+### 10.3 为什么暂不做 Electron/Tauri
+
+- 本项目是自托管单用户工具，无分发需求；Python 后端无法消失，只能 PyInstaller sidecar，架构复杂度翻倍。
+- 包体瓶颈在 Python ML 栈（本机 venv 实测 ~1.1GB，Torch 单项 368MB），不在壳；Tauri 的小壳省不掉这块。
+- **将来若确需桌面分发，选 Electron 而非 Tauri**（Codex 修正意见，已采纳）：epub.js 的 iframe 渲染、Selection API、CFI 标注对浏览器引擎高度敏感，Tauri 在 macOS/Linux 用 WebKit 会把跨引擎差异打在阅读器最脆弱的部位；Electron 统一 Chromium 是刚需。
+- 近期体验替代方案：`reader3 launch` 命令（起服务 → 健康检查 → 打开 PWA/Chrome `--app` 无边框窗口），零成本获得 90% 桌面感。
+
+---
+
+## 11. 明确不做的事（Non-goals）
 
 - ❌ 后端迁移 TypeScript / Node / Bun（8–16 全职工程周，收益为零，架构更复杂）
 - ❌ 现阶段 Electron 或 Tauri（无分发需求；若未来需要，选 Electron 保 Chromium 一致性）
@@ -270,25 +588,20 @@ pickle 是实际的迁移阻塞点与安全隐患（`pickle.load` 对不可信�
 - ❌ 引入 SQL 数据库（文件系统即数据库的宪法原则保留）
 - ❌ 更换嵌入模型或向量库（改动即全量重建索引 + 检索质量对等验证，无收益不动）
 
-## 5. 风险与缓解
+---
 
-| 风险 | 缓解 |
-|---|---|
-| 迁移引入回归（尤其标注锚定与搜索高亮） | Phase 1 安全网先行；`annotations.js` 放在最后迁移 |
-| 存量书库 pkl 不兼容 | 双写 + 回退读取 + `--migrate` 命令，跨版本过渡 |
-| Vite 构建破坏"无构建即改即用"的开发体验 | `vite dev` 提供 HMR，比现状更好；产物提交策略可选（提交 dist 或 CI 构建） |
-| 单人维护者时间碎片化 | 每 Phase 独立可交付、可暂停；Phase 之间无硬耦合（仅 Phase 1 是全局前置） |
-| Chroma 相似度换算假设（`1 − L2` clamp）与实际距离度量不符 | Phase 1 补一条针对已知语料的检索质量测试固化现状 |
-
-## 6. 里程碑与分支
-
-见合流计划 [`plan-ui-migration-sequencing.md`](./plan-ui-migration-sequencing.md) **§9**，它是分支编号的唯一真相源。
-
-> 本节此前列过一份 `007-test-safety-net` … `011-launch-experience` 的编号表，与合流计划 §9 的编号**冲突**（同一个编号指向不同工作）。已删除，避免两套编号并存。
+*本计划由两次独立分析（Claude 三路并行子代理全仓库勘察 + Codex 只读仓库推演）交叉验证后综合而成；分歧点（Tauri vs Electron）已按更强论证方（Codex）修正。本文只做顺序与接口，不重开任何已定技术选型。*
 
 ---
 
-*本计划由两次独立分析（Claude 三路并行子代理全仓库勘察 + Codex 只读仓库推演）交叉验证后综合而成；分歧点（Tauri vs Electron）已按更强论证方（Codex）修正。*
+# 附录 A —— 2026-08-15 工程评审原文
+
+> **本节以下是评审原文与当时的落地记录，逐字保留、不追改。**
+> 因此其中的文件路径、已删除的 `tasks/010-*.md` / `tasks/014-*.md`、以及裸写的 `S1`–`S5` 降级态编号
+> 都停留在写作当时的形态。三点换算：
+> **(1)** 文中的「合流计划」「主计划」在 2026-08-17 合并后都指**本文**（章节号原样有效）；
+> **(2)** 降级状态现行编号为 `DEG-S1`–`DEG-S5`，定义在 [`spec-frontend-design.md` §6.4](../20260817-frontend-ui-refactor/spec-frontend-design.md)；
+> **(3)** 已删除任务文件的内容现落在前端计划的 `### WI-N:` 里，对照见 [`README.md`](./README.md) 的「权威范围」表。
 
 ## GSTACK REVIEW REPORT
 
@@ -363,7 +676,7 @@ Phase 1b 从 Phase 1 中拆出并降级为「仅阻塞 Phase 4」，使 Phase 2/
   → Phase 0 将 `search.js` / `ai.js` / `settings.js` / `library-search.js` 四个文件包进 IIFE（仓库另外八个 JS 文件本就是 IIFE，这四个是落后者），falsy 语义统一为 `String(v ?? "")`。
   **附带发现（正面）**：真正的跨文件全局契约只有 `window.Reader3Epub` 一个（`epub-renderer.js` 定义，annotations.js / search.js 经 `?.` 消费）；`annotations.js` 的 `getReaderContext` 在 IIFE 内不构成冲突。ES module 化的爆炸半径远小于「5818 行裸 JS」的直觉。
 - **B2** 67 处 `except Exception`、4 处裸 `pass`。Phase 1a 开头先写死三级规则：外部数据读取可降级但必须 `logging.warning` 带上下文；数据完整性校验禁止捕获必须上抛；禁止裸 `pass`。ruff 开 `BLE`/`S110`，存量入白名单逐步清理。已知四处（`_parse_summary_payload()`、`api_ai_question()` 内的 `push()` 闭包、`ai/books.ensure_book_uuid()`、`ai/conversations.list_conversations_combined()`）在 Phase 1a 修（**不放 Phase 0**——这是行为变更，需与测试同步）。
-- **B3** Phase 2 对 Python 写了「不改行为」，Phase 4 对 JS 无对称约束。补上该约束，并把第 5 步拆为 **5a**（纯 JS 拆 `annotations.js`，不动一行逻辑，验收：1b 标注 E2E 全绿）与 **5b**（拆出的文件逐个转 TS，同一套 E2E 再全绿）。⚠️ 本条原写的 anchoring/renderer/ui 三分法已被证伪，实际划分见 [`tasks/014-ts-frontend-reader.md`](tasks/014-ts-frontend-reader.md)。CFI/DOM Range 这类脆弱代码，多一个 PR 的成本远低于混在一起后的调试成本。
+- **B3** Phase 2 对 Python 写了「不改行为」，Phase 4 对 JS 无对称约束。补上该约束，并把第 5 步拆为 **5a**（纯 JS 拆 `annotations.js`，不动一行逻辑，验收：1b 标注 E2E 全绿）与 **5b**（拆出的文件逐个转 TS，同一套 E2E 再全绿）。⚠️ 本条原写的 anchoring/renderer/ui 三分法已被证伪，实际划分见 `tasks/014-ts-frontend-reader.md`。CFI/DOM Range 这类脆弱代码，多一个 PR 的成本远低于混在一起后的调试成本。
 - **B4** 42 处 `console.log`（annotations.js 33 / epub-renderer.js 9）换成 `debug.ts` 分层，由 `localStorage.reader3_debug` 控制（默认关），ESLint 开 `no-console` 放行 warn/error。
 
 ### 性能（C1–C5，计划原本无此章节）
@@ -377,7 +690,7 @@ Phase 1b 从 Phase 1 中拆出并降级为「仅阻塞 Phase 4」，使 Phase 2/
 - **C5 [P1，2026-08-16 eng-review 新增]** **书库首页把每本书的正文全部反序列化了一遍。** `library_view` 遍历 `books/*_data/`，对每个目录调 `load_book_cached()` ——只为读书名、作者、封面这几个字段，却把整本书的 spine 与全文 text 都拉进内存。`lru_cache(maxsize=10)` 意味着第 11 本起每次刷新首页都是冷读。
   这是**全站访问频次最高的路径**（每次进站必走），而 C1 说的跨库搜索是低频操作 —— C1–C4 一个字没提它，优先级排反了。
   修法与 A5 的粒度接口天然对齐：`load_book_metadata(book_id)` 只读 `manifest.json`，不碰 `chapters.jsonl`。
-  ⏳ **落点待裁决**：严格说它依赖 Phase 3 的 `manifest.json` 才成立；放 Phase 2b 需要先出一个过渡版（例如单独缓存一份轻量书目 JSON）。见合流计划文末 UNRESOLVED DECISIONS。
+  ⏳ **落点待裁决**：严格说它依赖 Phase 3 的 `manifest.json` 才成立；放 Phase 2b 需要先出一个过渡版（例如单独缓存一份轻量书目 JSON）。见附录 B 文末 UNRESOLVED DECISIONS。
 
 性能工作**单列 Phase 2b**：塞进 Phase 2 会让结构变化与缓存算法变化混淆；塞进 Phase 3 会让序列化格式、加载策略、搜索性能三者同变，等价性证明失去可信度。
 
@@ -397,7 +710,7 @@ Phase 1b 从 Phase 1 中拆出并降级为「仅阻塞 Phase 4」，使 Phase 2/
 
 iframe 标注 E2E 可行：Selection 本就不能跨 browsing context，实际需求是「iframe 内建选区 → 操作外层工具栏」。路径为 child frame 内 `document.createRange()` → 写入 iframe Selection → iframe document 上派发 `mouseup` → 点外层工具栏 → 断言 `POST /api/notes/*` → 刷新 → 断言 iframe 内重现 `<mark>`。`window.Reader3Epub` 已提供所需可测性桥。真实鼠标拖选只保留一条 smoke。
 
-> **2026-08-16 修正**：这条链里**只有最后一段构成通过条件**——「刷新后 `<mark>` 回到同一段文字上」。断言 `POST` 发生过属于 wiring-only，仅留作失败时的诊断信息。见 `docs/plans/20260816-tech-stack-and-ui-changes/tasks/009-e2e-annotations.md` §0。
+> **2026-08-16 修正**：这条链里**只有最后一段构成通过条件**——「刷新后 `<mark>` 回到同一段文字上」。断言 `POST` 发生过属于 wiring-only，仅留作失败时的诊断信息。见 `docs/plans/20260816-tech-stack-migration/tasks/009-e2e-annotations.md` §0。
 
 工件：`~/.gstack/projects/anzchy-reader3-pro/jackcheng-master-eng-review-test-plan-20260815-151717.md`
 任务：`~/.gstack/projects/anzchy-reader3-pro/tasks-eng-review-20260815-151717.jsonl`（30 项）
@@ -431,3 +744,336 @@ Phase 0 与 Phase 1a 的 fixture 语料建设可并行（不同文件）。Phase
 **APPROVE WITH CHANGES** — 计划的技术判断（后端不迁 TS、不上 SPA 框架、不做 Electron/Tauri、pickle 是真实阻塞点）全部成立，证据基础扎实。但在实施前必须：(1) 补入两个 P0；(2) 按上述 8 阶段重排；(3) 采纳 A5 的粒度接口契约与 A1 的分级降级；(4) 将 Chroma 改为 generation swap。其中 (3) 与 (4) 是 Codex 标记的阻塞项——不修则 JSONL 迁移收益归零且索引重建不具崩溃一致性。
 
 NO UNRESOLVED DECISIONS
+
+---
+
+# 附录 B —— 2026-08-16 三份计划并审原文
+
+> **本节以下是评审原文与当时的落地记录，逐字保留、不追改。** 换算规则同附录 A 开头三条：
+> 文中的「本文」「主计划」指合并前的 `plan-ui-migration-sequencing.md`，合并后即**本文**（§4 / §6 / §7 / §8 / §9.1 等章节号原样有效）；
+> 「技术栈计划」指合并前的另一半，现在也是本文（其 Phase / A1–A5 / B1–B4 / C1–C5 等标签原样有效）。
+
+## GSTACK REVIEW REPORT
+
+**审查对象**：三份计划并审 —— 本文（顺序）、`20260815-plan-tech-stack-migration.md`（架构）、`20260815-spec-frontend-design.md`（设计），外加对其事实性断言的源码核验。
+**审查日期**：2026-08-16 ｜ **分支**：`master` ｜ **Outside Voice**：Codex（`codex exec`，read-only）
+
+**流程偏差（先说清）**：本技能规定每条发现用 AskUserQuestion 逐条 STOP 确认。本次会话以「执行 1-4，然后继续 eng-review」恢复且要求不再提问，故所有需要用户拍板的项改为汇总到文末 **UNRESOLVED DECISIONS**，不在中途打断。
+
+---
+
+### 1. 架构（Architecture）
+
+#### A-1 [CRITICAL] 4B.1 的模块划分漏掉整条标注写入路径 —— 置信度 **9/10**
+
+`docs/plans/20260816-tech-stack-migration/tasks/014-ts-frontend-reader.md` 的七模块表把 `interactions.ts` 描述为：
+
+> `constructor`（减去七行 `qs()`）`init` `onAnnotationClick` `getExistingMarkerIds` `onSelection` … `copySelection` `askAi` ＋ `initAnnotations`
+
+逐符号核对 `annotations.js`：`AnnotationUI` 有 **30 个方法**，上游计划记为 24。差额六个是 `toggleMarkerAnnotation` / `toggleAnnotation` / `deleteCurrentAnnotation` / `saveNote` / `deleteAnnotations` / `createAnnotation`，约 174 行，构成从 `handleAction`（已指派 `interactions.ts`）到三处 `fetch`（已指派 `notes-api.ts`）之间的完整写入链。七个模块的行数估算合计 1055，文件实际 1127 —— 差额与这六个方法吻合。
+
+按行号区间机械切分会把它们塞进 `note-editor.ts`，于是 `createAnnotation`（marker / wavy / underline / note **四种类型共用的唯一写入口**）住进一个叫「笔记编辑器」的模块，同时 `notes-api.ts` 与 `note-editor.ts` 双双声称拥有那三处 `fetch`。
+
+**裁定：采用方案 (a)，新增第八个模块 `commands.ts`**，依赖方向 `interactions → commands → notes-api` 单向。Codex 独立给出同一结论，并点名两个落选项的失败模式：(b) 折进 `notes-api` 是**层级塌缩**，传输层被 UI 状态与渲染污染，最终长成 god service；(c) 只做文件切分不做职责切分是**装饰性模块化**，667 行的隐式耦合与过宽的可变权限原样保留，拿不到单测边界。
+
+> `tasks/014-ts-frontend-reader.md` 的「⚠️ 待评审」块与 `contracts/annotation-host-contracts.md` 均指向本报告，**此项就此关闭**。
+
+#### A-2 [HIGH] K5 冻结范围只覆盖「今天这个消费者用到的」成员 —— **8/10**
+
+K5 冻结 `window.Reader3Epub` 9 个成员中的 5 个。被略过的 4 个里，`applyThemeSettings` 与 `displaySectionIndex` 在 `reader.html` 里都有活的调用点，且 4B.3（阅读设置面板）明确依赖前者。照现状写，**4B.3 没有一条被许可的路径**。
+
+**裁定：冻结契约必须枚举边界的全部活成员。** Codex 给出的规则比「全都写上」更好用 —— 每个对外可调用成员必须落到三类处置之一：**(1)** 纳入契约并写明签名与行为；**(2)** 显式标记 deprecated 并指定移除阶段；**(3)** 通过**收窄契约名义**排除在外（把 K5 从「`Reader3Epub` 公开面」改叫「标注依赖子集」），而不是默默不提。
+
+默默不提是最差的一种：读者无法区分「没用到」和「不许用」。
+
+#### A-3 [MEDIUM] A5 的「四处合并」里有一处是死代码，应删不应并 —— **9/10**
+
+技术栈计划 A5 写：
+
+> 合并范围为**四处** `_Reader3Unpickler` / cached-loader 定义：`server.py` 一处、`search_service.py` 两处、`vector_search.py` 一处
+
+第四处 —— `SearchIndex`、`BookIndex.from_book_pkl`、`SearchIndex.build_from_library` —— 全仓库 grep 确认**从未被调用**，唯一提及在 `specs/_archive/001-search-features/` 的文档里。它来自 001 的 T027/T029/T030：实现了但没接线，`search_library()` 后来走的是 per-book `load_book_index` 这条路。
+
+它还带着两处分歧：用**裸 `pickle.load`，没有 `_Reader3Unpickler` shim**（另外三处都有），且包在 `except Exception: failed.append(book_id)` 里 —— 一本 legacy `__main__.Book` 的 pkl 在阅读器里能开，在这个索引里会**无声消失**；同时它整段复制了 `load_book_index` 的 `BookIndex` 构造体。
+
+**裁定：Phase 0 删除，A5 改为三处合并。** 把死代码搬进新的 `book_store.py` 等于把一个静默失败分支洗成「现役设计」。
+
+> **2026-08-16 已执行**（用户裁决：删）。删除范围只有 `SearchIndex` 类与 `BookIndex.from_book_pkl` 这个 classmethod——**`BookIndex` / `ChapterIndex` 两个 dataclass 是活的**，`load_book_index()` 构造它们，三条搜索路径都在用；照字面「删掉 BookIndex」会打断整个关键词搜索。`search_service.py` 773 → 734 行，模块与 `server.py` 导入通过，单本书 `load_book_index` 冒烟正常。A5 已改写为「三处」，Phase 2a 退出条件同步。
+
+#### A-4 [MEDIUM] K3 的前置条件在生产侧成立，但没人把它写成 4B.2 的门槛 —— **8/10**
+
+K3 说 `position: fixed` 的浮层要求祖先链无 `transform` / `filter` / `backdrop-filter` / `contain` / `will-change: transform`。核验现状：`annotation-toolbar` / `note-editor` / `note-tooltip` 三个浮层今天都是 `<body>` **直接子元素**，条件天然满足 —— 也正因为天然满足，没人意识到它是个条件。而原型里 `.page-flow` 自己就带 `will-change: transform`；4B.2 重写外壳时把浮层挪进任何一个页面容器，K3 立刻失效，**而且是"元素可见、位置错了"这种 E2E 照样绿的失效**。
+
+**裁定：4B.2 增加硬门槛** —— 三个浮层保持 `<body>` 直接子元素（或 `<dialog>` top-layer），并加一条断言：浮层祖先链上不存在会创建 containing block 的属性。
+
+#### A-5 [LOW] K1 爆炸半径低估 —— **7/10**
+
+契约文件已按核验结果改正（`init()` 的 `if (!this.contentEl || !this.toolbar) return;` 先行短路，缺任一元素**整个标注 UI 静默不启动**，而非仅缺失那一块降级）。此处仅记录，无待办。
+
+---
+
+### 2. 代码质量（Code Quality）
+
+#### Q-1 [HIGH] testid 是 0 → 134，不是「成本很低」—— **9/10**
+
+设计规格 §4.1 现已记录：原型 134 个唯一 testid，**0 个合规**；其中 24 个带 `reader-` / `library-` 前缀的**比裸名更危险**，批量改名时容易被当成「已经对了」而跳过。
+
+补一条核验结果：**生产侧 `templates/` 与 `static/` 里 `data-testid` 出现次数为 0**。现有可用锚点是 `id=`（library.html 77、reader.html 66、settings.html 13、library_classic.html 9），但 id 是**样式与 JS 的活引用**，不是测试契约 —— 把它当 testid 用，等于让测试锁死实现细节，而这正好是 strangler-fig 接缝最不该有的性质。
+
+所以合同 1 的真实工作量是**两侧各一遍**：原型 134 个改名 + 生产模板从 0 新增。计划里「现有稳定 id 可直接映射，成本很低」的判断偏乐观。顺序（先原型后模板）已在 §3 与设计规格 §4.1 定死，方向是对的。
+
+#### Q-2 [MEDIUM] 行号治理已落地，但 `tests/conftest.py` 自己还留着一处漂移行号 —— **9/10**
+
+三份计划已统一改用符号名定位（步骤 4 的产出）。但 `tests/conftest.py` 的 docstring 里写着 `reader3.py:187`，而 `shutil.rmtree(output_dir)` 实际在 **:188** —— 一个测试基建文件在还没有任何测试的时候，就已经攒下一处失效引用。这是「谁都别写行号」这条规矩的活教材，顺手改掉。
+
+> **2026-08-16 补正**：本条开头那句「三份计划已统一改用符号名」当时只对了一半——正文与 A5 已改，**附录仍留着七八处行号**（`search.js:369-370`、`server.py:1836` / `:2092`、`ai/books.py:57` 等），设计规格里还有三处。已在 R8 一并扫干净。
+
+#### Q-3 [LOW] B1 / B2 / B4 核验通过 —— **8/10**
+
+`escapeHtml` 的活全局覆盖、67 处 `except Exception`、42 处 `console.log`（annotations.js 33 + epub-renderer.js 9，正确排除了 pagination.js 的 2 处 —— 该文件是待删死代码）三项均与源码一致。计划在这一节是可信的。
+
+---
+
+### 3. 测试（Tests）
+
+#### T-1 [CRITICAL] 整套计划的承重墙目前是零 —— **9/10**
+
+`tests/` 现状：只有 `conftest.py`（39 行，一份描述三条泳道的 docstring）、四个空目录（`contract/` `e2e/` `fixtures/` `unit/`）、一个 `.DS_Store`，以及一个**源文件已不存在**的 `test_probe_tmp.cpython-310` pyc。`.github/workflows` 不存在。**零测试，零 CI。**
+
+这不是新发现 —— 技术栈计划自己写着「零测试、零 CI、无既有约定」。但它是排序结论的地基：§4 论证「Phase 3 要在一套已经跑绿一段时间的 E2E 下做」这句话，今天字面上还没有任何东西支撑。**Phase 1 不是一个阶段，是这份计划能不能成立的前提。**
+
+配套一条：那个 stale pyc 说明 `tests/` 曾经跑过一次又被删干净。Phase 0 应把 `tests/**/__pycache__` 与 `.DS_Store` 进 `.gitignore`，避免它们跟着首个测试 PR 一起进仓库。
+
+#### T-2 [HIGH] 标注契约的失败模式是静默的，E2E 必须正向断言 —— **9/10**
+
+K1–K6 六份契约里 **4 份的违约不产生任何 console 报错**：K1 缺元素 → `init()` 静默 return；K3 祖先链有 transform → 浮层可见但位置错；K4 事件名拼错 → 监听方永不触发；K6 上下文读不到 → 走 `location.pathname` 回退（4B.1 已定改为抛错）。
+
+这决定了 1b 的 E2E 不能写成「无报错即通过」。三条具体要求：
+
+1. **位置断言而非可见性断言** —— K3 只有量选区矩形与浮层矩形的相对位置才测得出；`toBeVisible()` 在错位时照样绿。
+2. **端到端往返断言** —— 划词 → 工具条 → 落库 → 刷新 → 高亮回到同一段文字上。只断言 `fetch` 被调用过属于 wiring-only。
+3. **降级路径要有正向证据** —— S1–S4 每个状态各一条：制造 stale，断言横幅出现且文案匹配。
+
+#### T-3 [MEDIUM] 4B.1 的门槛依赖 1b 覆盖了写入路径 —— **8/10**
+
+门槛写的是「1b 的标注 E2E **零改动**全绿」。这条只有在 1b 的用例覆盖了 A-1 里那六个写入方法时才成立 —— 而它们恰恰是最容易被漏掉的一层（读侧渲染肉眼可见，写侧只在刷新后才暴露）。1b 的用例清单里必须显式包含：四种类型各创建一次、改色、删除、笔记编辑保存。
+
+---
+
+### 4. 性能（Performance）
+
+#### P-1 [HIGH] 性能章节漏了最热的那条路由 —— **9/10**
+
+C1–C4 覆盖了跨库搜索、`index_map` 内存、缓存失效、JSONL 粒度，唯独没有 `GET /`。核验 `server.py` 的 `library_view`：书库首页对 `books/` 下**每一个** `*_data` 目录调 `load_book_cached(item)` —— 也就是**把每本书的全文反序列化一遍，只为读出 title 和挑一张封面**。`load_book_cached` 是 `@lru_cache(maxsize=10)`，所以 11 本以上每次首页刷新都是全库重读；即便在 10 本以内，冷启动后的第一次首页访问也要把整个书库解一遍 pickle。
+
+这条与 C4 是同一枚硬币：A5 的 `manifest.json` 一旦落地，首页就该**只读 manifest**，一行正文都不碰。**建议列为 C5，落 Phase 2b**，并在 Phase 1a 的基准里加一项「首页冷启动 TTFB × 书库规模」。
+
+#### P-2 [MEDIUM] C1 的颠簸阈值算错了 —— **9/10**
+
+C1 说：
+
+> 库超 10 本即每次跨库搜索都颠簸缓存
+
+事实要素是对的（两个 cache、10 与 4），结论偏了：`search_library()` 的每本书循环里同时调 `load_book_cached`（maxsize=**10**）与 `load_book_index`（maxsize=**4**），**约束项是小的那个**，所以颠簸从**第 5 本**开始，不是第 11 本。而且 `load_book_index` 的 cache key 含 `case_sensitive`，同一本书在两种大小写模式下占两个槽 —— 用户切一次大小写开关，有效容量再砍半。
+
+修法不变（weighted LRU），但触发点比计划以为的早一倍多，P1 的定级是合适的。
+
+#### P-3 [LOW] 所有性能结论都是推演，当前库只有 1 本书 —— **8/10**
+
+`books/` 下现有 1 个 `*_data` 目录。上述阈值没有一条是实测出来的。Phase 1a 的基准建设必须先造出 20 本规模的合成书库，否则 Phase 2b 的「优化前后」两侧都测不出差别。
+
+---
+
+### Outside Voice —— Codex
+
+`codex exec --sandbox read-only`，就三个问题独立作答（未读仓库，仅凭结构化描述推理）。
+
+| 问题 | Codex 结论 | 本报告处置 |
+|---|---|---|
+| Q1 写入路径归属 | 选 (a) `commands.ts`；(b) = layer collapse / god service，(c) = cosmetic modularization | **采纳**，见 A-1 |
+| Q2 冻结范围 | 枚举全部活成员；给出三类处置规则（纳入 / deprecate / 收窄契约名义） | **采纳且升级**，Codex 的规则比原问题的二选一更好，见 A-2 |
+| Q3 Phase 3 位置 | **反对**现有顺序，主张 `… → 4A → 4B → Phase 3 → Phase 5` | **部分采纳**，见下 |
+
+**Q3 的分歧值得展开。** Codex 的论证是：不要把「不可逆的持久化变更」和「风险最高的 UI 重写」摞在一起，而 Phase 1 的测试尚无 CI 历史，保护力未经检验。
+
+**它的前提在本仓库不成立。** Phase 3 迁移的是 `book.pkl → manifest.json + chapters.jsonl` —— 这是**派生数据**，源头 `book.epub` 就躺在同一个目录里，没有被 Phase 3 触碰；`notes.json` / `ai_meta.json` / `chroma_db/` 也都在格式变更范围之外。叠加计划已有的**双写 + 回退读**，Phase 3 的回滚动作就是「删掉两个新文件」。它不是不可逆的。
+
+所以：**顺序维持不变，但本文 §4 的论证 1（不可逆性）站不住，应当改写。** 支撑这个顺序的是论证 2 与 3 —— 阅读器一重写，标注 E2E 随之重写，届时是在一套刚出生的测试下动用户数据；而「等价性测试通过、真实标注已坏」这个已点名的失败模式，要求验收基准跑在**还没被改过**的阅读器 DOM 上。这两条与 Codex 的顾虑不冲突。
+
+**Codex 真正有价值的那半句是「CI 历史尚无，保护力未经检验」** —— 对此的正确回应不是换顺序，而是加一道门槛：**Phase 3 开工前，1b 的标注 E2E 需在 CI 上连续绿 ≥ 10 次且跨 ≥ 5 个工作日**。一套跑过一次的 E2E 和一套跑绿两周的 E2E，不是同一个东西。
+
+**另有一条真实的不可逆风险被这场辩论翻出来**：`reader3.py` 在写入任何内容前 `shutil.rmtree(output_dir)`，而 `notes.json` / `ai_meta.json` / `chroma_db/` 全在里面。它跟 Phase 3 的格式无关，但一旦 `reader3 --migrate` 复用摄取路径，就会在迁移时抹掉用户标注。**`--migrate` 必须原地读写，禁止走摄取路径** —— 这条要写进 Phase 3 的验收。
+
+---
+
+### 不在本次范围内（NOT in scope）
+
+- **技术选型本身**：后端留 Python、不上 SPA 框架、不做 Electron/Tauri、不换嵌入模型与向量库 —— 均为已定项，未重开。
+- **视觉设计评审**：配色、排版、组件形态属 `/plan-design-review` 与 `/design-review`，本次只看它们对实施顺序造成的约束。
+- **原型代码质量**：`designs/reader-pro-next/` 是可执行规格，不是待移植代码（见其 README），未按生产标准审。
+- **AI / RAG 子系统**：三份计划都没打算动它，本次未核验 `ai/` 下的任何实现。
+- **未运行任何测试**：仓库零测试，无可运行项；所有结论来自静态核验与源码阅读。
+
+### 已经存在的东西（What already exists）
+
+盘点一遍，免得把已有的当作待建：
+
+| 已有 | 位置 | 状态 |
+|---|---|---|
+| 完整的标注实现（四类型、CFI + quote/prefix/suffix 锚定、重叠渲染） | `static/js/annotations.js` 1127 行 | 可用，未拆分，零测试 |
+| epub.js 集成与分页 | `static/js/epub-renderer.js` | 可用，`window.Reader3Epub` 9 个成员 |
+| 42 条 API 路由 | `web/server.py` | 可用，无契约测试 |
+| 关键词 + 语义搜索、RAG、多 provider AI | `search_service.py` / `vector_search.py` / `ai/` | 可用 |
+| 三页 UI + classic library | `templates/` 4 个模板 | 可用，`data-testid` 为 0 |
+| 高保真目标原型（三屏 + 错误态） | `designs/reader-pro-next/` | 可跑，134 个 testid 待改名 |
+| K1–K6 宿主契约 | `contracts/annotation-host-contracts.md` | 已成文，本报告后需改 K5 |
+| 双层 token 体系、逐页规格、S1–S5 降级态 | 设计规格 §3 / §5–6 | 已成文，两项 token 待收口 |
+| 测试基建 | `tests/` | **只有 conftest.py 骨架，零用例，零 CI** |
+
+### 待办（TODOS，按依赖排序）
+
+见下一节「实施任务」。
+
+### 失败模式（Failure modes）
+
+按「会不会被现有验收挡住」排序 —— 越靠前的越容易溜过去。
+
+| # | 失败模式 | 为什么会溜过去 | 挡它的东西 |
+|---|---|---|---|
+| 1 | 4B.2 把浮层挪进带 `transform` 的容器，工具条定位错乱 | 元素可见、无报错，`toBeVisible()` 绿 | R5 的位置断言 |
+| 2 | 4B.1 按行号切分，写入链落进 `note-editor.ts` | 拆分后行为不变，E2E 全绿 | R1 的 `commands.ts` + 依赖方向检查 |
+| 3 | Phase 3 等价性测试通过，真实标注已错位 | 等价性只比对文本，不比对锚定 | 真实 iframe 标注迁移 E2E（计划已有） |
+| 4 | `--migrate` 走摄取路径，`rmtree` 抹掉 `notes.json` | 迁移「成功」，数据在别处丢 | R10 的原地读写约束 |
+| 5 | testid 批量改名时跳过那 24 个「看起来已经对了」的 | 前缀正确，命名规则不对 | R11 的机器校验（正则 + CI） |
+| 6 | 死代码 `SearchIndex` 被搬进 `book_store.py` | 搬运本身不会失败 | R4 的先删后并 |
+| 7 | 首页在 20 本书时变慢，但没人测过 | 开发者本地只有 1 本书 | R7 的合成书库基准 |
+
+### 关键路径与并行（Diagram）
+
+```
+Phase 0 ─┬─ R1 R2 R3 (契约收口，纯文档)   ─────────────┐
+         ├─ R4 删死代码                                │
+         ├─ R8 conftest 行号 + gitignore               │
+         └─ R11 testid 校验脚本                        │
+                                                       ▼
+Phase 1a ── R7 合成书库 + 基准 ──┬─ 单测四类（可四路并行）
+                                 └─ 42 路由契约测试
+                                       │
+Phase 1b ── R12 标注 E2E（含写入路径 + 位置断言 + S1–S4）
+                                       │
+                          ┌────────────┴────────────┐
+                          ▼                         ▼
+                 Phase 2a → 2b (R6 首页只读 manifest)   Phase 4A（不碰 annotations.js）
+                          │                         │
+                          ▼                         ▼
+                 [R9 soak 门槛: E2E 连绿 ≥10 次 / ≥5 天]
+                          │
+                 Phase 3 (R10 --migrate 原地读写)
+                          │
+                          ▼
+                 Phase 4B ── 4B.1 (R1) → 4B.2 (R5) → 4B.3 → 4B.4
+                          │
+                          ▼
+                 Phase 5
+```
+
+关键路径：`Phase 1a → 1b → 2a → 2b → soak → Phase 3 → 4B`。Phase 4A 全程可与后端线并行，是唯一真正的并行收益点。
+
+### worktree 并行
+
+| worktree | 内容 | 与谁冲突 |
+|---|---|---|
+| `007-hygiene-and-contracts` | R1 R2 R3 R4 R8 R11 —— 契约文档 + 删死代码 + 基建 | R4 动 `search_service.py`，与后续 2a 有重叠，先落 |
+| `008-test-safety-net` 四路 | 搜索偏移 / 摄取 / 持久化 / AI routing 四类单测互不相干 | 各自新建文件，零冲突 |
+| `009-e2e-annotations` | R12 | 只加 `tests/e2e/`，零冲突 |
+| `010-design-degradation-states` | 两项 token 收口 + S1–S5 | 只改 `designs/` 与规格，零冲突 |
+| `011-backend-refactor` | R6 R7 + `book_store.py` | 与 `007` 在 `search_service.py` 上冲突，必须在其后 |
+| `013-ts-frontend-shell` | Phase 4A | 不碰 `annotations.js` / `reader.html`，可与 `011` / `012` 全程并行 |
+
+不能并行的两对：`012-storage-format` 与 `014-ts-frontend-reader`（§4 的严格串行）；`014` 内部 4B.1 → 4B.2（拆分必须先于外壳移动 DOM）。
+
+### 实施任务（Implementation Tasks）
+
+| ID | 任务 | 落点 | 阶段 | 优先级 |
+|---|---|---|---|---|
+| **R1** ✅ | 4B.1 采用方案 (a)，新增 `commands.ts` 承载六个写入方法；写死 `interactions → commands → notes-api` 单向依赖；删除 tasks.md 的「⚠️ 待评审」块 | `tasks/014-ts-frontend-reader.md` | Phase 0 | P0 |
+| **R2** ✅ | K5 扩展到 `Reader3Epub` 全部 9 个成员，每个落到「纳入 / deprecate+移除阶段 / 收窄契约名义」三类之一；`applyThemeSettings` 与 `displaySectionIndex` 纳入 | `docs/plans/20260817-frontend-ui-refactor/contracts/annotation-host-contracts.md` | Phase 0 | P0 |
+| **R3** ✅ | K1 补一句：缺任一元素 → `init()` 静默 return → 整个标注 UI 不启动（已改，本项为复核） | 同上 | Phase 0 | P2 |
+| **R4** ✅ | 删除死代码 `SearchIndex` / `BookIndex.from_book_pkl` / `SearchIndex.build_from_library`；技术栈计划 A5 改为「三处合并」 | `search_service.py` + A5 | Phase 0 | P1 |
+| **R5** ✅ | 4B.2 增加门槛：三浮层保持 `<body>` 直接子元素（或 `<dialog>` top-layer）；E2E 断言祖先链无 containing-block 属性、且浮层矩形与选区矩形相对位置正确 | `tasks/014-ts-frontend-reader.md` + 本文 §7 | Phase 0（写门槛）/ 4B.2（执行） | P0 |
+| **R6** ✅ | 新增 **C5**：`library_view` 改为只读 `manifest.json`，不反序列化正文 | 技术栈计划 §性能 + Phase 2b | Phase 2b | P1 |
+| **R7** ✅ | C1 阈值订正为「第 5 本」并说明 `case_sensitive` 进 key 使有效容量再半；Phase 1a 基准加「首页冷启动 TTFB × 书库规模」；造 20 本合成书库 fixture | 技术栈计划 §性能 + Phase 1a | Phase 1a | P1 |
+| **R8** ✅ | 修 `tests/conftest.py` 的 `reader3.py:187` → 改用符号名；删除 stale pyc 与 `tests/.DS_Store`；`.gitignore` 清掉残留冲突标记（~~加 `tests/**/__pycache__` 与 `.DS_Store`~~ —— 本建议有误，见落地记录） | `tests/` + `.gitignore` | Phase 0 | P2 |
+| **R9** ✅ | 本文 §4 论证 1（不可逆性）改写为「派生数据 + 双写回退 ⇒ 可逆，真正的理由是论证 2 与 3」；§7 增加 soak 门槛：Phase 3 开工前 1b E2E 在 CI 连绿 ≥10 次且跨 ≥5 个工作日 | 本文 §4 / §7 | Phase 0 | P1 |
+| **R10** ✅ | Phase 3 验收增加：`reader3 --migrate` 原地读写，**禁止**复用摄取路径（`shutil.rmtree` 会抹掉 `notes.json` / `ai_meta.json` / `chroma_db/`） | 技术栈计划 Phase 3 | Phase 0（写约束）/ Phase 3（执行） | P0 |
+| **R11** ✅ | testid 命名的机器校验：一条正则 + CI 检查，覆盖原型 134 个与生产模板新增项；显式点名那 24 个带前缀但不合规的，防止被当成「已经对了」跳过 | `designs/` + CI | Phase 0.5 | P1 |
+| **R12** ✅ | 1b 用例清单显式包含写入路径：四类型各创建一次、改色、删除、笔记保存；断言方式为「刷新后高亮回到同一段文字」而非「fetch 被调用」；S1–S4 各一条正向证据 | `tasks/009-e2e-annotations.md` | Phase 1b | P0 |
+
+JSONL 工件：`docs/plans/20260816-tech-stack-migration/eng-review-tasks.jsonl`
+
+---
+
+### 落地记录（2026-08-16，本报告发出后当场执行）
+
+用户裁决：**维持 Phase 3 在 4B 之前**（不采纳 Codex 的重排）、**维持 soak 门槛数值**（≥10 次 / ≥5 个工作日）；其余 must fix / should fix 按建议执行。R1–R12 **十二项全部执行完毕**，分三批：第一批五项（R1/R2/R3/R9/R10）、第二批两项 P0（R5/R12）、第三批五项 P1–P2（R4/R6/R7/R8/R11）。R4 的代码删除动作已于同日按用户裁决执行。
+
+| 任务 | 改了哪里 |
+|---|---|
+| **R1** | `tasks/014-ts-frontend-reader.md`：七模块 → 八模块，新增 `commands.ts`（175 行，六个写入方法）；「⚠️ 待评审」块替换为裁定记录含两个落选方案的失败模式；退出门槛新增**依赖方向机器可验**（`dependency-cruiser` / ESLint `import/no-restricted-paths`，不靠人盯） |
+| **R2** | `docs/plans/20260817-frontend-ui-refactor/contracts/annotation-host-contracts.md` K5：先立三类处置规则，再全量枚举 9 个成员 —— **7 个纳入**，`book` 与 `getContentDocument()` 标 deprecate 并定于 4B.2 结束移除（两者实测零消费方）。`4B.3` 的 K5 待评审注记同步改为「已确认纳入」 |
+| **R9** | 本文 §4 删除论证 1 并记录其被证伪的经过；§7 新增 **soak 门槛**小节 |
+| **R10** | 技术栈计划 Phase 3：`--migrate` 硬约束写进任务项，验收新增「迁移后 `notes.json` / `ai_meta.json` / `chroma_db/` 三者字节不变」的测试；本文 §7 门槛表同步 |
+| **R3** | 复核确认，无改动 |
+| **R5** | K3 的挂载规则从「必须挂在 `.reader-shell` 直下」改为**属性判据 + 两种安全挂法**（`<body>` 直接子元素 / `<dialog>` top layer），并补 `containingBlockAncestor()` 参考实现；属性清单补齐 `perspective` 与 `will-change: filter\|perspective`。`tasks/014-ts-frontend-reader.md` 4B.2 新增「硬约束 2」与退出门槛（结构断言 + 几何断言，三个浮层各一遍）；本文 §7 Phase 4B 行同步 |
+| **R12** | 新建 `docs/plans/20260816-tech-stack-migration/tasks/009-e2e-annotations.md`：读路径 5 条、**写路径 10 条**、K1–K6 各一条能失败的断言、S1–S4 各一条正向证据；统一收尾动作为「刷新后断言高亮回到同一段文字」。本文 §6/§7、技术栈计划 Phase 1 均改为引用它 |
+| **R4** | **代码已删**（用户裁决）：`search_service.py` 移除 `SearchIndex` 类与 `BookIndex.from_book_pkl`，773 → 734 行；`BookIndex` / `ChapterIndex` 两个 dataclass 保留（活代码）。技术栈计划 A5 改写为「合并范围为**三处**」并把删除理由与边界收进引用块；Phase 0 新增 0.7、Phase 2a 退出条件「四处 → 三处」、审查发现表的「四处」标注为已消解 |
+| **R6** | 技术栈计划性能章节新增 **C5**（置于 C4 之后，章节标题改为 C1–C5）：`library_view` 为读元数据反序列化了全书正文，是全站最高频路径，而 C1 的跨库搜索是低频路径——**优先级排反了**；修法与 A5 的 `load_book_metadata()` 同源。落点阶段待裁决 |
+| **R7** | C1 阈值订正：原文按 `load_book_cached` 的 `maxsize=10` 写「库超 10 本」，真正的约束是 `load_book_index` 的 **`maxsize=4`**（第 5 本就开始颠簸），且 `case_sensitive` 编进了 `lru_cache` key，**有效容量再折半到 2 本**。Phase 1a 基准加「首页冷启动 TTFB × 书库规模」，并要求造 20 本合成 fixture |
+| **R8** | `tests/conftest.py` docstring 去掉 `reader3.py:187` 改用符号名；删除 stale pyc（含一个源文件已不存在的 `test_probe_tmp`）与 `tests/.DS_Store`；`.gitignore` 清掉残留的 merge 冲突标记 |
+| **R11** | 本文 §6 步骤 0.5 新增两条 lint 的对照表（**选择器 lint 约束测试代码，命名 lint 约束模板与原型**，此前只有前者），命名 lint 给出正则（现已收敛为 §6 步骤 0.5 的 canonical 代码块，见下方 R13）并要求显式点名设计规格 §4.1 那 24 个带前缀但不合规的 testid；§7 Phase 0 退出条件改为「两条 lint 都在 CI 里生效」 |
+
+### 第二轮 Codex 评审的落地记录（2026-08-16 晚）
+
+评审报告全文见 [`review-codex.md`](./review-codex.md)（`gpt-5.6-sol` / `xhigh` / read-only，threadId `01a0094b-e03a-7243-8d66-77706193c9b3`）。共 19 条发现，以下三条已落地。
+
+| 任务 | 落地内容 |
+|---|---|
+| **R13**（原报告第 4 条，CRITICAL） | **修复 R12 引入的依赖环。** R12 把 K1/K6 的新行为与 S1–S4 的横幅写进了 Phase 1b 的退出门槛，但这些行为分别要到 4B.1 / Phase 3 / 4A.4 才存在，而那些阶段又都以 1b 通过为前置——按原文的顺序跑不通。修法是把「写下来」与「计入门槛」分开：`tasks/009-e2e-annotations.md` 新增 **§0.5 用例分组与激活阶段**（`baseline-1b` / `acceptance-4b1` / `acceptance-p3` / `acceptance-4a4` / `acceptance-2a` 五组），§4 契约表加「组」列并把 K-1 / K-6 各拆成 baseline 现状特征化条与 4B.1 行为变更条，§5 整节移出 1b 门槛，§8 退出门槛重写为「仅 `baseline-1b`」；`tasks/014-ts-frontend-reader.md` 4B.1 / 4B.2 门槛改为「`baseline-1b` 零改动全绿 ＋ `acceptance-4b1` 解开 skip」；本文 §7 的 Phase 1b / 3 / 4A / 4B 四行与 soak 门槛同步 |
+| **R14**（原报告第 16 条，MEDIUM） | **命名 lint 正则不可直接复制。** 原文三处（§6 步骤 0.5 的表格、§7 Phase 0 行、R11 记录）都把正则写成 `^(lib\|rd\|set)-…`——Markdown 表格单元格里 `\|` 是必需的转义，但复制进 lint 配置就变成匹配**字面反斜杠加竖线**，永远不命中，lint 会全绿而命名方案毫无约束。§6 步骤 0.5 新增 **canonical 正则代码块**（`^(?:lib\|rd\|set)-[a-z0-9]+(?:-[a-z0-9]+)*$`，非捕获组），其余三处一律改为引用它。同时 `tasks/014-ts-frontend-reader.md` 4B.1 的依赖校验从「ESLint 或 dependency-cruiser 二选一」**定为 `dependency-cruiser`**，并补齐四条规则：`no-circular`（原文缺失）、`commands-no-upward`、**`interactions-no-bypass`**（原文只禁反向 import，挡不住 `interactions` 直连 `notes-api` 这种正向绕过，而那恰是最省事的走法）、`notes-api-leaf` |
+| **R15**（原报告第 2 条，MEDIUM） | **R4 删掉的代码，001 的设计文档仍在要求实现。** 运行时代码的删除边界是对的（`src/` 已零引用），但 `specs/_archive/001-search-features/` 四份文档仍把 `SearchIndex` / `from_book_pkl()` / `build_from_library()` 列为待办——任何人照 tasks.md 往下做都会把死代码重新引入。`tasks.md` 的 T027 / T029 / T030 标注为 SUPERSEDED 并划除（T028 与 `BookIndex` dataclass 本身保留，是活代码），`data-model.md`（文首 ＋ §4）、`research.md`（Indexing Strategy 节）、`plan.md`（宪法门槛清单）各加醒目说明并指向 per-book 的 `load_book_index()` |
+
+> 其余 16 条尚未处理，其中三条 HIGH 值得优先看：**第 14 条**（`manifest.json` + `chapters.jsonl` 是两文件提交却没有事务协议，崩溃会留下 manifest 指向半写文件）、**第 15 条**（iframe 门槛「`textContent` 与偏移不变」是必要非充分条件，包裹/拆分文本节点可保持扁平文本相同却改变 DOM path，不足以保护 CFI）、**第 18 条**（§6 说 1b 与 Track D 不阻塞任何人，§7 却让 Phase 3 同时依赖二者——M3 实为三路汇合点）。另有**第 1 条**指出「`commands.ts` 不得碰 DOM」与「纯拆分」无法同时机械满足，已作为未裁决项记入 `tasks/014-ts-frontend-reader.md`。
+
+---
+
+**执行 R2 时抓到一条新事实**：`search.js` 也消费 K5（`getContentRoot` / `onContentsReady`），而契约表原先只写了 annotations。这意味着 **K5 的爆炸半径比 4B.1 大** —— 改接口会同时打断阅读页内搜索。已写进契约与 4B.1 的 K5 产出行。这条正是 Codex「枚举全部活成员」那条规则的直接产物：不逐个核对消费方，就发现不了。
+
+**执行 R5 时抓到一条**：契约里 K3 原写「三个浮层必须挂在 `.reader-shell` 直下」，而生产今天三个浮层都是 `<body>` 直接子元素——**契约在用原型的实现描述规范**，照它改反而会把浮层从合规位置挪进一个只是恰好干净的容器。已改为属性判据（谁都不许在祖先链上造包含块）+ 两种默认安全的挂法。顺带补齐了原清单漏掉的 `perspective` 与 `will-change: filter|perspective`。
+
+**执行 R12 时抓到两条**：(1) 技术栈计划给的 iframe E2E 路径以「断言 `POST /api/notes/*`」收尾，**照字面写就是 wiring-only**——已在原文加修正注，并把「刷新后 `<mark>` 回到同一段文字」定为唯一的通过条件；(2) `server.py` 的 `BOOKS_DIR` 是**模块导入时**读取的进程级常量，所以 E2E 的图书目录隔离必须做到「每 worker 一个服务进程」，运行期换 env 无效——这套用例会真删标注，隔离没做对就是拿开发者自己的书库当靶子。
+
+**执行 R8 时发现我自己的建议有一半是错的**：R8 原本建议给 `.gitignore` 补 `tests/**/__pycache__` 与 `.DS_Store`。`git check-ignore -v` 证明两者**早已被覆盖**——根级的 `__pycache__/`（第 2 行）与 `.DS_Store`（第 13 行）不带前导斜杠，gitignore 语义下匹配任意深度。那些 pyc 之所以在仓库里，是**在规则生效前就被提交过**，加规则治不了已跟踪文件，删文件才治。R8 真正有内容的只剩「删 stale 文件」与「conftest 去行号」两半。
+
+**执行 R7 时抓到一条**：C1 的阈值看错了缓存。这条比它看起来严重——阈值一旦写进 Phase 1a 的性能基准，就成了验收判据；「库超 10 本才颠簸」在一个 `maxsize=4` 的缓存上永远不会触发，跑出来的结论会是「C1 不存在」。**一个错的阈值比没有阈值更糟。** 顺带暴露一个更基础的问题：`books/` 现在只有 1 本书，C1–C5 的全部结论都是**推断而非实测**——单本库里 `maxsize=4` 与 `maxsize=10` 表现完全一致。20 本合成 fixture 因此不是锦上添花，是这几条结论能否被验证的前提。
+
+**顺带清理**：三份计划＋设计规格里剩余的代码行号引用（`search.js:369-370`、`epub-renderer.js:367`、`server.py:1836` / `:2092`、`ai/books.py:57`、`ai/conversations.py:331`、`reader.html:1551-1595`、`toolbar.js:113-114` / `:44-60` 等）全部换成符号名。其中 `routing.py:47` 已经漂了——那行现在是 gemini 分支，Anthropic 的 1M 在 `:51`。「谁都别写行号」这条规矩在两天内自证了两次。
+
+---
+
+### 结论
+
+| 项 | 值 |
+|---|---|
+| 审查轮次 | 1（三份计划并审 + 源码核验 + Outside Voice） |
+| 状态 | **PASS WITH CHANGES** |
+| 发现 | 13 条 —— CRITICAL 2 / HIGH 4 / MEDIUM 4 / LOW 3 |
+| 已在审查中关闭 | A-1（模块划分选 (a)）、A-2（K5 全量枚举） |
+| Outside Voice | Codex，3 问 3 答；Q1/Q2 采纳，Q3 前提被源码证伪、部分采纳 |
+| 待办 | R1–R12 **全部闭合** |
+
+**VERDICT: PASS WITH CHANGES** —— 三份计划的事实基础经核验总体可靠，阶段顺序经 Outside Voice 挑战后依然成立（但支撑它的论证要换一条）。开工前必须先落 R1 / R2 / R5 / R10 / R12 五项 P0：前两项解开 4B.1 与 4B.3 的死锁，后三项堵住三个「验收会通过、东西已经坏了」的口子。**五项已于 2026-08-16 全部写入计划**，同日 R4 / R6 / R7 / R8 / R11 五项 P1–P2 也一并落地（见上「落地记录」）。R4 的死代码已实际删除。开工前只剩两个待裁决项（见下），均不阻塞 Phase 0 动工。
+
+**UNRESOLVED DECISIONS:**
+
+- **R6 / C5 首页只读 manifest 的落点** —— C5 已写入性能章节（附录 A），但阶段未定。严格说它依赖 Phase 3 的 `manifest.json` 才成立，放 Phase 2b 需要先出一个过渡版（例如单独缓存一份轻量书目 JSON）。放 2b 并加过渡版／推迟到 Phase 3 一并做，二选一。
+- **合同 2 的两项 token 尚未收口** —— 标注暗色变体取显式 `--p-hl-*-dk` 还是 `color-mix`；原型单层 token 名如何映射到规格两层。§3 已给建议与落点（Track D / 4A.1），但仍需你拍板才算冻结。

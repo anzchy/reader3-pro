@@ -8,7 +8,7 @@
 ## 为什么要归档
 
 `specs/` 现在承担的是另一件事。计划文档
-[`docs/plans/20260816-tech-stack-and-ui-changes/plan-ui-migration-sequencing.md`](../../docs/plans/20260816-tech-stack-and-ui-changes/plan-ui-migration-sequencing.md) §9
+[`docs/plans/20260816-tech-stack-migration/plan-tech-stack-migration.md`](../../docs/plans/20260816-tech-stack-migration/plan-tech-stack-migration.md) §9
 把 `specs/{分支名}/tasks.md` 定义为**活跃分支的任务清单**存放处。
 两种文档形态相同、编号规则相同、放在同一个目录下，但生命周期相反——
 一批是"已经做完的记录"，一批是"还没做的清单"。
@@ -35,7 +35,7 @@
 
 - **一次规划工作 = 一个文件夹**：计划、设计规格、跨分支契约、评审记录、各分支任务清单
   全部放在 `docs/plans/{日期}-{主题}/` 下。当前唯一在进行的是
-  [`docs/plans/20260816-tech-stack-and-ui-changes/`](../../docs/plans/20260816-tech-stack-and-ui-changes/README.md)
-- 分支任务清单 → 该文件夹的 `tasks/{分支名}.md`，分支编号由其 `plan-ui-migration-sequencing.md` §9 统一分配
+  [`docs/plans/20260816-tech-stack-migration/`](../../docs/plans/20260816-tech-stack-migration/README.md)
+- 分支任务清单 → 该文件夹的 `tasks/{分支名}.md`，分支编号由其 `plan-tech-stack-migration.md` §9 统一分配
 - `specs/` 现在只剩本 `_archive/`
 - spec-kit 工具链（`.specify/`、`.claude/commands/speckit.*`）已于 2026-08-16 移除

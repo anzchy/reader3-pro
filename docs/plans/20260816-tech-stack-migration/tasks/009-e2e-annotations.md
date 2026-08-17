@@ -1,12 +1,14 @@
 # 009-e2e-annotations —— 任务
 
 - **对应阶段**: Phase 1b（Playwright E2E）起写，后续阶段逐组激活
-- **进入条件**: Phase 0 的 0.3（`--port` + `/api/health`）与 0.5（`data-testid` 全量补齐）完成。见 `docs/plans/20260816-tech-stack-and-ui-changes/plan-ui-migration-sequencing.md` §6
+- **进入条件**: Phase 0 的 0.3（`--port` + `/api/health`）与 0.5（`data-testid` 全量补齐）完成。见 `docs/plans/20260816-tech-stack-migration/plan-tech-stack-migration.md` §6
 - **退出条件**: **`baseline-1b` 组**在**主 CI**（非 nightly）绿灯。其余组各自在所属阶段的出口生效，见 §0.5
 - **下游**: Phase 4A / 4B 的进入条件；Phase 3 的 soak 门槛（连绿 ≥10 次、跨度 ≥5 个工作日）数的就是 **`baseline-1b`** 这一组
-- **契约**: K1–K6 见 `docs/plans/20260816-tech-stack-and-ui-changes/contracts/annotation-host-contracts.md`；降级状态 S1–S5 见 `docs/plans/20260816-tech-stack-and-ui-changes/spec-frontend-design.md` §6.4
+- **契约**: K1–K6 见 `docs/plans/20260817-frontend-ui-refactor/contracts/annotation-host-contracts.md`；降级状态 DEG-S1–DEG-S5 见 `docs/plans/20260817-frontend-ui-refactor/spec-frontend-design.md` §6.4
 
 > **引用规则**：用**符号名**与 **testid** 定位，不写代码行号。
+
+> **跨计划**：[前端计划](../../20260817-frontend-ui-refactor/README.md)的测试矩阵**引用本文的用例 ID**（`R-1`…`R-6` / `W-1`…`W-10` / `K-1`…`K-6` / `X-1` / `X-2`）与 §0.5 的激活分组，**不重写这些用例**。前端矩阵新增的是本文范围之外的东西：按钮态、面板互斥与焦点、键盘与 a11y、数据态、响应式、主题解析。两边出现冲突时，标注 E2E 的用例定义以本文为准。
 
 ---
 
@@ -30,8 +32,8 @@
 
 > **为什么需要分组**：本文最初把全部用例塞进 Phase 1b 的退出门槛，这构成一个**依赖环**——
 >
-> - K-1 的「响亮失败」与 K-6 的「`Reader3Ctx` 缺失时抛错」是 **4B.1 才产生的行为**（见 `docs/plans/20260816-tech-stack-and-ui-changes/tasks/014-ts-frontend-reader.md` §4B.1 契约产出表 K1/K6 行，K6 明写「本次拆分中唯一**故意的行为变更**」）；
-> - S1–S4 的横幅要到 **Phase 3 / 4A.4** 才存在（本文 §5 注已承认这点）；
+> - K-1 的「响亮失败」与 K-6 的「`Reader3Ctx` 缺失时抛错」是 **4B.1 才产生的行为**（见[前端计划](../../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md)的 4B.1 契约产出表 K1/K6 行，K6 明写「本次拆分中唯一**故意的行为变更**」）；
+> - DEG-S1–DEG-S4 的横幅要到 **Phase 3 / 4A.4** 才存在（本文 §5 注已承认这点）；
 > - 而 Phase 3 的进入条件含 1b 的 soak 门槛，Phase 4A 的进入条件是 1b 绿灯，Phase 4B 的进入条件是 Phase 3 + 4A.4。
 >
 > 于是「1b 全绿」要求先有 4B.1 和 Phase 3 的产物，而它们又都排在 1b 之后。**按原文的顺序跑不通。**
@@ -42,9 +44,9 @@
 |---|---|---|:--:|:--:|
 | **`baseline-1b`** | §2 读路径 R-1…R-6、§3 写路径 W-1…W-10、§4 的 K-2 / K-3 / K-4 / K-5、§6 X-1 / X-2 | Phase 1b | ✅ | ✅ |
 | **`acceptance-4b1`** | §4 的 K-1（响亮失败）与 K-6 的抛错断言 | 4B.1 | ❌ | ❌ |
-| **`acceptance-p3`** | §5 的 S1–S4，**朴素横幅形态** | Phase 3 出口 | ❌ | ❌ |
-| **`acceptance-4a4`** | §5 的 S1–S4，**设计规格形态**（只改 testid 映射，断言语义不变） | 4A.4 | ❌ | ❌ |
-| **`acceptance-2a`** | S5 写冲突（本文 §7 已列为不在 1b） | Phase 2a | ❌ | ❌ |
+| **`acceptance-p3`** | §5 的 DEG-S1–DEG-S4，**朴素横幅形态** | Phase 3 出口 | ❌ | ❌ |
+| **`acceptance-4a4`** | §5 的 DEG-S1–DEG-S4，**设计规格形态**（只改 testid 映射，断言语义不变） | 4A.4 | ❌ | ❌ |
+| **`acceptance-2a`** | DEG-S5 写冲突（本文 §7 已列为不在 1b） | Phase 2a | ❌ | ❌ |
 
 **落地方式**：用 pytest marker（`@pytest.mark.baseline_1b` 等），CI 按组选择。未激活的组以 `skip` 而非删除的形式存在，理由是它们必须在写的时候就被 review——**一条到期才第一次被人读的断言，等于没写。**
 
@@ -141,7 +143,7 @@ child frame 内 document.createRange() → 写入 iframe 的 Selection
 
 ---
 
-## 5. S1–S4 降级状态各一条正向证据
+## 5. DEG-S1–DEG-S4 降级状态各一条正向证据
 
 > **组：`acceptance-p3`（朴素形态）→ `acceptance-4a4`（设计规格形态）。整节都不计入 Phase 1b 的退出门槛**，因为横幅本身要到 Phase 3 / 4A.4 才存在。用例在 1b 阶段就写好并挂 skip，到期解开。
 
@@ -149,14 +151,14 @@ child frame 内 document.createRange() → 写入 iframe 的 Selection
 
 | 状态 | 制造方式 | 断言 |
 |---|---|---|
-| **S1** 标注 stale | 改写 `notes.json` 里的 spine 指纹使其与当前书不匹配 | 阅读器顶部横幅出现，文案匹配；Notes 面板逐条标记 |
-| **S2** 索引 stale | 使 chroma 指纹不匹配 | 书卡第五态 + 搜索面板顶部提示 |
-| **S3** pickle 回退告警 | `READER3_ALLOW_PICKLE=1` 启动 | 书库与阅读器都出现全局告警条 |
-| **S4** 存储格式/迁移进度 | 准备一本旧格式书 | 书卡上 `storage_format` 标记正确 |
+| **DEG-S1** 标注 stale | 改写 `notes.json` 里的 spine 指纹使其与当前书不匹配 | 阅读器顶部横幅出现，文案匹配；Notes 面板逐条标记 |
+| **DEG-S2** 索引 stale | 使 chroma 指纹不匹配 | 书卡第五态 + 搜索面板顶部提示 |
+| **DEG-S3** pickle 回退告警 | `READER3_ALLOW_PICKLE=1` 启动 | 书库与阅读器都出现全局告警条 |
+| **DEG-S4** 存储格式/迁移进度 | 准备一本旧格式书 | 书卡上 `storage_format` 标记正确 |
 
-> S1–S4 的**落地阶段**是 Phase 3（先以朴素横幅落到 Jinja 模板）与 Phase 4A.4（按设计规格重做）。本文的用例随之分两批写：Phase 3 出口时对朴素形态断言，4A.4 改版后只改 testid 映射、断言语义不变。
+> DEG-S1–DEG-S4 的**落地阶段**是 Phase 3（先以朴素横幅落到 Jinja 模板）与 Phase 4A.4（按设计规格重做）。本文的用例随之分两批写：Phase 3 出口时对朴素形态断言，4A.4 改版后只改 testid 映射、断言语义不变。
 >
-> **S5（notes 写冲突）不在 1b**——它依赖 Phase 2a 的乐观并发，届时随 2a 一起补。
+> **DEG-S5（notes 写冲突）不在 1b**——它依赖 Phase 2a 的乐观并发，届时随 2a 一起补。
 
 ---
 
@@ -172,7 +174,7 @@ child frame 内 document.createRange() → 写入 iframe 的 Selection
 ## 7. 不在 1b 范围
 
 - 迁移相关的 iframe 标注 E2E —— 属 **Phase 3 出口**（真实 `--migrate` 前后标注不漂移），在 `specs/012-storage-format/` 里
-- S5 写冲突 UI —— 随 Phase 2a
+- DEG-S5 写冲突 UI —— 随 Phase 2a
 - 视觉回归 / 截图对比 —— 本套只测行为
 - 性能基准 —— 属 Phase 1a
 
@@ -192,11 +194,11 @@ child frame 内 document.createRange() → 写入 iframe 的 Selection
 
 | 组 | 归属阶段的退出门槛 |
 |---|---|
-| `acceptance-4b1` | 4B.1 退出门槛（见 `docs/plans/20260816-tech-stack-and-ui-changes/tasks/014-ts-frontend-reader.md`） |
+| `acceptance-4b1` | 4B.1 退出门槛（见[前端计划](../../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md)） |
 | `acceptance-p3` | Phase 3 出口 |
 | `acceptance-4a4` | 4A.4 出口 |
 | `acceptance-2a` | Phase 2a 出口 |
 
-**一个不成组的例外**：R-6 属 `baseline-1b`，但它的**栏宽参数**要到 4B.3 才有对象可测。这是往既有用例上加参数，不是新开一组，因此不进上表；它的门槛写在 `docs/plans/20260816-tech-stack-and-ui-changes/tasks/014-ts-frontend-reader.md` §4B.3 退出门槛里。
+**一个不成组的例外**：R-6 属 `baseline-1b`，但它的**栏宽参数**要到 4B.3 才有对象可测。这是往既有用例上加参数，不是新开一组，因此不进上表；它的门槛写在[前端计划](../../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md)的 4B.3 工作项退出门槛里。
 
 > **不要把未激活组的 skip 当成永久豁免。** 每个阶段的出口 checklist 里都要有一行「本阶段应激活的组已解开 skip 且绿灯」，否则 skip 会一路带到 Phase 5。
