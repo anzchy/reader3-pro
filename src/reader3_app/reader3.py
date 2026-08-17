@@ -273,6 +273,27 @@ def _staging_dir_is_owned(leftover: str) -> bool:
     return suffix.isdigit() and int(suffix) != os.getpid() and _pid_is_running(int(suffix))
 
 
+def _is_own_staging_name(leftover: str) -> bool:
+    """Whether ``leftover`` is named the way :func:`_staging_dir` names things.
+
+    The glob that finds leftovers is wider than the set of names this module
+    creates, and the excess is not hypothetical. A book folder is named
+    ``{epub_stem}_data``, so an EPUB legally called ``sample_data.staging-1.epub``
+    produces ``sample_data.staging-1_data`` — a real library folder that the
+    pattern ``sample_data.staging-*`` matches. So does a user's own
+    ``sample_data.staging-backup``. Neither has a lock file, so
+    :func:`_staging_dir_is_owned` reports them unowned and the caller would
+    delete them outright, ``notes.json`` and all: a data-loss path inside the
+    protocol that exists to prevent data loss.
+
+    A staging directory this module made always ends in a bare pid, and a real
+    book folder never can — ``_data`` is always appended, so its suffix can never
+    be all digits. Requiring digits therefore separates the two exactly.
+    """
+    suffix = os.path.basename(leftover).rsplit(".staging-", 1)[-1]
+    return suffix.isdigit()
+
+
 def _clear_staging_dirs(output_dir: str) -> None:
     """Remove staging directories left behind by a previous crashed run.
 
@@ -285,6 +306,10 @@ def _clear_staging_dirs(output_dir: str) -> None:
     # glob.escape: a book folder is named after the EPUB file, so it can legally
     # contain '*', '?' or '[' — none of which may be read as a pattern here.
     for leftover in glob.glob(f"{glob.escape(normalized)}.staging-*"):
+        if not _is_own_staging_name(leftover):
+            # Someone else's directory that merely matches the pattern. Not ours
+            # to reason about, and certainly not ours to delete.
+            continue
         if _staging_dir_is_owned(leftover):
             raise RuntimeError(
                 f"another process is already processing {normalized}; refusing to "

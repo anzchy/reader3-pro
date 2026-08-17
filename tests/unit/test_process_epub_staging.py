@@ -179,6 +179,49 @@ def test_reprocess_does_not_touch_sibling_book_directories(
     assert sorted(os.listdir(books_dir)) == ["other_data", "sample_data", "sample_data_old"]
 
 
+def test_reprocess_spares_siblings_matching_the_staging_glob(
+    seeded_book_dir: Path, books_dir: Path, epub_v1: Path, epub_v2: Path, snapshot
+):
+    """L3 / S1 - the staging glob matches real book folders; they must survive.
+
+    Regression for the cleanup deleting whatever ``{book}.staging-*`` matched.
+    Neither decoy has a lock file, so ``_staging_dir_is_owned`` reported both
+    unowned and ``_clear_staging_dirs`` removed them with their ``notes.json``.
+    The sibling test above misses this: its decoys are named ``sample_data_old``
+    and ``other_data``, and the glob matches neither.
+    """
+    import subprocess
+    import sys
+
+    from bookdir import make_seeded_book_dir
+
+    # What an EPUB named 'sample_data.staging-1.epub' legitimately produces.
+    decoys = {
+        "sample_data.staging-1_data": make_seeded_book_dir(
+            books_dir, epub_v1, name="sample_data.staging-1_data"
+        ),
+        "sample_data.staging-backup": make_seeded_book_dir(
+            books_dir, epub_v1, name="sample_data.staging-backup"
+        ),
+    }
+    before = {name: snapshot(path) for name, path in decoys.items()}
+
+    # A genuine orphan, so a guard that simply stopped deleting anything fails here.
+    reaped = subprocess.Popen([sys.executable, "-c", ""])
+    reaped.wait()
+    orphan = Path(f"{seeded_book_dir}.staging-{reaped.pid}")
+    orphan.mkdir()
+    (orphan / "book.pkl").write_bytes(b"half-written")
+
+    process_epub(str(epub_v2), str(seeded_book_dir))
+
+    assert {name: snapshot(path) for name, path in decoys.items()} == before
+    for name, path in decoys.items():
+        assert (path / "notes.json").exists(), f"{name} lost its annotations"
+    assert not orphan.exists(), "the real orphan should still be cleaned up"
+    assert staging_leftovers(seeded_book_dir) == sorted(str(p) for p in decoys.values())
+
+
 def test_failed_epub_copy_raises_and_commits_nothing(
     seeded_book_dir: Path, epub_v2: Path, snapshot
 ):
