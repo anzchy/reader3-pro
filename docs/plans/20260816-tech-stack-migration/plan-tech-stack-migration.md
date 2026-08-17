@@ -677,7 +677,7 @@ Phase 1b 从 Phase 1 中拆出并降级为「仅阻塞 Phase 4」，使 Phase 2/
   **附带发现（正面）**：真正的跨文件全局契约只有 `window.Reader3Epub` 一个（`epub-renderer.js` 定义，annotations.js / search.js 经 `?.` 消费）；`annotations.js` 的 `getReaderContext` 在 IIFE 内不构成冲突。ES module 化的爆炸半径远小于「5818 行裸 JS」的直觉。
 - **B2** 67 处 `except Exception`、4 处裸 `pass`。Phase 1a 开头先写死三级规则：外部数据读取可降级但必须 `logging.warning` 带上下文；数据完整性校验禁止捕获必须上抛；禁止裸 `pass`。ruff 开 `BLE`/`S110`，存量入白名单逐步清理。已知四处（`_parse_summary_payload()`、`api_ai_question()` 内的 `push()` 闭包、`ai/books.ensure_book_uuid()`、`ai/conversations.list_conversations_combined()`）在 Phase 1a 修（**不放 Phase 0**——这是行为变更，需与测试同步）。
 - **B3** Phase 2 对 Python 写了「不改行为」，Phase 4 对 JS 无对称约束。补上该约束，并把第 5 步拆为 **5a**（纯 JS 拆 `annotations.js`，不动一行逻辑，验收：1b 标注 E2E 全绿）与 **5b**（拆出的文件逐个转 TS，同一套 E2E 再全绿）。⚠️ 本条原写的 anchoring/renderer/ui 三分法已被证伪，实际划分见 `tasks/014-ts-frontend-reader.md`。CFI/DOM Range 这类脆弱代码，多一个 PR 的成本远低于混在一起后的调试成本。
-- **B4** 42 处 `console.log`（annotations.js 33 / epub-renderer.js 9）换成 `debug.ts` 分层，由 `localStorage.reader3_debug` 控制（默认关），ESLint 开 `no-console` 放行 warn/error。
+- **B4** 42 处 `console.log`（annotations.js 33 / epub-renderer.js 9）换成 `debug.ts` 分层，由 `localStorage["reader3.debug"]` 控制（默认关），ESLint 开 `no-console` 放行 warn/error。
 
 ### 性能（C1–C5，计划原本无此章节）
 

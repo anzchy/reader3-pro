@@ -93,6 +93,7 @@
       --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.55);
       --shadow-lg: 0 20px 48px rgba(0, 0, 0, 0.65);
 
+      /* What the reading axis resolves to when it is on `auto` (its default). */
       --page-bg: #131c2e;
       --page-ink: #dbe3ef;
       --page-quiet: #93a3bb;
@@ -128,11 +129,20 @@
       }
     }
 
-    /* Reading themes recolour the page surface only (spec §5.7). */
-    [data-reading-theme="paper"] { --page-bg: var(--surface); --page-ink: var(--text); --page-quiet: var(--muted); }
-    [data-reading-theme="sepia"] { --page-bg: #f6ecd8; --page-ink: #4a3b28; --page-quiet: #8a7455; }
-    [data-reading-theme="green"] { --page-bg: #dcece0; --page-ink: #24382a; --page-quiet: #5b7563; }
-    [data-reading-theme="night"] { --page-bg: #10151f; --page-ink: #c2ccdb; --page-quiet: #7e8ca3; }
+    /* Reading paper is its own axis, stamped on <html> alongside data-theme
+       (ruling R7 in spec-frontend-design.md §11.1). Two rules to keep straight:
+
+       1. `auto` deliberately has NO rule. It means "leave the --page-* the
+          chrome axis already set" — that is what makes it follow the interface.
+          Adding a [data-reading-theme="auto"] block collapses the two axes
+          back into one.
+       2. The other four are ABSOLUTE: byte-identical under light and dark
+          chrome. Scoping is by selector (.reader-shell), not by mount point,
+          so paper can never leak onto the library page. */
+    html[data-reading-theme="paper"] .reader-shell { --page-bg: #ffffff; --page-ink: #1f2937; --page-quiet: #64748b; }
+    html[data-reading-theme="sepia"] .reader-shell { --page-bg: #f6ecd8; --page-ink: #4a3b28; --page-quiet: #8a7455; }
+    html[data-reading-theme="green"] .reader-shell { --page-bg: #dcece0; --page-ink: #24382a; --page-quiet: #5b7563; }
+    html[data-reading-theme="night"] .reader-shell { --page-bg: #10151f; --page-ink: #c2ccdb; --page-quiet: #7e8ca3; }
 
     [data-reading-font="system"] { --reading-font: var(--ui-font); }
     [data-reading-font="kai"] { --reading-font: "Kaiti SC", "STKaiti", "KaiTi", serif; }
@@ -186,9 +196,8 @@
     .btn:disabled { opacity: 0.45; cursor: not-allowed; }
     .btn-primary { background: var(--blue-600); border-color: var(--blue-600); color: #fff; }
     .btn-primary:hover:not(:disabled) { background: var(--blue-700); border-color: var(--blue-700); color: #fff; }
-    .btn-secondary { background: var(--surface); }
-    .btn-danger-solid { background: var(--danger); border-color: var(--danger); color: #fff; }
-    .btn-danger-solid:hover:not(:disabled) { filter: brightness(0.92); color: #fff; }
+    .btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+    .btn-danger:hover:not(:disabled) { filter: brightness(0.92); color: #fff; }
     .btn-sm { height: 28px; padding: 0 10px; font-size: 13px; }
     .btn-icon { width: 34px; padding: 0; font-size: 15px; }
 
@@ -573,7 +582,12 @@
     }
     .pref-option:hover { border-color: var(--blue-500); }
     .pref-option.is-active { border-color: var(--blue-600); background: var(--blue-50); color: var(--blue-700); font-weight: 600; }
-    .swatch-paper { box-shadow: inset 4px 0 0 #ffffff; }
+    /* `auto` follows the chrome axis, so its swatch is the only relative one.
+   It reads --surface (a chrome token) rather than --page-bg, because inside
+   .reader-shell --page-bg is whatever paper is currently selected — which
+   would make the auto swatch mirror sepia/green instead of the interface. */
+.swatch-auto { box-shadow: inset 4px 0 0 var(--surface); }
+.swatch-paper { box-shadow: inset 4px 0 0 #ffffff; }
     .swatch-sepia { box-shadow: inset 4px 0 0 #f6ecd8; }
     .swatch-green { box-shadow: inset 4px 0 0 #dcece0; }
     .swatch-night { box-shadow: inset 4px 0 0 #10151f; }
@@ -745,7 +759,7 @@
     /* ============================================================== */
     /* Responsive                                                      */
     /* ============================================================== */
-    @media (max-width: 1024px) {
+    @media (max-width: 1279px) {
       .library-shell, .library-shell.is-collapsed { grid-template-columns: var(--sidebar-width) minmax(0, 1fr); }
       .insights-slot {
         position: fixed; top: var(--header-height); right: 0; bottom: 0; width: var(--insights-width);
@@ -764,7 +778,7 @@
       .reader-viewport { margin: 0 60px; }
     }
 
-    @media (max-width: 720px) {
+    @media (max-width: 767px) {
       .library-shell, .library-shell.is-collapsed { grid-template-columns: minmax(0, 1fr); }
       .sidebar-slot {
         position: fixed; top: var(--header-height); left: 0; bottom: 0; width: var(--sidebar-width);

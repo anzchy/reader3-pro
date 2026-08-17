@@ -139,8 +139,8 @@ function Modal(props) {
         <div className="modal-body">{children}</div>
         {primaryLabel && (
           <footer className="modal-footer">
-            <button className="btn btn-secondary" type="button" data-testid="modal-cancel" onClick={onClose}>{cancelLabel || "Cancel"}</button>
-            <button className={"btn " + (tone === "danger" ? "btn-danger-solid" : "btn-primary")} type="button" data-testid="modal-primary" onClick={onPrimary}>{primaryLabel}</button>
+            <button className="btn" type="button" data-testid="modal-cancel" onClick={onClose}>{cancelLabel || "Cancel"}</button>
+            <button className={"btn " + (tone === "danger" ? "btn-danger" : "btn-primary")} type="button" data-testid="modal-primary" onClick={onPrimary}>{primaryLabel}</button>
           </footer>
         )}
       </section>
@@ -184,7 +184,7 @@ function TopBar(props) {
           </>
         )}
         {screen === "settings" && (
-          <button className="btn btn-secondary" type="button" data-testid="back-to-library" onClick={() => onScreen("library")}>Back to Library</button>
+          <button className="btn" type="button" data-testid="back-to-library" onClick={() => onScreen("library")}>Back to Library</button>
         )}
       </div>
     </header>
@@ -429,7 +429,7 @@ function DashboardPanel(props) {
         <p className="empty-copy">Indexing a book enables semantic search and grounded AI answers. Dashboard progress counts indexed books, not reading progress.</p>
         <div className="settings-actions" style={{marginTop: "12px"}}>
           <button className="btn btn-primary" type="button" data-testid="index-remaining">Index remaining</button>
-          <button className="btn btn-secondary" type="button" data-testid="open-index-errors" onClick={props.onShowErrors}>View 1 error</button>
+          <button className="btn" type="button" data-testid="open-index-errors" onClick={props.onShowErrors}>View 1 error</button>
         </div>
       </div>
     </div>
@@ -481,7 +481,7 @@ function ChatPanel(props) {
           }}
         ></textarea>
         {streaming
-          ? <button className="btn btn-secondary" type="button" data-testid="chat-stop" onClick={onStop}>Stop</button>
+          ? <button className="btn" type="button" data-testid="chat-stop" onClick={onStop}>Stop</button>
           : <button className="btn btn-primary" type="button" data-testid="chat-send" onClick={onSend}>Send</button>}
       </div>
     </div>

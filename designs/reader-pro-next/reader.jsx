@@ -307,7 +307,7 @@ function ReaderSearchPanel(props) {
       <div className="index-banner" data-testid="reader-index-status">
         <span>Semantic index: <strong>{window.STATUS_META[indexStatus].label}</strong></span>
         {indexStatus !== "indexed" && (
-          <button className="btn btn-secondary btn-sm" type="button" data-testid="index-book" onClick={onIndex}>Index book</button>
+          <button className="btn btn-sm" type="button" data-testid="index-book" onClick={onIndex}>Index book</button>
         )}
       </div>
       <input
@@ -422,9 +422,9 @@ function AiPanel(props) {
     >
       {exporting && (
         <div className="export-row" role="group" aria-label="Export conversation" data-testid="ai-export-menu">
-          <button className="btn btn-secondary btn-sm" type="button" onClick={() => exportAs("md")}>Markdown</button>
-          <button className="btn btn-secondary btn-sm" type="button" onClick={() => exportAs("txt")}>Plain text</button>
-          <button className="btn btn-secondary btn-sm" type="button" onClick={() => exportAs("json")}>JSON</button>
+          <button className="btn btn-sm" type="button" onClick={() => exportAs("md")}>Markdown</button>
+          <button className="btn btn-sm" type="button" onClick={() => exportAs("txt")}>Plain text</button>
+          <button className="btn btn-sm" type="button" onClick={() => exportAs("json")}>JSON</button>
         </div>
       )}
       {history && (
@@ -490,7 +490,7 @@ function AiPanel(props) {
           }}
         ></textarea>
         {streaming
-          ? <button className="btn btn-secondary" type="button" data-testid="ai-stop" onClick={stop}>Stop</button>
+          ? <button className="btn" type="button" data-testid="ai-stop" onClick={stop}>Stop</button>
           : <button className="btn btn-primary" type="button" data-testid="ai-send" onClick={() => send()}>Send</button>}
       </div>
 
@@ -512,7 +512,11 @@ function AiPanel(props) {
 
 /* -------------------------- Font popover --------------------------- */
 
+/* Five, not four. `auto` is the default and means "follow the interface theme"
+   (ruling R7). It is not a colour of its own — it is the absence of an
+   override, so it has no CSS rule in index.html. */
 const READING_THEMES = [
+  { id: "auto", label: "Auto" },
   { id: "paper", label: "Paper" },
   { id: "sepia", label: "Sepia" },
   { id: "green", label: "Green" },
@@ -669,7 +673,8 @@ function ReaderScreen(props) {
   const { book, onBack, errorState } = props;
   const [panel, setPanel] = useState(null);
   const [fontOpen, setFontOpen] = useState(false);
-  const [prefs, setPrefs] = useState({ size: 18, leading: 1.85, font: "system", readingTheme: "paper" });
+  /* size/leading here are prototype values; production ships 17 / 1.9 (R7 tail). */
+  const [prefs, setPrefs] = useState({ size: 18, leading: 1.85, font: "system", readingTheme: "auto" });
   const [chapterIndex, setChapterIndex] = useState(RD.chapter.index);
   const [annotations, setAnnotations] = useState(RD.annotations);
   const [selection, setSelection] = useState(null);
@@ -683,6 +688,16 @@ function ReaderScreen(props) {
   const flowRef = useRef(null);
   const chapterRef = useRef(RD.chapter.index);
   const paging = usePagination(viewportRef, flowRef, chapterIndex, [chapterIndex, prefs.size, prefs.leading, prefs.font, panel, aiWidth]);
+
+  /* The paper axis is stamped on <html>, not on .reader-shell (ruling R7):
+     in production a synchronous <head> script sets it before <body> exists,
+     so .reader-shell is not available as a mount point. Scoping is done by
+     the selector `html[data-reading-theme=x] .reader-shell` instead. `auto`
+     is stamped like any other value — only the chrome axis removes its
+     attribute (for "system"). */
+  useEffect(() => {
+    document.documentElement.setAttribute("data-reading-theme", prefs.readingTheme);
+  }, [prefs.readingTheme]);
 
   const chapterNotes = annotations.filter((note) => note.chapter_index === chapterIndex);
 
@@ -840,7 +855,7 @@ function ReaderScreen(props) {
             Re-process the book to restore it.
           </p>
           <div className="settings-actions" style={{justifyContent: "center", marginTop: "16px"}}>
-            <button className="btn btn-secondary" type="button" onClick={onBack}>Back to Library</button>
+            <button className="btn" type="button" onClick={onBack}>Back to Library</button>
             <button className="btn btn-primary" type="button" data-testid="reprocess-book">Re-process book</button>
           </div>
         </div>
@@ -851,7 +866,7 @@ function ReaderScreen(props) {
   const progress = Math.round(((paging.page + 1) / paging.pages) * 100);
 
   return (
-    <div className="reader-shell" data-reading-theme={prefs.readingTheme} data-reading-font={prefs.font} data-testid="reader-shell">
+    <div className="reader-shell" data-reading-font={prefs.font} data-testid="reader-shell">
       <LiveRegion message={announce} />
 
       <header className="reader-header" data-testid="reader-header">
@@ -913,7 +928,7 @@ function ReaderScreen(props) {
 
           <footer className="chapter-nav" data-testid="chapter-nav">
             <button
-              className="btn btn-secondary"
+              className="btn"
               type="button"
               disabled={chapterIndex === 0}
               data-testid="chapter-prev"
@@ -921,7 +936,7 @@ function ReaderScreen(props) {
             >Previous</button>
             <span className="chapter-count" data-testid="chapter-count">Section {chapterIndex + 1} of {RD.chapter.total}</span>
             <button
-              className="btn btn-secondary"
+              className="btn"
               type="button"
               disabled={chapterIndex >= RD.chapter.total - 1}
               data-testid="chapter-next"

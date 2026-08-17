@@ -68,13 +68,13 @@ function ProviderRow(props) {
 
       <div className="provider-actions">
         <button className="btn btn-primary btn-sm" type="button" data-testid={"provider-save-" + provider.id} onClick={() => onAnnounce(provider.name + " saved")}>Save</button>
-        <button className="btn btn-secondary btn-sm" type="button" disabled={busy} data-testid={"provider-test-" + provider.id} onClick={runTest}>
+        <button className="btn btn-sm" type="button" disabled={busy} data-testid={"provider-test-" + provider.id} onClick={runTest}>
           {busy ? "Testing…" : "Test connection"}
         </button>
         {/* Refresh models queries a running server for its installed models —
             only Ollama exposes that, so it is Ollama-only (spec §4.3). */}
         {provider.isOllama && (
-          <button className="btn btn-secondary btn-sm" type="button" data-testid="provider-refresh-models" onClick={() => onAnnounce("Model list refreshed")}>Refresh models</button>
+          <button className="btn btn-sm" type="button" data-testid="provider-refresh-models" onClick={() => onAnnounce("Model list refreshed")}>Refresh models</button>
         )}
         {test === "ok" && <span className="state-line is-ok" data-testid={"provider-result-" + provider.id}>Connection OK</span>}
         {test === "fail" && <span className="state-line is-error" data-testid={"provider-result-" + provider.id}>Connection failed — add an API key first</span>}
@@ -144,9 +144,9 @@ function SettingsScreen(props) {
           <h2 className="settings-title">Data</h2>
           <p className="settings-copy">These actions change stored state and each asks for confirmation first.</p>
           <div className="settings-actions">
-            <button className="btn btn-secondary" type="button" data-testid="data-reindex" onClick={() => setConfirm("reindex")}>Rebuild all indexes</button>
-            <button className="btn btn-secondary" type="button" data-testid="data-conversations" onClick={() => setConfirm("conversations")}>Delete all conversations</button>
-            <button className="btn btn-secondary" type="button" data-testid="data-cache" onClick={() => setConfirm("cache")}>Clear reading cache (IndexedDB)</button>
+            <button className="btn" type="button" data-testid="data-reindex" onClick={() => setConfirm("reindex")}>Rebuild all indexes</button>
+            <button className="btn" type="button" data-testid="data-conversations" onClick={() => setConfirm("conversations")}>Delete all conversations</button>
+            <button className="btn" type="button" data-testid="data-cache" onClick={() => setConfirm("cache")}>Clear reading cache (IndexedDB)</button>
           </div>
         </section>
 
@@ -154,8 +154,8 @@ function SettingsScreen(props) {
           <h2 className="settings-title">Export</h2>
           <p className="settings-copy">Exports contain books, notes, collections and conversations. Provider settings are exported without API keys (no keys).</p>
           <div className="settings-actions">
-            <button className="btn btn-secondary" type="button" data-testid="export-json" onClick={() => setAnnounce("Export started")}>Export library JSON</button>
-            <button className="btn btn-secondary" type="button" data-testid="export-settings" onClick={() => setAnnounce("Export started")}>Export settings (no keys)</button>
+            <button className="btn" type="button" data-testid="export-json" onClick={() => setAnnounce("Export started")}>Export library JSON</button>
+            <button className="btn" type="button" data-testid="export-settings" onClick={() => setAnnounce("Export started")}>Export settings (no keys)</button>
           </div>
         </section>
       </div>

@@ -128,7 +128,7 @@ function LibraryScreen(props) {
             <button className={"view-button " + (view === "list" ? "is-active" : "")} type="button" aria-pressed={view === "list"} data-testid="view-list" onClick={() => setView("list")}>List</button>
           </div>
           <button
-            className={"btn " + (selectionMode ? "btn-primary" : "btn-secondary")}
+            className={"btn " + (selectionMode ? "btn-primary" : "btn")}
             type="button"
             aria-pressed={selectionMode}
             data-testid="toggle-selection"
@@ -145,7 +145,7 @@ function LibraryScreen(props) {
             <button className="text-button" type="button" data-testid="select-all" onClick={() => setSelectedIds(books.map((book) => book.id))}>Select all</button>
             <button className="text-button" type="button" data-testid="select-none" onClick={() => setSelectedIds([])}>Clear</button>
             <div className="bulk-spacer"></div>
-            <button className="btn btn-secondary btn-sm" type="button" disabled={!selectedIds.length} data-testid="bulk-collection" onClick={() => setDialog({ kind: "addTo" })}>Add to collection</button>
+            <button className="btn btn-sm" type="button" disabled={!selectedIds.length} data-testid="bulk-collection" onClick={() => setDialog({ kind: "addTo" })}>Add to collection</button>
             <button className="btn btn-primary btn-sm" type="button" disabled={!selectedIds.length} data-testid="bulk-index" onClick={() => setAnnounce("Indexing " + selectedIds.length + " books")}>Index selected</button>
           </div>
         )}
@@ -161,7 +161,7 @@ function LibraryScreen(props) {
             <div className="empty-symbol" aria-hidden="true">⌕</div>
             <h2 className="empty-title">No books match “{filter}”</h2>
             <p className="empty-copy">Try a different title or author, or clear the filter.</p>
-            <button className="btn btn-secondary" type="button" style={{marginTop: "12px"}} onClick={() => setFilter("")}>Clear filter</button>
+            <button className="btn" type="button" style={{marginTop: "12px"}} onClick={() => setFilter("")}>Clear filter</button>
           </div>
         ) : view === "grid" ? (
           <div className="book-grid" data-testid="book-grid">
@@ -268,7 +268,7 @@ function LibraryScreen(props) {
                 <h3 className="note-group-title">{error.book_title}</h3>
                 <p className="empty-copy">{error.message}</p>
                 <p className="result-section">{error.at}</p>
-                <button className="btn btn-secondary btn-sm" type="button" data-testid="retry-index">Retry indexing</button>
+                <button className="btn btn-sm" type="button" data-testid="retry-index">Retry indexing</button>
               </article>
             ))}
           </div>
@@ -286,7 +286,7 @@ function App() {
   const params = new URLSearchParams(window.location.search);
   const [screen, setScreen] = useState(params.get("screen") || "library");
   const [book, setBook] = useState(A.books[0]);
-  const [theme, setTheme] = useState(localStorage.getItem("r3-theme") || "system");
+  const [theme, setTheme] = useState(localStorage.getItem("reader3.ui.colorScheme") || "system");
   const [mobileNav, setMobileNav] = useState(false);
   const [mobileInsights, setMobileInsights] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -296,7 +296,7 @@ function App() {
     const root = document.documentElement;
     if (theme === "system") root.removeAttribute("data-theme");
     else root.setAttribute("data-theme", theme);
-    localStorage.setItem("r3-theme", theme);
+    localStorage.setItem("reader3.ui.colorScheme", theme);
   }, [theme]);
 
   const closeMobile = () => {
@@ -347,7 +347,7 @@ function App() {
           <div className="dropzone" data-testid="dropzone">
             <p className="empty-title" style={{fontSize: "15px"}}>Drop EPUB files here</p>
             <p className="empty-copy">or</p>
-            <button className="btn btn-secondary" type="button" data-testid="choose-files">Choose files</button>
+            <button className="btn" type="button" data-testid="choose-files">Choose files</button>
           </div>
           <p className="empty-copy" style={{marginTop: "12px"}}>
             Files are processed locally into <code>books/&#123;name&#125;_data/</code>. PDF support is not available yet.

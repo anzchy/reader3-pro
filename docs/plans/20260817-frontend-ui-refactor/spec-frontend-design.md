@@ -6,7 +6,7 @@
 
 > ### 权威范围
 >
-> **本文权威**：双层 token 体系（§3）、`data-testid` 命名（§4）、组件清单（§5）、逐页规格（§6）、**iframe 边界与其例外（§6.0）**、降级状态设计（§6.4）、响应式断点（§7）、可访问性契约（§8）。
+> **本文权威**：双层 token 体系（§3）、`data-testid` 命名（§4）、组件清单与 `Button` 变体集（§5 / §5.1）、逐页规格（§6）、**iframe 边界与其例外（§6.0）**、降级状态设计（§6.4）、响应式断点（§7）、可访问性契约（§8）、**原型冲突裁决（§11）**。
 >
 > **本文不权威**：实施顺序、阶段划分、分支编号、技术栈选型与后端架构 —— 见 [`plan-tech-stack-migration.md`](../20260816-tech-stack-migration/plan-tech-stack-migration.md)。原型 → 生产的翻译规则 —— 见 [`designs/reader-pro-next/README.md`](../../../designs/reader-pro-next/README.md)。
 >
@@ -45,7 +45,7 @@
 
 > **这不是"视觉需要 polish"，是阅读器最高频的控件根本不存在。** 任何 reader 的设计规格如果绕过它，做出来还是个假面板。
 
-**决策**：本规格把阅读设置定义为**功能规格**（§6.3），并把它和 §3 的暗色模式统一到一个 `data-reading-theme` 契约上。字体 ×4 中的三款中文商业字体（得到今楷/汉仪旗黑/思源宋体）**未授权且未打包，删掉**，只保留 系统黑体 / 思源宋体（可 self-host 的开源字体）二选一。
+**决策**：本规格把阅读设置定义为**功能规格**（§6.3）。它的「纸色」与 §3 的界面明暗是**两根独立的轴**（`data-reading-theme` 与 `data-theme`，裁决见 §11-R7），不是一个契约。字体 ×4 中的三款中文商业字体（得到今楷/汉仪旗黑/思源宋体）**未授权且未打包，删掉**，只保留 系统黑体 / 思源宋体（可 self-host 的开源字体）二选一。
 
 ### D2 🔴 暗色模式在全站不存在
 
@@ -63,7 +63,7 @@
 
 全站 9 条 `@media`（reader 3 / dedao-theme 2 / library 2 / search 1 / library 1），`settings.css` 与 `css/` 下 5 个文件 **0 条**。`reader.html` 的 `.nav-zone-left/right` 是覆盖左右两侧的点击翻页热区——在触屏上会直接吞掉滚动和选词，而选词是标注功能的入口。
 
-**决策**：§7 定义三档断点，并规定 `nav-zone` 在 `<1024px` 一律禁用。
+**决策**：§7 定义三档断点（`1280` / `768`）。`nav-zone` 隐形热区**整体删除**、改显式翻页按钮——用视口宽度判断触屏是错的代理，见 §6.3 与 §11-R2。
 
 ### 1.5 浏览器实测补充的三个缺陷（D5–D7）
 
@@ -164,8 +164,22 @@ Tier 2  Semantic（角色，逐主题重定义）     --r3-*
 
 ### 3.3 Tier 2 — Semantic（组件唯一可用层）
 
+**两根轴，不是一根**（裁决见 §11-R7）。界面外观与阅读画布是两个状态域，各自拥有一组 token，谁也不重定义谁：
+
+| 轴 | 属性（都 stamp 在 `<html>`） | 取值 | 拥有的 token |
+|---|---|---|---|
+| **chrome** | `data-theme` | 属性缺席＝跟随系统 / `light` / `dark` | `bg`、`surface*`、`text*`、`border*`、`accent*`、`focus-ring`、四组状态色 ＋ `-subtle`、`shadow-*` |
+| **reading** | `data-reading-theme` | `auto`（默认）/ `paper` / `sepia` / `green` / `night` | `page-bg`、`page-ink`、`page-quiet`、`hl-*` |
+
+三条硬规则：
+
+1. **两个属性都挂 `<html>`，作用域由选择器保证，不由挂载点保证。** 阅读 token 只许写成 `html[data-reading-theme="x"] .reader-shell { }`。书库页没有 `.reader-shell`，纸色天然不外溢——而 `.reader-shell` 在 FOUC 的 inline script 执行时还不存在，属性挂不上去。
+2. **`auto` 之外的四种纸色是绝对值**，在 light / dark chrome 下完全相同。`auto` 是**唯一**跟随 chrome 的值，且它有名字——不许把「跟随界面」藏在 `paper` 里（原型犯的就是这个错，见 §11-R7）。
+3. **`--r3-hl-*` 归 reading 轴**，因为高亮画在纸上、在 iframe 里，跟界面明暗无关。`auto` 下由 chrome 决定，所以 chrome 轴里也有一份——那是 `auto` 的取值，不是 chrome 自己的角色。
+
 ```css
-:root {                      /* 亮色为默认 */
+/* ── 轴 1：chrome ───────────────────────────────────── */
+:root {                      /* 亮色 chrome 为默认 */
   --r3-bg:            var(--p-gray-100);   /* 页面底 */
   --r3-surface:       var(--p-gray-0);     /* 卡片 */
   --r3-surface-raised:var(--p-gray-0);     /* 弹层/抽屉 */
@@ -195,6 +209,8 @@ Tier 2  Semantic（角色，逐主题重定义）     --r3-*
   --r3-success-subtle:var(--p-green-100); --r3-warning-subtle:var(--p-amber-100);
   --r3-error-subtle:var(--p-red-100);     --r3-info-subtle:var(--p-cyan-100);
 
+  /* reading 轴 auto 档的取值——不是 chrome 自己的角色，见上面规则 3 */
+  --r3-page-bg:#ffffff; --r3-page-ink:#1f2937; --r3-page-quiet:#64748b;
   --r3-hl-yellow:var(--p-hl-yellow); --r3-hl-green:var(--p-hl-green);
   --r3-hl-pink:var(--p-hl-pink);     --r3-hl-blue:var(--p-hl-blue);
 
@@ -203,20 +219,27 @@ Tier 2  Semantic（角色，逐主题重定义）     --r3-*
   --r3-shadow-lg:0 4px 20px rgb(0 0 0 / .10);
 }
 
-:root[data-reading-theme="night"] {
-  /* --r3-bg / --r3-surface / --r3-text 刻意不在这里定义：下面那组阅读主题里
-     同选择器的 night 规则会覆盖它们，写在这里是永远生效不了的死值 */
-  --r3-surface-raised:#242424; --r3-surface-sunken:#141414;
-  --r3-surface-hover:#2a2a2a;
-  --r3-text-muted:#8f8f8f;
-  --r3-text-subtle:#6b6b6b; --r3-text-disabled:#4a4a4a;
-  --r3-border:#2f2f2f; --r3-border-subtle:#242424; --r3-border-strong:#3f3f3f;
+/* dark chrome 的两个入口：显式选择、以及未显式选 light 时跟随系统。
+   两块内容**必须逐字相同**——生产里用一个 CSS 自定义属性块生成两次，
+   不许手抄两遍。中性色取原型实测值（偏蓝，不是中性灰） */
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { /* ↓ 同下 */ } }
+:root[data-theme="dark"] {
+  --r3-bg:#0b1220;             /* 原型 --canvas */
+  --r3-surface:#131c2e;        /* 原型 --surface */
+  --r3-surface-raised:#1c2740; --r3-surface-sunken:#182335;
+  --r3-surface-hover:#182335;
+  --r3-text:#e2e8f0; --r3-text-muted:#94a3b8;
+  --r3-text-subtle:#64748b; --r3-text-disabled:#475569;
+  --r3-text-quiet:#93a3bb;
+  --r3-border:#263349; --r3-border-subtle:#1c2740; --r3-border-strong:#35476a;
   --r3-accent:var(--p-blue-400);   /* D-5 改蓝后同步；原值 #ff8534 是暖橙时代的残留 */
   --r3-accent-subtle:var(--p-blue-950);
   --r3-success:var(--p-green-400); --r3-warning:var(--p-amber-400);
   --r3-error:var(--p-red-400);     --r3-info:var(--p-cyan-400);
   --r3-success-subtle:var(--p-green-950); --r3-warning-subtle:var(--p-amber-950);
   --r3-error-subtle:var(--p-red-950);     --r3-info-subtle:var(--p-cyan-950);
+  /* auto 档在 dark chrome 下的取值 */
+  --r3-page-bg:#131c2e; --r3-page-ink:#dbe3ef; --r3-page-quiet:#93a3bb;
   --r3-hl-yellow:var(--p-hl-yellow-dk); --r3-hl-green:var(--p-hl-green-dk);
   --r3-hl-pink:var(--p-hl-pink-dk);     --r3-hl-blue:var(--p-hl-blue-dk);
   --r3-shadow-sm:0 1px 3px rgb(0 0 0 / .4);
@@ -224,11 +247,28 @@ Tier 2  Semantic（角色，逐主题重定义）     --r3-*
   --r3-shadow-lg:0 4px 20px rgb(0 0 0 / .6);
 }
 
-/* 阅读主题只改正文表面，不改 app chrome；ink/quiet 取原型实测值 */
-:root[data-reading-theme="sepia"] { --r3-bg:#ece0c8; --r3-surface:var(--p-paper-sepia); --r3-text:#4a3b28; --r3-text-quiet:#8a7455; }
-:root[data-reading-theme="green"] { --r3-bg:#cfe2d4; --r3-surface:var(--p-paper-green); --r3-text:#24382a; --r3-text-quiet:#5b7563; }
-:root[data-reading-theme="night"] { --r3-bg:#080b12; --r3-surface:var(--p-paper-night); --r3-text:#c2ccdb; --r3-text-quiet:#7e8ca3; }
+/* ── 轴 2：reading（只作用于 .reader-shell 内） ─────────
+   auto 故意没有规则——它就是「不覆盖 chrome 给的 page-* 与 hl-*」。
+   别把它当漏写补上，补上就又变成一根轴了。 */
+html[data-reading-theme="paper"] .reader-shell { --r3-page-bg:var(--p-gray-0);      --r3-page-ink:#1f2937; --r3-page-quiet:#64748b; }
+html[data-reading-theme="sepia"] .reader-shell { --r3-page-bg:var(--p-paper-sepia); --r3-page-ink:#4a3b28; --r3-page-quiet:#8a7455; }
+html[data-reading-theme="green"] .reader-shell { --r3-page-bg:var(--p-paper-green); --r3-page-ink:#24382a; --r3-page-quiet:#5b7563; }
+html[data-reading-theme="night"] .reader-shell { --r3-page-bg:var(--p-paper-night); --r3-page-ink:#c2ccdb; --r3-page-quiet:#7e8ca3; }
+
+/* 高亮跟纸走，不跟 chrome 走：三种亮纸用亮色高亮，夜纸用暗色高亮 */
+html[data-reading-theme="paper"] .reader-shell,
+html[data-reading-theme="sepia"] .reader-shell,
+html[data-reading-theme="green"] .reader-shell {
+  --r3-hl-yellow:var(--p-hl-yellow); --r3-hl-green:var(--p-hl-green);
+  --r3-hl-pink:var(--p-hl-pink);     --r3-hl-blue:var(--p-hl-blue);
+}
+html[data-reading-theme="night"] .reader-shell {
+  --r3-hl-yellow:var(--p-hl-yellow-dk); --r3-hl-green:var(--p-hl-green-dk);
+  --r3-hl-pink:var(--p-hl-pink-dk);     --r3-hl-blue:var(--p-hl-blue-dk);
+}
 ```
+
+> **`--p-paper-white` 现在只有 `paper` 一档在用**（`auto` 直接吃 chrome 的 `#ffffff`）。两者同值不是巧合，是 `auto` 在亮色下**就该**长得像 `paper`——区别只在切到 dark chrome 时 `paper` 不动、`auto` 跟着走。
 
 **状态色实测对比度**（2026-08-16，WCAG 2.1 相对亮度公式）——这四组不是挑好看的，是挑过线的：
 
@@ -243,15 +283,23 @@ Tier 2  Semantic（角色，逐主题重定义）     --r3-*
 >
 > **淡底不能独自表达状态。** 四个 `-subtle` 压在页面底上只有 1.10–1.22:1（亮色）、1.15–1.32:1（夜间）。只染一层底色的横幅在两个主题下都近乎看不见。**横幅必须同时有边框或图标**，边框直接用状态前景色。
 
-> `paper`（默认）不设 `data-reading-theme`，直接继承 `:root` 的 light/dark semantic 值。上面三个主题的 `--r3-bg` 是纸色的略暗衬底，由纸色派生。
+**两个 key、两个属性、一段 inline script**：
 
-**跟随系统**：`data-reading-theme` 未设置时，`@media (prefers-color-scheme: dark)` 套用 night 的 semantic 值。用户显式选择后写入 `localStorage.reader3_reading_theme` 并 stamp 到 `<html>`，显式选择优先。
+| 轴 | key | 取值 | 默认 | 属性写法 |
+|---|---|---|---|---|
+| chrome | `localStorage["reader3.ui.colorScheme"]` | `system` / `light` / `dark` | `system` | `system` → **移除** `data-theme`；否则 `data-theme="light\|dark"` |
+| reading | `localStorage["reader3.reader.theme"]` | `auto` / `paper` / `sepia` / `green` / `night` | `auto` | 始终写 `data-reading-theme="<值>"`，`auto` 也写 |
 
-> **闪白（FOUC）**：主题必须在首屏绘制前生效。`<head>` 内嵌一段同步 inline script 读 `localStorage` 并 stamp `data-reading-theme`，**不能**等 `defer` 的 JS。这条容易漏，漏了每次刷新都白闪一下。
+> **闪白（FOUC）**：两个属性都必须在首屏绘制前生效。`<head>` 内嵌**一段**同步 inline script 读两个 key 并 stamp 到 `<html>`，**不能**等 `defer` 的 JS。三处容易错：
+> 1. 属性挂 `<html>`，**不是** `.reader-shell`——inline script 跑的时候 `<body>` 还没解析，那个元素不存在。
+> 2. `auto` 也要 stamp。属性缺席与 `auto` 在 CSS 上等价，但选择器状态、`data-testid` 断言和 `aria-checked` 都要一个具体值；缺席是「没读到 localStorage」的信号，两者不能混。
+> 3. chrome 的 `system` 反过来——**必须**移除属性，因为跟随系统靠的是 `@media` 命中 `:not([data-theme="light"])`。
+
+**visual 组合矩阵是 2 × 4 = 8 种**（chrome 有效结果只有 light / dark 两种，`system` 是解析策略不是第三种外观；reading 的 `auto` 解析成两端之一，不产生第五种纸）。但**不是所有断言都乘 8**：纸色与高亮是绝对值，正文对比度 4 条、高亮压纸 4×4=16 条，都与 chrome 无关；真正要跑满 8 遍的只有**接缝**——阅读器工具条 / 页边 / 弹层压在纸上的那圈边界。
 
 ### 3.4 间距 / 圆角 / 字阶
 
-间距沿用现值（4/8/16/24/32/48），重命名为 `--r3-space-{xs,sm,md,lg,xl,2xl}`。圆角沿用（4/6/8/12/full）。
+间距沿用现值（4/8/16/24/32/48），重命名为 `--r3-space-{xs,sm,md,lg,xl,2xl}`。圆角**取原型实测值**并命名：`--r3-radius-sm:6px`、`--r3-radius-md:10px`、`--r3-radius-lg:16px`、`--r3-radius-full:999px`（原型 `--radius-{sm,md,lg}` 一一对应）。本节此前写的「沿用 4/6/8/12」是**现状生产**的值，不是目标值——目标是原型。
 
 布局宽度（§6.2 的三栏 Grid 引用，此前未定义）：
 
@@ -264,10 +312,31 @@ Tier 2  Semantic（角色，逐主题重定义）     --r3-*
 字阶是**新增**——现状没有字号 token，全站硬编码 px：
 
 ```css
---r3-text-xs:12px;  --r3-text-sm:13px; --r3-text-base:14px;
---r3-text-md:16px;  --r3-text-lg:18px; --r3-text-xl:22px; --r3-text-2xl:28px;
+--r3-text-2xs:11px; --r3-text-xs:12px;  --r3-text-sm:13px; --r3-text-base:14px;
+--r3-text-md:16px;  --r3-text-lg:18px;  --r3-text-xl:22px; --r3-text-2xl:28px;
 --r3-leading-tight:1.4; --r3-leading-normal:1.6; --r3-leading-reading:1.9;
 ```
+
+**`--r3-text-2xs:11px` 是补的**（裁决见 §11-R4）。原字阶只有 7 档、最小 12px，是在没测原型的情况下写的：原型实际用了 **12 个字号字面量**，其中 **44 处在 14px 以下**、只有 7 处等于 14px。强行把 11px 抬到 12px 会压掉徽章／eyebrow 与次级元数据之间的层级。
+
+原型字面量按下表 snap，**这是唯一的映射，实施时不得再自行取整**：
+
+| 原型值 | 用量 | → token | 说明 |
+|---|---|---|---|
+| 10px | 1 | `2xs` 11px | `.stale-dot` |
+| 11px | 7 | `2xs` 11px | eyebrow / 状态 pill / 计数 |
+| 11.5px | 9 | `xs` 12px | 次级元数据 |
+| 12px | 8 | `xs` 12px | — |
+| 12.5px | 12 | `sm` 13px | 作者行 / 笔记正文 / TOC |
+| 13px | 15 | `sm` 13px | — |
+| 13.5px | 1 | `base` 14px | `.msg-body` |
+| 14px | 7 | `base` 14px | — |
+| 15px | 2 | `md` 16px | `.modal-title` / `.settings-title` |
+| 17px | 1 | `lg` 18px | `.empty-title` |
+| 20px | 1 | `xl` 22px | `.stat-value` |
+| 15px / 26px（图标位） | 3 | — | `.btn-icon` / `.rail-button` / `.page-arrow` 的 `font-size` 是**字形图标的尺寸**，随图标改 SVG 一并消失，不进字阶 |
+
+> 上表有三处会产生可见位移：15→16、17→18、20→22。这是把设计收进字阶的代价，接受。`17px` 与阅读器正文默认字号（§6.3，14–24px 可调）无关——那是 iframe 内的正文，不走 UI 字阶。
 
 **字体**：`--r3-font-sans` 沿用系统栈。`--r3-font-serif` 现在指向 Google Fonts 的 `Noto Serif SC`——**这是个离线故障点**（自托管应用连外网 CDN，断网即回退且首屏跳字）。改为 self-host 思源宋体子集，或直接回退到系统 `PingFang SC` / `Songti SC`。
 
@@ -321,7 +390,7 @@ Plan 的 Phase 1b 会写 Playwright E2E 并作为 Phase 4 的合并门槛。如�
 
 | 组件 | 现状 | 变更 |
 |---|---|---|
-| `Button` | `.toolbar-btn` / `.mini-btn` / `.btn` / `.rt-btn` / `.nav-btn` / `.ai-btn` / `.drawer-btn` **七套** | 收敛为 `.r3-btn` + `--primary/--danger/--ghost/--icon` 修饰符 |
+| `Button` | `.toolbar-btn` / `.mini-btn` / `.btn` / `.rt-btn` / `.nav-btn` / `.ai-btn` / `.drawer-btn` **七套** | 收敛为 `.r3-btn` ＋ 下方 5 个修饰符（§5.1） |
 | `Badge / Pill` | `.badge` / `.status-pill` / `.chunk-pill` | 收敛为 `.r3-badge` + 状态色修饰符 |
 | `Modal` | `<dialog class="modal">` ×5，结构一致 | 保留 `<dialog>`（原生 a11y 好），抽 `.r3-modal` |
 | `Drawer / Panel` | `#reader-search-drawer` / `#reader-ai-panel` / `#toc-mode` / `#notes-mode` 各写一套 | 统一 `.r3-panel` + 进出场动效 + 焦点陷阱 |
@@ -331,6 +400,22 @@ Plan 的 Phase 1b 会写 Playwright E2E 并作为 Phase 4 的合并门槛。如�
 | `Skeleton` | **不存在**，现为 `-` 或 `Loading...` 文本 | 新增；书库卡片与统计数字用骨架屏 |
 
 > ⚠️ **`Modal` 一行的"保留 `<dialog>`"说的是现有 Jinja 模板；原型 `components.jsx` 的 `Modal` 是 `div.overlay` ＋ `role="dialog"`，已经不是原生 `<dialog>` 了。** 两边选型未收敛。这条差异在 §6.4 的 DEG-S5 上会咬人（原生 `<dialog>` 的 Esc 关闭要靠 `cancel` 事件 `preventDefault()` 才拦得住，div 版只要不接 Esc 即可），由 Track D 裁定并回写本表。
+
+### 5.1 `Button` 的 canonical 变体集（裁决见 §11-R3）
+
+`.r3-btn` 为基类：描边中性、`height:34px`、`padding:0 14px`、`gap:6px`、`border-radius: var(--r3-radius-sm)`。修饰符只有五个：
+
+| 修饰符 | 用途 | 原型对应 | 备注 |
+|---|---|---|---|
+| `--primary` | 主操作，每屏至多一个 | `.btn-primary` | 实底品牌蓝 |
+| `--danger` | 破坏性操作 | `.btn-danger-solid` | **改名**：`-solid` 是实现细节，不进变体名 |
+| `--ghost` | 无边框低强度操作 | 现有 **12 个裸类**（`.text-button` / `.link-button` / `.collapse-button` / `.row-more` / tab 类…） | 原型没有统一 ghost，全是就地写的 `border:0; background:none` |
+| `--icon` | 纯图标方形按钮 | `.btn-icon` | 必带 `aria-label`（§8.6） |
+| `--sm` | 尺寸档，`height:28px` | `.btn-sm`（10 处） | **本规格此前漏了尺寸档**，补上；可与上面四个叠加 |
+
+**`.btn-secondary` 删除。** 原型里它的全部声明是 `background: var(--surface)`，而基类 `.btn` 已经是同一个值——**它是空操作**，24 处引用降级为裸 `.r3-btn`，零视觉变化。
+
+**状态**：基类必须实现 `default` / `hover` / `active` / `disabled` 四态 ＋ 全局 `:focus-visible`；`loading` 态由 §5 的 `Skeleton`／spinner 承担，不做成按钮修饰符。原型目前只有 `hover` 与 `disabled`，`active` 缺失。
 
 ---
 
@@ -416,7 +501,7 @@ function bodySignature(body) {
 
 1. **AI 偏好** — 默认 provider（下拉）、流式开关、时间戳开关。删除 `Auto suggested questions (future)`——不做的功能不该占一行 UI。
 2. **服务商** — `#settings-providers` 动态渲染。每个 provider 一张卡：名称 + 启用开关 + API key（`type=password`，已配置显示 `••••••••` + "已配置"徽章）+ 模型 + 测试连接按钮。**新增连接状态指示**（未配置 / 已配置 / 测试通过 / 测试失败）。
-3. **外观**（**新增分区**）— 阅读主题四选一 + 界面语言。与 §6.3 的 reader 面板共用同一份状态。
+3. **外观**（**新增分区**）— **界面明暗**三选一（跟随系统 / 浅色 / 深色，`data-theme` 轴，见 §3.3）＋ 界面语言。**这里没有纸色**：阅读主题属于另一根轴，控件在 §6.3 的阅读设置面板里，两者不共用状态（裁决见 §11-R7）。
 4. **数据** — 清空对话 / 清空摘要 / 导出 / 导入。**破坏性操作必须二次确认**：现在 `Clear conversations` 是点了就执行，无确认。用 `<dialog>` 确认（**不要用 `confirm()`**——浏览器模态会阻塞，且不可测）。
 
 **状态**：加载中（骨架）/ 保存中（按钮 disabled + spinner）/ 保存成功（Toast，2s 自动消失）/ 保存失败（就地错误 + 保留用户输入）。
@@ -429,7 +514,7 @@ function bodySignature(body) {
 
 | 区域 | 变更 |
 |---|---|
-| Header | 保留 logo + 导航 + 主操作。**新增**阅读主题切换按钮（与 reader 一致，避免只有 reader 能切） |
+| Header | 保留 logo + 导航 + 主操作。**新增**界面明暗切换按钮（`data-theme` 轴三态循环：跟随系统 → 浅色 → 深色）。**不是**纸色切换——书库页没有纸，纸色轴在这里无意义（§11-R7） |
 | 左栏 Types | 保留。`PDF` 项 `disabled` 但仍显示计数——要么实现要么删，不留死项 |
 | 左栏 Collections | 保留。`.collection-actions`（Clean / Delete）现在常驻显示，噪音大 → 改为 hover / focus-within 显示，键盘可达 |
 | 工具栏 | 搜索、排序、视图切换、多选。图标现在是 emoji（`🔍` `▦` `✓`）→ 换 SVG，与 reader 的 SVG 图标风格统一 |
@@ -444,16 +529,22 @@ function bodySignature(body) {
 
 **阅读设置面板（D1，从零实现）**
 
-统一为一个 `data-reading-theme` 契约，同时驱动 **app chrome**（§3.3 semantic token）和 **iframe 正文**（epub.js `themes.override`）：
+`data-reading-theme` 只驱动**阅读画布**——纸色、正文墨色、高亮色，宿主页与 iframe 两侧同步。**它不碰 app chrome**，界面明暗是另一根轴（`data-theme`，裁决见 §11-R7），控件在设置页 §6.1 的「外观」分区，不在这个面板里。
 
 | 控件 | 值域 | 持久化 | 作用域 |
 |---|---|---|---|
-| 主题 | `white` / `sepia` / `green` / `night` | `localStorage.reader3_reading_theme` | 全局（chrome + iframe） |
-| 字号 | 14–24px，步长 1，默认 17 | `localStorage.reader3_font_size` | 仅 iframe |
-| 行距 | 1.4–2.4，步长 0.1，默认 1.9 | `localStorage.reader3_line_height` | 仅 iframe |
-| 字体 | `system` / `serif` **（二选一）** | `localStorage.reader3_font_family` | 仅 iframe |
+| 主题 | `auto`（默认）/ `paper` / `sepia` / `green` / `night` | `localStorage["reader3.reader.theme"]` | 阅读画布（`.reader-shell` ＋ iframe） |
+| 字号 | 14–24px，步长 1，默认 17 | `localStorage["reader3.reader.fontSize"]` | 仅 iframe |
+| 行距 | 1.4–2.4，步长 0.1，默认 1.9 | `localStorage["reader3.reader.lineHeight"]` | 仅 iframe |
+| 字体 | `system` / `serif` **（二选一）** | `localStorage["reader3.reader.fontFamily"]` | 仅 iframe |
 
-- 四个 `.theme-option` / 两个 `.font-option` 必须带 `data-value`，用 `role="radiogroup"` + `aria-checked`，键盘方向键可切（现在是裸 `<div>`，鼠标键盘都不可用）。
+> **key 命名空间是 `reader3.<区域>.<camelCase>`**（裁决见 §11-R5）。理由是生产**已经**在用这一套——`reader3.library.rightPanelCollapsed` 是全仓库现存的唯一一个前端存储 key。本规格此前写的 `reader3_reading_theme`（下划线）与原型的 `r3-theme`（短横）都是各自发明的第三套，作废。DEG 横幅的会话内关闭态同规则：`sessionStorage["reader3.degrade.<状态 id>"]`。
+>
+> **主题值域是 `paper`，不是 `white`。** 本表此前写 `white`、D1 的现状表写「白色」，指的是同一个东西。以 `paper` 为准——这个字符串要写进 `localStorage` 和 `data-reading-theme`，不能有第二个拼法。
+>
+> **默认是 `auto`，不是 `paper`**（裁决见 §11-R7）。`auto` = 跟随界面明暗：light chrome 下就是白纸，dark chrome 下跟着变深。`paper` 是**绝对白**，在 dark chrome 下依然是白纸——两者在亮色下看起来一样，区别只在切暗时。这个「跟随」行为必须有自己的名字，藏进 `paper` 会让 `paper` 一个值同时表示绝对色和相对色（原型正是这么写的，见 §11-R7）。
+
+- **五个** `.theme-option` / 两个 `.font-option` 必须带 `data-value`，用 `role="radiogroup"` + `aria-checked`，键盘方向键可切（现在是裸 `<div>`，鼠标键盘都不可用）。
 - 字号/行距按钮到达边界时 `disabled`，并显示实际值（现在恒为 17 / 1.9）。
 - 删除 得到今楷 / 汉仪旗黑 / 思源宋体 三项商业字体——未授权、未打包、点了没反应。
 
@@ -477,7 +568,13 @@ function bodySignature(body) {
 
 **焦点管理**：面板打开时焦点移入、`Esc` 关闭并归还焦点、面板内 Tab 循环。现有 `toolbar.js` 的 `resetFocusAfterClose()` 只做了 blur，没有归还——键盘用户关闭面板后焦点掉到 body。
 
-**翻页热区**：`.nav-zone-left/right` 在 `≥1024px` 保留，`<1024px` **必须禁用**（D4——会吞掉选词，而选词是标注入口）。
+**翻页热区：删除，改显式按钮**（裁决见 §11-R2）。
+
+现状 `.nav-zone-left/right` 是覆盖左右两侧的**隐形**点击区，D4 记录的问题是它在触屏上吞掉选词、而选词是标注入口。原先的规格写「`≥1024px` 保留、`<1024px` 禁用」，用视口宽度当触屏的代理——这个代理是错的（1280px 的触屏笔电照样吞选词），而且与 §7 表里「`768–1279px` 禁用」自相矛盾。
+
+目标形态不保留隐形热区：翻页由**显式的 `‹` / `›` 按钮**承担，带 `aria-label`，`<768px` 隐藏（此档改用工具栏翻页）。原型 `reader.jsx` 的 `.page-arrow` 已经是这个形态，本条是把规格对齐到它，不是新设计。
+
+隐形热区一旦删除，「宽度 vs 触屏」这个判定就不再需要——**没有热区可吞选词**。
 
 **章节导航**：`Previous` / `Section N of M` / `Next` 与页内翻页热区语义不同（前者跳 spine，后者翻页）。视觉上必须区分，并在 `.nav-indicator` 旁同时显示页内进度。
 
@@ -514,8 +611,10 @@ function bodySignature(body) {
 | 断点 | 书库 | 阅读器 |
 |---|---|---|
 | `≥1280px` 桌面 | 三栏全展开 | 正文居中，面板为侧栏推挤布局 |
-| `768–1279px` 平板 | 右栏折叠为抽屉（已有 `#right-collapse-toggle`），左栏保留 | 面板改为覆盖式抽屉；**翻页热区禁用** |
-| `<768px` 移动 | 单栏，左栏与右栏均为抽屉，书卡网格降为 2 列 | 工具栏移到底部；面板全屏；热区禁用 |
+| `768–1279px` 平板 | 右栏折叠为抽屉（已有 `#right-collapse-toggle`），左栏保留 | 面板改为覆盖式抽屉 |
+| `<768px` 移动 | 单栏，左栏与右栏均为抽屉，书卡网格降为 2 列 | 工具栏移到底部；面板全屏；翻页箭头隐藏 |
+
+> **断点数值是 canonical 的：`1280px` / `768px`。** 原型 `index.html` 原写 `1024px` / `720px`——**两个 `@media` 里的行为与上表逐条一致，只有阈值不同**（≤1024 收右栏、≤720 收左栏并降列）。已按本表把原型改为 `max-width: 1279px` / `767px`，见 §11-R1。
 
 规则：布局用 Grid/Flex + `min-width:0`，尺寸用相对单位；表格与代码块自带 `overflow-x:auto`；`body` 任何断点下都不得横向滚动。
 
@@ -535,7 +634,7 @@ function bodySignature(body) {
 ## 8. 可访问性契约
 
 1. 焦点可见：所有可交互元素 `:focus-visible` 显示 `--r3-focus-ring` 2px 轮廓。现状多处 `outline:none` 无替代。
-2. 对比度：正文 ≥ 4.5:1，大字 ≥ 3:1，**四个阅读主题各自验证**（sepia 与 green 底色最容易不达标）。§3.3 的四组状态色同标准，**亮色档最容易漏**——原先的 500 档在白底上只有 2.15–3.76:1，已按实测换成 700 档。
+2. 对比度：正文 ≥ 4.5:1，大字 ≥ 3:1，**六组纸/墨各自验证**——四种绝对纸色（paper / sepia / green / night）＋ `auto` 在 light 与 dark chrome 下解析出的两组（sepia 与 green 底色最容易不达标）。这六组与 chrome 无关，**不乘 8**。§3.3 的四组状态色同标准，**亮色档最容易漏**——原先的 500 档在白底上只有 2.15–3.76:1，已按实测换成 700 档。
 3. 键盘可达：§6.3 的 `.theme-option` / `.font-option` 现在是裸 `<div>`，完全不可聚焦——必须改 `role="radio"` + `tabindex`。
 4. 动态区域：搜索结果、AI 流式输出、索引进度用 `aria-live="polite"`（`#aria-live` 已存在，扩大使用）。
 5. 尊重 `prefers-reduced-motion`：面板动效降级为瞬时。
@@ -571,3 +670,61 @@ function bodySignature(body) {
 - ❌ 重新设计 `library_classic.html`（删除）
 - ❌ 移动端手势（滑动翻页、长按菜单）——本轮只保证不破坏，不新增
 - ❌ 完整 i18n 框架——只做一份类型化消息表（与 plan Phase 4 一致）
+
+---
+
+## 11. 裁决记录
+
+原型 `designs/reader-pro-next/` 与本规格在下列事实上各写各的、都没声明谁是权威。2026-08-17 逐条实测后裁决如下，**输的一方就地改掉，不留第二份**。
+
+| # | 事实 | 原型 | 本规格（原） | 裁决 | 依据 |
+|---|---|---|---|---|---|
+| **R1** | 响应式断点 | `1024` / `720` | `1280` / `768` | **规格赢** | 两个 `@media` 的**行为**与 §7 表逐条一致，分歧只在阈值。`1280` 与面板推挤模式同源；`768` 是平板／手机的通行分界 |
+| **R2** | 翻页热区 | 无热区，显式 `.page-arrow` 按钮（带 `aria-label`） | 隐形 `.nav-zone`，按宽度禁用 | **原型赢** | 用视口宽度代理触屏是错的（触屏笔电照吞选词），且规格 §7 与 §6.3 自相矛盾（<1280 vs <1024）。删掉热区，判定条件一并消失 |
+| **R3** | 按钮变体 | `primary`/`secondary`/`danger-solid`/`sm`/`icon` | `primary`/`danger`/`ghost`/`icon` | **合并** | `.btn-secondary` 全部声明是 `background: var(--surface)`，与基类 `.btn` 同值——**空操作**，删除；`--sm` 原型 10 处在用，规格漏了，补；`ghost` 原型散在 12 个裸类里，规格是对的，保留 |
+| **R4** | 字阶 | 12 个字面量（11–26px，含 11.5/12.5/13.5） | 7 档，最小 12px | **合并** | 规格的分档结构对，但没测原型：44 处用量在 14px 以下。补 `2xs:11px` 成 8 档，其余不动，原型按 §3.4 映射表 snap |
+| **R5** | 存储 key 命名 | `r3-theme` | `reader3_reading_theme` | **都输，取生产** | 生产已发货 `reader3.library.rightPanelCollapsed`，点号命名空间是既成事实。统一 `reader3.<区域>.<camelCase>` |
+| **R6** | 圆角值 | `6/10/16` | 「沿用 4/6/8/12」 | **原型赢** | 规格写的是**现状生产**的值，而目标形态是原型。§3.4 已改为 6/10/16 |
+
+### 11.1 R7 —— 主题是一根轴还是两根（**已裁决 2026-08-17：两根**）
+
+这条是核对 R5 时发现的，比 R1–R6 任何一条都深，单独走了一轮独立评审（OpenAI Codex，session `01a00ed1`）。
+
+**冲突原貌：**
+
+| | 本规格（原 §3.3） | 原型 |
+|---|---|---|
+| 轴数 | **一根**：`data-reading-theme` ∈ {unset=paper, sepia, green, night} | **两根**：`<html data-theme>` ∈ {light, dark, system} 管 app chrome；`.reader-shell[data-reading-theme]` ∈ {paper, sepia, green, night} 管纸色 |
+| 挂载点 | `<html>`（`:root[...]`） | 纸色挂 `.reader-shell`，**不是 `<html>`** |
+| night 与 chrome 的关系 | night 顺带重定义 chrome 的 semantic token | 互不相干：可以「chrome 亮色 ＋ 正文 night」 |
+| 跟随系统 | `data-reading-theme` 未设时看 `prefers-color-scheme` | 显式第三值 `system` |
+
+**裁决：两根轴，但两边都要改。** 最终形态写在 §3.3，摘要：
+
+| | 结论 | 谁输了 |
+|---|---|---|
+| 轴数 | **两根**（原型对） | 规格 |
+| 挂载点 | **两个属性都挂 `<html>`**，作用域靠选择器 `html[data-reading-theme=x] .reader-shell` | 原型（挂 `.reader-shell` 上，FOUC 时该元素不存在） |
+| 纸色值 | 四种**绝对值**，另立 `auto` 表示「跟随界面」 | 原型（把「跟随」藏在 `paper` 里，`--page-bg: var(--surface)`） |
+| 默认纸色 | **`auto`** | 规格（原写 `paper`；绝对白纸配 dark chrome 是刺眼的开箱体验） |
+| 跨轴组合 | **全部允许，不做联动**，2×4 = 8 种 | — |
+| chrome 中性色 | 取原型实测值（偏蓝 `#0b1220` / `#131c2e`…） | 规格（原写中性灰 `#242424` / `#141414`，是「night 纸色」思路的残留） |
+
+**决定性依据不是「白天浅色界面读夜间纸」这个用例**（它是真需求，但不足以定架构），而是这三条：
+
+1. **单轴下书库页和设置页拿不到暗色模式。** §1-D2 要修的缺陷是「暗色模式在**全站**不存在」，而单轴的开关叫 `data-reading-theme`——书库页没有正文。要么书库跟着 sepia 变米黄（荒谬），要么书库根本没有暗色（没修 D2）。单轴修不了自己声称要修的缺陷。
+2. **plan 的验收标准早就是按双轴写的。** WI-10 写「三个阅读主题与全站明暗是**两个维度**」「明暗 × 三阅读主题的每一种组合」「六种组合」，FT-01 写「明暗 × 白 / 米 / 绿 / 夜 每种组合」。这些句子在单轴下不成立——单轴里「明暗」就是那根轴本身，不存在「夜间 × sepia」。spec 与 plan 各按各的模型写了半年，是双轴那一边先被当成事实用起来的。
+3. **单轴已经在自己身上撞过一次死值。** 原 §3.3 有一整段注释解释「`--r3-bg` 刻意不在 night 块里定义，否则会被下面同选择器的 night 规则覆盖成死值」。需要写注释提醒自己别踩的分层，是分层错了。原型在双轴下也撞了一次同类死值（dark chrome 的 `--page-*` 被四条 reading 规则全覆盖，`index.html:96`），但那是 `paper` 相对化引起的，改成绝对值后自动消失。
+
+**Codex 的独立结论一致**（选 B、纸色绝对化、属性都挂 `<html>`、全组合允许、iframe 用共享常量注入不反解 computed style），只在一处被推翻：它建议 `paper` 改绝对色、需要跟随时**另外新增** `auto`。本规格把 `auto` 直接定为**默认**——否则新用户在系统深色下开箱就是白纸配深界面。`auto` 的实现是「没有覆盖规则」，不是一段 JS 解析。
+
+**遗留给实施的两条**：
+
+- **iframe 注入必须与 CSS 同源。** 一份 TS 常量 `READING_THEMES: Record<ReadingTheme, {bg, ink, quiet, hl}>`，同时喂给样式表和 `themes.override()`。**不许**从宿主页 `getComputedStyle` 反解颜色再注进 iframe——`auto` 会让这条路径依赖 chrome 的最终解析状态，是最容易在暗色下出错的写法。
+- **老用户会看到变化。** 现状生产无主题、正文恒为 `#333` 白底。默认 `auto` 意味着系统深色的用户升级后阅读器直接变深。这是 D2 要修的东西，不是回归，但要写进发布说明。迁移逻辑不为主题写任何值——**key 缺席即 `auto`**。
+
+顺带记两条小的：原型 `prefs` 默认是 `size: 18` / `leading: 1.85`，规格 §6.3 写 17 / 1.9。**规格赢**——17 / 1.9 与现状生产显示的值一致，改默认值会让老用户的阅读版式无故位移。原型的默认 `readingTheme: "paper"` 按上面的裁决改为 `auto`。
+
+**尚未裁决**（不在本轮）：§5 的 `Modal` 选型（原生 `<dialog>` vs `div[role=dialog]`），仍挂在 Track D。
+
+**已裁决但尚未落到原型的**（原型仍带旧值，见其 README「已被裁决推翻」表）：R3 的 ghost 收敛、R4 的字阶 snap、以及图标改 SVG。三项都是 WI-10 / WI-11 的实施内容，目标值已由本节锁死。

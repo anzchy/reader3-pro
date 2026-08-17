@@ -22,7 +22,7 @@
 |---|---|---|---|
 | D-1 | 保留横向分页 | `usePagination`（`reader.jsx`）用 CSS 多列复刻 epub.js：`column-width = viewport 宽`、`column-gap = 64`、`column-fill: auto`，外层 `overflow: hidden`，靠 `translateX(-page × (pageW + gap))` 翻页；页数 = `round((scrollWidth + gap) / (pageW + gap))` | `flowW 2480 = 1208 + 64 + 1208` → 恰好 2 页；`page-next` 产生 `translateX(-1272px)`，指示器 `2 / 2` |
 | D-2 | 英文为主 | 全原型英文，`<html lang="en">`；已同步回写 spec §0.3 与迁移计划 §7.5 | — |
-| D-3 | 做深色模式 + 阅读主题 | 两级：`:root[data-theme]`（light/dark/system 三态循环，glyph ☀/☾/◐，落 `localStorage`）+ 独立 `[data-reading-theme]`（paper/sepia/green/night）与 `[data-reading-font]`（system/kai/hei/song）只作用于正文 | 切 dark 后 `body` → `rgb(11,18,32)`、卡片 → `rgb(19,28,46)`；切 sepia 后正文 → `rgb(246,236,216)`；song 生效为 Source Han Serif SC |
+| D-3 | 做深色模式 + 阅读主题 | 两级：`:root[data-theme]`（light/dark/system 三态循环，glyph ☀/☾/◐，落 `localStorage`）+ 独立 `data-reading-theme`（**auto**/paper/sepia/green/night，2026-08-17 裁决 R7 后同挂 `<html>`、四种纸色改绝对值、默认 `auto`；契约见设计规格 §3.3）与 `[data-reading-font]`（system/kai/hei/song）只作用于正文 | 切 dark 后 `body` → `rgb(11,18,32)`、卡片 → `rgb(19,28,46)`；切 sepia 后正文 → `rgb(246,236,216)`；song 生效为 Source Han Serif SC |
 | D-4 | 废弃 Classic | 原型不含 Classic 屏；spec §3.3/§4.2/§6.6、G-02、G-08 与截图 `11-library-classic-*` 转历史记录 | — |
 | D-5 | 主色 `#3b82f6` | 取代 `#ff6b00` 及其 hover/light/muted 派生值 | — |
 

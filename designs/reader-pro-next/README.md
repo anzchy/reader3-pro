@@ -67,10 +67,34 @@ open http://127.0.0.1:8125/index.html
 | 项 | 说明 |
 |---|---|
 | DOM 结构与 class 命名 | 原型的标记结构就是目标结构，Jinja 模板照抄 |
-| 全部 CSS 与 token 值 | `index.html` 的样式块即 Phase 4 的 CSS 产物来源（token 改名见设计规格 §3） |
+| CSS 与 token 值——**但有 6 条例外，见下表** | `index.html` 的样式块是 Phase 4 的 CSS 产物**起点**，不是终点（token 改名见设计规格 §3） |
 | 交互状态机 | 单面板互斥、分层 Escape、选区 → 工具条 → 编辑器。原型里是 React state，生产里写成每页一个显式状态对象 + 一个 render 函数，**不需要框架** |
 | 可访问性实现 | 焦点陷阱与焦点归还、`role="switch"`、`aria-live` 播报、`role="button"` 的书卡 |
 | 空态 / 错误态文案 | `No results found for "{query}"`、`Search failed — …`、EPUB 缺失屏 |
+
+### 已被裁决推翻的原型事实（2026-08-17）
+
+上面那行「CSS 直接可移植」曾经写作「**全部** CSS 与 token 值」，实测下来在 6 处是假的。裁决全文见
+[`spec-frontend-design.md` §11](../../docs/plans/20260817-frontend-ui-refactor/spec-frontend-design.md)，摘要：
+
+| # | 原型里的值 | 目标值 | 原型是否已改 |
+|---|---|---|---|
+| R1 | 断点 `1024` / `720` | **`1279` / `767`**（即 §7 的 ≥1280 / ≥768 三档） | ✅ 已改 |
+| R3a | `.btn-secondary` | **删除**——它的声明与基类 `.btn` 同值，是空操作 | ✅ 已删（24 处引用降级为裸 `.btn`） |
+| R3b | `.btn-danger-solid` | **`.btn-danger`**——`-solid` 是实现细节，不进变体名 | ✅ 已改名 |
+| R3c | ghost 按钮散在 12 个裸类里（`.text-button` / `.link-button` / `.collapse-button` / `.row-more` …） | 收敛为 `--ghost` 修饰符 | ❌ 未改，WI-11 落地 |
+| R4 | 12 个字号字面量（11–26px，含 11.5 / 12.5 / 13.5） | 8 档字阶，映射表见规格 §3.4 | ❌ 未改，WI-10 落地 |
+| R6 | 圆角 `6 / 10 / 16` | 保留，**规格改成跟原型走**（规格原写「沿用 4/6/8/12」，那是现状生产的值） | ✅ 规格已改 |
+| R7 | 纸色 `[data-reading-theme]` 挂在 `.reader-shell` 上；`paper` 是相对色（`--page-bg: var(--surface)`）；默认 `paper`；四个选项 | **两根轴都挂 `<html>`**，作用域靠选择器 `html[data-reading-theme=x] .reader-shell`；四种纸色改**绝对值**；新增 `auto` 并定为**默认**；**五个**选项 | ✅ 已改 |
+
+另有两条不属于「CSS 可移植」但同批裁决：
+
+- **R2 翻页热区**：原型的显式 `.page-arrow` 按钮赢，隐形 `.nav-zone` 整体删除。原型无需改动。
+- **R5 存储 key**：原型的 `r3-theme` 与规格的 `reader3_reading_theme` **都输**，统一到生产已在用的 `reader3.<区域>.<camelCase>`。原型未改（它只有主题一个 key，且不写真实存储）。
+
+**还有两条原型没有、规格也没细化的**：`Skeleton` 与 `Toast` 在原型里 0 命中，图标全部是 emoji／文字符号（`<svg>` 0 命中，而现状生产的 `reader.html` 已经在用 SVG）。这两处**不要拿原型当参考**，照搬会倒退。
+
+**R7 的一处原型缺口**：规格 §6.1 的设置页「外观」分区（界面明暗三选一 ＋ 界面语言）是**新增分区**，`settings.jsx` 里没有。原型只在书库 header 上演示了 chrome 三态循环（`app.jsx:289-300`），状态机以那处为准；设置页的那组控件按 WI-12 直接实现，无原型可抄。
 
 ### 明确**不可**移植（照搬即错）
 

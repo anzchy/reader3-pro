@@ -63,9 +63,9 @@
 |---|---|
 | `--r3-warn` / `--r3-danger` | 重命名为 `--r3-warning` / `--r3-error`，并补齐四个同名 `-subtle` 底色 |
 | `--r3-sidebar-w` / `--r3-right-w` | 补定义（否则 `grid-template-columns` 整条失效，三栏塌成默认布局） |
-| `--r3-text-quiet` | 补 paper（默认）主题下的定义 |
+| `--r3-text-quiet` | 补 `:root` 下的定义（它是 chrome 轴的角色色，此前只在阅读主题块里出现过） |
 
-⚠️ **对比度不达标的是浅色主题的 500 档**，不是夜间档——白底上绿 2.28 / 琥珀 2.15 / 红 3.76 / 青 3.68，已按实测改成浅色 700 档、夜间 400 档。这一点在旧记录里被写反过，不要沿用错的版本。
+⚠️ **对比度不达标的是浅色档的 500**，不是夜间档——白底上绿 2.28 / 琥珀 2.15 / 红 3.76 / 青 3.68，已按实测改成浅色 700 档、夜间 400 档。这一点在旧记录里被写反过，不要沿用错的版本。
 
 0.8 要做的是**不让悬空引用再长出来**（lint 本身），不是再修一遍这三处。
 
@@ -96,7 +96,7 @@
 
 | 事实 | 唯一定义处 |
 |---|---|
-| 双层 design token（Tier 1 `--p-*` → Tier 2 `--r3-*`）与三阅读主题 | `spec-frontend-design.md` §3 |
+| 双层 design token（Tier 1 `--p-*` → Tier 2 `--r3-*`）与**两根主题轴**（chrome `data-theme` × reading `data-reading-theme`） | `spec-frontend-design.md` §3.3 |
 | 八个基础组件的规格与变体 | `spec-frontend-design.md` §5 |
 | 设置页 / 书库页 / 阅读器逐页规格 | `spec-frontend-design.md` §6.1 / §6.2 / §6.3 |
 | 降级状态 DEG-S1–DEG-S5 的定义、色彩语义、可关闭性 | `spec-frontend-design.md` §6.4 |
@@ -339,7 +339,9 @@ WI-1 到 WI-20 全部以这三项落地为前置，下面各 WI 的「前置 WI�
 
 ### WI-7: 契约 2 收口——高亮色改 RGB 三元组
 
-**范围**：`{前端源码根}` 下的 token 定义与九处 `color-mix` 使用点；夜间主题的高亮呈现方式。
+**范围**：`{前端源码根}` 下的 token 定义与九处 `color-mix` 使用点；**夜纸**（reading 轴 `night`，以及 `auto`@dark chrome）下的高亮呈现方式。
+
+> `--r3-hl-*` 属 **reading 轴**，不属 chrome 轴——高亮是画在纸上、在 iframe 里的（§11-R7 规则 3）。下文的「夜间」一律指夜纸，不指界面暗色。
 
 **前置 WI**：无（可与 WI-1 并行；WI-10 消费它的产物）。
 
@@ -373,9 +375,9 @@ WI-1 到 WI-20 全部以这三项落地为前置，下面各 WI 的「前置 WI�
 1. 全仓库 CSS 里 `color-mix(` 出现次数为 0。
 2. 九个原使用点全部改为 `rgb(var(--r3-hl-*-rgb) / <alpha>)` 形式，alpha 值分别为 .35（4 处）、.45（4 处）、.18（1 处，且底色不再是品牌蓝）。
 3. token 悬空 lint（0.8）通过，`--r3-hl-*-rgb` 全部有定义。
-4. 浅色主题下 marker 四色合成后与正文的对比度均 ≥4.5:1（用计算值断言，不靠肉眼）。
-5. 夜间主题下四色 marker 元素**除背景外**还带至少一个非背景视觉提示：断言其 `text-decoration-line` 非 `none`，或 `border-left-width` 大于 0。
-6. 夜间主题下 marker 的背景色 alpha 通道不等于 1。
+4. **亮纸**（`paper` / `sepia` / `green` ＋ `auto`@light）下 marker 四色合成后与该纸墨色的对比度均 ≥4.5:1（用计算值断言，不靠肉眼）。
+5. **夜纸**（`night` ＋ `auto`@dark）下四色 marker 元素**除背景外**还带至少一个非背景视觉提示：断言其 `text-decoration-line` 非 `none`，或 `border-left-width` 大于 0。
+6. 夜纸下 marker 的背景色 alpha 通道不等于 1。
 7. `.anno.is-note` 的解析背景色不等于 `--r3-accent` 的解析色。
 
 ---
@@ -436,25 +438,47 @@ WI-1 到 WI-20 全部以这三项落地为前置，下面各 WI 的「前置 WI�
 
 ### WI-10: 4A.1 token 与主题层
 
-**范围**：双层 token 定义文件；三个阅读主题；夜间模式。
+**范围**：双层 token 定义文件；**两根主题轴**（chrome 明暗 ＋ 阅读纸色）的 CSS 与 FOUC inline script。
 
 **前置 WI**：WI-7、WI-9。
 
-**做什么**：落地设计规格 §3 的双层 token——Tier 1 调色板 `--p-*`，Tier 2 语义 `--r3-*`，**组件只许引用 Tier 2**。同时把 WI-7 的 RGB 三元组落进来，并补上现状完全没有的夜间模式（D2）。
+**做什么**：落地设计规格 §3 的双层 token——Tier 1 调色板 `--p-*`，Tier 2 语义 `--r3-*`，**组件只许引用 Tier 2**。同时把 WI-7 的 RGB 三元组落进来，并补上现状完全没有的暗色模式（D2）。
 
-三个阅读主题（white / sepia / green / night 见设计规格 §6.3）与全站明暗是两个维度，token 解析要在两两组合下都不悬空。
+主题是**两根互不重定义的轴**（裁决 §11-R7，契约唯一定义处是设计规格 §3.3）：
 
-**涉及 testid**：无新增。
+| 轴 | 属性（都 stamp 在 `<html>`） | 取值 | 拥有的 token |
+|---|---|---|---|
+| chrome | `data-theme` | 属性缺席＝跟随系统 / `light` / `dark` | 除下一行外的全部 `--r3-*` |
+| reading | `data-reading-theme` | `auto`（默认）/ `paper` / `sepia` / `green` / `night` | `--r3-page-bg` / `-ink` / `-quiet`、`--r3-hl-*`（含 `-rgb`） |
+
+三条必须落对的实现细节：
+
+- 阅读 token 只许写成 `html[data-reading-theme="x"] .reader-shell { }`。**作用域靠选择器保证，不靠挂载点**——书库页没有 `.reader-shell`，纸色天然不外泄。
+- **`auto` 没有 CSS 规则**，它就是「不覆盖 chrome 给的 `--r3-page-*` / `--r3-hl-*`」。谁把它当漏写补上，两根轴就又合成一根了。
+- 另四种纸色是**绝对值**，在 light / dark chrome 下逐字相同。
+
+**本 WI 还交付 FOUC inline script**（三个页面模板 `<head>` 共用一段同步脚本）：读两个 localStorage key，往 `<html>` 上 stamp 两个属性。三条易错点：
+
+- 属性 stamp 在 `<html>`，**不是** `.reader-shell`——脚本执行时 `<body>` 尚未解析，该元素不存在。
+- `auto` **也要写出属性**（`data-reading-theme="auto"`），它靠「没有 CSS 覆盖规则」生效，不靠属性缺席。
+- chrome 的 `system` 反过来——**必须移除** `data-theme`，因为跟随系统靠 `@media` 命中 `:not([data-theme="light"])`。
+
+**涉及 testid**：无新增（chrome 切换控件本身在 WI-12 / WI-13 落地）。
 
 **涉及降级状态**：无（但 DEG 横幅的四个 `-subtle` 底色在此层解析）。
 
 **验收标准**：
 
 1. 组件样式文件里对 `--p-*` 的直接引用次数为 0（只许引 `--r3-*`）。
-2. token 悬空 lint 通过：明暗 × 三阅读主题的每一种组合下，`getComputedStyle` 解析全部 `--r3-*` 均非空字符串。
-3. 切到夜间模式后 `body` 的背景色计算值改变，且正文色与背景对比度 ≥4.5:1。
-4. `--r3-warning` / `--r3-error` 及四个 `-subtle` 在六种组合下都有定义。
-5. WI-7 的 `--r3-hl-*-rgb` 在六种组合下都解析为三个数字。
+2. token 悬空 lint 通过：**chrome 2 × reading 5 = 10 种**属性组合下（chrome 只有 light / dark 两个有效解析，`system` 不是第三种视觉），`getComputedStyle` 解析全部 `--r3-*` 均非空字符串。
+3. 切到 dark chrome 后 `body` 背景色计算值改变，且 `--r3-text` 与 `--r3-bg` 对比度 ≥4.5:1；**且此断言与 `data-reading-theme` 取何值无关**（跑满 5 个值结果一致）。
+4. `--r3-warning` / `--r3-error` 及四个 `-subtle` 在 10 种组合下都有定义。
+5. WI-7 的 `--r3-hl-*-rgb` 在 10 种组合下都解析为三个数字。
+6. **纸色绝对性**：`paper` / `sepia` / `green` / `night` 四值下解析出的 `--r3-page-bg` / `-ink` / `-quiet` / `--r3-hl-*`，在 light chrome 与 dark chrome 下**逐字相等**。
+7. **`auto` 是跟随的那一个**：`auto` 下解析出的 `--r3-page-bg` 在 light 与 dark chrome 下**不相等**，且分别等于该 chrome 下 `:root` 声明的值。
+8. **不外泄**：书库页与设置页在 `data-reading-theme` 取任一值时，`body` 的 `background-color` 计算值不变。
+9. **FOUC**：三个页面首帧（`DOMContentLoaded` 前采样）`<html>` 上两个属性已按存储值 stamp；`colorScheme=system` 时 `data-theme` 属性**不存在**；`reader3.reader.theme` 缺席时 `data-reading-theme` 为 `"auto"`。
+10. CSS 里不存在 `[data-reading-theme="auto"]` 选择器（`auto` 必须靠没有规则实现，写了就是把两根轴又合成一根）。
 
 ---
 
@@ -469,7 +493,7 @@ WI-1 到 WI-20 全部以这三项落地为前置，下面各 WI 的「前置 WI�
 - `escape.ts` 的形状由 **0.4 的 `escapeHtml` 收敛结论**决定，本 WI 不另作裁定。
 - `showToast` / `elementDebugInfo` / `getEventTargetElement` 从 `annotations.js` 移出来落这里——WI-14 的八模块行数合计约 1085、文件实际 1127，差额就是这三个。
 - 设计规格 §5 标注 `Toast` 组件**不存在**，本 WI 要把它建出来。
-- 42 处 `console.log`（`annotations.js` 33 ＋ `epub-renderer.js` 9）换成 `debug.ts` 分层，由 `localStorage.reader3_debug` 控制、默认关；ESLint 开 `no-console` 但放行 warn / error。
+- 42 处 `console.log`（`annotations.js` 33 ＋ `epub-renderer.js` 9）换成 `debug.ts` 分层，由 `localStorage["reader3.debug"]` 控制、默认关；ESLint 开 `no-console` 但放行 warn / error。
 
 **涉及 testid**：`rd-toast` / `lib-toast`（Toast 容器）。
 
@@ -478,7 +502,7 @@ WI-1 到 WI-20 全部以这三项落地为前置，下面各 WI 的「前置 WI�
 **验收标准**：
 
 1. 源码内 `console.log(` 出现次数为 0，`no-console` 规则开启且构建通过。
-2. `localStorage.reader3_debug` 未设置时 `debug.*` 调用不产生任何控制台输出；设置后产生输出。
+2. `localStorage["reader3.debug"]` 未设置时 `debug.*` 调用不产生任何控制台输出；设置后产生输出。
 3. `escape.ts` 只导出 0.4 结论里确定的那一组函数（函数名逐个比对）。
 4. Toast 挂载后 N 毫秒自动消失，且同时最多存在一个 Toast 容器元素。
 5. `showToast` / `elementDebugInfo` / `getEventTargetElement` 在 `{前端源码根}/reader/` 下的定义处计数为 0（确实移走了）。
@@ -497,7 +521,9 @@ WI-1 到 WI-20 全部以这三项落地为前置，下面各 WI 的「前置 WI�
 
 移动端 390×844 下 ollama 行的 `Enabled` 溢出（§7 实测第四项）在这一项修掉。
 
-**涉及 testid**：`set-provider-*`、`set-data-cache`、`set-data-conversations`、`set-data-reindex`、`set-export-json`、`set-export-settings`、`set-rag-chunks`、`set-rag-context`、`set-rag-embedding`、`set-confirm-dialog`、`set-confirm-ok`、`set-confirm-cancel`。
+**第 3 分区「外观」是新增的**，只放 **chrome 轴**：界面明暗三选一（跟随系统 / 浅色 / 深色）＋ 界面语言。**这里没有纸色**——纸色是另一根轴，控件在 WI-18 的阅读设置面板里（§11-R7）。三选一写 `reader3.ui.colorScheme`，`system` 时**移除** `<html data-theme>`；token 与 FOUC 脚本由 WI-10 提供，本 WI 只挂控件。
+
+**涉及 testid**：`set-appearance-scheme-system` / `-light` / `-dark`、`set-provider-*`、`set-data-cache`、`set-data-conversations`、`set-data-reindex`、`set-export-json`、`set-export-settings`、`set-rag-chunks`、`set-rag-context`、`set-rag-embedding`、`set-confirm-dialog`、`set-confirm-ok`、`set-confirm-cancel`。
 
 **涉及降级状态**：无。
 
@@ -508,6 +534,9 @@ WI-1 到 WI-20 全部以这三项落地为前置，下面各 WI 的「前置 WI�
 3. 设置页所有 testid 匹配 canonical 正则且以 `set-` 开头（命名 lint 通过）。
 4. 390×844 下 ollama 行的 `Enabled` 控件 `getBoundingClientRect().right` ≤ 视口宽度。
 5. 设置页样式文件对 `--p-*` 的直接引用次数为 0。
+6. 「外观」分区恰有三个明暗选项，`role="radiogroup"` ＋ 同时 `aria-checked="true"` 的数量为 1；无存储值时选中 `set-appearance-scheme-system`。
+7. 选中 `system` 后 `<html>` 上**不存在** `data-theme` 属性；选 `light` / `dark` 后属性值等于所选，且 `reader3.ui.colorScheme` 同步。三次切换都**不触碰** `data-reading-theme`。
+8. 「外观」分区内不存在任何纸色控件（`rd-pref-theme-*` 在设置页命中数为 0）。
 
 ---
 
@@ -525,9 +554,11 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 
 书卡进度值与 WI-19 对齐（同一个计算口径）。
 
+**Header 新增界面明暗切换按钮**（chrome 轴三态循环 跟随系统 → 浅色 → 深色，与 WI-12 设置页那组是**同一个状态**、同一个 key）。**不是纸色切换**——书库页没有纸（§11-R7）。
+
 **删除动作**：`library_classic.html` 与它的环境变量分支。**执行删除前须单独确认**。
 
-**涉及 testid**：`lib-book-grid`、`lib-book-card`、`lib-sidebar`、`lib-collections-create`、`lib-search-input`、`lib-filter`、`lib-sort`、`lib-view-grid`、`lib-view-list`、`lib-bulk-bar`、`lib-select-all`、`lib-select-none`、`lib-bulk-index`、`lib-bulk-collection`、`lib-empty`、`lib-filter-empty`、`lib-dropzone`、`lib-add-books`，以及 WI-3 / WI-4 / WI-5 的全部降级 testid。
+**涉及 testid**：`lib-theme-toggle`、`lib-book-grid`、`lib-book-card`、`lib-sidebar`、`lib-collections-create`、`lib-search-input`、`lib-filter`、`lib-sort`、`lib-view-grid`、`lib-view-list`、`lib-bulk-bar`、`lib-select-all`、`lib-select-none`、`lib-bulk-index`、`lib-bulk-collection`、`lib-empty`、`lib-filter-empty`、`lib-dropzone`、`lib-add-books`，以及 WI-3 / WI-4 / WI-5 的全部降级 testid。
 
 **涉及降级状态**：DEG-S2、DEG-S3、DEG-S4（重做形态）。
 
@@ -540,6 +571,7 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 5. 书卡显示的进度值与 WI-19 定义的计算口径逐本一致（同一本书两处取值相等）。
 6. 书库页所有 testid 以 `lib-` 开头且匹配 canonical 正则。
 7. 空库、筛选无结果、加载失败三种状态各自渲染对应 testid，且三者互斥（同一时刻只有一个可见）。
+8. `lib-theme-toggle` 连点三次回到初始态；`aria-label` 随态更新；三态与设置页「外观」互通（在设置页选 `dark` 后回书库，按钮显示 `dark`）。
 
 ---
 
@@ -636,14 +668,14 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 - **工具栏** 6 个 SVG 按钮 ＋ 新增 active 态，z-index 高于所有面板（修 D6：现状 `closeAllPanels()` 只关搜索和 AI，TOC / Notes 打开时点搜索按钮会超时）。
 - **面板互斥**：单一 `activePanel` 状态。≥1280px 用 push 布局，<1280px 用 overlay。
 - **焦点**：打开时焦点移入、Esc 关闭并**归还焦点**、Tab 在面板内循环。现状 `resetFocusAfterClose()` 只做了 blur。
-- **导航区**：<1024px 禁用 nav-zone；章节导航与翻页热区在语义上必须可区分。
+- **导航区**：**删除隐形 nav-zone**，改显式 `‹` / `›` 翻页按钮（带 `aria-label`），`<768px` 隐藏（该档由工具栏翻页）。章节导航（跳 spine）与页内翻页在语义上必须可区分。裁决见规格 §11-R2——原先的「`<1024px` 禁用」是用视口宽度代理触屏，代理是错的。
 - **标注工具栏** 7 个操作 ＋ 4 个颜色，中文文案，`aria-pressed`，Delete 单独隔开。
 - **DEG-S1 重做形态**落这里。
 - WI-15 里标 `@deprecated` 的两个成员在本 WI 结束时删除。
 
 **K3 硬约束（覆盖层挂载点）**：只允许两种挂载——`<body>` 直接子元素（生产现状，零改动即合规），或 `<dialog>` ＋ `showModal()` 进 top layer。挂在 `.reader-shell` 里不是禁止，但**每次都要证明**。`.page-flow` 已经带着 `will-change: transform`，就是那个反面教材。
 
-**涉及 testid**：`rd-toolbar`、`rd-toolbar-toc`、`rd-toolbar-notes`、`rd-toolbar-search`、`rd-toolbar-ai`、`rd-toolbar-settings`、`rd-toolbar-back`、`rd-panel-toc`、`rd-panel-notes`、`rd-panel-search`、`rd-panel-ai`、`rd-anno-toolbar`、`rd-anno-copy`、`rd-anno-note`、`rd-anno-ask`、`rd-anno-delete`、`rd-anno-color-yellow` / `-green` / `-pink` / `-blue`、`rd-note-editor`、`rd-note-tooltip`、`rd-degrade-s1`。
+**涉及 testid**：`rd-toolbar`、`rd-toolbar-toc`、`rd-toolbar-notes`、`rd-toolbar-search`、`rd-toolbar-ai`、`rd-toolbar-settings`、`rd-toolbar-back`、`rd-panel-toc`、`rd-panel-notes`、`rd-panel-search`、`rd-panel-ai`、`rd-anno-toolbar`、`rd-anno-copy`、`rd-anno-note`、`rd-anno-ask`、`rd-anno-delete`、`rd-anno-color-yellow` / `-green` / `-pink` / `-blue`、`rd-note-editor`、`rd-note-tooltip`、`rd-degrade-s1`、`rd-page-prev`、`rd-page-next`。
 
 **涉及降级状态**：DEG-S1（重做形态）。
 
@@ -657,7 +689,7 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 6. **每个用例的 `afterEach`**（或一条专门的结构测试）断言 `rd-anno-toolbar`、`rd-note-editor`、`rd-note-tooltip` 三者的 `containingBlockAncestor(el) === null`。**不是只在 happy path 上验一次。**同时按 Codex #3 补齐属性集合——独立的 `translate` / `rotate` / `scale`、`content-visibility`，以及 `will-change` 里的 `contain` / `content-visibility` / `backdrop-filter` / `translate` / `rotate` / `scale`，旧 Safari 另查 `webkitBackdropFilter`；每一种制造属性各有一条参数化断言（人为加上该属性后 `containingBlockAncestor` 必须返回非 `null`）。补齐后的集合写回 `contracts/annotation-host-contracts.md` 的 K3。
 7. **几何断言**：`rd-anno-toolbar` 的矩形相对选区矩形水平居中，误差 ≤N px；垂直方向贴着选区边缘，误差 ≤N px。`toBeVisible()` / `toBeAttached()` **不算数**，不许当替代。
 8. `rd-note-editor` 与 `rd-note-tooltip`（经 hover 触发）同样满足第 6、7 条。
-9. 1023×800 下 nav-zone 元素的 `pointer-events` 计算值为 `none` 或该元素不存在。
+9. 全页面不存在隐形翻页热区元素（按 `.nav-zone-left` / `.nav-zone-right` 查询返回 0 个）；`rd-page-prev` / `rd-page-next` 存在且各有非空 `aria-label`；767×800 下两者均不可见。
 10. 标注工具栏 4 个颜色按钮的 `aria-pressed` 在选中时为 `true`、未选中为 `false`，同时为 `true` 的数量 ≤1。
 11. `rd-anno-delete` 与其余六个操作之间存在视觉分隔（其 `margin-left` 或分隔元素存在，计算值断言）。
 12. 源码内 `getContentDocument` 与 `Reader3Epub.book` 的引用次数为 0。
@@ -700,30 +732,38 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 
 | 项 | 范围 | 默认 | 存储 | 作用域 |
 |---|---|---|---|---|
-| 主题 | white / sepia / green / night | white | `localStorage.reader3_reading_theme` | 全局 |
-| 字号 | 14–24px，步长 1 | 17 | `reader3_font_size` | 仅 iframe |
-| 行高 | 1.4–2.4，步长 0.1 | 1.9 | —— | —— |
-| 字体 | system / serif 二选一 | system | —— | —— |
+| 主题（纸色） | auto / paper / sepia / green / night | **auto** | `localStorage["reader3.reader.theme"]` | 值全局，视觉仅 `.reader-shell` ＋ iframe |
+| 字号 | 14–24px，步长 1 | 17 | `localStorage["reader3.reader.fontSize"]` | 仅 iframe |
+| 行高 | 1.4–2.4，步长 0.1 | 1.9 | `localStorage["reader3.reader.lineHeight"]` | 仅 iframe |
+| 字体 | system / serif 二选一 | system | `localStorage["reader3.reader.fontFamily"]` | 仅 iframe |
 
-主题选择器用 `role="radiogroup"` ＋ `aria-checked` ＋ 方向键；字号行高到边界时按钮 `disabled`。
+> **纸色的白档叫 `paper`，不是 `white`**；key 命名空间是 `reader3.<区域>.<camelCase>`。两条都是规格 §11-R5 的裁决，理由是生产已发货 `reader3.library.rightPanelCollapsed`。
+>
+> **这一栏不是界面明暗。** 界面明暗是另一根轴（`data-theme`，控件在 header 与设置页「外观」分区，见 WI-13），存在 `reader3.ui.colorScheme` 里。本表只管纸色。裁决见规格 §11-R7，契约唯一定义处是 §3.3。
+>
+> **默认 `auto` 而不是 `paper`**：`auto` = 跟随界面明暗（light chrome → 白纸，dark chrome → 深纸），实现是「没有覆盖规则」而不是一段 JS 解析。绝对白纸配深界面是刺眼的开箱体验。
+
+**主题选择器五个选项**（`auto` 排第一），用 `role="radiogroup"` ＋ `aria-checked` ＋ 方向键；字号行高到边界时按钮 `disabled`。
+
+**iframe 注入与宿主 CSS 必须同源**：一份 TS 常量 `READING_THEMES: Record<ReadingTheme, {bg, ink, quiet, hl}>` 同时喂给样式表和 `themes.override()`。**不许**从宿主页 `getComputedStyle` 反解颜色再注进 iframe——`auto` 会让这条路径依赖 chrome 的最终解析状态。`auto` 在常量表里按当前 chrome 取 light / dark 两组之一。
 
 **D5 栏宽**（正文 45–75 字符）：`max-width: 38rem`、`margin-inline: auto`、`text-align: start`、内边距 `clamp(16px, 5vw, 64px)`，在 1440×900 与 390×844 两处都要验。走 `applyThemeSettings`（已在 K5 冻结面里确认）经 `themes.override` 注入。
 
 **删掉三个未授权的商业中文字体。** 字体一律收敛成 `system` / `serif` **两值**（Codex #7）；`serif` 的资产归属**实施时二选一**：self-host 思源宋体（开源许可，需把字体文件纳入构建），或在资产落地前直接用系统 serif fallback。选定哪个都行，但必须落到验收第 10 条里，不许两种说法并存。
 
-**旧偏好迁移（Codex #10）**：现状**已经**实现了字号与行距，偏好存在 `reader3-font-settings` 这个 JSON key 里。直接换新 key 会把用户偏好重置。必须做一次性迁移：读 legacy JSON → 范围校验（越界的钳到合法区间，不是丢弃）→ 写入新 key → 写迁移完成标记 → 之后不再读 legacy。
+**旧偏好迁移（Codex #10）**：现状**已经**实现了字号与行距，偏好存在 `reader3-font-settings` 这个 JSON key 里。直接换新 key 会把用户偏好重置。必须做一次性迁移：读 legacy JSON → 范围校验（越界的钳到合法区间，不是丢弃）→ 写入新 key → 写迁移完成标记 → 之后不再读 legacy。**迁移不为主题写任何值**——legacy 里没有主题，`reader3.reader.theme` 缺席即 `auto`，这正是我们要的默认。
 
-**涉及 testid**：`rd-rail-font`、`rd-font-popover`、`rd-pref-theme-white` / `-sepia` / `-green` / `-night`、`rd-pref-size`、`rd-pref-size-inc`、`rd-pref-size-dec`、`rd-pref-leading`、`rd-pref-font-system`、`rd-pref-font-serif`。
+**涉及 testid**：`rd-rail-font`、`rd-font-popover`、`rd-pref-theme-auto` / `-paper` / `-sepia` / `-green` / `-night`、`rd-pref-size`、`rd-pref-size-inc`、`rd-pref-size-dec`、`rd-pref-leading`、`rd-pref-font-system`、`rd-pref-font-serif`。
 
 **涉及降级状态**：无。
 
 **验收标准**：
 
-1. 主题容器 `role` 为 `radiogroup`，四个选项各有 `aria-checked`，同时为 `true` 的数量恰为 1。
+1. 主题容器 `role` 为 `radiogroup`，**五个**选项各有 `aria-checked`，同时为 `true` 的数量恰为 1；无任何存储值时为 `true` 的是 `rd-pref-theme-auto`。
 2. 焦点在主题组内按右方向键，选中项前移一个并且 `aria-checked` 随之更新。
 3. 字号为 14 时减号按钮 `disabled` 为真、加号为假；字号为 24 时相反。
-4. 改字号后刷新页面，`localStorage.reader3_font_size` 与实际渲染字号一致。
-5. 主题存 `localStorage.reader3_reading_theme`，且切换后书库页也读到同一个值（全局作用域）；字号只影响 iframe 内文本，iframe 外元素字号不变。
+4. 改字号后刷新页面，`localStorage["reader3.reader.fontSize"]` 与实际渲染字号一致。
+5. 主题存 `localStorage["reader3.reader.theme"]`，且切换后书库页也读到同一个值（值是全局的）；但书库页 `body` 的 `background-color` 在五个值下**计算结果不变**（视觉只作用于 `.reader-shell`）。字号只影响 iframe 内文本，iframe 外元素字号不变。
 6. 1440×900 与 390×844 下，正文一行的字符数落在 45–75 之间（取样连续 3 行）。
 7. 正文容器 `max-width` 计算值等于 `38rem` 的像素值，`margin-inline` 左右相等，`text-align` 为 `start`。
 8. **A/B/C 三重断言在栏宽注入路径上全部通过**——**C（CFI 往返解析到同一段引文）才是真正要证的那条**，因为栏宽改变的是「标注落在第几屏」。
@@ -732,7 +772,10 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 11. `baseline-1b` 零改动通过。
 12. 只存在 legacy `reader3-font-settings` 时加载阅读器：新 key 被写出，值等于 legacy 里的值，且实际渲染字号与行高等于 legacy 值（**偏好没被重置**）。
 13. legacy 值越界（例如字号 99）时钳到合法区间（24），不抛错、不回落默认值。
-14. 迁移完成标记存在后再次加载：不再读 legacy key（把 legacy 改成另一个值，断言渲染不变）。
+14. 迁移完成标记存在后再次加载：不再读 legacy key（把 legacy 改成另一个值，断言渲染不变）；且 `reader3.reader.theme` **未被写入**，选中项仍是 `auto`。
+15. 切纸色时 `<html>` 的 `data-reading-theme` 被改写（`auto` 也写出属性，不是移除），`data-theme` **不被触碰**；反过来切界面明暗时 `data-reading-theme` 不被触碰。
+16. `auto` 下切换界面明暗，iframe 内正文背景色随之改变；`paper` 下切换界面明暗，iframe 内正文背景色**不变**。
+17. 注入 iframe 的颜色来自共享常量 `READING_THEMES`，源码内不存在「宿主页 `getComputedStyle` 取色 → 注入 iframe」的调用路径。
 
 ---
 
@@ -851,6 +894,7 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 | FB-L16 | WI-13 | `lib-refresh-stats` | 连点 3 次只发 1 次；陈旧数据点击后统计数字被替换而不是叠加 |
 | FB-L17 | WI-13 | `lib-nav-settings` / `lib-nav-library` | 当前页对应项 `aria-current="page"`，另一项没有 |
 | FB-L18 | WI-13 | **陈旧数据写入** | 在 A 标签页删掉一本书，B 标签页点该书的 `lib-bulk-index`：不静默成功，显示错误或刷新提示 |
+| FB-L19 | WI-13 | `lib-theme-toggle` | 三态循环，连点 3 次回到初始态；`aria-label` 随态更新；与设置页「外观」共用 `reader3.ui.colorScheme`（设置页选 `dark` 后回书库，按钮显示 `dark`） |
 
 #### 5.1.2 阅读器
 
@@ -869,7 +913,7 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 | FB-R11 | WI-16 | `rd-ai-send` / `rd-ai-stop` | 空输入时 send `disabled`；发送后 send 变 `disabled`、stop 可用；stop 后流终止且不再追加文本 |
 | FB-R12 | WI-16 | `rd-ai-new` / `rd-ai-clear` / `rd-ai-history` / `rd-ai-export` | 八态全过；`rd-ai-clear` 走确认弹层，不用 `confirm()` |
 | FB-R13 | WI-18 | `rd-pref-size-inc` / `-dec` | 14 时 dec `disabled`、24 时 inc `disabled`（边界两端各断言一次） |
-| FB-R14 | WI-18 | `rd-pref-theme-*` ×4 | 恰有一个 `aria-checked="true"`；方向键可移动选中项 |
+| FB-R14 | WI-18 | `rd-pref-theme-*` ×5（含 `-auto`） | 恰有一个 `aria-checked="true"`；无存储值时是 `-auto`；方向键可移动选中项 |
 | FB-R15 | WI-18 | `rd-pref-font-system` / `-serif` | 恰好两个选项；切换后 iframe 内正文 `font-family` 计算值改变 |
 | FB-R16 | WI-16 | `rd-toc-row` | 点击后跳到对应章节（断言 spine index 变化，不是断言元素存在） |
 | FB-R17 | WI-16 | `rd-sheet-close` | 关闭后焦点归还到打开它的按钮 |
@@ -889,6 +933,7 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 | FB-S07 | WI-12 | `set-rag-chunks` / `set-rag-context` / `set-rag-embedding` | 越界输入被钳到合法区间而不是保存越界值；保存后刷新仍是钳后的值 |
 | FB-S08 | WI-12 | `set-provider-key` | 输入框 `type="password"`；保存后重新加载页面，返回值不含明文 key |
 | FB-S09 | WI-12 | **陈旧数据写入** | A 标签页改了 provider 配置，B 标签页用旧值点 `set-provider-save`：不静默覆盖 |
+| FB-S10 | WI-12 | `set-appearance-scheme-system` / `-light` / `-dark` | `role="radiogroup"`，恰有一个 `aria-checked="true"`，无存储值时是 `-system`；选 `system` 时 `<html>` 上**没有** `data-theme` 属性，选另两个时属性值等于所选；三次切换都不触碰 `data-reading-theme` |
 
 ---
 
@@ -924,8 +969,8 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 |---|---|---|---|---|
 | FA-01 | WI-10 | §8-1 焦点可见 | 三页全部可交互元素 | 逐个 Tab 聚焦，`outline-width` 为 2px 且 `outline-color` 等于 `--r3-focus-ring` 解析值；`outline: none` 且无替代的元素数为 0 |
 | FA-02 | WI-10 | §8-1 | 同上 | 鼠标点击聚焦时**不显示**焦点环（同一元素两次采样，键盘态与鼠标态的 `outline-width` 不同） |
-| FA-03 | WI-10 | §8-2 对比度 | 四个阅读主题 × 正文 | 正文 ≥4.5:1、大字 ≥3:1，计算值断言（sepia 与 green 单独各一条） |
-| FA-04 | WI-10 | §8-2 | 四组状态色 × 明暗 | 全部 ≥4.5:1；亮色档单独断言（原 500 档只有 2.15–3.76:1） |
+| FA-03 | WI-10 | §8-2 对比度 | **六组纸/墨**：四种绝对纸色 ＋ `auto` 在 light / dark chrome 下解析出的两组 | 正文 ≥4.5:1、大字 ≥3:1，计算值断言（sepia 与 green 单独各一条）。**与 chrome 无关，不乘 10** |
+| FA-04 | WI-10 | §8-2 | 四组状态色 × chrome 明暗 | 全部 ≥4.5:1；亮色档单独断言（原 500 档只有 2.15–3.76:1）。状态色属 chrome 轴，**与纸色无关** |
 | FA-05 | WI-18 | §8-3 键盘可达 | `rd-pref-theme-*` / `rd-pref-font-*` | `role="radio"` ＋ 可聚焦（`tabIndex` ≥ -1 且能被 Tab 到）；现状是裸 `div`，完全不可聚焦 |
 | FA-06 | WI-18 | §8-3 | `rd-pref-theme-*` 容器 | `role="radiogroup"`；方向键左右各移动一位并循环；Home / End 跳首尾 |
 | FA-07 | WI-12 | §8-3 | `set-provider-toggle` | `role="switch"` ＋ `aria-checked`；Space 切换、Enter 不误触发第二次 |
@@ -1059,7 +1104,7 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 | FV-08 | WI-12 | 390×844 | `set-provider-toggle` 所在行 | `Enabled` 控件 `getBoundingClientRect().right` ≤ 视口宽（**实测失效项 4** 的回归） |
 | FV-09 | WI-16 | 1440×900 | 阅读器面板 | push 布局：面板打开后正文容器宽度变小 |
 | FV-10 | WI-16 | 1023×800 | 阅读器面板 | overlay 布局：面板打开后正文容器宽度不变 |
-| FV-11 | WI-16 | 1023×800 | nav-zone | `pointer-events` 为 `none` 或元素不存在（翻页热区禁用） |
+| FV-11 | WI-16 | 三档 | 翻页控件 | 隐形热区（`.nav-zone-*`）查询返回 0 个；`rd-page-prev` / `rd-page-next` 各有非空 `aria-label`；767×800 下两者不可见（规格 §11-R2） |
 | FV-12 | WI-16 | 390×844 | 阅读器工具栏 | 位于视口底部（`getBoundingClientRect().bottom` 接近视口高）；面板全屏 |
 | FV-13 | WI-18 | 1440×900 | 正文行宽 | 连续取 3 行，每行字符数落在 45–75 |
 | FV-14 | WI-18 | 390×844 | 正文行宽 | 同上 |
@@ -1070,23 +1115,31 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 
 ### 5.8 主题与 token 解析
 
-明暗 × 三阅读主题的组合下，逐项断言 token 解析不悬空。
+主题是**两根轴**（chrome `data-theme` × reading `data-reading-theme`，裁决见规格 §11-R7，契约唯一定义处是 §3.3）。
+组合矩阵 = chrome 2 种有效解析（light / dark；`system` 是解析策略不是第三种视觉）× reading 5 值 = **10 种**。
+
+> **但不是所有断言都乘 10。** 纸色与高亮是绝对值，只有 `auto` 跟 chrome 走：
+> 「墨压纸」四条、「高亮压纸」的组合都与 chrome 无关；真正要跑满 10 遍的只有**悬空检查**与**接缝**。下表逐条注明各自的规模。
 
 | 用例 ID | 归属 WI | 断言目标 | 预期结果 |
 |---|---|---|---|
-| FT-01 | WI-10 | 全部 `--r3-*` | 明暗 × 白 / 米 / 绿 / 夜 每种组合下 `getComputedStyle` 解析均非空字符串（**悬空 `var(--x)` 会解析成空串**） |
+| FT-01 | WI-10 | 全部 `--r3-*` | **10 种组合**（chrome light/dark × reading auto/paper/sepia/green/night）下 `getComputedStyle` 解析均非空字符串（**悬空 `var(--x)` 会解析成空串**） |
 | FT-02 | WI-10 | 组件样式文件 | 对 `--p-*` 的直接引用次数为 0（组件只许引 Tier 2） |
-| FT-03 | WI-10 | `--r3-warning` / `--r3-error` ＋ 四个 `-subtle` | 六种组合下都有定义 |
-| FT-04 | WI-7 | `--r3-hl-*-rgb` | 六种组合下都解析为三个数字 |
+| FT-03 | WI-10 | `--r3-warning` / `--r3-error` ＋ 四个 `-subtle` | 10 种组合下都有定义 |
+| FT-04 | WI-7 | `--r3-hl-*-rgb` | 10 种组合下都解析为三个数字 |
 | FT-05 | WI-7 | 全仓库 CSS | `color-mix(` 出现次数为 0 |
 | FT-06 | WI-7 | 九个原使用点 | 形如 `rgb(var(--r3-hl-*-rgb) / α)`，α 分别为 .35（4 处）、.45（4 处）、.18（1 处） |
-| FT-07 | WI-7 | 浅色 marker 四色 | 合成后与正文对比度均 ≥4.5:1（计算值断言） |
-| FT-08 | WI-7 | 夜间 marker 四色 | 背景 alpha 不等于 1，**且**带非背景提示：`text-decoration-line` 非 `none` 或 `border-left-width` 大于 0（黄 3.02 / 绿 3.94 实色不达标，且 paper-night 下解集为空） |
+| FT-07 | WI-7 | 亮纸 marker 四色 | `paper` / `sepia` / `green` ＋ `auto`@light 四种纸下，合成后与该纸墨色对比度均 ≥4.5:1（计算值断言，**不乘 chrome**） |
+| FT-08 | WI-7 | 夜纸 marker 四色 | `night` ＋ `auto`@dark 两种纸下，背景 alpha 不等于 1，**且**带非背景提示：`text-decoration-line` 非 `none` 或 `border-left-width` 大于 0（黄 3.02 / 绿 3.94 实色不达标，且 paper-night 下解集为空） |
 | FT-09 | WI-7 | `.anno.is-note` | 解析背景色不等于 `--r3-accent` 解析色（D-5 之后品牌蓝会与选区、focus ring 撞色） |
-| FT-10 | WI-10 | 夜间模式 | `body` 背景色计算值与浅色不同；正文与背景对比度 ≥4.5:1 |
-| FT-11 | WI-18 | 主题持久化 | 切主题后刷新，`localStorage.reader3_reading_theme` 与实际渲染一致；书库页读到同一个值（全局作用域） |
+| FT-10 | WI-10 | chrome 轴 | `data-theme="dark"` 下 `body` 背景色计算值与 light 不同；`--r3-text` 对 `--r3-bg` ≥4.5:1。**跑满 5 个 reading 值，结果必须一致**（chrome 不受纸色影响） |
+| FT-11 | WI-18 | 两轴持久化 | 两个 key 两个属性：切纸色写 `reader3.reader.theme` ＋ `<html data-reading-theme>`（`auto` 也写出属性），不动 `data-theme`；切界面明暗写 `reader3.ui.colorScheme` ＋ `<html data-theme>`（`system` 是**移除**属性），不动 `data-reading-theme`。各自刷新后与渲染一致 |
 | FT-12 | WI-18 | 字号作用域 | 改字号只影响 iframe 内文本，iframe 外元素字号不变（**仅 iframe** 作用域） |
 | FT-13 | WI-10 | token 悬空 lint | 0.8 的 lint 在全部样式文件上通过；`var(--x, fallback)` 有 fallback 也算违规 |
+| FT-14 | WI-10 | 纸色绝对性 | `paper` / `sepia` / `green` / `night` 下解析的 `--r3-page-*` 与 `--r3-hl-*`，在 light 与 dark chrome 下**逐字相等** |
+| FT-15 | WI-10 | `auto` 是唯一的跟随档 | `auto` 下 `--r3-page-bg` 在 light 与 dark chrome 下**不相等**，且各自等于该 chrome 的 `:root` 声明值；CSS 里不存在 `[data-reading-theme="auto"]` 选择器（**它靠没有规则实现**） |
+| FT-16 | WI-10 | 纸色不外泄 | 书库页与设置页 `body` 的 `background-color` 计算值，在 `data-reading-theme` 取五个值时全部相同 |
+| FT-17 | WI-10 | FOUC | 首帧（`DOMContentLoaded` 前）`<html>` 上两个属性已按存储值 stamp 完毕；无 `.reader-shell` 存在时 inline script 不抛错 |
 
 ---
 
