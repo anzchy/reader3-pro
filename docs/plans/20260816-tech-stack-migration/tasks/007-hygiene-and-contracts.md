@@ -42,7 +42,13 @@
 | 0.7 删死代码 `SearchIndex` / `BookIndex.from_book_pkl` / `SearchIndex.build_from_library` | ✅ 已删。`BookIndex` / `ChapterIndex` dataclass 仍在 `search_service.py`，**是活代码，不要动** |
 | spec-kit 退场、规划文档合并进本文件夹 | ✅ |
 
-还没动的：0.2、0.6 剩下的两小项。0.1、0.3、0.4、0.5、0.7、0.8 已完成。
+**全部八项已完成**（0.1 / 0.3 / 0.4 / 0.5 / 0.7 / 0.8 见各节的 ✅；0.2 与 0.6 于 2026-08-23 收尾）。
+
+> ⚠️ **本行此前写着「0.3 已完成」，是错的。** 实测 `src/reader3_app/web/server.py` 里
+> 既没有 `READER3_PORT`、没有 `--port`，也没有 `/api/health`——`main()` 仍是写死的
+> `uvicorn.run(app, host="127.0.0.1", port=8123)`。2026-08-23 才真正实现。
+> 记账错误本身值得留一行：**"已完成"这四个字没有护栏，写错了没有任何东西会报警**，
+> 这正是 008 要建测试网、而不是继续靠文档记账的理由。
 
 ---
 
@@ -91,6 +97,13 @@ uv build → 解包 wheel → 断言 templates/、static/js/、static/css/、sta
 
 把这段做成 CI 的一步（008 建 CI 时接管）。**必须在 Phase 4「dist 提交进 git」之前修**，否则 dist 提交了也发不出去。
 
+✅ 已完成（2026-08-23）。
+
+- **修法**：`package-data` 的 `"static/*"` → `"static/**/*"`（`**` 需 setuptools ≥62.3，`[build-system]` 已要求 ≥68）。修后 wheel 里 css 5 ＋ js 6 ＋ vendor 2 共 13 个子目录文件全部就位，模板与静态资源合计 28 个，缺 0。
+- **守卫**：`scripts/check_wheel_contents.py`，接进 `.github/workflows/lint.yml` 的**新 job `wheel`**。它**不进 `contracts` job**——那个 job 的「零依赖、不装任何东西」是刻意保住的性质（让 lint 在还没有 `tests/` 的分支上也能跑），而本检查要 `uv build`。
+- **判定不是抽查是对账**：源码树 `web/templates/` 与 `web/static/` 下的每个文件都必须在 wheel 里有对应条目。抽查会在有人新增 `static/img/` 时静默失效。
+- ⚠️ **实施中发现的第二个坑，比原 bug 更阴**：本地做过一次成功构建之后，`src/reader3.egg-info/SOURCES.txt` 会列全整棵树；而 `pyproject.toml` 开着 `include-package-data = true`，setuptools 会把 SOURCES.txt 里的文件也算作包数据。于是**把 `package-data` 改回坏的 `static/*`，wheel 依然是完整的**，检查照样绿。`build/lib/` 的残留同理。CI 是干净检出所以看不见——**这个陷阱只在本地咬人，而本地恰恰是改 `pyproject.toml` 的人第一时间验证的地方**。脚本因此在构建前自清这两处。两个方向都已实测：坏配置 exit 1、好配置 exit 0。
+
 ---
 
 ## 0.3 端口可配置 ＋ 健康探针
@@ -109,6 +122,14 @@ uv build → 解包 wheel → 断言 templates/、static/js/、static/css/、sta
 **测试目标**：优先级三种组合（`tests/unit/`）；`/api/health` 的状态码与载荷形状（`tests/contract/`，FastAPI TestClient）。
 
 **明确不做**：Playwright `webServer` 配置本身（属 009）。
+
+✅ 已完成（2026-08-23）。
+
+- `resolve_port(argv, env)` 是个纯函数，优先级 **`--port` > `READER3_PORT` > `DEFAULT_PORT` 8123**；`--port 9000` 与 `--port=9000` 两种写法都收。
+- **非法值抛错，不回落默认值**。静默回落会把「你写错了」伪装成「一切正常」——服务照样起来，只是起在 8123 上，然后撞开发者本地那个实例。`main()` 捕获后打一行到 stderr 并 `return 2`。
+- `GET /api/health` 返回 `{"status": "ok", "version": "<包版本>"}`，版本走 `importlib.metadata`。**故意不碰磁盘**：不扫 `books/`、不读 settings、不加载任何 `book.pkl`。009 起的实例常跑在空目录里，探针一旦顺手扫书库就会在那里 500，而 `webServer` 只会报「服务没起来」。
+- **测试**：`tests/unit/test_resolve_port.py`（三种优先级组合 ＋ 空 env ＋ 六个非法值 ＋ 边界 1/65535）、`tests/contract/test_health_route.py`（状态码、载荷形状、书库目录不存在时仍 200）。18 条，全绿；全量 68 条全绿。
+- **实测 smoke**：`READER3_PORT=8199` → 起在 8199；`READER3_PORT=8199 … --port 8200` → 起在 **8200**（CLI 赢）；`/api/health` 实回 `{"status":"ok","version":"1.4.0"}`；`READER3_PORT=abc` → `reader3-server: READER3_PORT 不是整数：'abc'`。
 
 ---
 
@@ -153,8 +174,12 @@ testid 全部合规；现有模板与生成 DOM 回贴了其中 152 个，反向
 | 项 | 状态 |
 |---|---|
 | `.gitignore` 末尾的合并冲突标记 | ✅ 已修 |
-| `pyproject.toml` 版本号对齐 git tag | ⬜ 现在是 `0.1.0`，最新 tag 是 `v1.4.0` |
-| `ai_settings.example.json` 补齐 provider | ⬜ 现有 `anthropic` / `gemini` / `ollama`，缺 `openai` / `openrouter`——而这两个 provider 的代码是实现了的 |
+| `pyproject.toml` 版本号对齐 git tag | ✅ `0.1.0` → `1.4.0`（2026-08-23）。全仓库只有这一处版本号，`/api/health` 通过 `importlib.metadata` 读它，不再抄一份 |
+| `ai_settings.example.json` 补齐 provider | ✅ 五个 provider 齐了（2026-08-23）。**不是手抄补两段，是整份从 `ai/config.py` 的 `default_settings_dict()` 生成**——手抄就是给同一个事实开第二处定义，下次改默认值又会漏 |
+
+> `max_retries` 现在会出现在示例文件里，因为它本来就在 `default_settings_dict()` 里、也本来就会被写进用户的 `config/ai_settings.json`。**这不是把它「接通」**——见下。
+>
+> 示例文件与默认值的漂移目前没有护栏。**一条 `assert json.load(example) == default_settings_dict()` 的单测归 008**，本分支不建（007 的 `tests/` 才刚有雏形）。
 
 **`max_retries` 不在 0.6 里。** 它能填、能存、能读回、`settings.js` 也在渲染，但没有任何 provider 消费它。删掉还是接通都是行为变更，归 Phase 2——技术栈计划 Phase 2 有专门一条。别顺手在 007 里处理掉。
 
@@ -192,12 +217,12 @@ testid 全部合规；现有模板与生成 DOM 回贴了其中 152 个，反向
 
 ## 8. 退出门槛
 
-- [ ] 0.1 修复；用户数据在重新处理后逐字节不变；中断可干净重跑
-- [ ] 0.2 修复；`uv build` 解包后 `static/js` / `static/css` / `static/vendor` 齐全
-- [ ] 0.3 `--port` 与 `READER3_PORT` 生效且优先级正确；`GET /api/health` 可用
+- [x] 0.1 修复；用户数据在重新处理后逐字节不变；中断可干净重跑
+- [x] 0.2 修复；`uv build` 解包后 `static/js` / `static/css` / `static/vendor` 齐全
+- [x] 0.3 `--port` 与 `READER3_PORT` 生效且优先级正确；`GET /api/health` 可用
 - [x] 0.4 四个文件 IIFE 化；四个页面人工 smoke 通过
 - [x] 0.5 testid 两侧一致；两条 lint 在 CI 里生效且违规数为 0
-- [ ] 0.6 版本号对齐；示例配置补齐两个 provider
+- [x] 0.6 版本号对齐；示例配置补齐两个 provider
 - [x] 0.7 死代码已删
 - [x] 0.8 token 悬空引用 lint 在 CI 里生效，差集为 0
 - [ ] 六项人工 smoke checklist 走一遍（技术栈计划 Phase 0）

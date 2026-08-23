@@ -1316,6 +1316,17 @@ def _sse_event(event: str, data: Any) -> bytes:
     return f"event: {event}\ndata: {payload}\n\n".encode("utf-8")
 
 
+@app.get("/api/health")
+async def api_health():
+    """就绪探针。009 的 Playwright `webServer` 与 Phase 5 的 `reader3 launch` 都用它。
+
+    **故意不碰磁盘**：不扫 books/、不读 settings、不加载任何 book.pkl。探针要在
+    书库为空甚至目录不存在时也能答 200，否则 webServer 只会报「服务没起来」，
+    而真实原因是探针自己在一个空目录上 500 了。
+    """
+    return {"status": "ok", "version": _package_version()}
+
+
 @app.get("/api/settings")
 async def api_get_settings():
     settings = load_ai_settings()
@@ -2400,11 +2411,70 @@ async def serve_image(book_id: str, image_name: str):
 
     return FileResponse(img_path)
 
+DEFAULT_PORT = 8123
+DEFAULT_HOST = "127.0.0.1"
+
+
+def _package_version() -> str:
+    """装出来的版本号；源码树里跑（没装过）时回落到 pyproject 之外的一个标记。"""
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        return version("reader3")
+    except PackageNotFoundError:
+        return "0+unknown"
+
+
+def _parse_port(raw: str, source: str) -> int:
+    """把一个字符串解成合法端口，解不动就抛。
+
+    **不回落到默认值**是有意的：静默回落会把「你写错了」伪装成「一切正常」——
+    服务照样起来，只是起在 8123 上，然后撞开发者本地那个实例。0.3 要消灭的
+    正是这类症状不指向病因的失败。
+    """
+    try:
+        port = int(raw)
+    except (TypeError, ValueError):
+        raise ValueError(f"{source} 不是整数：{raw!r}") from None
+    if not (1 <= port <= 65535):
+        raise ValueError(f"{source} 超出 1–65535：{port}")
+    return port
+
+
+def resolve_port(argv: list[str], env: dict[str, str]) -> int:
+    """端口优先级：**`--port` > `READER3_PORT` > 8123**。
+
+    定义处见 tasks/007-hygiene-and-contracts.md 步骤 0.3。
+    `--port 9000` 与 `--port=9000` 两种写法都收。
+    """
+    for i, arg in enumerate(argv):
+        if arg == "--port":
+            if i + 1 >= len(argv):
+                raise ValueError("--port 缺少值")
+            return _parse_port(argv[i + 1], "--port")
+        if arg.startswith("--port="):
+            return _parse_port(arg.split("=", 1)[1], "--port")
+
+    raw = (env.get("READER3_PORT") or "").strip()
+    if raw:
+        return _parse_port(raw, "READER3_PORT")
+
+    return DEFAULT_PORT
+
+
 def main() -> int:
+    import sys
+
     import uvicorn
 
-    print("Starting server at http://127.0.0.1:8123")
-    uvicorn.run(app, host="127.0.0.1", port=8123)
+    try:
+        port = resolve_port(sys.argv[1:], dict(os.environ))
+    except ValueError as e:
+        print(f"reader3-server: {e}", file=sys.stderr)
+        return 2
+
+    print(f"Starting server at http://{DEFAULT_HOST}:{port}")
+    uvicorn.run(app, host=DEFAULT_HOST, port=port)
     return 0
 
 
