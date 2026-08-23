@@ -226,7 +226,9 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 >
 > **fallback 也算违规**，因为 fallback 恰好是这条 lint 要防的那个故障的伪装：`var(--r3-error, #ccc)` 在 token 缺失时不会露馅，横幅照常渲染成一个灰色的普通提示——比静默回落更难被发现，因为它看起来是「有人考虑过」。要 fallback 就先把 token 定义出来。
 >
-> 实现约十行：扫 `designs/reader-pro-next/`、`static/css/`、`templates/*.html` 与设计规格里的 CSS 块，收集所有 `--x:` 定义与所有 `var(--x)` 引用，求差集。定义在别处（如浏览器内置或第三方）的走白名单。
+> 实现见 `scripts/lint_token_refs.py`（约 100 行，含扫描集与自述）：收集所有 `--x:` 定义与所有 `var(--x)` 引用，求差集。定义在别处（如浏览器内置或第三方）的走 `scripts/token_ref_whitelist.txt`。
+>
+> **扫描集是 `static/**` 下的全部 `.css`，不只是 `static/css/`。** 本行此前写作 `static/css/`，实施时发现那样会漏掉 `static/` 顶层的 `dedao-theme.css`（620 个 `--dedao-*`，全仓库最大的一坨 token）、`library.css`、`ai.css`、`search.css`、`settings.css` 五个文件——正好是悬空引用最可能藏身的地方。同理，规格侧除 `spec-frontend-design.md` 外也扫 `plan-frontend-ui-refactor.md` 的 CSS 块。落地实测：22 个来源、271 个定义、1119 处引用，悬空 0、带 fallback 0。
 >
 > **扫描范围会再扩一次，且已有归属。** 上面五处都是**现状**的样式所在地；`{前端源码根}`（Vite ＋ TS 的新目录，013 建）落地后，本 lint 必须同时扫它，否则 013／014 迁进去的样式全部脱离本 lint。前端计划有三条验收依赖它在源码根下生效（`plan-frontend-ui-refactor.md` 的 WI-7 验收 3、WI-10、WI-16），**扩范围这件事由该计划的 WI-9 验收 12 交付**，改动落回本行。此前两边都默认对方会做。
 
