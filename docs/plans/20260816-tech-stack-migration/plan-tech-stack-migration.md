@@ -442,7 +442,7 @@ pickle 是实际的迁移阻塞点与安全隐患（`pickle.load` 对不可信�
 
 | 阶段 | 进入条件 | 退出条件 |
 |---|---|---|
-| Phase 0 | — | P0-1/P0-2 修复并人工 smoke；`--port` 与 `/api/health` 可用；testid 在原型与模板两侧一致；**两条 lint 都在 CI 里生效**——选择器 lint（约束 `tests/e2e/`）与命名 lint（约束模板与原型，正则以 §6 步骤 0.5 的 **canonical 代码块**为准，违规数归零）；**0.8 的 token 悬空引用 lint 在 CI 里生效且为 0**。三条 lint 落在 `.github/workflows/lint.yml` 的同一个 job 里，分三步跑 |
+| Phase 0 | — | P0-1/P0-2 修复并人工 smoke（**六项 checklist 的正文在 [`tasks/007-hygiene-and-contracts.md`](./tasks/007-hygiene-and-contracts.md) §8.1**，本文只引用不重述）；`--port` 与 `/api/health` 可用；testid 在原型与模板两侧一致；**两条 lint 都在 CI 里生效**——选择器 lint（约束 `tests/e2e/`）与命名 lint（约束模板与原型，正则以 §6 步骤 0.5 的 **canonical 代码块**为准，违规数归零）；**0.8 的 token 悬空引用 lint 在 CI 里生效且为 0**。三条 lint 落在 `.github/workflows/lint.yml` 的同一个 job 里，分三步跑 |
 | Phase 1a | Phase 0 | CI 绿灯成为合并门槛；42 路由契约测试通过；**API v1 形状冻结**；性能基准记录在案 |
 | Phase 1b | 0.3 + 0.5 | **`baseline-1b` 组**在**主 CI**（非 nightly）绿灯；**用例覆盖写路径**（四类型创建 / 改色 / 删除 / 笔记保存，断言为刷新后回到同一段文字）；K2–K5 与 K1/K6 的**现状特征化**条各一条正向证据；连续 3 次全量运行零 flaky；其余组**用例写完并 review**，以 skip 形态存在。⚠️ K1/K6 的新行为与 DEG-S1–DEG-S4 的横幅**不在本阶段门槛内**——它们要到 4B.1 / Phase 3 / 4A.4 才存在，写进 1b 会形成依赖环。分组见 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) §0.5 |
 | Track D | Phase 0 | DEG-S1–DEG-S5 设计完成并回写设计规格 §6.4；合同 2 剩余两项收口；loading 骨架屏补齐 |

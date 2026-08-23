@@ -1,4 +1,4 @@
-# 007 步骤 0.5 与 0.8 的三条 lint（`contracts` job），以及 0.2 的 wheel 内容检查（`wheel` job）。
+# 007 步骤 0.5 与 0.8 的三条 lint（`contracts` job），以及 0.2 的两重 wheel 检查（`wheel` job）。
 # 迁移计划 §7 Phase 0 的退出条件要求它们「在 CI 里生效」。
 #
 # 三条 lint 都是零依赖的标准库脚本，所以 `contracts` 这个 job 不装任何东西——
@@ -38,7 +38,7 @@ jobs:
         run: python3 scripts/lint_token_refs.py
 
   wheel:
-    name: wheel 内容检查（0.2）
+    name: wheel 内容 ＋ 装出来能跑（0.2）
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -49,3 +49,11 @@ jobs:
       # 所以它必须由 CI 每次构建来验，不能靠人记得。
       - name: 打 wheel 并逐文件对账（templates/ 与 static/ 下不许漏）
         run: python3 scripts/check_wheel_contents.py
+
+      # 「文件进了 wheel」与「装出来能跑」会分开坏。2026-08-23 实测：内容检查
+      # 全绿，装出来每个 HTML 页面照样 500——依赖没上界，干净环境解析出
+      # starlette 1.6.0，旧的 TemplateResponse 签名在 1.x 里已删除。
+      # 这一步是**全仓库唯一按最新依赖解析的地方**，`uv.lock` 在这里故意不参与。
+      - name: 装进干净 venv 起真服务，四个路由不许 5xx
+        if: always()
+        run: python3 scripts/smoke_installed_wheel.py

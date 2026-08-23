@@ -223,9 +223,9 @@ async def library_view(request: Request):
         collections_error = str(e)
 
     return templates.TemplateResponse(
+        request,
         _library_template_name(),
         {
-            "request": request,
             "books": books,
             "counts": {
                 "all": len(books),
@@ -241,7 +241,7 @@ async def library_view(request: Request):
 
 @app.get("/settings", response_class=HTMLResponse)
 async def settings_view(request: Request):
-    return templates.TemplateResponse("settings.html", {"request": request})
+    return templates.TemplateResponse(request, "settings.html", {})
 
 def _validate_book_id_path_safe(book_id: str) -> str:
     safe = os.path.basename(str(book_id or ""))
@@ -516,8 +516,7 @@ async def read_chapter(request: Request, book_id: str, chapter_index: int):
     safe_book_id = os.path.basename(book_id)
     cover_url = f"/read/{safe_book_id}/images/{cover_image}" if cover_image else None
     epub_available = os.path.exists(os.path.join(BOOKS_DIR, safe_book_id, "book.epub"))
-    return templates.TemplateResponse("reader.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "reader.html", {
         "book": book,
         "current_chapter": current_chapter,
         "chapter_index": chapter_index,

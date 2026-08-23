@@ -42,7 +42,7 @@
 | 0.7 删死代码 `SearchIndex` / `BookIndex.from_book_pkl` / `SearchIndex.build_from_library` | ✅ 已删。`BookIndex` / `ChapterIndex` dataclass 仍在 `search_service.py`，**是活代码，不要动** |
 | spec-kit 退场、规划文档合并进本文件夹 | ✅ |
 
-**全部八项已完成**（0.1 / 0.3 / 0.4 / 0.5 / 0.7 / 0.8 见各节的 ✅；0.2 与 0.6 于 2026-08-23 收尾）。
+**全部八项已完成**（0.1 / 0.3 / 0.4 / 0.5 / 0.7 / 0.8 见各节的 ✅；0.2 与 0.6 于 2026-08-23 收尾），**六项人工 smoke 已走完**（§8.1）。
 
 > ⚠️ **本行此前写着「0.3 已完成」，是错的。** 实测 `src/reader3_app/web/server.py` 里
 > 既没有 `READER3_PORT`、没有 `--port`，也没有 `/api/health`——`main()` 仍是写死的
@@ -218,14 +218,55 @@ testid 全部合规；现有模板与生成 DOM 回贴了其中 152 个，反向
 ## 8. 退出门槛
 
 - [x] 0.1 修复；用户数据在重新处理后逐字节不变；中断可干净重跑
-- [x] 0.2 修复；`uv build` 解包后 `static/js` / `static/css` / `static/vendor` 齐全
+- [x] 0.2 修复；`uv build` 解包后 `static/js` / `static/css` / `static/vendor` 齐全；**且装出来真能跑**（见 §8.1 的 S2）
 - [x] 0.3 `--port` 与 `READER3_PORT` 生效且优先级正确；`GET /api/health` 可用
 - [x] 0.4 四个文件 IIFE 化；四个页面人工 smoke 通过
 - [x] 0.5 testid 两侧一致；两条 lint 在 CI 里生效且违规数为 0
 - [x] 0.6 版本号对齐；示例配置补齐两个 provider
 - [x] 0.7 死代码已删
 - [x] 0.8 token 悬空引用 lint 在 CI 里生效，差集为 0
-- [ ] 六项人工 smoke checklist 走一遍（技术栈计划 Phase 0）
+- [x] 六项人工 smoke checklist 走一遍（正文见 §8.1，2026-08-23 全绿）
+
+### 8.1 六项人工 smoke checklist
+
+> **这份清单此前只有引用、没有正文。** 技术栈计划 §阶段重排里写着「独立 commit ＋
+> 六项人工 smoke checklist」，但六项是哪六项，两份文档都没写过。2026-08-23 按
+> 「哪几项非人眼／非装包不可验」把它定下来：**0.5 与 0.8 不在其中**——那两项的
+> 判据是 lint 违规数为 0，机器已经在管，再走一遍人工是重复记账。
+
+| # | 对应 | 怎么验 | 结果（2026-08-23） |
+|---|---|---|---|
+| S1 | 0.1 | 真实书里造一条标注 → 重新处理该 epub → 用户数据还在 | ✅ `notes.json` / `ai_meta.json` **sha256 逐字节不变**，`ai_conversations` 在，无 staging 残留，刷新后高亮回到同一段文字 |
+| S2 | 0.2 | wheel 装进**干净 venv** → 起服务 → 阅读器不白屏 | ✅ 修完两个 bug 后全绿（下详）。`static/{js,css,vendor}` 8 个资源全 200，正文 15844 字，高亮渲染，零控制台错误 |
+| S3 | 0.3 | `--port` ／ `READER3_PORT` ／ `/api/health` | ✅ 8137 起服务时用户自己的 8123 实例正在跑，没有互相干扰——这正是这一项存在的理由 |
+| S4 | 0.4 | 四个页面（library / reader / settings / 跨库搜索）零控制台错误 | ✅ 唯一一条错误是 `/api/ollama/models` 503，Ollama 没起时的设计行为，设置页降级成安装指引 |
+| S5 | 0.6 | 示例配置能被**真实 loader** 吃下去 | ✅ 与 `default_settings_dict()` 逐键相等，五个 provider 全部解析出 model／timeout／retries |
+| S6 | 0.7 | 删死代码后关键词与语义搜索都还在 | ✅ 关键词 200 有结果；语义在未索引的书上返回空并显示「Results from 0 indexed books (1 not indexed)」 |
+
+**S2 揪出了一个比 0.2 本身更严重的问题，已一并修掉。**
+
+`static/**/*` 修好之后，`check_wheel_contents.py` 全绿、文件确实都进了 wheel——
+但把 wheel 装进干净 venv 起服务，**`/`、`/settings`、`/read/*` 每个 HTML 页面都 500**。
+
+原因与打包无关：`pyproject.toml` 的依赖只有下界没有上界，干净环境解析出
+**starlette 1.6.0**，而 `templates.TemplateResponse(name, context)` 这个旧签名
+在 1.x 里已被删除（0.29 起就标了废弃）。仓库的 `uv.lock` 钉着 0.49.3，所以
+`uv run` 与 pytest **全程绿灯，一次都没报过**。
+
+修法是把三处调用点改成新签名 `TemplateResponse(request, name, context)`——
+0.49 与 1.6 都吃，因此不需要给依赖加上界（加上界只是把问题冻住，不是修好）。
+两个版本下都实测过三个路由 200，仓库 68 条测试仍全绿。
+
+护栏是新增的 `scripts/smoke_installed_wheel.py`，接进 CI 的 `wheel` job：
+造一本合成 epub（`READER3_BOOKS_DIR` 指到临时目录，**绝不碰真 `books/`**）→
+装 wheel 进干净 venv → 起真的 `reader3-server` 子进程 → 打四个路由。
+**它是全仓库唯一一处按最新依赖解析的地方**，`uv.lock` 在这里故意不参与——
+任何「依赖出大版本 → 装出来起不来」的问题，只有它看得见。已实测会咬人：
+把 `/settings` 改回旧签名，它报 `500` 并退出 1。
+
+> 这两件事值得分开记：**「文件进没进 wheel」和「装出来能不能跑」会独立地坏。**
+> 007 原本只写了前者，于是修完 0.2 之后，一个每个页面都 500 的 wheel 仍然会
+> 通过全部退出门槛。
 
 ---
 
