@@ -520,6 +520,18 @@ Plan 的 Phase 1b 会写 Playwright E2E 并作为 Phase 4 的合并门槛。如�
 4. 重设计可以任意改 class、改嵌套、改标签——但**不得改 testid**。
 5. testid 的值必须是**字符串字面量**，不得由变量拼接或模板插值产生（原型的 `data-testid={"status-" + props.status}` 是错的，改静态映射表）。两条理由：命名 lint 扫的是字面量，拼出来的它看不见；且 testid 契约的价值有一半在**可 grep**——一个在仓库里搜不到的 testid，E2E 挂了没人找得到它是谁发的。
 
+   规则 5 只覆盖了**取值有界**的情形。0.5 落地时补上无界的一半（2026-08-23）：
+
+   | 取值 | 做法 | E2E 怎么定位 |
+   |---|---|---|
+   | **有界**（枚举：状态、颜色、主题、tab……） | 逐个枚举成字面量，放进一张 `const` 表，`data-testid={表[key]}`。**表的标识符里要带 `TESTID`**——命名 lint 靠这个约定找到表内的字面量 | `[data-testid="rd-anno-color-yellow"]` |
+   | **无界**（来自用户数据的 id：书、集合、笔记、会话、章节、provider） | **同类元素共用一个字面量 testid**，id 由**另一个** `data-*` 属性携带（`data-book-id` / `data-note-id` / `data-provider` …） | `[data-testid="lib-book-card"][data-book-id="…"]` |
+
+   无界那一行不违反规则 2：`data-*` 属性选择器既不是 class、不是 `nth-child`、也不是层级结构选择器，
+   重设计改不动它。把 id 拼进 testid 才是违规——那样每本书都会造出一个 grep 不到的新 testid。
+
+   逐条落地见 [`contracts/testid-rename-map.md` §5](../20260816-tech-stack-migration/contracts/testid-rename-map.md)。
+
 命名约定：
 
 | 页面 | 前缀 | 示例 |
@@ -534,7 +546,14 @@ Plan 的 Phase 1b 会写 Playwright E2E 并作为 Phase 4 的合并门槛。如�
 
 原型 `designs/reader-pro-next/` 现有 **134 个唯一 `data-testid`，其中符合上表前缀方案的：0 个。**
 
-> ⚠️ 容易看错的一点：有 24 个 testid 带 `reader-` / `library-` 前缀，形似合规，实则是**另一套**命名（页面全称而非 `rd-` / `lib-`）。它们比裸名更危险——批量改名时容易被当成"已经对了"而跳过。**134 个全部需要改名。**
+> **2026-08-23 改名落地后的订正：真实数是 138，不是 134。** 差的 4 个不是新元素，是口径差——
+> 原先只清点了 `data-testid="…"` 属性，漏掉了 `Sheet` 组件的 `testId="…"` **prop** 形式
+> （`toc-panel` / `notes-panel` / `reader-search-panel` / `ai-panel`），它在组件内部转成 `data-testid`，
+> 在浏览器里同样是一个 testid。**命名 lint 因此必须同时扫 `testId="…"`。**
+> 下面那 24 个的数字反而一直是对的：23 个在属性里，第 24 个（`reader-search-panel`）正是漏掉的 prop 之一。
+> 全部新旧对照见 [`contracts/testid-rename-map.md`](../20260816-tech-stack-migration/contracts/testid-rename-map.md)。
+
+> ⚠️ 容易看错的一点：有 24 个 testid 带 `reader-` / `library-` 前缀，形似合规，实则是**另一套**命名（页面全称而非 `rd-` / `lib-`）。它们比裸名更危险——批量改名时容易被当成"已经对了"而跳过。**138 个站点全部需要改名。**（已于 2026-08-23 在 007 的 0.5 里改完：原型 221 个唯一名全部合规。）
 
 已经出现的漂移：同一个概念"一条搜索命中"，在书库是 `search-hit`，在阅读器是 `reader-search-hit`；而 `search-empty` / `search-loading` / `search-failed` 三个裸名被阅读器占用了——书库搜索一旦补上空态就会撞名。
 

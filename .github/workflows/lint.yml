@@ -1,0 +1,34 @@
+# 007 步骤 0.5 与 0.8 的三条 lint。迁移计划 §7 Phase 0 的退出条件要求它们「在 CI 里生效」。
+#
+# 三条都是零依赖的标准库脚本，所以这个 job 不装任何东西——不 uv sync、不 pip install。
+# 测试 CI 由 008 单独建（tests/ 目录那时才有），两者不合并：lint 必须在没有测试的分支上也能跑。
+name: lint
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  contracts:
+    name: 契约 lint（testid ＋ token）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # 三条分开跑，且不用 `&&` 串联：失败时要能一眼看出是哪一条，
+      # 而不是「第一条挂了，后两条没跑，不知道它们是绿是红」。
+      - name: 选择器 lint（tests/e2e/ 只许用 data-testid 与 ARIA）
+        run: python3 scripts/lint_e2e_selectors.py
+
+      - name: 命名 lint（模板与原型的 testid 必须匹配 canonical 正则）
+        if: always()
+        run: python3 scripts/lint_testid_naming.py
+
+      - name: token 悬空引用 lint（var(--x) 的 x 必须有定义，带 fallback 也算违规）
+        if: always()
+        run: python3 scripts/lint_token_refs.py

@@ -57,18 +57,61 @@ function useFocusTrap(ref, active, onClose) {
   }, [active, onClose, ref]);
 }
 
+/* ------------------------------------------------------------------ */
+/* 跨页共享 chrome 的 testid（0.5）                                     */
+/* ------------------------------------------------------------------ */
+/* TopBar / Modal / ConfirmModal / LiveRegion 这几个 DOM 节点在书库、阅读器、
+   设置三个页面各出现一次，而命名方案只有 lib- / rd- / set- 三个前缀，没有
+   「共享」这一档。所以组件内部不写死 testid：调用点传 page，组件从这张静态
+   表里取。表里全是字符串字面量，命名 lint 扫得到，仓库里 grep 得到——这正是
+   设计规格 §4 规则 5 说的「改静态映射表」。 */
+const SHARED_TESTIDS = {
+  lib: {
+    liveRegion: "lib-live-region",
+    topbar: "lib-topbar", brand: "lib-brand", themeToggle: "lib-theme-toggle",
+    mobileMenu: "lib-topbar-mobile-menu", mobileInsights: "lib-topbar-mobile-insights",
+    navLibrary: "lib-topbar-nav-library", navSettings: "lib-topbar-nav-settings",
+    addBooks: "lib-topbar-add-books", backToLibrary: "lib-topbar-back-to-library",
+    modal: "lib-modal", modalClose: "lib-modal-close",
+    modalCancel: "lib-modal-cancel", modalPrimary: "lib-modal-primary",
+    confirmBody: "lib-confirm-body",
+  },
+  rd: {
+    liveRegion: "rd-live-region",
+    topbar: "rd-topbar", brand: "rd-brand", themeToggle: "rd-theme-toggle",
+    mobileMenu: "rd-topbar-mobile-menu", mobileInsights: "rd-topbar-mobile-insights",
+    navLibrary: "rd-topbar-nav-library", navSettings: "rd-topbar-nav-settings",
+    addBooks: "rd-topbar-add-books", backToLibrary: "rd-topbar-back-to-library",
+    modal: "rd-modal", modalClose: "rd-modal-close",
+    modalCancel: "rd-modal-cancel", modalPrimary: "rd-modal-primary",
+    confirmBody: "rd-confirm-body",
+  },
+  set: {
+    liveRegion: "set-live-region",
+    topbar: "set-topbar", brand: "set-brand", themeToggle: "set-theme-toggle",
+    mobileMenu: "set-topbar-mobile-menu", mobileInsights: "set-topbar-mobile-insights",
+    navLibrary: "set-topbar-nav-library", navSettings: "set-topbar-nav-settings",
+    addBooks: "set-topbar-add-books", backToLibrary: "set-topbar-back-to-library",
+    modal: "set-modal", modalClose: "set-modal-close",
+    modalCancel: "set-modal-cancel", modalPrimary: "set-modal-primary",
+    confirmBody: "set-confirm-body",
+  },
+};
+
 /* Screen-reader announcements (spec §3.1 "Live region"). */
 function LiveRegion(props) {
-  return <div className="sr-only" role="status" aria-live="polite" data-testid="live-region">{props.message}</div>;
+  const t = SHARED_TESTIDS[props.page];
+  return <div className="sr-only" role="status" aria-live="polite" data-testid={t.liveRegion}>{props.message}</div>;
 }
 
 /* ------------------------------------------------------------------ */
 /* Primitives                                                           */
 /* ------------------------------------------------------------------ */
 
-function Brand() {
+function Brand(props) {
+  const t = SHARED_TESTIDS[props.page];
   return (
-    <div className="brand" data-testid="brand">
+    <div className="brand" data-testid={t.brand}>
       <span className="brand-mark" aria-hidden="true">R3</span>
       <span>Reader3 Pro</span>
     </div>
@@ -85,6 +128,7 @@ function Toggle(props) {
       aria-checked={checked}
       aria-label={label}
       data-testid={props["data-testid"]}
+      data-provider={props["data-provider"]}
       onClick={(event) => {
         event.stopPropagation();
         onChange(!checked);
@@ -97,6 +141,7 @@ function Toggle(props) {
 
 function ThemeToggle(props) {
   const { theme, onTheme } = props;
+  const t = SHARED_TESTIDS[props.page];
   const next = { light: "dark", dark: "system", system: "light" };
   const glyph = { light: "☀", dark: "☾", system: "◐" };
   const title = { light: "Theme: light", dark: "Theme: dark", system: "Theme: follow system" };
@@ -106,7 +151,7 @@ function ThemeToggle(props) {
       type="button"
       aria-label={title[theme] + " — click to change"}
       title={title[theme]}
-      data-testid="theme-toggle"
+      data-testid={t.themeToggle}
       onClick={() => onTheme(next[theme])}
     >
       {glyph[theme]}
@@ -114,8 +159,15 @@ function ThemeToggle(props) {
   );
 }
 
+/* `name` 是**同页多弹层**的判别位，不是 testid 的一部分。原型任一时刻只挂一个 Modal，
+   所以 lib-modal 这一个名字就够；但现有 Jinja 模板里四个 <dialog> 是同时存在于 DOM 的
+   （library.html 的 add-books / index-errors / create-collection / add-to-collection），
+   testid 一样就选不出唯一元素。做法与设计规格 §4 规则 5 无界那一行同构：
+   testid 保持字面量，判别位另开一个 data-* 属性。E2E 写作
+   [data-testid="lib-modal-primary"][data-modal="create-collection"]。 */
 function Modal(props) {
-  const { title, children, onClose, primaryLabel, onPrimary, tone, cancelLabel, size } = props;
+  const { title, children, onClose, primaryLabel, onPrimary, tone, cancelLabel, size, page, name } = props;
+  const t = SHARED_TESTIDS[page];
   const ref = useRef(null);
   useFocusTrap(ref, true, onClose);
 
@@ -130,17 +182,18 @@ function Modal(props) {
         aria-label={title}
         tabIndex="-1"
         ref={ref}
-        data-testid="modal"
+        data-testid={t.modal}
+        data-modal={name}
       >
         <header className="modal-header">
           <h2 className="modal-title">{title}</h2>
-          <button className="btn btn-icon" type="button" aria-label="Close dialog" style={{marginLeft: "auto"}} data-testid="modal-close" onClick={onClose}>×</button>
+          <button className="btn btn-icon" type="button" aria-label="Close dialog" style={{marginLeft: "auto"}} data-testid={t.modalClose} data-modal={name} onClick={onClose}>×</button>
         </header>
         <div className="modal-body">{children}</div>
         {primaryLabel && (
           <footer className="modal-footer">
-            <button className="btn" type="button" data-testid="modal-cancel" onClick={onClose}>{cancelLabel || "Cancel"}</button>
-            <button className={"btn " + (tone === "danger" ? "btn-danger" : "btn-primary")} type="button" data-testid="modal-primary" onClick={onPrimary}>{primaryLabel}</button>
+            <button className="btn" type="button" data-testid={t.modalCancel} data-modal={name} onClick={onClose}>{cancelLabel || "Cancel"}</button>
+            <button className={"btn " + (tone === "danger" ? "btn-danger" : "btn-primary")} type="button" data-testid={t.modalPrimary} data-modal={name} onClick={onPrimary}>{primaryLabel}</button>
           </footer>
         )}
       </section>
@@ -150,10 +203,11 @@ function Modal(props) {
 
 /* Destructive actions must confirm (spec §4.3 Data, §4.1 item 7). */
 function ConfirmModal(props) {
-  const { title, body, confirmLabel, onCancel, onConfirm } = props;
+  const { title, body, confirmLabel, onCancel, onConfirm, page, name } = props;
+  const t = SHARED_TESTIDS[page];
   return (
-    <Modal title={title} primaryLabel={confirmLabel} tone="danger" onClose={onCancel} onPrimary={onConfirm}>
-      <p className="empty-copy" style={{fontSize: "13px"}} data-testid="confirm-body">{body}</p>
+    <Modal page={page} name={name} title={title} primaryLabel={confirmLabel} tone="danger" onClose={onCancel} onPrimary={onConfirm}>
+      <p className="empty-copy" style={{fontSize: "13px"}} data-testid={t.confirmBody} data-modal={name}>{body}</p>
     </Modal>
   );
 }
@@ -164,27 +218,31 @@ function ConfirmModal(props) {
 
 function TopBar(props) {
   const { screen, onScreen, onAdd, onMobileMenu, onMobileInsights, theme, onTheme } = props;
+  /* 原型是单页外壳，同一条 TopBar 在两个 screen 下复用；生产是两张 Jinja 页，
+     各自渲染自己那一份。testid 跟 screen 走，两侧因此一致。 */
+  const page = screen === "settings" ? "set" : "lib";
+  const t = SHARED_TESTIDS[page];
 
   return (
-    <header className="topbar" data-testid="topbar">
+    <header className="topbar" data-testid={t.topbar}>
       {screen === "library" && (
-        <button className="btn btn-icon mobile-only" type="button" aria-label="Open library navigation" data-testid="mobile-menu" onClick={onMobileMenu}>☰</button>
+        <button className="btn btn-icon mobile-only" type="button" aria-label="Open library navigation" data-testid={t.mobileMenu} onClick={onMobileMenu}>☰</button>
       )}
-      <Brand />
+      <Brand page={page} />
       <nav className="topnav" aria-label="Primary navigation">
-        <button className={"topnav-button " + (screen === "library" ? "is-active" : "")} type="button" data-testid="nav-library" onClick={() => onScreen("library")}>My Library</button>
-        <button className={"topnav-button " + (screen === "settings" ? "is-active" : "")} type="button" data-testid="nav-settings" onClick={() => onScreen("settings")}>Settings</button>
+        <button className={"topnav-button " + (screen === "library" ? "is-active" : "")} type="button" data-testid={t.navLibrary} onClick={() => onScreen("library")}>My Library</button>
+        <button className={"topnav-button " + (screen === "settings" ? "is-active" : "")} type="button" data-testid={t.navSettings} onClick={() => onScreen("settings")}>Settings</button>
       </nav>
       <div className="topbar-actions">
-        <ThemeToggle theme={theme} onTheme={onTheme} />
+        <ThemeToggle page={page} theme={theme} onTheme={onTheme} />
         {screen === "library" && (
           <>
-            <button className="btn btn-icon mobile-only tablet-visible" type="button" aria-label="Open insights panel" data-testid="mobile-insights" onClick={onMobileInsights}>◎</button>
-            <button className="btn btn-primary" type="button" data-testid="add-books" onClick={onAdd}>Add books</button>
+            <button className="btn btn-icon mobile-only tablet-visible" type="button" aria-label="Open insights panel" data-testid={t.mobileInsights} onClick={onMobileInsights}>◎</button>
+            <button className="btn btn-primary" type="button" data-testid={t.addBooks} onClick={onAdd}>Add books</button>
           </>
         )}
         {screen === "settings" && (
-          <button className="btn" type="button" data-testid="back-to-library" onClick={() => onScreen("library")}>Back to Library</button>
+          <button className="btn" type="button" data-testid={t.backToLibrary} onClick={() => onScreen("library")}>Back to Library</button>
         )}
       </div>
     </header>
@@ -208,7 +266,7 @@ function CollectionRow(props) {
 
   return (
     <div className="collection-item">
-      <button className={"sidebar-row " + (active ? "is-active" : "")} type="button" data-testid={"collection-" + collection.id} onClick={() => onScope(collection.id)}>
+      <button className={"sidebar-row " + (active ? "is-active" : "")} type="button" data-testid="lib-sidebar-collection" data-collection-id={collection.id} onClick={() => onScope(collection.id)}>
         <span className="sidebar-icon" aria-hidden="true">{collection.name.charAt(0).toUpperCase()}</span>
         <span className="row-label">{collection.name}</span>
         {collection.stale ? <span className="stale-dot" title={collection.stale + " missing book(s)"} aria-label={collection.stale + " missing books"}>!</span> : null}
@@ -219,14 +277,14 @@ function CollectionRow(props) {
         type="button"
         aria-label={"Actions for " + collection.name}
         aria-expanded={menu}
-        data-testid={"collection-menu-" + collection.id}
+        data-testid="lib-sidebar-collection-menu-toggle" data-collection-id={collection.id}
         onClick={(event) => {
           event.stopPropagation();
           setMenu((current) => !current);
         }}
       >⋯</button>
       {menu && (
-        <div className="row-menu" role="menu" data-testid="collection-menu">
+        <div className="row-menu" role="menu" data-testid="lib-sidebar-collection-menu" data-collection-id={collection.id}>
           <button className="row-menu-item" type="button" role="menuitem" onClick={() => onRename(collection)}>Rename…</button>
           <button className="row-menu-item" type="button" role="menuitem" disabled={!collection.stale} onClick={() => onClean(collection)}>
             Remove {collection.stale || 0} missing book{collection.stale === 1 ? "" : "s"}
@@ -241,20 +299,20 @@ function CollectionRow(props) {
 function LibrarySidebar(props) {
   const { scope, onScope, collections, counts, onCreateCollection, onRenameCollection, onDeleteCollection, onCleanCollection } = props;
   return (
-    <aside className="library-sidebar" aria-label="Library navigation" data-testid="library-sidebar">
+    <aside className="library-sidebar" aria-label="Library navigation" data-testid="lib-sidebar">
       <section className="sidebar-section">
         <p className="section-eyebrow">Types</p>
-        <button className={"sidebar-row " + (scope === "all" ? "is-active" : "")} type="button" data-testid="scope-all" onClick={() => onScope("all")}>
+        <button className={"sidebar-row " + (scope === "all" ? "is-active" : "")} type="button" data-testid="lib-sidebar-scope-all" onClick={() => onScope("all")}>
           <span className="sidebar-icon" aria-hidden="true">A</span>
           <span className="row-label">All Books</span>
           <span className="count-badge">{counts.all}</span>
         </button>
-        <button className={"sidebar-row " + (scope === "epub" ? "is-active" : "")} type="button" data-testid="scope-epub" onClick={() => onScope("epub")}>
+        <button className={"sidebar-row " + (scope === "epub" ? "is-active" : "")} type="button" data-testid="lib-sidebar-scope-epub" onClick={() => onScope("epub")}>
           <span className="sidebar-icon" aria-hidden="true">E</span>
           <span className="row-label">EPUB</span>
           <span className="count-badge">{counts.epub}</span>
         </button>
-        <button className="sidebar-row is-disabled" type="button" disabled title="PDF not supported yet" data-testid="scope-pdf">
+        <button className="sidebar-row is-disabled" type="button" disabled title="PDF not supported yet" data-testid="lib-sidebar-scope-pdf">
           <span className="sidebar-icon" aria-hidden="true">P</span>
           <span className="row-label">PDF</span>
           <span className="count-badge">0</span>
@@ -263,7 +321,7 @@ function LibrarySidebar(props) {
       <section className="sidebar-section">
         <div className="sidebar-heading-row">
           <p className="section-eyebrow">Collections</p>
-          <button className="mini-add" type="button" aria-label="Create collection" data-testid="create-collection" onClick={onCreateCollection}>+</button>
+          <button className="mini-add" type="button" aria-label="Create collection" data-testid="lib-sidebar-create-collection" onClick={onCreateCollection}>+</button>
         </div>
         {collections.length === 0 && <p className="empty-copy" style={{margin: "4px 10px"}}>No collections yet.</p>}
         {collections.map((collection) => (
@@ -286,6 +344,27 @@ function LibrarySidebar(props) {
 /* Book views                                                           */
 /* ------------------------------------------------------------------ */
 
+/* 0.5：testid 值必须是字面量，不能拼。取值集合写死的走静态映射表；
+   取值来自用户数据的（书、集合、笔记、会话）走「字面量 testid + 另一个
+   data-* 携带 id」，见本文件里的 lib-book-card / lib-sidebar-collection。 */
+const LIB_BOOK_STATUS_TESTID = {
+  not_indexed: "lib-book-status-not-indexed",
+  indexing: "lib-book-status-indexing",
+  indexed: "lib-book-status-indexed",
+  error: "lib-book-status-error",
+};
+
+const LIB_CHAT_MSG_TESTID = {
+  user: "lib-chat-msg-user",
+  assistant: "lib-chat-msg-assistant",
+};
+
+const LIB_PANEL_TAB_TESTID = {
+  dashboard: "lib-panel-tab-dashboard",
+  chat: "lib-panel-tab-chat",
+  search: "lib-panel-tab-search",
+};
+
 const STATUS_META = {
   not_indexed: { label: "Not indexed", tone: "warn" },
   indexing: { label: "Indexing…", tone: "busy" },
@@ -296,7 +375,7 @@ const STATUS_META = {
 function StatusPill(props) {
   const meta = STATUS_META[props.status] || STATUS_META.not_indexed;
   return (
-    <span className={"status-pill is-" + meta.tone} data-testid={"status-" + props.status}>
+    <span className={"status-pill is-" + meta.tone} data-testid={LIB_BOOK_STATUS_TESTID[props.status] || LIB_BOOK_STATUS_TESTID.not_indexed}>
       {props.status === "indexing" && <span className="spinner" aria-hidden="true"></span>}
       {meta.label}
     </span>
@@ -328,7 +407,7 @@ function BookCard(props) {
       tabIndex="0"
       aria-pressed={selectionMode ? selected : undefined}
       aria-label={book.title + " by " + book.author}
-      data-testid={"book-card-" + book.id}
+      data-testid="lib-book-card" data-book-id={book.id}
       onClick={handleActivate}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -360,7 +439,7 @@ function BookTable(props) {
   const { books, selectionMode, selectedIds, onToggleSelected, onOpenReader } = props;
   return (
     <div className="table-wrap">
-      <table className="book-table" data-testid="book-table">
+      <table className="book-table" data-testid="lib-book-table">
         <thead>
           <tr>
             {selectionMode && <th scope="col" className="col-check"><span className="sr-only">Selected</span></th>}
@@ -374,7 +453,7 @@ function BookTable(props) {
         </thead>
         <tbody>
           {books.map((book) => (
-            <tr key={book.id} data-testid={"book-row-" + book.id}>
+            <tr key={book.id} data-testid="lib-book-row" data-book-id={book.id}>
               {selectionMode && (
                 <td className="col-check">
                   <input
@@ -409,10 +488,10 @@ function DashboardPanel(props) {
   const indexed = D.books.filter((b) => b.index_status === "indexed").length;
   const pct = Math.round((indexed / D.books.length) * 100);
   return (
-    <div className="panel-content" data-testid="panel-dashboard">
+    <div className="panel-content" data-testid="lib-panel-dashboard">
       <div className="panel-title-row">
         <h2 className="panel-title">Library overview</h2>
-        <button className="text-button" type="button" data-testid="refresh-stats" onClick={props.onRefresh}>Refresh stats</button>
+        <button className="text-button" type="button" data-testid="lib-panel-refresh-stats" onClick={props.onRefresh}>Refresh stats</button>
       </div>
       <div className="stats-grid">
         {D.stats.map((stat) => (
@@ -428,8 +507,8 @@ function DashboardPanel(props) {
         <div className="progress-track"><div className="progress-fill" style={{width: pct + "%"}}></div></div>
         <p className="empty-copy">Indexing a book enables semantic search and grounded AI answers. Dashboard progress counts indexed books, not reading progress.</p>
         <div className="settings-actions" style={{marginTop: "12px"}}>
-          <button className="btn btn-primary" type="button" data-testid="index-remaining">Index remaining</button>
-          <button className="btn" type="button" data-testid="open-index-errors" onClick={props.onShowErrors}>View 1 error</button>
+          <button className="btn btn-primary" type="button" data-testid="lib-panel-index-remaining">Index remaining</button>
+          <button className="btn" type="button" data-testid="lib-panel-open-index-errors" onClick={props.onShowErrors}>View 1 error</button>
         </div>
       </div>
     </div>
@@ -439,13 +518,13 @@ function DashboardPanel(props) {
 function ChatPanel(props) {
   const { draft, onDraft, thread, streaming, onSend, onStop } = props;
   return (
-    <div className="panel-content is-flex" data-testid="panel-chat">
+    <div className="panel-content is-flex" data-testid="lib-panel-chat">
       <div className="panel-title-row">
         <h2 className="panel-title">Ask your book</h2>
       </div>
       <div className="panel-form">
         <label className="field-label">Scope
-          <select className="field-control" defaultValue="single" aria-label="Chat scope" data-testid="chat-scope">
+          <select className="field-control" defaultValue="single" aria-label="Chat scope" data-testid="lib-chat-scope">
             <option value="all" disabled>All books — Coming soon</option>
             <option value="collection" disabled>Collection — Coming soon</option>
             <option value="single">Single book · The Art of Spending Money</option>
@@ -461,7 +540,7 @@ function ChatPanel(props) {
           </div>
         </div>
       ) : (
-        <div className="thread" data-testid="chat-thread">
+        <div className="thread" data-testid="lib-chat-thread">
           {thread.map((message, index) => <Message key={index} message={message} />)}
           {streaming && <TypingRow />}
         </div>
@@ -471,7 +550,7 @@ function ChatPanel(props) {
           className="field-control composer"
           value={draft}
           placeholder="Ask about this book…  (Enter to send, Shift+Enter for a new line)"
-          data-testid="chat-input"
+          data-testid="lib-chat-input"
           onChange={(event) => onDraft(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {
@@ -481,8 +560,8 @@ function ChatPanel(props) {
           }}
         ></textarea>
         {streaming
-          ? <button className="btn" type="button" data-testid="chat-stop" onClick={onStop}>Stop</button>
-          : <button className="btn btn-primary" type="button" data-testid="chat-send" onClick={onSend}>Send</button>}
+          ? <button className="btn" type="button" data-testid="lib-chat-stop" onClick={onStop}>Stop</button>
+          : <button className="btn btn-primary" type="button" data-testid="lib-chat-send" onClick={onSend}>Send</button>}
       </div>
     </div>
   );
@@ -491,13 +570,13 @@ function ChatPanel(props) {
 function Message(props) {
   const { message } = props;
   return (
-    <div className={"msg is-" + message.role} data-testid={"msg-" + message.role}>
+    <div className={"msg is-" + message.role} data-testid={LIB_CHAT_MSG_TESTID[message.role]}>
       <div className="msg-meta">{message.role === "user" ? "You" : "Assistant"} · {message.ts}</div>
       <div className="msg-body">{message.text}</div>
       {message.citations && (
         <div className="citations">
           {message.citations.map((citation) => (
-            <button className="citation" type="button" key={citation.section} data-testid={"citation-" + citation.section}>{citation.label}</button>
+            <button className="citation" type="button" key={citation.section} data-testid="lib-chat-citation" data-section={citation.section}>{citation.label}</button>
           ))}
         </div>
       )}
@@ -507,7 +586,7 @@ function Message(props) {
 
 function TypingRow() {
   return (
-    <div className="msg is-assistant" data-testid="msg-streaming">
+    <div className="msg is-assistant" data-testid="lib-chat-msg-streaming">
       <div className="msg-meta">Assistant · generating</div>
       <div className="typing" aria-label="Generating"><i></i><i></i><i></i></div>
     </div>
@@ -520,36 +599,36 @@ function SearchPanel(props) {
   const total = D.libraryResults.reduce((sum, group) => sum + group.total, 0);
 
   return (
-    <div className="panel-content" data-testid="panel-search">
+    <div className="panel-content" data-testid="lib-panel-search">
       <div className="panel-title-row">
         <h2 className="panel-title">Search library</h2>
-        {active && <button className="text-button" type="button" data-testid="search-clear" onClick={() => onQuery("")}>Clear</button>}
+        {active && <button className="text-button" type="button" data-testid="lib-search-clear" onClick={() => onQuery("")}>Clear</button>}
       </div>
       <div className="panel-form">
         <label className="field-label">Search all books
-          <input className="field-control" value={query} placeholder="Try “money”" data-testid="library-search-input" onChange={(event) => onQuery(event.target.value)} />
+          <input className="field-control" value={query} placeholder="Try “money”" data-testid="lib-search-input" onChange={(event) => onQuery(event.target.value)} />
         </label>
         <div className="control-row">
           <label className="field-label" style={{flex: 1}}>Mode
-            <select className="field-control" value={mode} data-testid="library-search-mode" onChange={(event) => onMode(event.target.value)}>
+            <select className="field-control" value={mode} data-testid="lib-search-mode" onChange={(event) => onMode(event.target.value)}>
               <option value="keyword">keyword</option>
               <option value="semantic">semantic</option>
               <option value="hybrid">hybrid</option>
             </select>
           </label>
           <label className="field-label" style={{flex: 1}}>Sort
-            <select className="field-control" value={sort} data-testid="library-search-sort" onChange={(event) => onSort(event.target.value)}>
+            <select className="field-control" value={sort} data-testid="lib-search-sort" onChange={(event) => onSort(event.target.value)}>
               <option value="relevance">relevance</option>
               <option value="book_title">book title</option>
             </select>
           </label>
         </div>
         <label className="check-row">
-          <input type="checkbox" checked={caseSensitive} data-testid="library-search-case" onChange={(event) => onCase(event.target.checked)} />
+          <input type="checkbox" checked={caseSensitive} data-testid="lib-search-case" onChange={(event) => onCase(event.target.checked)} />
           <span>Case sensitive</span>
         </label>
         {mode !== "keyword" && (
-          <div className="inline-note is-warn" data-testid="search-index-warning">
+          <div className="inline-note is-warn" data-testid="lib-search-index-warning">
             Semantic and hybrid need a semantic index. 3 of 4 books are not indexed and will be skipped.
           </div>
         )}
@@ -564,7 +643,7 @@ function SearchPanel(props) {
           </div>
         </div>
       ) : (
-        <div data-testid="library-search-results">
+        <div data-testid="lib-search-results">
           <p className="result-summary">Found {total} results across {D.libraryResults.length} books</p>
           {D.libraryResults.map((group) => {
             const limit = expanded[group.book_id] ? 10 : 3;
@@ -573,13 +652,13 @@ function SearchPanel(props) {
               <section className="result-group" key={group.book_id}>
                 <h3 className="result-group-title">{group.book_title} <span>{group.total}</span></h3>
                 {shown.map((hit, index) => (
-                  <button className="search-result" type="button" key={index} data-testid="search-hit">
+                  <button className="search-result" type="button" key={index} data-testid="lib-search-hit">
                     <div className="result-section">Section {hit.section} · {hit.section_title} · {hit.score.toFixed(2)}</div>
                     <div className="result-copy" dangerouslySetInnerHTML={{__html: hit.snippet}}></div>
                   </button>
                 ))}
                 {group.hits.length > shown.length && (
-                  <button className="text-button" type="button" data-testid={"show-more-" + group.book_id} onClick={() => onExpand(group.book_id)}>
+                  <button className="text-button" type="button" data-testid="lib-search-show-more" data-book-id={group.book_id} onClick={() => onExpand(group.book_id)}>
                     Show more ({group.hits.length - shown.length})
                   </button>
                 )}
@@ -596,13 +675,13 @@ function InsightsPanel(props) {
   const { tab, onTab, collapsed, onCollapse } = props;
   if (collapsed) {
     return (
-      <aside className="library-insights is-collapsed" aria-label="Library insights" data-testid="insights-collapsed">
-        <button className="btn btn-icon" type="button" aria-label="Expand insights panel" data-testid="expand-insights" onClick={() => onCollapse(false)}>‹</button>
+      <aside className="library-insights is-collapsed" aria-label="Library insights" data-testid="lib-insights-collapsed">
+        <button className="btn btn-icon" type="button" aria-label="Expand insights panel" data-testid="lib-insights-expand" onClick={() => onCollapse(false)}>‹</button>
       </aside>
     );
   }
   return (
-    <aside className="library-insights" aria-label="Library insights" data-testid="insights">
+    <aside className="library-insights" aria-label="Library insights" data-testid="lib-insights">
       <div className="panel-tabs" role="tablist" aria-label="Insights views">
         {[["dashboard", "Overview"], ["chat", "Chat"], ["search", "Search"]].map((item) => (
           <button
@@ -613,11 +692,11 @@ function InsightsPanel(props) {
             aria-selected={tab === item[0]}
             aria-controls={"tabpanel-" + item[0]}
             key={item[0]}
-            data-testid={"tab-" + item[0]}
+            data-testid={LIB_PANEL_TAB_TESTID[item[0]]}
             onClick={() => onTab(item[0])}
           >{item[1]}</button>
         ))}
-        <button className="collapse-button desktop-only" type="button" aria-label="Collapse insights panel" data-testid="collapse-insights" onClick={() => onCollapse(true)}>›</button>
+        <button className="collapse-button desktop-only" type="button" aria-label="Collapse insights panel" data-testid="lib-insights-collapse" onClick={() => onCollapse(true)}>›</button>
       </div>
       <div className="tabpanel" role="tabpanel" id={"tabpanel-" + tab} aria-labelledby={"tab-" + tab}>
         {props.children}

@@ -21,7 +21,7 @@ function ProviderRow(props) {
   };
 
   return (
-    <article className={"provider-card " + (enabled ? "is-enabled" : "")} data-testid={"provider-" + provider.id}>
+    <article className={"provider-card " + (enabled ? "is-enabled" : "")} data-testid="set-provider-card" data-provider={provider.id}>
       <header className="provider-head">
         <div>
           <h3 className="provider-name">{provider.name}</h3>
@@ -32,7 +32,7 @@ function ProviderRow(props) {
           <Toggle
             checked={enabled}
             label={"Enable " + provider.name}
-            data-testid={"provider-toggle-" + provider.id}
+            data-testid="set-provider-toggle" data-provider={provider.id}
             onChange={(next) => {
               setEnabled(next);
               onAnnounce(provider.name + (next ? " enabled" : " disabled"));
@@ -43,10 +43,10 @@ function ProviderRow(props) {
 
       <div className="provider-grid">
         <label className="field-label">Model
-          <input className="field-control" defaultValue={provider.model} data-testid={"provider-model-" + provider.id} />
+          <input className="field-control" defaultValue={provider.model} data-testid="set-provider-model" data-provider={provider.id} />
         </label>
         <label className="field-label">Base URL
-          <input className="field-control" defaultValue={provider.baseUrl} data-testid={"provider-url-" + provider.id} />
+          <input className="field-control" defaultValue={provider.baseUrl} data-testid="set-provider-url" data-provider={provider.id} />
         </label>
         {provider.needsKey && (
           <label className="field-label">API key
@@ -59,7 +59,7 @@ function ProviderRow(props) {
               value={apiKey}
               autoComplete="off"
               placeholder={provider.keySet ? "•••••••••••••• (stored, hidden)" : "sk-…"}
-              data-testid={"provider-key-" + provider.id}
+              data-testid="set-provider-key" data-provider={provider.id}
               onChange={(event) => setApiKey(event.target.value)}
             />
           </label>
@@ -67,21 +67,21 @@ function ProviderRow(props) {
       </div>
 
       <div className="provider-actions">
-        <button className="btn btn-primary btn-sm" type="button" data-testid={"provider-save-" + provider.id} onClick={() => onAnnounce(provider.name + " saved")}>Save</button>
-        <button className="btn btn-sm" type="button" disabled={busy} data-testid={"provider-test-" + provider.id} onClick={runTest}>
+        <button className="btn btn-primary btn-sm" type="button" data-testid="set-provider-save" data-provider={provider.id} onClick={() => onAnnounce(provider.name + " saved")}>Save</button>
+        <button className="btn btn-sm" type="button" disabled={busy} data-testid="set-provider-test" data-provider={provider.id} onClick={runTest}>
           {busy ? "Testing…" : "Test connection"}
         </button>
         {/* Refresh models queries a running server for its installed models —
             only Ollama exposes that, so it is Ollama-only (spec §4.3). */}
         {provider.isOllama && (
-          <button className="btn btn-sm" type="button" data-testid="provider-refresh-models" onClick={() => onAnnounce("Model list refreshed")}>Refresh models</button>
+          <button className="btn btn-sm" type="button" data-testid="set-provider-refresh-models" onClick={() => onAnnounce("Model list refreshed")}>Refresh models</button>
         )}
-        {test === "ok" && <span className="state-line is-ok" data-testid={"provider-result-" + provider.id}>Connection OK</span>}
-        {test === "fail" && <span className="state-line is-error" data-testid={"provider-result-" + provider.id}>Connection failed — add an API key first</span>}
+        {test === "ok" && <span className="state-line is-ok" data-testid="set-provider-result" data-provider={provider.id}>Connection OK</span>}
+        {test === "fail" && <span className="state-line is-error" data-testid="set-provider-result" data-provider={provider.id}>Connection failed — add an API key first</span>}
       </div>
 
       {provider.isOllama && (
-        <p className="inline-note" data-testid="ollama-hint">
+        <p className="inline-note" data-testid="set-provider-ollama-hint">
           Ollama must be running locally. Start it with <code>ollama serve</code>, then pull a model with <code>ollama pull llama3</code>.
         </p>
       )}
@@ -112,8 +112,8 @@ function SettingsScreen(props) {
   };
 
   return (
-    <div className="settings-screen" data-testid="settings-screen">
-      <LiveRegion message={announce} />
+    <div className="settings-screen" data-testid="set-screen">
+      <LiveRegion page="set" message={announce} />
       <div className="settings-inner">
         <section className="settings-block">
           <h2 className="settings-title">AI providers</h2>
@@ -129,13 +129,13 @@ function SettingsScreen(props) {
           <h2 className="settings-title">Retrieval</h2>
           <div className="provider-grid">
             <label className="field-label">Chunks per query
-              <input className="field-control" type="number" defaultValue="6" min="1" max="20" data-testid="rag-chunks" />
+              <input className="field-control" type="number" defaultValue="6" min="1" max="20" data-testid="set-rag-chunks" />
             </label>
             <label className="field-label">Context window
-              <input className="field-control" type="number" defaultValue="8000" step="500" data-testid="rag-context" />
+              <input className="field-control" type="number" defaultValue="8000" step="500" data-testid="set-rag-context" />
             </label>
             <label className="field-label">Embedding model
-              <input className="field-control" defaultValue="paraphrase-multilingual-MiniLM-L12-v2" data-testid="rag-embedding" />
+              <input className="field-control" defaultValue="paraphrase-multilingual-MiniLM-L12-v2" data-testid="set-rag-embedding" />
             </label>
           </div>
         </section>
@@ -144,9 +144,9 @@ function SettingsScreen(props) {
           <h2 className="settings-title">Data</h2>
           <p className="settings-copy">These actions change stored state and each asks for confirmation first.</p>
           <div className="settings-actions">
-            <button className="btn" type="button" data-testid="data-reindex" onClick={() => setConfirm("reindex")}>Rebuild all indexes</button>
-            <button className="btn" type="button" data-testid="data-conversations" onClick={() => setConfirm("conversations")}>Delete all conversations</button>
-            <button className="btn" type="button" data-testid="data-cache" onClick={() => setConfirm("cache")}>Clear reading cache (IndexedDB)</button>
+            <button className="btn" type="button" data-testid="set-data-reindex" onClick={() => setConfirm("reindex")}>Rebuild all indexes</button>
+            <button className="btn" type="button" data-testid="set-data-conversations" onClick={() => setConfirm("conversations")}>Delete all conversations</button>
+            <button className="btn" type="button" data-testid="set-data-cache" onClick={() => setConfirm("cache")}>Clear reading cache (IndexedDB)</button>
           </div>
         </section>
 
@@ -154,14 +154,14 @@ function SettingsScreen(props) {
           <h2 className="settings-title">Export</h2>
           <p className="settings-copy">Exports contain books, notes, collections and conversations. Provider settings are exported without API keys (no keys).</p>
           <div className="settings-actions">
-            <button className="btn" type="button" data-testid="export-json" onClick={() => setAnnounce("Export started")}>Export library JSON</button>
-            <button className="btn" type="button" data-testid="export-settings" onClick={() => setAnnounce("Export started")}>Export settings (no keys)</button>
+            <button className="btn" type="button" data-testid="set-export-json" onClick={() => setAnnounce("Export started")}>Export library JSON</button>
+            <button className="btn" type="button" data-testid="set-export-settings" onClick={() => setAnnounce("Export started")}>Export settings (no keys)</button>
           </div>
         </section>
       </div>
 
       {confirm && (
-        <ConfirmModal
+        <ConfirmModal page="set" name={confirm}
           title={destructive[confirm].title}
           body={destructive[confirm].body}
           confirmLabel={destructive[confirm].label}

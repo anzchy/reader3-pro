@@ -329,6 +329,7 @@ class ReaderSearchUI {
     const caseSensitive = Boolean(this.caseBox?.checked);
     const mode = this.modeSelect?.value || "keyword";
     this.status.textContent = "Searching…";
+    this.status.setAttribute("data-testid", "rd-search-loading");
 
     const url = new URL(`/api/search/${encodeURIComponent(this.bookId)}`, window.location.origin);
     url.searchParams.set("q", q);
@@ -340,6 +341,7 @@ class ReaderSearchUI {
     const data = await resp.json();
     if (!resp.ok) {
       this.status.textContent = data?.detail || "Search failed";
+      this.status.setAttribute("data-testid", "rd-search-failed");
       return;
     }
     const results = Array.isArray(data?.results) ? data.results : [];
@@ -351,11 +353,15 @@ class ReaderSearchUI {
 
   renderResults(results, statusMessage) {
     this.status.textContent = statusMessage || `Found ${results.length} results`;
+    // loading / failed / empty 在原型里是三个互斥的状态元素；这里只有一个 status 节点，
+    // 所以按状态换 testid，值仍是字面量（设计规格 §4 规则 5）。
+    this.status.removeAttribute("data-testid");
     this.list.innerHTML = "";
 
     if (!results.length) {
       const empty = document.createElement("div");
       empty.className = "search-status";
+      empty.setAttribute("data-testid", "rd-search-empty");
       empty.textContent = `No results found for "${this.input.value.trim()}"`;
       this.list.appendChild(empty);
       return;
@@ -364,6 +370,8 @@ class ReaderSearchUI {
     for (const r of results) {
       const item = document.createElement("div");
       item.className = "search-result-item";
+      item.setAttribute("data-testid", "rd-search-hit");
+      item.setAttribute("data-section", String(r.chapter_order));
       if (r.match_explanation) item.title = r.match_explanation;
 
       const chapter = document.createElement("div");

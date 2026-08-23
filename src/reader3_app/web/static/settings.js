@@ -111,7 +111,7 @@ function renderProviderCard(p, ollamaStatus, ollamaModels, isExpanded) {
     ? `
       <label class="label">
         API key ${apiKeyConfigured ? '<span class="pill ok">Configured</span>' : '<span class="pill bad">Missing</span>'}
-        <input type="password" data-k="api_key" placeholder="Paste API key to set/update (leave blank to keep)" />
+        <input type="password" data-k="api_key" data-testid="set-provider-key" data-provider="${escapeHtml(name)}" placeholder="Paste API key to set/update (leave blank to keep)" />
       </label>
     `
     : `
@@ -125,14 +125,14 @@ function renderProviderCard(p, ollamaStatus, ollamaModels, isExpanded) {
   const chevronSvg = `<svg class="provider-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
 
   return `
-    <div class="provider-card ${expandedClass}" data-provider="${escapeHtml(name)}">
+    <div class="provider-card ${expandedClass}" data-testid="set-provider-card" data-provider="${escapeHtml(name)}">
       <div class="provider-head" data-action="toggle">
         <div class="provider-name">
           ${chevronSvg}
           ${escapeHtml(name)} ${statusPill} <span class="hint">${escapeHtml(modelsHint)}</span>
         </div>
         <label class="checkbox" onclick="event.stopPropagation()">
-          <input type="checkbox" data-k="enabled" ${enabled ? "checked" : ""} />
+          <input type="checkbox" data-k="enabled" data-testid="set-provider-toggle" data-provider="${escapeHtml(name)}" ${enabled ? "checked" : ""} />
           Enabled
         </label>
       </div>
@@ -140,11 +140,11 @@ function renderProviderCard(p, ollamaStatus, ollamaModels, isExpanded) {
         <div class="provider-grid">
           <label class="label">
             Base URL
-            <input type="text" data-k="base_url" value="${escapeHtml(baseUrl)}" />
+            <input type="text" data-k="base_url" data-testid="set-provider-url" data-provider="${escapeHtml(name)}" value="${escapeHtml(baseUrl)}" />
           </label>
           <label class="label">
             Model
-            <input type="text" data-k="model_name" value="${escapeHtml(modelName)}" />
+            <input type="text" data-k="model_name" data-testid="set-provider-model" data-provider="${escapeHtml(name)}" value="${escapeHtml(modelName)}" />
           </label>
           <label class="label">
             Timeout (seconds)
@@ -157,10 +157,10 @@ function renderProviderCard(p, ollamaStatus, ollamaModels, isExpanded) {
           ${keyRow}
         </div>
         <div class="row">
-          <button class="btn" data-action="save">Save</button>
-          <button class="btn" data-action="test">Test</button>
-          ${name === "ollama" ? `<button class="btn" data-action="refresh-models">Refresh models</button>` : ""}
-          <span class="status" data-role="status"></span>
+          <button class="btn" data-action="save" data-testid="set-provider-save" data-provider="${escapeHtml(name)}">Save</button>
+          <button class="btn" data-action="test" data-testid="set-provider-test" data-provider="${escapeHtml(name)}">Test</button>
+          ${name === "ollama" ? `<button class="btn" data-action="refresh-models" data-testid="set-provider-refresh-models">Refresh models</button>` : ""}
+          <span class="status" data-role="status" data-testid="set-provider-result" data-provider="${escapeHtml(name)}"></span>
         </div>
         ${
           name === "ollama" && !ollamaStatus?.running

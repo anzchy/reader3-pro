@@ -1,6 +1,16 @@
 (() => {
   "use strict";
 
+  // 有界枚举 → 静态映射表，值是字面量（设计规格 §4 规则 5）。
+  // 与 designs/reader-pro-next/components.jsx 的 LIB_BOOK_STATUS_TESTID 一一对应；
+  // loading / unknown 两态原型里没有对应元素，故不给 testid（见 testid-rename-map.md §8.2）。
+  const LIB_BOOK_STATUS_TESTID = {
+    not_indexed: "lib-book-status-not-indexed",
+    indexing: "lib-book-status-indexing",
+    indexed: "lib-book-status-indexed",
+    error: "lib-book-status-error",
+  };
+
   const BULK_INDEX_STORAGE_KEY = "reader3.library.bulkIndexingActive";
   const VIEW_MODE_STORAGE_KEY = "reader3.library.viewMode";
 
@@ -275,6 +285,8 @@
           "is-unknown",
           "is-error",
         );
+        if (LIB_BOOK_STATUS_TESTID[normalized]) pill.setAttribute("data-testid", LIB_BOOK_STATUS_TESTID[normalized]);
+        else pill.removeAttribute("data-testid");
         if (normalized === "indexed") {
           pill.classList.add("is-indexed");
           pill.textContent = "Indexed";
@@ -321,6 +333,7 @@
       const pill = qs(".status-pill", target);
       if (!pill) continue;
       pill.classList.remove("is-indexed", "is-not-indexed", "is-indexing", "is-unknown", "is-error");
+      pill.removeAttribute("data-testid");
       pill.classList.add("is-loading");
       pill.textContent = "Loading…";
     }
@@ -710,6 +723,7 @@
     for (const c of collections) {
       const row = document.createElement("div");
       row.className = "collection-row";
+      row.setAttribute("data-testid", "lib-sidebar-collection");
       row.dataset.collectionId = c.id;
 
       const present = [];

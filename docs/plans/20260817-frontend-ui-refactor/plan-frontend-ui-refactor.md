@@ -121,7 +121,7 @@
 | API v1 冻结清单、覆盖率门槛数值 | [`tasks/008-test-safety-net.md`](../20260816-tech-stack-migration/tasks/008-test-safety-net.md) |
 | 两文件提交协议、读取状态机三态 | [`plan-tech-stack-migration.md`](../20260816-tech-stack-migration/plan-tech-stack-migration.md) Phase 3 |
 
-**testid 命名**：canonical 正则在 0.5，写在技术栈迁移计划的代码块里——**从代码块里复制，不要从 Markdown 表格里复制**（表格里 `|` 被转义成 `\|`）。本计划涉及的所有新建元素一律 `lib-` / `rd-` / `set-` 三前缀之一。原型现有 134 个 testid **零个合规**，其中 24 个带 `reader-` / `library-` 前缀的**看起来像合规但不是**。重命名本身归 0.5，本计划只负责新元素首次就写对。
+**testid 命名**：canonical 正则在 0.5，写在技术栈迁移计划的代码块里——**从代码块里复制，不要从 Markdown 表格里复制**（表格里 `|` 被转义成 `\|`）。本计划涉及的所有新建元素一律 `lib-` / `rd-` / `set-` 三前缀之一。原型原有 138 个 testid 站点**零个合规**，其中 24 个带 `reader-` / `library-` 前缀的**看起来像合规但不是**。重命名本身归 0.5，**已于 2026-08-23 完成**（新旧对照见 [`contracts/testid-rename-map.md`](../20260816-tech-stack-migration/contracts/testid-rename-map.md)）；本计划只负责新元素首次就写对。
 
 **分支落点**：Track D → `010-design-degradation-states`；WI-9–WI-13 → `013-ts-frontend-shell`；WI-14–WI-19 → `014-ts-frontend-reader`；WI-20 → `015-launch-experience`。编号来源见上表第一行。
 

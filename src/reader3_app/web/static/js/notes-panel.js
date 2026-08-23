@@ -98,6 +98,7 @@
       if (!groups.length || totalCount === 0) {
         const empty = document.createElement("div");
         empty.className = "notes-empty";
+        empty.setAttribute("data-testid", "rd-notes-empty");
         empty.textContent = "你可以在这里记录本书的想法、划线、书签";
         this.body.appendChild(empty);
         return;
@@ -124,6 +125,9 @@
 
           const item = document.createElement("div");
           item.className = "notes-item" + (hasNote ? " has-note" : "");
+          // testid 是字面量，笔记 id 走另一个 data-*（设计规格 §4 规则 5 无界那一行）。
+          item.setAttribute("data-testid", "rd-notes-item");
+          item.setAttribute("data-note-id", id);
           item.tabIndex = 0;
           item.addEventListener("click", () => {
             if (!ctx.bookId) return;

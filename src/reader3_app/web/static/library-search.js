@@ -199,6 +199,8 @@ class LibrarySearchUI {
       const showMore = document.createElement("button");
       showMore.className = "library-show-more";
       showMore.type = "button";
+      showMore.setAttribute("data-testid", "lib-search-show-more");
+      showMore.setAttribute("data-book-id", String(bookId));
       showMore.textContent = "Show more";
       showMore.addEventListener("click", () => this.performSearch(10));
       right.appendChild(showMore);
@@ -210,6 +212,9 @@ class LibrarySearchUI {
       for (const r of bookResults) {
         const item = document.createElement("div");
         item.className = "search-result-item";
+        item.setAttribute("data-testid", "lib-search-hit");
+        item.setAttribute("data-book-id", String(bookId));
+        item.setAttribute("data-section", String(r.chapter_order));
         if (r.match_explanation) item.title = r.match_explanation;
         const chapter = document.createElement("div");
         chapter.className = "search-result-chapter";

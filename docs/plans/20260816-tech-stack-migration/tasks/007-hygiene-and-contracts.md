@@ -21,7 +21,7 @@
 | **0.3** `--port` / `READER3_PORT` ＋ `GET /api/health` | ✅ | 参数优先级 + 路由契约，两类断言都直接 |
 | 0.2 wheel 打包漏 `static/js` | ❌ | 验收是「`uv build` 解包后文件在不在」，属打包脚本，不是单测 |
 | 0.4 四个 JS 文件 IIFE 化 | ❌ | 没有 JS 测试宿主（要到 013 才有）。护栏靠人工 smoke |
-| 0.5 testid 定名 ＋ 两条 lint | ❌ | 产物是 lint 规则本身。它的「测试」就是违规计数从 134 归零 |
+| 0.5 testid 定名 ＋ 两条 lint | ❌ | 产物是 lint 规则本身。它的「测试」就是违规计数从 138 归零 |
 | 0.8 token 悬空引用 lint | ❌ | 同上，产物是 lint 本身。「测试」是差集为 0 |
 | 0.6 事实性修复 | ❌ | 改常量与示例配置 |
 | 0.7 删死代码 | ❌ | 删除动作。护栏是 0.1/0.3 的测试与人工 smoke |
@@ -42,7 +42,7 @@
 | 0.7 删死代码 `SearchIndex` / `BookIndex.from_book_pkl` / `SearchIndex.build_from_library` | ✅ 已删。`BookIndex` / `ChapterIndex` dataclass 仍在 `search_service.py`，**是活代码，不要动** |
 | spec-kit 退场、规划文档合并进本文件夹 | ✅ |
 
-还没动的：0.2、0.3、0.4、0.5、0.8，以及 0.6 剩下的两小项。0.1 与 0.7 已完成。
+还没动的：0.2、0.6 剩下的两小项。0.1、0.3、0.4、0.5、0.7、0.8 已完成。
 
 ---
 
@@ -120,11 +120,16 @@ uv build → 解包 wheel → 断言 templates/、static/js/、static/css/、sta
 
 **验收**：人工 smoke 四个页面（library / reader / settings / 跨库搜索）。013 建起前端测试宿主之后补自动化。
 
+✅ 已完成（commit `f11b346`）。
+
 ---
 
 ## 0.5 testid 定名 ＋ 两条 lint
 
-**顺序是先改原型、后回贴模板**（合流计划 §4.1）。134 个唯一 testid，**0 个合规**，全部需要改名。
+**顺序是先改原型、后回贴模板**（合流计划 §4.1）。原型侧 138 个 testid 站点，**0 个合规**，全部需要改名。
+
+> 计划里此前写的是 134。差的四个是 `Sheet` 的 `testId=` prop——只 grep `data-testid=` 的口径看不见它们。
+> 对账过程见 [`contracts/testid-rename-map.md`](../contracts/testid-rename-map.md) §1；「24 个危险名」那个数没变。
 
 **这是两条不同的 lint，不是一条**——对照表见 `plan-tech-stack-migration.md` §6 步骤 0.5 下方的注。一句话概括：**选择器 lint 约束测试代码，命名 lint 约束模板与原型**。只有前者的话，模板里照样可以新增 `reader-search-hit` 这种名字，命名方案随即失守。
 
@@ -132,7 +137,12 @@ canonical 正则在 `plan-tech-stack-migration.md` §6 的「canonical 正则（
 
 命名 lint 必须**显式点名设计规格 §4.1 那 24 个带 `reader-` / `library-` 前缀的 testid**：它们形似合规，批量改名时最容易被当成「已经对了」跳过，而正则会把它们判为不合规——正是要的效果。
 
-**验收**：lint 初始状态 134 条违规 → 改完归零，两条 lint 都在 CI 里生效。
+**验收**：lint 初始状态 138 条违规 → 改完归零，两条 lint 都在 CI 里生效。
+
+✅ 已完成。逐条新旧映射、回贴覆盖清单、以及 `data-modal` / `data-sheet` 判别位的约定，
+见 [`contracts/testid-rename-map.md`](../contracts/testid-rename-map.md)。落地结果：原型 221 个唯一
+testid 全部合规；现有模板与生成 DOM 回贴了其中 152 个，反向新造为 0；三条 lint 在
+`.github/workflows/lint.yml` 里分三步跑，均为 0 违规。
 
 > **testid 必须早于 Phase 1b 动笔。** 这是全篇最便宜也最容易漏的一条：Phase 4 的任何布局改动都会推翻用 class 或结构选择器写的 E2E。合流计划 §8 把「testid 定名拖到 1b 之后」列为头号返工源。
 
@@ -168,6 +178,8 @@ canonical 正则在 `plan-tech-stack-migration.md` §6 的「canonical 正则（
 
 > 注意 `var(--x, fallback)` 的两义性：带 fallback 的引用**照样要判违规**。fallback 是给运行时降级用的，不是给拼错名字用的——一条永远走 fallback 的 `var()` 是死代码，而它看起来在正常工作。
 
+✅ 已完成（commit `7f7fd86`）。`scripts/lint_token_refs.py`：扫 22 个来源、271 个定义 / 1119 处引用，悬空 0、带 fallback 0。
+
 ---
 
 ## 0.7 删除死代码
@@ -183,11 +195,11 @@ canonical 正则在 `plan-tech-stack-migration.md` §6 的「canonical 正则（
 - [ ] 0.1 修复；用户数据在重新处理后逐字节不变；中断可干净重跑
 - [ ] 0.2 修复；`uv build` 解包后 `static/js` / `static/css` / `static/vendor` 齐全
 - [ ] 0.3 `--port` 与 `READER3_PORT` 生效且优先级正确；`GET /api/health` 可用
-- [ ] 0.4 四个文件 IIFE 化；四个页面人工 smoke 通过
-- [ ] 0.5 testid 两侧一致；两条 lint 在 CI 里生效且违规数为 0
+- [x] 0.4 四个文件 IIFE 化；四个页面人工 smoke 通过
+- [x] 0.5 testid 两侧一致；两条 lint 在 CI 里生效且违规数为 0
 - [ ] 0.6 版本号对齐；示例配置补齐两个 provider
 - [x] 0.7 死代码已删
-- [ ] 0.8 token 悬空引用 lint 在 CI 里生效，差集为 0
+- [x] 0.8 token 悬空引用 lint 在 CI 里生效，差集为 0
 - [ ] 六项人工 smoke checklist 走一遍（技术栈计划 Phase 0）
 
 ---

@@ -373,6 +373,8 @@ class ReaderAIUI {
     list.forEach((c) => {
       const div = document.createElement("div");
       div.className = "ai-thread";
+      div.setAttribute("data-testid", "rd-ai-conversation");
+      div.setAttribute("data-conversation-id", String(c.id || ""));
       if (this.conversation && String(c.id) === String(this.conversation.id)) div.classList.add("is-active");
       const title = this._threadTitle(c);
       const meta = `${new Date(String(c.last_updated || "") || Date.now()).toLocaleString()} · ${(c.messages || []).length} msgs`;
@@ -486,7 +488,7 @@ class ReaderAIUI {
           const order = Number(s.chapter_order ?? s.chapter_id ?? 0);
           const title = String(s.chapter_title || "");
           const label = `第${order + 1}章 ${title}`.trim();
-          return `<a href="/read/${encodeURIComponent(this.ctx.bookId)}/${order}">${escapeHtml(label)}</a>`;
+          return `<a data-testid="rd-ai-citation" data-section="${order}" href="/read/${encodeURIComponent(this.ctx.bookId)}/${order}">${escapeHtml(label)}</a>`;
         })
         .join("<br/>");
       cites.innerHTML = `<div style="font-weight:600; margin-bottom:4px;">引用</div>${items}`;

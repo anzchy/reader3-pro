@@ -84,8 +84,8 @@ function LibraryScreen(props) {
         />;
 
   return (
-    <div className={"library-shell " + (collapsed ? "is-collapsed" : "")} data-testid="library-shell">
-      <LiveRegion message={announce} />
+    <div className={"library-shell " + (collapsed ? "is-collapsed" : "")} data-testid="lib-shell">
+      <LiveRegion page="lib" message={announce} />
 
       <div className={"drawer-scrim " + (mobileNav || mobileInsights ? "is-open" : "")} onClick={onCloseMobile} aria-hidden="true"></div>
 
@@ -105,18 +105,18 @@ function LibraryScreen(props) {
         />
       </div>
 
-      <main className="library-main" data-testid="library-main">
+      <main className="library-main" data-testid="lib-main">
         <div className="library-toolbar">
           <input
             className="field-control filter-input"
             value={filter}
             placeholder="Filter by title or author…"
             aria-label="Filter books"
-            data-testid="library-filter"
+            data-testid="lib-toolbar-filter"
             onChange={(event) => setFilter(event.target.value)}
           />
           <label className="field-label inline">Sort
-            <select className="field-control" value={sort} data-testid="library-sort" onChange={(event) => setSort(event.target.value)}>
+            <select className="field-control" value={sort} data-testid="lib-toolbar-sort" onChange={(event) => setSort(event.target.value)}>
               <option value="recent">Recently read</option>
               <option value="title">Title</option>
               <option value="author">Author</option>
@@ -124,14 +124,14 @@ function LibraryScreen(props) {
             </select>
           </label>
           <div className="view-switch" role="group" aria-label="View mode">
-            <button className={"view-button " + (view === "grid" ? "is-active" : "")} type="button" aria-pressed={view === "grid"} data-testid="view-grid" onClick={() => setView("grid")}>Grid</button>
-            <button className={"view-button " + (view === "list" ? "is-active" : "")} type="button" aria-pressed={view === "list"} data-testid="view-list" onClick={() => setView("list")}>List</button>
+            <button className={"view-button " + (view === "grid" ? "is-active" : "")} type="button" aria-pressed={view === "grid"} data-testid="lib-toolbar-view-grid" onClick={() => setView("grid")}>Grid</button>
+            <button className={"view-button " + (view === "list" ? "is-active" : "")} type="button" aria-pressed={view === "list"} data-testid="lib-toolbar-view-list" onClick={() => setView("list")}>List</button>
           </div>
           <button
             className={"btn " + (selectionMode ? "btn-primary" : "btn")}
             type="button"
             aria-pressed={selectionMode}
-            data-testid="toggle-selection"
+            data-testid="lib-toolbar-select-mode"
             onClick={() => {
               setSelectionMode((value) => !value);
               setSelectedIds([]);
@@ -140,31 +140,31 @@ function LibraryScreen(props) {
         </div>
 
         {selectionMode && (
-          <div className="bulk-bar" role="region" aria-label="Bulk actions" data-testid="bulk-bar">
+          <div className="bulk-bar" role="region" aria-label="Bulk actions" data-testid="lib-bulk-bar">
             <span>{selectedIds.length} selected</span>
-            <button className="text-button" type="button" data-testid="select-all" onClick={() => setSelectedIds(books.map((book) => book.id))}>Select all</button>
-            <button className="text-button" type="button" data-testid="select-none" onClick={() => setSelectedIds([])}>Clear</button>
+            <button className="text-button" type="button" data-testid="lib-bulk-select-all" onClick={() => setSelectedIds(books.map((book) => book.id))}>Select all</button>
+            <button className="text-button" type="button" data-testid="lib-bulk-select-none" onClick={() => setSelectedIds([])}>Clear</button>
             <div className="bulk-spacer"></div>
-            <button className="btn btn-sm" type="button" disabled={!selectedIds.length} data-testid="bulk-collection" onClick={() => setDialog({ kind: "addTo" })}>Add to collection</button>
-            <button className="btn btn-primary btn-sm" type="button" disabled={!selectedIds.length} data-testid="bulk-index" onClick={() => setAnnounce("Indexing " + selectedIds.length + " books")}>Index selected</button>
+            <button className="btn btn-sm" type="button" disabled={!selectedIds.length} data-testid="lib-bulk-collection" onClick={() => setDialog({ kind: "addTo" })}>Add to collection</button>
+            <button className="btn btn-primary btn-sm" type="button" disabled={!selectedIds.length} data-testid="lib-bulk-index" onClick={() => setAnnounce("Indexing " + selectedIds.length + " books")}>Index selected</button>
           </div>
         )}
 
         {A.books.length === 0 ? (
-          <div className="empty-panel-inner" data-testid="library-empty">
+          <div className="empty-panel-inner" data-testid="lib-empty">
             <div className="empty-symbol" aria-hidden="true">📚</div>
             <h2 className="empty-title">Your library is empty</h2>
             <p className="empty-copy">Add an EPUB to get started. Reader3 processes it locally — nothing leaves your machine.</p>
           </div>
         ) : books.length === 0 ? (
-          <div className="empty-panel-inner" data-testid="filter-empty">
+          <div className="empty-panel-inner" data-testid="lib-filter-empty">
             <div className="empty-symbol" aria-hidden="true">⌕</div>
             <h2 className="empty-title">No books match “{filter}”</h2>
             <p className="empty-copy">Try a different title or author, or clear the filter.</p>
             <button className="btn" type="button" style={{marginTop: "12px"}} onClick={() => setFilter("")}>Clear filter</button>
           </div>
         ) : view === "grid" ? (
-          <div className="book-grid" data-testid="book-grid">
+          <div className="book-grid" data-testid="lib-book-grid">
             {books.map((book) => (
               <BookCard
                 key={book.id}
@@ -194,30 +194,30 @@ function LibraryScreen(props) {
       </div>
 
       {dialog && dialog.kind === "create" && (
-        <Modal title="New collection" primaryLabel="Create" onClose={() => setDialog(null)} onPrimary={() => {
+        <Modal page="lib" name="create-collection" title="New collection" primaryLabel="Create" onClose={() => setDialog(null)} onPrimary={() => {
           setCollections((current) => current.concat([{ id: "c" + (current.length + 1), name: "Untitled collection", book_ids: [], stale: 0 }]));
           setDialog(null);
           setAnnounce("Collection created");
         }}>
           <label className="field-label">Name
-            <input className="field-control" defaultValue="Untitled collection" data-testid="collection-name-input" />
+            <input className="field-control" defaultValue="Untitled collection" data-testid="lib-collection-name-input" />
           </label>
         </Modal>
       )}
 
       {dialog && dialog.kind === "rename" && (
-        <Modal title={"Rename “" + dialog.collection.name + "”"} primaryLabel="Save" onClose={() => setDialog(null)} onPrimary={() => {
+        <Modal page="lib" name="rename-collection" title={"Rename “" + dialog.collection.name + "”"} primaryLabel="Save" onClose={() => setDialog(null)} onPrimary={() => {
           setDialog(null);
           setAnnounce("Collection renamed");
         }}>
           <label className="field-label">Name
-            <input className="field-control" defaultValue={dialog.collection.name} data-testid="collection-rename-input" />
+            <input className="field-control" defaultValue={dialog.collection.name} data-testid="lib-collection-rename-input" />
           </label>
         </Modal>
       )}
 
       {dialog && dialog.kind === "delete" && (
-        <ConfirmModal
+        <ConfirmModal page="lib" name="delete-collection"
           title={"Delete “" + dialog.collection.name + "”?"}
           body="The collection is removed. The books inside it stay in your library."
           confirmLabel="Delete collection"
@@ -232,7 +232,7 @@ function LibraryScreen(props) {
       )}
 
       {dialog && dialog.kind === "clean" && (
-        <ConfirmModal
+        <ConfirmModal page="lib" name="clean-collection"
           title="Remove missing books?"
           body={dialog.collection.stale + " book(s) in this collection no longer exist on disk. Removing them only updates the collection."}
           confirmLabel="Remove missing"
@@ -248,12 +248,12 @@ function LibraryScreen(props) {
       )}
 
       {dialog && dialog.kind === "addTo" && (
-        <Modal title={"Add " + selectedIds.length + " books to collection"} primaryLabel="Add" onClose={() => setDialog(null)} onPrimary={() => {
+        <Modal page="lib" name="add-to-collection" title={"Add " + selectedIds.length + " books to collection"} primaryLabel="Add" onClose={() => setDialog(null)} onPrimary={() => {
           setDialog(null);
           setAnnounce("Books added to collection");
         }}>
           <label className="field-label">Collection
-            <select className="field-control" data-testid="add-to-collection-select">
+            <select className="field-control" data-testid="lib-add-to-collection-select">
               {collections.map((collection) => <option key={collection.id} value={collection.id}>{collection.name}</option>)}
             </select>
           </label>
@@ -261,14 +261,14 @@ function LibraryScreen(props) {
       )}
 
       {dialog && dialog.kind === "errors" && (
-        <Modal title="Index errors" onClose={() => setDialog(null)}>
-          <div data-testid="index-errors">
+        <Modal page="lib" name="index-errors" title="Index errors" onClose={() => setDialog(null)}>
+          <div data-testid="lib-index-errors">
             {A.indexErrors.map((error) => (
               <article className="error-row" key={error.book_id}>
                 <h3 className="note-group-title">{error.book_title}</h3>
                 <p className="empty-copy">{error.message}</p>
                 <p className="result-section">{error.at}</p>
-                <button className="btn btn-sm" type="button" data-testid="retry-index">Retry indexing</button>
+                <button className="btn btn-sm" type="button" data-testid="lib-index-retry">Retry indexing</button>
               </article>
             ))}
           </div>
@@ -343,11 +343,11 @@ function App() {
       </div>
 
       {addOpen && (
-        <Modal title="Add books" primaryLabel="Process 0 files" onClose={() => setAddOpen(false)} onPrimary={() => setAddOpen(false)}>
-          <div className="dropzone" data-testid="dropzone">
+        <Modal page="lib" name="add-books" title="Add books" primaryLabel="Process 0 files" onClose={() => setAddOpen(false)} onPrimary={() => setAddOpen(false)}>
+          <div className="dropzone" data-testid="lib-add-dropzone">
             <p className="empty-title" style={{fontSize: "15px"}}>Drop EPUB files here</p>
             <p className="empty-copy">or</p>
-            <button className="btn" type="button" data-testid="choose-files">Choose files</button>
+            <button className="btn" type="button" data-testid="lib-add-choose-files">Choose files</button>
           </div>
           <p className="empty-copy" style={{marginTop: "12px"}}>
             Files are processed locally into <code>books/&#123;name&#125;_data/</code>. PDF support is not available yet.

@@ -119,7 +119,7 @@ Phase 3  JSONL + 指纹 + generation swap  ←── 三路汇合 ────�
 
 | # | 合同 | 内容在哪 | 冻结时点 |
 |---|---|---|---|
-| **合同 1** | `data-testid` | 命名与前缀方案：设计规格 §4；实测对账（134 个唯一 testid，**0 个合规**）：同 §4.1 | Phase 0.5 |
+| **合同 1** | `data-testid` | 命名与前缀方案：设计规格 §4；实测对账（138 个站点，**0 个合规**）：同 §4.1；逐条新旧映射与回贴清单：[`contracts/testid-rename-map.md`](./contracts/testid-rename-map.md) | Phase 0.5 ✅ |
 | **合同 2** | Design token | 双层体系与全部取值：设计规格 §3。剩余两项待定见下 | Phase 4A.1 |
 | **合同 3** | API 形状 v1 | Phase 1a 的 42 路由契约测试即其可执行形式 | Phase 1a |
 | **合同 4** | 消息表 key | 英文为默认 locale（D-2）；key 命名建议 `{page}.{region}.{element}`，与 testid 同构便于对照。原型英文文案即 `en` 初值 | Phase 4A |
@@ -210,7 +210,7 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 > | **选择器 lint** | 测试代码（`tests/e2e/`） | 只允许 `data-testid` 与 ARIA role/name；禁止 class 选择器、`nth-child`、层级结构选择器 |
 > | **命名 lint** | 模板与原型（`templates/*.html`、`designs/reader-pro-next/`） | 每个 `data-testid` 必须匹配**下方的 canonical 正则**（前缀方案见设计规格 §4） |
 >
-> 只有前者不足以保住契约：选择器 lint 全绿，模板里照样可以新增 `reader-search-hit` 这种名字，命名方案随即失守。命名 lint 必须**显式点名设计规格 §4.1 那 24 个带 `reader-` / `library-` 前缀的 testid**——它们形似合规，批量改名时最容易被当成「已经对了」跳过，而正则会把它们判为不合规，正是要的效果。134 个全部需要改名，lint 的初始状态就是「134 条违规」，改完归零。
+> 只有前者不足以保住契约：选择器 lint 全绿，模板里照样可以新增 `reader-search-hit` 这种名字，命名方案随即失守。命名 lint 必须**显式点名设计规格 §4.1 那 24 个带 `reader-` / `library-` 前缀的 testid**——它们形似合规，批量改名时最容易被当成「已经对了」跳过，而正则会把它们判为不合规，正是要的效果。138 个站点全部需要改名，lint 的初始状态就是「138 条违规」，改完归零。（此前记的 134 少算了 `Sheet` 的四个 `testId=` prop——只 grep `data-testid=` 的口径看不见它们。对账见 [`contracts/testid-rename-map.md`](./contracts/testid-rename-map.md) §1。）
 
 #### canonical 正则（唯一真相源）
 
@@ -442,7 +442,7 @@ pickle 是实际的迁移阻塞点与安全隐患（`pickle.load` 对不可信�
 
 | 阶段 | 进入条件 | 退出条件 |
 |---|---|---|
-| Phase 0 | — | P0-1/P0-2 修复并人工 smoke；`--port` 与 `/api/health` 可用；testid 在原型与模板两侧一致；**两条 lint 都在 CI 里生效**——选择器 lint（约束 `tests/e2e/`）与命名 lint（约束模板与原型，正则以 §6 步骤 0.5 的 **canonical 代码块**为准，违规数归零）；**0.8 的 token 悬空引用 lint 在 CI 里生效且为 0** |
+| Phase 0 | — | P0-1/P0-2 修复并人工 smoke；`--port` 与 `/api/health` 可用；testid 在原型与模板两侧一致；**两条 lint 都在 CI 里生效**——选择器 lint（约束 `tests/e2e/`）与命名 lint（约束模板与原型，正则以 §6 步骤 0.5 的 **canonical 代码块**为准，违规数归零）；**0.8 的 token 悬空引用 lint 在 CI 里生效且为 0**。三条 lint 落在 `.github/workflows/lint.yml` 的同一个 job 里，分三步跑 |
 | Phase 1a | Phase 0 | CI 绿灯成为合并门槛；42 路由契约测试通过；**API v1 形状冻结**；性能基准记录在案 |
 | Phase 1b | 0.3 + 0.5 | **`baseline-1b` 组**在**主 CI**（非 nightly）绿灯；**用例覆盖写路径**（四类型创建 / 改色 / 删除 / 笔记保存，断言为刷新后回到同一段文字）；K2–K5 与 K1/K6 的**现状特征化**条各一条正向证据；连续 3 次全量运行零 flaky；其余组**用例写完并 review**，以 skip 形态存在。⚠️ K1/K6 的新行为与 DEG-S1–DEG-S4 的横幅**不在本阶段门槛内**——它们要到 4B.1 / Phase 3 / 4A.4 才存在，写进 1b 会形成依赖环。分组见 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) §0.5 |
 | Track D | Phase 0 | DEG-S1–DEG-S5 设计完成并回写设计规格 §6.4；合同 2 剩余两项收口；loading 骨架屏补齐 |
@@ -822,6 +822,8 @@ K3 说 `position: fixed` 的浮层要求祖先链无 `transform` / `filter` / `b
 
 #### Q-1 [HIGH] testid 是 0 → 134，不是「成本很低」—— **9/10**
 
+> 【0.5 落地后回填】实际是 138 个站点，不是 134——差的四个是 `Sheet` 的 `testId=` prop。结论不变，方向也不变。对账见 [`contracts/testid-rename-map.md`](./contracts/testid-rename-map.md) §1。
+
 设计规格 §4.1 现已记录：原型 134 个唯一 testid，**0 个合规**；其中 24 个带 `reader-` / `library-` 前缀的**比裸名更危险**，批量改名时容易被当成「已经对了」而跳过。
 
 补一条核验结果：**生产侧 `templates/` 与 `static/` 里 `data-testid` 出现次数为 0**。现有可用锚点是 `id=`（library.html 77、reader.html 66、settings.html 13、library_classic.html 9），但 id 是**样式与 JS 的活引用**，不是测试契约 —— 把它当 testid 用，等于让测试锁死实现细节，而这正好是 strangler-fig 接缝最不该有的性质。
@@ -931,7 +933,7 @@ C1 说：
 | 42 条 API 路由 | `web/server.py` | 可用，无契约测试 |
 | 关键词 + 语义搜索、RAG、多 provider AI | `search_service.py` / `vector_search.py` / `ai/` | 可用 |
 | 三页 UI + classic library | `templates/` 4 个模板 | 可用，`data-testid` 为 0 |
-| 高保真目标原型（三屏 + 错误态） | `designs/reader-pro-next/` | 可跑，134 个 testid 待改名 |
+| 高保真目标原型（三屏 + 错误态） | `designs/reader-pro-next/` | 可跑，testid 已按 canonical 正则改名（221 个唯一名，0 违规） |
 | K1–K6 宿主契约 | `contracts/annotation-host-contracts.md` | 已成文，本报告后需改 K5 |
 | 双层 token 体系、逐页规格、S1–S5 降级态 | 设计规格 §3 / §5–6 | 已成文，两项 token 待收口 |
 | 测试基建 | `tests/` | **只有 conftest.py 骨架，零用例，零 CI** |
@@ -1012,7 +1014,7 @@ Phase 1b ── R12 标注 E2E（含写入路径 + 位置断言 + S1–S4）
 | **R8** ✅ | 修 `tests/conftest.py` 的 `reader3.py:187` → 改用符号名；删除 stale pyc 与 `tests/.DS_Store`；`.gitignore` 清掉残留冲突标记（~~加 `tests/**/__pycache__` 与 `.DS_Store`~~ —— 本建议有误，见落地记录） | `tests/` + `.gitignore` | Phase 0 | P2 |
 | **R9** ✅ | 本文 §4 论证 1（不可逆性）改写为「派生数据 + 双写回退 ⇒ 可逆，真正的理由是论证 2 与 3」；§7 增加 soak 门槛：Phase 3 开工前 1b E2E 在 CI 连绿 ≥10 次且跨 ≥5 个工作日 | 本文 §4 / §7 | Phase 0 | P1 |
 | **R10** ✅ | Phase 3 验收增加：`reader3 --migrate` 原地读写，**禁止**复用摄取路径（`shutil.rmtree` 会抹掉 `notes.json` / `ai_meta.json` / `chroma_db/`） | 技术栈计划 Phase 3 | Phase 0（写约束）/ Phase 3（执行） | P0 |
-| **R11** ✅ | testid 命名的机器校验：一条正则 + CI 检查，覆盖原型 134 个与生产模板新增项；显式点名那 24 个带前缀但不合规的，防止被当成「已经对了」跳过 | `designs/` + CI | Phase 0.5 | P1 |
+| **R11** ✅ | testid 命名的机器校验：一条正则 + CI 检查，覆盖原型 138 个站点与生产模板新增项；显式点名那 24 个带前缀但不合规的，防止被当成「已经对了」跳过 | `designs/` + CI | Phase 0.5 | P1 |
 | **R12** ✅ | 1b 用例清单显式包含写入路径：四类型各创建一次、改色、删除、笔记保存；断言方式为「刷新后高亮回到同一段文字」而非「fetch 被调用」；S1–S4 各一条正向证据 | `tasks/009-e2e-annotations.md` | Phase 1b | P0 |
 
 JSONL 工件：`docs/plans/20260816-tech-stack-migration/eng-review-tasks.jsonl`
