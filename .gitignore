@@ -52,3 +52,4 @@ coverage-unit.json
 
 # Codex CLI byproduct (contains account id)
 error.log
+/.tokenize

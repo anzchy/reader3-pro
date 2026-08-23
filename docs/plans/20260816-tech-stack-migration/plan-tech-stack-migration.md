@@ -234,7 +234,7 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 
 **验收**: 两个 P0 修复并人工 smoke；`--port` 与 `/api/health` 可用；testid 在原型与模板两侧一致且三条 lint 生效。完整门槛见 §7。
 
-> testid 必须早于 Phase 1b 动笔。本计划已把「Phase 1b 的标注 E2E 在主 CI 绿灯」写为 Phase 4 的前置条件，却没有规定 E2E 用什么定位元素；若用 class 或结构选择器，Phase 4 的任何布局改动都会推翻整套 E2E。这是全篇最便宜也最容易漏的一条。
+> testid 必须早于 Phase 1b 动笔。本计划已把「Phase 1b 的标注 E2E 绿灯」写为 Phase 4A 的前置条件，却没有规定 E2E 用什么定位元素；若用 class 或结构选择器，Phase 4 的任何布局改动都会推翻整套 E2E。这是全篇最便宜也最容易漏的一条。
 
 ### 并行区间（Phase 0 之后）
 
@@ -267,9 +267,9 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 **Phase 1b**
 
 - [ ] Playwright E2E：书库导航、epub.js 渲染、iframe 内标注**创建与恢复**、AI SSE 流式。**完整用例清单见 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md)**——含写路径（四类型创建 / 改色 / 删除 / 笔记保存）、K1–K6 与 DEG-S1–DEG-S4 的正向证据，以及「断言刷新后高亮回到同一段文字」这条统一收尾
-- [ ] E2E 必须在**主 CI** 里跑，不得放 nightly——Phase 4 的前置条件依赖它
+- [ ] E2E 必须进**本地 tdd-guardian 的 `e2e` lane**（`gateOn: push`），不得挂成「想起来才跑」的旁路任务——Phase 4A 的前置条件依赖它，soak 也数它（改基见 §7）
 
-**验收**: CI 绿灯成为合并门槛；核心路径（摄取/搜索/笔记/路由）有回归保护。完整门槛见 §7。
+**验收**: 测试门禁生效——**本地 tdd-guardian 门禁**，不是 GitHub 的 required check（CI 仅发版触发，改基说明见 §7 的 soak 门槛小节）；核心路径（摄取/搜索/笔记/路由）有回归保护。完整门槛见 §7。
 
 ### Phase 2 —— Python 内部重构（不改行为）
 
@@ -380,7 +380,7 @@ pickle 是实际的迁移阻塞点与安全隐患（`pickle.load` 对不可信�
 
 **`--migrate` 不得改变 `book_fingerprint()`。** A1 的指纹涵盖原 EPUB hash、spine href/order、每个 XHTML 原始内容 hash、解析器版本——纯粹的存储格式转换一样都不碰。若迁移后指纹变了，A1 的分级降级会立刻生效，**全库用户标注一次性判 stale**。因此 Phase 3 的验收里那条"`notes.json` 三者字节不变"的测试要再加一句断言：迁移前后 `book_fingerprint(book_id)` 相等。
 
-**进入条件**: Phase 2b 完成 **且** Track D 完成 **且** 1b 的标注 E2E 在主 CI 连绿 ≥10 次、跨度 ≥5 个工作日（soak 门槛，见 §7）。三路汇合，见 §9.1。
+**进入条件**: Phase 2b 完成 **且** Track D 完成 **且** 1b 的标注 E2E 达到 **soak 门槛**——次数、跨度与**计数基准**三项的唯一定义处是 §7，本行不复述（2026-08-24 改基：数的是本地全量运行，不再是主 CI）。三路汇合，见 §9.1。
 
 **验收**: 新处理的书完全不依赖 pickle 即可阅读/搜索/标注；存量书可一键迁移；**`--migrate` 原地读写，有一条测试证明迁移后 `notes.json` / `ai_meta.json` / `chroma_db/` 三者字节不变、且 `book_fingerprint(book_id)` 不变**；**有一条崩溃注入测试**：在提交协议第 7 步之后、第 8 步之前中断，重启后该书仍能正常打开（状态判为 `missing`，走 pkl），且下一次迁移能干净地重跑；**重写整本书的路径（非 `--migrate`）另需覆盖「两条协议缺口」那两条**——回滚是 rename 不是 copy（断言 inode）、中断后不留下新产物挨着旧 marker；DEG-S1–DEG-S4 在当时的 UI 里可见；**并跑至少一条真实 iframe 标注迁移 E2E**（理由见附录 A 的「最可能的失败模式」）。
 
@@ -396,7 +396,7 @@ pickle 是实际的迁移阻塞点与安全隐患（`pickle.load` 对不可信�
 
 #### Phase 4A —— 前端底座与非阅读页
 
-进入条件：`1b` 主 CI 绿灯。与 `2a / 2b / 3` 并行。
+进入条件：`1b` 的 `baseline-1b` 组绿灯（**本地 lane，不是主 CI**——改基见 §7）。与 `2a / 2b / 3` 并行。
 
 子阶段 **4A.0 → 4A.1 → 4A.3 → 4A.2 → 4A.4**（工具链 → token 与主题基础设施 → 共享模块 → settings 试点 → library ＋ 删除 Classic）。**每个子阶段做什么、验收什么，展开在
 [前端计划](../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) 的 WI-9 – WI-13 里**；本文只持有顺序与门槛（§7）。
@@ -443,8 +443,8 @@ pickle 是实际的迁移阻塞点与安全隐患（`pickle.load` 对不可信�
 | 阶段 | 进入条件 | 退出条件 |
 |---|---|---|
 | Phase 0 | — | P0-1/P0-2 修复并人工 smoke（**六项 checklist 的正文在 [`tasks/007-hygiene-and-contracts.md`](./tasks/007-hygiene-and-contracts.md) §8.1**，本文只引用不重述）；`--port` 与 `/api/health` 可用；testid 在原型与模板两侧一致；**两条 lint 都在 CI 里生效**——选择器 lint（约束 `tests/e2e/`）与命名 lint（约束模板与原型，正则以 §6 步骤 0.5 的 **canonical 代码块**为准，违规数归零）；**0.8 的 token 悬空引用 lint 在 CI 里生效且为 0**。三条 lint 落在 `.github/workflows/lint.yml` 的同一个 job 里，分三步跑 |
-| Phase 1a | Phase 0 | CI 绿灯成为合并门槛；42 路由契约测试通过；**API v1 形状冻结**；性能基准记录在案 |
-| Phase 1b | 0.3 + 0.5 | **`baseline-1b` 组**在**主 CI**（非 nightly）绿灯；**用例覆盖写路径**（四类型创建 / 改色 / 删除 / 笔记保存，断言为刷新后回到同一段文字）；K2–K5 与 K1/K6 的**现状特征化**条各一条正向证据；连续 3 次全量运行零 flaky；其余组**用例写完并 review**，以 skip 形态存在。⚠️ K1/K6 的新行为与 DEG-S1–DEG-S4 的横幅**不在本阶段门槛内**——它们要到 4B.1 / Phase 3 / 4A.4 才存在，写进 1b 会形成依赖环。分组见 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) §0.5 |
+| Phase 1a | Phase 0 | 测试门禁生效（**本地 tdd-guardian**，非 required check——见本节 soak 小节的改基说明）；42 路由契约测试通过；**API v1 形状冻结**；性能基准记录在案 |
+| Phase 1b | 0.3 + 0.5 | **`baseline-1b` 组**在**本地 `e2e` lane** 绿灯并入 `soak-log.md` 台账（原写「主 CI（非 nightly）」，2026-08-24 随 CI 改为仅发版触发而改基，见本节 soak 小节）；**用例覆盖写路径**（四类型创建 / 改色 / 删除 / 笔记保存，断言为刷新后回到同一段文字）；K2–K5 与 K1/K6 的**现状特征化**条各一条正向证据；连续 3 次全量运行零 flaky；其余组**用例写完并 review**，以 skip 形态存在。⚠️ K1/K6 的新行为与 DEG-S1–DEG-S4 的横幅**不在本阶段门槛内**——它们要到 4B.1 / Phase 3 / 4A.4 才存在，写进 1b 会形成依赖环。分组见 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) §0.5 |
 | Track D | Phase 0 | DEG-S1–DEG-S5 设计完成并回写设计规格 §6.4；合同 2 剩余两项收口；loading 骨架屏补齐 |
 | Phase 2a | 1a | 每个 router < 500 行；`book_store` **三处** loader 合并（第四处已作为死代码删除，见附录 A 的 A5）；**notes 乐观并发落地**；行为不变由 1a 证明 |
 | Phase 2b | 2a | 跨库搜索性能相对基准可量化改善；`_normalize_with_map` 差分测试通过 |
@@ -457,7 +457,16 @@ pickle 是实际的迁移阻塞点与安全隐患（`pickle.load` 对不可信�
 
 §4 论证 1 的原话是「在一套**已经跑绿一段时间**的 E2E 下迁移」。这句话不量化就是空话——一套只跑过一次的 E2E 和一套跑绿两周的 E2E，保护力不是一个量级，而本仓库今天**零 CI 历史**。
 
-**Phase 3 开工前，`baseline-1b` 组必须在主 CI 上连续绿 ≥ 10 次，且跨度 ≥ 5 个工作日。**
+**Phase 3 开工前，`baseline-1b` 组必须连续绿 ≥ 10 次，且跨度 ≥ 5 个工作日。**
+
+> **数的不再是主 CI 的运行，是本地全量运行——2026-08-24 改基。** 起因是全仓 CI 统一改为**仅发版触发**（`release.published` ＋ `push.tags`，日常 push 不跑）。原文数「主 CI 连绿 10 次」在那条策略下等于要求 5 个工作日内发 10 次版：**门槛不是变严了，是变得不可达**。
+>
+> **数值一个不动**——≥10 次 / ≥5 个工作日是 R9 评审后用户亲自裁定维持的（见「GSTACK REVIEW REPORT」的 R9 行），改基不碰它。换的只有计数基准：
+>
+> - 每次 `baseline-1b` 全量运行往 **`soak-log.md`** 追一行：**UTC 时间戳 ＋ commit sha ＋ 结果 ＋ 单次时长**。跨度按台账首行与第十行的日期算。该台账由 009 建，它是 `baseline-1b` 的产物之一。
+> - 「连续」的清零规则不变：中途任何一次红清零重计，flaky 与 broken 仍不做区分。
+>
+> **必须写明丢了什么**：本地计数丢掉的是「**独立、干净环境**」这一性质。而依赖漂移、时区、缓存这三类，正是上面「跨度条款」想逼出来的东西——它们恰恰在同一台机器上最不容易复现。所以改基之后，跨度条款只剩「日历时间」这一半效力，「环境多样性」那一半没有了。唯一的补偿不在 soak 里：**发版关门检查里跑一次 `baseline-1b` 全量**。这是本条策略的**已知代价，不是疏漏**。
 
 > 数的只是 `baseline-1b`。其余组在 Phase 3 之前尚未激活（它们测的行为还不存在），把它们算进来就会让 soak 门槛永远无法达标——分组定义见 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) §0.5。
 
@@ -657,7 +666,7 @@ Phase 4  前端 TS（5a 拆分 / 5b 转换，两个 PR）
 Phase 5  launch + PWA
 ```
 
-Phase 1b 从 Phase 1 中拆出并降级为「仅阻塞 Phase 4」，使 Phase 2/3 不被 E2E 拖住；同时 Phase 4 的前置条件明确写为「1b 的标注 E2E 必须在**主 CI** 里绿灯，不得放在 nightly」。
+Phase 1b 从 Phase 1 中拆出并降级为「仅阻塞 Phase 4」，使 Phase 2/3 不被 E2E 拖住；同时 Phase 4 的前置条件明确写为「1b 的标注 E2E 必须绿灯」——该条原文要求「在主 CI 里、不得放 nightly」，2026-08-24 随 CI 改为仅发版触发而改基为本地 lane ＋ `soak-log.md` 台账，见 §7。
 
 ### 架构决策（A1–A5）
 

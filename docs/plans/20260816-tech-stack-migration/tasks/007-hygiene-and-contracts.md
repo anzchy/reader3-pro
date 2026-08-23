@@ -165,6 +165,12 @@ canonical 正则在 `plan-tech-stack-migration.md` §6 的「canonical 正则（
 testid 全部合规；现有模板与生成 DOM 回贴了其中 152 个，反向新造为 0；三条 lint 在
 `.github/workflows/lint.yml` 里分三步跑，均为 0 违规。
 
+> **2026-08-23：`lint.yml` 改成只在发版时触发**（`release.published` ＋ `v*` tag push ＋
+> 手动 `workflow_dispatch`），日常 push 与 PR 都不再跑。退出条件里「在 CI 里生效」仍然成立，
+> 但**生效的频率降了**：中间攒的违规要等到发版那天才会一次性暴露。三条 lint 都是零依赖
+> 标准库脚本，本地 `python3 scripts/lint_*.py` 随手能跑——把它当成发版前的关门检查，
+> 别当成写代码时的实时护栏。触发条件的定义在 `lint.yml` 的头部注释，此处不重述。
+
 > **testid 必须早于 Phase 1b 动笔。** 这是全篇最便宜也最容易漏的一条：Phase 4 的任何布局改动都会推翻用 class 或结构选择器写的 E2E。合流计划 §8 把「testid 定名拖到 1b 之后」列为头号返工源。
 
 ---

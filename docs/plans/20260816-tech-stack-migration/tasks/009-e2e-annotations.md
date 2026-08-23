@@ -2,8 +2,8 @@
 
 - **对应阶段**: Phase 1b（Playwright E2E）起写，后续阶段逐组激活
 - **进入条件**: Phase 0 的 0.3（`--port` + `/api/health`）与 0.5（`data-testid` 全量补齐）完成。见 `docs/plans/20260816-tech-stack-migration/plan-tech-stack-migration.md` §6
-- **退出条件**: **`baseline-1b` 组**在**主 CI**（非 nightly）绿灯。其余组各自在所属阶段的出口生效，见 §0.5
-- **下游**: Phase 4A / 4B 的进入条件；Phase 3 的 soak 门槛（连绿 ≥10 次、跨度 ≥5 个工作日）数的就是 **`baseline-1b`** 这一组
+- **退出条件**: **`baseline-1b` 组**全量绿灯，并在 `soak-log.md` 留下可计数的记录（**不再要求「主 CI 绿灯」**——CI 已统一为仅发版触发，改基说明见迁移计划 §7 的 soak 小节）。其余组各自在所属阶段的出口生效，见 §0.5
+- **下游**: Phase 4A / 4B 的进入条件；Phase 3 的 **soak 门槛**数的就是 **`baseline-1b`** 这一组（次数、跨度、计数基准的唯一定义处是迁移计划 §7，本行不复述）。**本分支还要建 `soak-log.md` 台账**——改基之后 soak 数的是它，没有它就没法计数
 - **契约**: K1–K6 见 `docs/plans/20260817-frontend-ui-refactor/contracts/annotation-host-contracts.md`；降级状态 DEG-S1–DEG-S5 见 `docs/plans/20260817-frontend-ui-refactor/spec-frontend-design.md` §6.4
 
 > **引用规则**：用**符号名**与 **testid** 定位，不写代码行号。
@@ -184,7 +184,7 @@ child frame 内 document.createRange() → 写入 iframe 的 Selection
 
 ### Phase 1b 的退出门槛 = 仅 `baseline-1b` 组
 
-- **`baseline-1b` 组**在**主 CI** 绿灯（非 nightly）
+- **`baseline-1b` 组**在**本地 `e2e` lane**（`gateOn: push`）绿灯，并往 `soak-log.md` 记账（原写「主 CI（非 nightly）」，随 CI 改为仅发版触发而改基——见迁移计划 §7）
 - 选择器 lint 通过：全套用例（含尚未激活的组）零 class / 结构选择器
 - **零 flaky**：`baseline-1b` 连续 3 次全量运行无偶发失败才算达标。理由见 soak 门槛——一条会偶发失败的 E2E 当不了 Phase 3 数据迁移的验收基准，而 flaky 会让计数反复清零
 - 单次全量运行时长记录在案（后续 soak 期间要跑十次以上，时长本身就是可行性约束）

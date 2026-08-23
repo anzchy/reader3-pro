@@ -22,9 +22,11 @@
 
 调用串里不要出现反引号、美元括号、分号、双与号、双竖线、尖括号和竖线——工作流的输入契约会直接拒绝。上面那行已经按这个约束写过，别自己往里加符号。
 
-> ⚠️ **先跑哪一批，以 §4.0 为准，不是以上面的顺序为准。** Track D（WI-1–WI-8）的验收按 §4.0 拆成两半：**定义类**在 `010` 上跑，**实现类**（56 条里的 55 条）要等 WI-9 交付源码根与 Vitest 宿主，随 4A / 4B 一并激活。所以第一行调用串在 `010` 上消费的是**定义类那一半**，它结尾那句「每个工作项的验收标准必须逐条二元判定」在 `010` 上的判定对象是 §4.0 的 **`010` 退出门槛**，不是 WI-1–WI-8 的验收清单——那份清单里只有 1 条标着 `验于 010`。
+> ⚠️ **先跑哪一批，以 §4.0 为准，不是以上面的顺序为准。** Track D（WI-1–WI-8）的验收按 §4.0 拆成两半：**定义类**在 `010` 上跑，**实现类**（57 条里的 56 条）要等 WI-9 交付源码根与 Vitest 宿主，随 4A / 4B 一并激活。所以第一行调用串在 `010` 上消费的是**定义类那一半**，它结尾那句「每个工作项的验收标准必须逐条二元判定」在 `010` 上的判定对象是 §4.0 的 **`010` 退出门槛**，不是 WI-1–WI-8 的验收清单——那份清单里只有 1 条标着 `验于 010`。
 >
-> **实际意义上第一个能开工的 WI 是 WI-9**（裁定见 §5.0 执行器表下方）。它之前只有文档工作，而且它自己还压着三个非 WI 前置：007 的 0.4 / 0.5 / 0.8（见 §3，实测三项均未开工）。
+> **实际意义上第一个能开工的 WI 是 WI-9**（裁定见 §5.0 执行器表下方）。它之前只有文档工作，而它压着的三个非 WI 前置——007 的 0.4 / 0.5 / 0.8——**已于 2026-08-23 在 `007-hygiene-and-contracts` 分支上全部交付，但该分支尚未合入 `master`（实测领先 28 个 commit）**。所以准确的状态是「**前置已交付，等合入**」，不是「前置已解除」：在 007 合入之前，`master` 上仍然没有那三条 lint，也没有回贴过的 testid。逐项状态见 §3。
+>
+> ~~此前这里写的是「实测三项均未开工」。~~ 该判断作于 007 收尾之前，2026-08-23 被实测推翻——007 的八项全部转 ✅，见 [`tasks/007-hygiene-and-contracts.md`](../20260816-tech-stack-migration/tasks/007-hygiene-and-contracts.md)。
 
 ---
 
@@ -58,8 +60,11 @@
 |---|---|---|
 | **0.1** 重新处理 EPUB 不再删光标注 | **已完成** | [`tasks/007-hygiene-and-contracts.md`](../20260816-tech-stack-migration/tasks/007-hygiene-and-contracts.md) |
 | **0.7** 删死代码（`SearchIndex` / `BookIndex.from_book_pkl` / `SearchIndex.build_from_library`） | **已完成** | 同上。⚠️ `BookIndex` / `ChapterIndex` 两个 dataclass **仍是活代码，不要动** |
-| **0.6** 事实性修复 | **部分完成**——`.gitignore` 合并冲突标记已修；版本号对齐与示例配置补齐**未做** | 同上 |
-| **0.2 / 0.3 / 0.4 / 0.5 / 0.8** | **未开始** | 同上 |
+| **0.6** 事实性修复 | **已完成**（2026-08-23 收尾：`.gitignore` 合并冲突标记、版本号对齐、示例配置补齐三项齐了） | 同上 |
+| **0.2 / 0.3 / 0.4 / 0.5 / 0.8** | **已完成**（2026-08-23） | 同上 |
+| 007 分支**是否已合入 `master`** | **否**——实测领先 28 个 commit。八项都在分支上，`master` 上一项都没有 | `git rev-list --count master..007-hygiene-and-contracts` |
+
+> ~~此前这张表把 0.2 / 0.3 / 0.4 / 0.5 / 0.8 记为「未开始」、0.6 记为「部分完成」。~~ 那是 007 收尾前的实测，2026-08-23 全部转 ✅ 后作废。**但作废的是「未开工」，不是「可以当它已经在主干上」**——见 §0 结尾与 §3 的「已交付，等合入」口径。
 
 **三处 token 悬空引用是 007 已经修好的**，本计划只消费结果、不重做：
 
@@ -129,11 +134,14 @@
 
 ## 3. 前置契约
 
-三项在 `007-hygiene-and-contracts` 实施、**本计划只消费不重述**：
+三项在 `007-hygiene-and-contracts` 实施、**本计划只消费不重述**。三项**都已在该分支上交付（2026-08-23）**，但**该分支尚未合入 `master`**——本节的口径统一是「**已交付，等合入**」，不是「前置已解除」：
 
-- **0.4** `escapeHtml` 收敛 —— 决定 WI-11 里 `escape.ts` 的形状。
-- **0.5** canonical testid 正则 ＋ 选择器 lint ＋ 命名 lint —— 是本计划全部测试矩阵的选择器基础。
-- **0.8** token 悬空引用 lint —— 是 DEG-S1–DEG-S5 横幅不静默失色的保证。**定义在 `plan-tech-stack-migration.md:192`，本文件只引用，不重述条款**（含「有 fallback 也算违规」那一条——它已回写到那边的定义处）。本计划对 0.8 的唯一增量是**扫描范围**要覆盖 `{前端源码根}`，由 WI-9 验收 12 落地。
+- **0.4** 四个落后 JS 文件（`library-search.js` / `search.js` / `ai.js` / `settings.js`）IIFE 化，顺带消掉四份互相覆盖的 `escapeHtml` 全局符号 —— **已完成，commit `f11b346`**。
+  > ⚠️ **0.4 交付的是「IIFE 化 ＋ 消掉全局冲突」，不是「收敛」。** 四份 `escapeHtml` 实现今天仍是四份，只是各自关在自己的 IIFE 里不再互相覆盖。**把它们真正收敛成单一 `escape.ts` 仍是 WI-11 / ET-9 的活**，裁决（取哪派的空值语义、哪派的写法）也在 WI-11 里，不在 007。此前这里写的「0.4 `escapeHtml` 收敛 —— 决定 WI-11 里 `escape.ts` 的形状」把因果写反了，作废。
+- **0.5** canonical testid 正则 ＋ 选择器 lint ＋ 命名 lint —— 是本计划全部测试矩阵的选择器基础。**已完成**：原型 221 个唯一 testid 全部合规，现有模板与生成 DOM 回贴了其中 152 个，反向新造为 0；逐条新旧映射见 [`contracts/testid-rename-map.md`](../20260816-tech-stack-migration/contracts/testid-rename-map.md)。
+- **0.8** token 悬空引用 lint —— 是 DEG-S1–DEG-S5 横幅不静默失色的保证。**定义在 `plan-tech-stack-migration.md` §6 的 0.8 一节，本文件只引用，不重述条款**（含「有 fallback 也算违规」那一条——它已回写到那边的定义处）。**已完成，实测违规数 0。** 本计划对 0.8 的唯一增量是**扫描范围**要覆盖 `{前端源码根}`，由 WI-9 验收 12 落地。
+
+**三条 lint 都接在 `.github/workflows/lint.yml` 的 `contracts` job 里，而该 workflow 于 2026-08-23 改成只在发版时触发**——`release.published` ＋ `v*` tag push ＋ 手动 `workflow_dispatch`，日常 push 与 PR 不再跑。这一点对本计划有直接后果：**WI-9 §9.3 的 token 硬编码 lint 和 WI-9 要接的其余 lint 挂的是同一个 workflow，因此它们不是每次 push 的实时护栏，攒下的违规会一次性堆到发版那天。** 实施者要么在本地随手跑（三条 lint 都是零依赖标准库脚本），要么在 Actions 页面手点 `workflow_dispatch`，不要指望 PR 上有红叉。
 
 WI-1 到 WI-20 全部以这三项落地为前置，下面各 WI 的「前置 WI」一栏不再重复写。
 
@@ -189,9 +197,9 @@ WI-1 到 WI-20 全部以这三项落地为前置，下面各 WI 的「前置 WI�
 
 #### `010` 的退出门槛
 
-> ⚠️ **「未激活」不等于「不用做」，也不等于「`010` 没有可判的内容」。** 实测 WI-1–WI-8 共 **56** 条验收，标记分布是 `验于 010` **1** 条、`验于 013` **33** 条、`验于 014` **22** 条。也就是说照验收清单读，`010` 上只有一条可判——而那一条（WI-8 第 5 条）本身还是「人工核对」。这样一来「Track D 做完了」在 `010` 上没有定义。
+> ⚠️ **「未激活」不等于「不用做」，也不等于「`010` 没有可判的内容」。** 实测 WI-1–WI-8 共 **57** 条验收，标记分布是 `验于 010` **1** 条、`验于 013` **34** 条、`验于 014` **22** 条。（2026-08-23 随 WI-4 新增第 7 条共享模块验收，`013` 由 33 增至 34、总数由 56 增至 57；这三个数字每改一条验收就要重数一遍，否则立刻变成假数据。）也就是说照验收清单读，`010` 上只有一条可判——而那一条（WI-8 第 5 条）本身还是「人工核对」。这样一来「Track D 做完了」在 `010` 上没有定义。
 >
-> 定义类的内容其实是齐的，只是它们**写在各 WI 的散文段落里**（标着〔定义类·验于 010〕的那 11 处），没进验收清单，所以判不了。下面这张表把它们提成 `010` 的退出门槛。
+> 定义类的内容其实是齐的，只是它们**写在各 WI 的散文段落里**（标着「定义类·验于 010」记号的那 12 处，grep 可数——**标记必须逐字一致**，WI-7 那处此前漏了「定义类·」前缀，已补齐；本句刻意不复写该记号的原样，否则它会把自己也数进去），没进验收清单，所以判不了。下面这张表把它们提成 `010` 的退出门槛。
 
 **`010` 允许改的文件集**：`designs/`、`spec-frontend-design.md`、以及本文件。**不碰生产源码**——与 `plan-tech-stack-migration.md:527`「它只改 `designs/` 与设计规格，不读一行生产代码」对齐。各 WI 的「范围」栏里凡是 `{前端源码根}` 下的路径，都属实现类那一半，不在 `010` 上动。
 
@@ -203,11 +211,11 @@ WI-1 到 WI-20 全部以这三项落地为前置，下面各 WI 的「前置 WI�
 | D-4 | WI-3 | 五态枚举（第五态定名 `stale`）与「状态未知」文案 | WI-3 | 枚举恰好五项、五个名字全部确定；未知态文案字面确定 |
 | D-5 | WI-4 | 触发条件 `READER3_ALLOW_PICKLE=1` 与列表条数上限 | WI-4 | 两处都是具体值，无「待定」「按需」 |
 | D-6 | WI-5 | `storage_format` 与索引状态两维度正交的裁定 | WI-5 | 正交性写明；两个维度的取值枚举各自齐全 |
-| D-7 | WI-6 | 零关闭路径 ＋ 二选一文案 | WI-6 | 出口恰好两个（「保留我的」／「取远端」），两条文案字面确定，且无第三条关闭路径 |
+| D-7 | WI-6 | 零关闭路径 ＋ 二选一文案 | WI-6 | 出口恰好两个，两条文案字面确定（**文案本身以 WI-6「做什么」栏为准，本行不重述**——此前本行写成「取远端」，与定义处的「采用远端」不一致，正是重述导致的漂移），且无第三条关闭路径 |
 | D-8 | WI-7 | 三元组方案（存 `--*-rgb`、alpha 留使用点）与九处 alpha 取值 35 / 45 / 18 | `spec §3.2` ＋ `§3.3`（token 定义）＋ WI-7（使用点） | 九个使用点逐一列出选择器与 alpha，无「同上」「其余同理」；且 `--p-hl-*-rgb`（亮暗共八个）与 `--r3-hl-*-rgb`（四个，在 §3.3 的四个块里各声明一遍）在 **spec** 里有字面定义 |
-| D-9 | WI-8 | 测试矩阵中不存在以骨架为断言目标的用例 | 第 5 节 | 第 5 节中 `骨架` / `skeleton` 作为**断言目标**出现的命中数为 0（可 grep，不靠人工核对） |
+| D-9 | WI-8 | 测试矩阵中不存在以骨架为断言目标的用例 | 第 5 节 | 第 5 节中 `骨架` / `skeleton` 作为**断言目标**出现的命中数为 0（可 grep，不靠人工核对）。**这不等于放弃 `prefers-reduced-motion` 下的无障碍保证**——那条落在 WI-8 验收 2 / 3 的 CSS 产物断言上，理由见 §5.0「骨架为什么连样式都不在 E2E 里断」 |
 
-**这九项全部满足，`010` 即为做完。** WI-1–WI-8 标着 `前置 WI-9` 的那 55 条验收在 `010` 上不参与判定，它们的执行归属见 WI-13 验收 10 与 WI-16 验收 16——**那两条才是它们真正被翻牌的地方**。此前这 55 条从 `010` 的账上划掉之后，没有被记到任何别的账上，等于谁都不欠。
+**这九项全部满足，`010` 即为做完。** WI-1–WI-8 标着 `前置 WI-9` 的那 56 条验收在 `010` 上不参与判定，它们的执行归属见 WI-13 验收 10 与 WI-16 验收 16——**那两条才是它们真正被翻牌的地方**。此前这 56 条从 `010` 的账上划掉之后，没有被记到任何别的账上，等于谁都不欠。
 
 ---
 
@@ -232,7 +240,7 @@ WI-1 到 WI-20 全部以这三项落地为前置，下面各 WI 的「前置 WI�
 - 内容用 children 插槽，不是 `primaryLabel` 字符串——各状态的操作按钮数量和形态不一样。
 - **testid 逐状态给**，不是共用一个 `degrade-banner`：`rd-degrade-s1` / `lib-degrade-s2` / …。`acceptance-p3` 要断言「出现的是哪一个状态」，共用 testid 断不出来。
 
-**硬约束（对比度实测）**〔**定义类·验于 010**〕：四个 `-subtle` 底色对页面底只有 1.10–1.22:1（浅色）/ 1.15–1.32:1（夜间）。**只有底色的横幅在视觉上等于不存在**——必须同时有边框或图标，边框用该状态的前景色本身（不新增 border token）。这条裁定与 tone 两档的映射（warn ＝ S1/S2/S4，danger ＝ S3/S5）是 012 朴素横幅要消费的那一半，`010` 上就要定死。
+**硬约束（对比度实测）**〔**定义类·验于 010**〕：四个 `-subtle` 底色对承载面的逐行实测值**定义在 `spec-frontend-design.md` §3.3 的淡底对比度表**（此处不重述数值——2026-08-23 正是因为两处各存一份而发现旧数复算不出）。结论：全部远低于非文字元素的 3:1 门槛，且换哪个承载面都一样。**只有底色的横幅在视觉上等于不存在**——必须同时有边框或图标，边框用该状态的前景色本身（不新增 border token）。这条裁定与 tone 两档的映射（warn ＝ S1/S2/S4，danger ＝ S3/S5）是 012 朴素横幅要消费的那一半，`010` 上就要定死。
 
 **涉及 testid**〔**定义类·验于 010**〕：`rd-degrade-s1`、`lib-degrade-s2`、`lib-degrade-s3` / `rd-degrade-s3`、`lib-degrade-s4`、以及各自的主操作按钮 `*-action` 与关闭按钮 `*-dismiss`。清单本身是文档级交付，`010` 上逐个核对拼写与前缀即可，不需要组件存在。
 
@@ -347,6 +355,8 @@ WI-1 到 WI-20 全部以这三项落地为前置，下面各 WI 的「前置 WI�
 4. 【实现类·前置 WI-9·验于 013】默认折叠：`lib-degrade-s3-list` 初始不可见；点 `lib-degrade-s3-toggle` 后可见，再点恢复不可见。
 5. 【实现类·前置 WI-9·验于 013】未迁移书目超过上限时渲染 `lib-degrade-s3-more`，其文本包含剩余条数；不超过时该元素不存在。
 6. 【实现类·前置 WI-9·验于 013】展开后列表里每一项的文本等于对应书的书名（与 `/api/library` 返回值逐条比对）。
+7. 【实现类·前置 WI-9·验于 013】**实现与文案各只有一份**：`{前端源码根}` 下，S3 横幅组件的**定义处**计数恰好为 **1**，其横幅文案字符串字面量的出现处计数同样恰好为 **1**；书库页与阅读器页两个挂载点**都从那一处 import**，两页各自的入口模块里该组件与该文案的本地定义处计数均为 **0**。共享模块的目录边界由 **WI-11** 给出（见 WI-11 的「范围」栏），本条不另指定目录名。
+   > **为什么这条非有不可**：DEG-S3 是五条降级里**唯一的全局降级**，两页都要出现（见本 WI「做什么」）。上面第 1 条只要求「两页都能查到」——两份各自实现的横幅同样能让它转绿，然后文案在一次改动里只改一半，两页说法就此分岔。这条把「一份」变成可数的断言，堵住那条路。**落在 `013` 而不是 `014`**：按 §4.0 的规则，`014` 只收「断言目标只存在于阅读器页」的条目，而本条的断言目标是共享模块的源码定义处，两页共用；DEG-S3 的重做形态本身也归 WI-13（见 WI-13「范围」）。阅读器那半边的挂载由 WI-16 复验，与本 WI 第 1 条同一口径。
 
 ---
 
@@ -431,28 +441,41 @@ WI-1 到 WI-20 全部以这三项落地为前置，下面各 WI 的「前置 WI�
 
 ### WI-7: 契约 2 收口——高亮色改 RGB 三元组
 
-**范围**：`{前端源码根}` 下的 token 定义与九处 `color-mix` 使用点；**夜纸**（reading 轴 `night`，以及 `auto`@dark chrome）下的高亮呈现方式。
+**范围**：**生产 CSS** 里高亮与笔记 chip 的九个底色使用点（清单见下方角色表：四处改写落在 `src/reader3_app/web/static/css/annotations.css`，五处新写落在笔记面板样式；两者都随 WI-9 迁进 `{前端源码根}`）；外加 `models/annotations.py` 的 `MarkerColor` 与 token 名的一一对应校验；**夜纸**（reading 轴 `night`，以及 `auto`@dark chrome）下的高亮呈现方式。
 
+> ⚠️ **`designs/reader-pro-next/` 不在本 WI 的范围内，本 WI 一个字都不改它。** 按 §1.1，原型是**被照抄的可执行规格**，不是交付物。本节凡是提到原型的地方，作用只有一个：**读取** 35 / 45 / 18 三个 alpha 与九个角色的清单。此前本节有多处把三元组改造写成「改原型」或「改完之后原型里 X 为 0」，那是把参考来源当成了交付目标，已按 §1.1 全部改指生产代码。
+>
 > `--r3-hl-*` 属 **reading 轴**，不属 chrome 轴——高亮是画在纸上、在 iframe 里的（§11-R7 规则 3）。下文的「夜间」一律指夜纸，不指界面暗色。
+>
+> **四个颜色名不由本 WI 定，也不许本 WI 改**：`src/reader3_app/models/annotations.py` 的 `MarkerColor`（`yellow` / `green` / `pink` / `blue`）是唯一权威，`notes.json` 里已存标注的 `color` 字段就是这四个字面量。token 名 `--r3-hl-{color}-rgb` 必须与它逐一对应；借本 WI 增、删、改名会让已存标注失配。
 
 **前置 WI**：
-裁定部分无（RGB 三元组方案与 alpha 取值可先定，可与 WI-1 并行；WI-10 消费它的产物）；
-落地部分前置 **WI-9**（源码根），且九处使用点的改写实际发生在**原型样式抽取进源码根之后**——在那之前 `{前端源码根}` 下没有这九处。
+裁定部分无（RGB 三元组方案与 alpha 取值可先定，可与 WI-1 并行；WI-10 消费它的产物，`--p-hl-*-rgb` / `--r3-hl-*-rgb` 的声明由 WI-10 按 spec §3.2 / §3.3 落地）；
+落地部分前置 **WI-9**（源码根）——九处使用点的改写发生在 `annotations.css` 及笔记面板样式迁进 `{前端源码根}` 之后。
 
 **做什么**：这条契约**是 alpha 问题，不是颜色问题**。
 
-九处 `color-mix`（不是八处），选择器名以原型实际写法为准：`.note-chip.is-*` ×4 用 35%（`designs/reader-pro-next/index.html:637-640`）、`.anno.is-marker.is-*` ×4 用 45%（同文件 `:663-666`）、`.anno.is-note` ×1 用 18%（`:677`），全是 `color-mix(in srgb, X N%, transparent)`——在 sRGB 里这就是纯 alpha。所以「chip 档该定什么显式颜色值」是个**假问题**。
+**「九处」是九个角色，不是九个字符串。** 角色清单与 alpha 取值从原型**读出来**（`designs/reader-pro-next/index.html` 的内联 `<style>`，选择器 `.note-chip.is-*` ×4 用 35%、`.anno.is-marker.is-*` ×4 用 45%、`.anno.is-note` ×1 用 18%），全是 `color-mix(in srgb, X N%, transparent)`——在 sRGB 里这就是纯 alpha。所以「chip 档该定什么显式颜色值」是个**假问题**。九个角色是：
 
-> ⚠️ **不要去搜 `.anno-chip`**：这个类名在全仓库 **0 命中**，是此前记错的名字。chip 档的真名是 `.note-chip`，marker 档的真名是 `.anno.is-marker`。35 / 45 / 18 三个百分比是实测值，正确，不动。
+| # | 角色 | alpha | 生产端今天的形态（实测 `static/css/annotations.css`） |
+|---|---|---|---|
+| 1–4 | 笔记 chip × 四色 | .35 | **不存在**——生产端全仓库 `chip` 0 命中，这四处是新写 |
+| 5–8 | marker 高亮 × 四色 | .45 | `mark.annotation.annotation--marker.annotation--{color}`，写死 `rgba(…, 0.75)` 字面量，**既无 token 也不是 45%** |
+| 9 | 笔记标记底色 | .18 | `mark.annotation.annotation--note` 只有 `cursor: pointer`，**根本没有底色** |
+
+所以本 WI 在生产端是「**五处新写 ＋ 四处改写**」，不是「把九处 `color-mix` 换掉」——生产 CSS 里今天一处 `color-mix` 都没有。选择器名以**迁移后生产组件的实际类名**为准（marker 与 note 两档沿用 `annotations.css` 现有类名，chip 档随笔记面板一并新写）；原型那三组选择器只是角色的**代号**，不要照抄进生产 CSS。
+
+> ⚠️ **不要去搜 `.anno-chip`**：这个类名在原型与生产端**均 0 命中**，是此前记错的名字。原型里 chip 档的真名是 `.note-chip`，marker 档的真名是 `.anno.is-marker`。35 / 45 / 18 三个百分比是实测值，正确，不动。
 
 裁定：**存 RGB 三元组，alpha 留在使用点**。
 
 **token 本身的定义在 `spec-frontend-design.md` §3.2（`--p-hl-*-rgb` 八个）与 §3.3（`--r3-hl-*-rgb` 四个 × 四块），那是唯一定义处；本 WI 只管使用点。** 此前这里贴过一份 `--p-hl-yellow-rgb: 251 191 36;` 的 CSS，而规格里当时一个 `-rgb` 都没有——两边一旦都写值就会各自漂移，且 0.8 的悬空 lint 只扫规格，扫不到这里。使用点的形态是：
 
 ```css
-/* 定义见 spec §3.2 / §3.3；下面两行是本 WI 要产出的东西 */
-.note-chip.is-yellow      { background: rgb(var(--r3-hl-yellow-rgb) / .35); }
-.anno.is-marker.is-yellow { background: rgb(var(--r3-hl-yellow-rgb) / .45); }
+/* token 定义见 spec §3.2 / §3.3，由 WI-10 落地；
+   下面两行是本 WI 要在生产 CSS 里产出的东西，类名以迁移后的生产组件为准 */
+.note-chip.is-yellow                              { background: rgb(var(--r3-hl-yellow-rgb) / .35); }
+mark.annotation.annotation--marker.annotation--yellow { background: rgb(var(--r3-hl-yellow-rgb) / .45); }
 ```
 
 落选方案与理由：`color-mix()` 就是要被删掉的那个东西；`rgb(from var(--x) r g b / .35)` 是相对颜色语法，支持度比 `color-mix` 还差；8 位十六进制要手调 16 个值。三元组 ＋ 斜杠 alpha 从 Safari 12.1 / Chrome 65 起可用，零 fallback。
@@ -461,7 +484,7 @@ WI-1 到 WI-20 全部以这三项落地为前置，下面各 WI 的「前置 WI�
 
 更硬的结论：paper-night 底 L=0.0075、正文 `#c2ccdb` L=0.5977 —— 「块对页面 ≥3:1」要求 L≥0.1224，「正文对块 ≥4.5:1」要求 L≤0.0939，**解集为空**。所以夜间高亮**必须有非背景提示**（下划线 / 左侧竖条 / 波浪线）。浅色不受影响（45% 黄压白仍有 9.95）。
 
-另有 D-5 遗留：`.anno.is-note` 用的 18% `--blue-500` 在 D-5 之后是品牌色，会和选区、focus ring 撞色，一并换掉。
+另有 D-5 遗留：**角色 9**（笔记标记底色）在原型里用的是 18% `--blue-500`，而 D-5 之后 `--blue-500` 是品牌色，照抄进生产 CSS 会和选区、focus ring 撞色。生产端取 `--r3-hl-*-rgb` 里的非品牌色，alpha 仍是 .18。
 
 **涉及 testid**：无新增（本项改的是 token 与样式）。
 
@@ -469,16 +492,16 @@ WI-1 到 WI-20 全部以这三项落地为前置，下面各 WI 的「前置 WI�
 
 **验收标准**：
 
-1. 【实现类·前置 WI-9·验于 013】**`{前端源码根}` 下的全部 `.css` 里 `color-mix(` 出现次数为 0。**
-   > ⚠️ 范围必须写成「`{前端源码根}` 下的 CSS」，不能写「全仓库 CSS」——实测 `src/` 下 `color-mix(` 计数**今天就已经是 0**，九处全在 `designs/reader-pro-next/index.html` 的 HTML 内联 `<style>` 里，不是 `.css` 文件。按「全仓库 CSS」写，这条**真空通过**，什么都没证明。本条的前提是原型样式已抽取进源码根；抽取之前它同样真空成立，所以它必须与验收 2 一起判（2 要求那九处确实存在于源码根并已改写）。
-2. 【实现类·前置 WI-9·验于 013】九个原使用点在 `{前端源码根}` 下全部存在且全部为 `rgb(var(--r3-hl-*-rgb) / <alpha>)` 形式，alpha 值分别为 .35（`.note-chip.is-*` 4 处）、.45（`.anno.is-marker.is-*` 4 处）、.18（`.anno.is-note` 1 处，且底色不再是品牌蓝）。
-3. 【实现类·前置 WI-9·验于 013】token 悬空 lint（0.8）通过，`--r3-hl-*-rgb` 全部有定义。
+1. 【实现类·前置 WI-9·验于 013】**`{前端源码根}` 下的全部 `.css` 里，九个角色的底色声明中不含任何字面颜色值**：`color-mix(`、`#rrggbb` / `#rgb`、以及 `rgb(` / `rgba(` 后直接跟数字的写法，三类命中数合计为 0；九处只能是 `rgb(var(--r3-hl-*-rgb) / <alpha>)`。
+   > ⚠️ **判据必须落在生产代码上，不能落在 `designs/`。** 此前这条写的是「`{前端源码根}` 下的 `.css` 里 `color-mix(` 出现次数为 0」，附注还解释它得等「原型样式抽取进源码根」才不真空——两处都把原型当成了要被改造的那份代码。实测两点推翻它：① 生产端 `src/` 下 `color-mix(` **今天就已经是 0**，九个角色里五个在生产端根本不存在、四个写的是 `rgba(255, 229, 143, 0.75)` 这类字面量，所以旧判据一行代码不动也能绿；② 九处 `color-mix` 全在 `designs/reader-pro-next/index.html` 的内联 `<style>` 里，而原型按 §1.1 **不许改也不用改**，「原型里 `color-mix` 为 0」永远不该是本 WI 的完成判据。新写法直接查生产 CSS 里有没有字面色，与角色是否存在无关，因此不再需要「和验收 2 一起判」这个附加条件。
+2. 【实现类·前置 WI-9·验于 013】上表九个角色在 `{前端源码根}` 的生产 CSS 里**全部存在**（含五个新写的），且底色全部为 `rgb(var(--r3-hl-*-rgb) / <alpha>)`，alpha 分别为 .35（chip 四色）、.45（marker 四色）、.18（笔记标记 1 处，且所用 token 不是品牌蓝）。**判的是生产文件里的九条声明，不是 `designs/` 里的九条。**
+3. 【实现类·前置 WI-9·验于 013】token 悬空 lint（0.8）通过，`--r3-hl-*-rgb` 全部有定义；且这四个 token 的颜色名集合与 `src/reader3_app/models/annotations.py` 的 `MarkerColor` **逐一相等**（既不多也不少，字面量比对）。
 4. 【实现类·前置 WI-9·验于 014】**亮纸**（`paper` / `sepia` / `green` ＋ `auto`@light）下 marker 四色合成后与该纸墨色的对比度均 ≥4.5:1（用计算值断言，不靠肉眼）。
 5. 【实现类·前置 WI-9·验于 014】**夜纸**（`night` ＋ `auto`@dark）下四色 marker 元素**除背景外**还带至少一个非背景视觉提示：断言其 `text-decoration-line` 非 `none`，或 `border-left-width` 大于 0。
 6. 【实现类·前置 WI-9·验于 014】夜纸下 marker 的背景色 alpha 通道不等于 1。
-7. 【实现类·前置 WI-9·验于 014】`.anno.is-note` 的解析背景色不等于 `--r3-accent` 的解析色。
+7. 【实现类·前置 WI-9·验于 014】**角色 9**（生产端的笔记标记，今天是 `mark.annotation.annotation--note`）的解析背景色不等于 `--r3-accent` 的解析色。
 
-> **定义类的那一半**〔**验于 010**〕：三元组方案（存 `--*-rgb`、alpha 留使用点）、九处的 alpha 取值 35/45/18、以及「夜纸必须有非背景提示」这条硬结论（paper-night 下 L≥0.1224 与 L≤0.0939 解集为空的推论），都是**裁定**，读本节就能核对，不依赖源码根存在。
+> **定义类的那一半**〔**定义类·验于 010**〕：三元组方案（存 `--*-rgb`、alpha 留使用点）、九个角色的 alpha 取值 35/45/18、以及「夜纸必须有非背景提示」这条硬结论（paper-night 下 L≥0.1224 与 L≤0.0939 解集为空的推论），都是**裁定**，读本节就能核对，不依赖源码根存在。**角色清单从原型读，落点在生产 CSS**——这一条本身也是裁定，见本节开头的范围说明。
 
 ---
 
@@ -502,9 +525,9 @@ WI-1 到 WI-20 全部以这三项落地为前置，下面各 WI 的「前置 WI�
 **验收标准**：
 
 1. 【实现类·前置 WI-9·验于 013】组件源码内不含 `data-testid` 属性。
-2. 【实现类·前置 WI-9·验于 013】`prefers-reduced-motion: reduce` 下，骨架元素的 `animation-name` 计算值为 `none`（或 `animation-duration` 为 0s）。
-3. 【实现类·前置 WI-9·验于 013】未开 reduced-motion 时 `animation-name` 不为 `none`。
-4. 【实现类·前置 WI-9·验于 013】书库首屏在数据返回前，`lib-book-grid` 内的骨架占位数量大于 0；数据返回后骨架数量为 0 且书卡数量等于返回条数。
+2. 【实现类·前置 WI-9·验于 013】`prefers-reduced-motion: reduce` 下骨架静止：**构建产物 CSS 中存在** `@media (prefers-reduced-motion: reduce)` 块，其中 `.r3-skeleton` 的 `animation` 为 `none`，且 `background` 换成纯色 `var(--r3-surface-sunken)`（规格 §5.2：只停动画不换底会留下一块左深右浅的静止渐变，比纯色更像渲染故障）。**这是源码 / 产物断言，不是运行时断言**——理由见 §5.0「骨架为什么连样式都不在 E2E 里断」。
+3. 【实现类·前置 WI-9·验于 013】默认（未开 reduced-motion）规则里 `.r3-skeleton` 的 `animation-name` 不为 `none`。与第 2 条成对，判在同一份产物 CSS 上——两条都不进 E2E。
+4. 【实现类·前置 WI-9·验于 013】书库首屏加载态**不以骨架为断言目标**：断 `lib-book-grid` 的 `aria-busy` 在数据返回前为 `true`、返回后为 `false`，且返回后书卡数量等于接口条数（矩阵对应行是 §5 的 FD-20）。**此前本条写的是「骨架占位数量大于 0」——那是在 E2E 里抢加载窗口，与本 WI 第 5 条自相矛盾**，已按规格 §5.2 的第 2 条改掉。
 5. 【定义类·验于 010】测试矩阵中不存在任何以骨架为断言目标的用例：**第 5 节内 `骨架` 与 `skeleton` 出现在「断言目标」列或断言描述中的命中数为 0**（grep 可判；本 WI 是 `010` 上唯一带 `验于 010` 的验收，做成人工核对就等于 `010` 一条都判不了）。允许它们出现在「不做什么」这类否定语境里，判定时按整行语义排除，排除的行要在 PR 描述里列出。
 
 ---
@@ -634,7 +657,7 @@ WI-1 到 WI-20 全部以这三项落地为前置，下面各 WI 的「前置 WI�
 
 - **名字**：token 硬编码 lint。与 token 悬空 lint 成对，接进本 WI 验收第 3 条那同一条命令。
 - **扫描范围**：`{前端源码根}` 下所有 `.css` **与 `.ts`**，以及 `src/reader3_app/web/templates/*.html`。`.ts` 必须进扫描集：实测 `js/epub-renderer.js:95` 今天就硬编码着 `font-family: "Noto Serif SC", serif`、`:186` 往 iframe 注入 `<link>`（见 WI-16），这些样式字面量是从脚本里写出去的，只扫 `.css` 一行都抓不到。
-- **违规项**，七类：
+- **违规项**，八类：
   1. 裸 hex（`#rgb` / `#rrggbb` / `#rrggbbaa`）；`rgb()` / `rgba()` 字面量。
   2. 裸 `z-index: <数字>`。
   3. 裸 `font-size: <数字>`。
@@ -857,15 +880,17 @@ WI-13 / WI-16 要照抄原型 `designs/reader-pro-next/`，而原型用的是**�
 
 **范围**：`{前端源码根}/shared/escape.ts`、`toast.ts`、`dom.ts`、`debug.ts`。
 
-**前置 WI**：WI-9，**以及 007 的任务 0.4**（见下）。
+**前置 WI**：WI-9。（007 的 0.4 已交付，但它**不**决定 `escape.ts` 的形状，见下。）
 
 **做什么**：把散在各处的公共工具收成共享模块。
 
-- `escape.ts` 的形状由 **0.4 的 `escapeHtml` 收敛结论**决定，本 WI 不另作裁定。
+- `escape.ts` 的形状**由本 WI 裁定**（ET-9），不由 007 的 0.4 决定——0.4 的范围止于 IIFE 化。
 
-> ⚠️ **0.4 是个悬空前置，本 WI 必须自带退路。** `tasks/007-hygiene-and-contracts.md:23` 把任务 0.4（四个 JS 文件 IIFE 化）标为 ❌，理由写着「**没有 JS 测试宿主（要到 013 才有）**」，`:45` 也把 0.4 列在「还没动的」里。而 013 就是 WI-9–WI-13 这批。于是成环：0.4 等测试宿主，测试宿主等本 WI 所在的批次。
+> ⚠️ **0.4 已交付，但它没有做收敛——收敛仍是本 WI 的活。** 0.4 于 2026-08-23 完成（commit `f11b346`，见 §3）：四个 JS 文件 IIFE 化，顶层符号不再挂 `window`，四份 `escapeHtml` 不再互相覆盖。**但它们仍然是四份实现**，只是各自关在自己的 IIFE 里。
 >
-> **裁决：`escapeHtml` 的收敛在本 WI 内完成，不等 0.4。** 结论现在就能给，因为四份实现实测只有两派、且**无安全差异**：
+> ~~此前这里写的是「0.4 是个悬空前置，本 WI 必须自带退路」，理由是 007 把 0.4 标为 ❌、卡在「没有 JS 测试宿主（要到 013 才有）」，而 013 就是 WI-9–WI-13 这批，于是成环。~~ 那个环 2026-08-23 已经解开——007 没等测试宿主就把 IIFE 化做完了。**但下面这条裁决不变，只是理由从「破环」换成「0.4 的范围本来就不含收敛」**：
+>
+> **裁决：`escapeHtml` 的收敛在本 WI 内完成（ET-9）。** 结论现在就能给，因为四份实现实测只有两派、且**无安全差异**：
 >
 > | 派 | 出处 | 写法 | 空值处理 |
 > |---|---|---|---|
@@ -874,7 +899,7 @@ WI-13 / WI-16 要照抄原型 `designs/reader-pro-next/`，而原型用的是**�
 >
 > 两派转义的是**同一组五个字符** `& < > " '`，`&#39;` 与 `&#039;` 是等价实体。唯一实质分歧在空值：**取 B 的空值语义**（把 `null` / `undefined` 渲染成 `"null"` 是缺陷不是特性），写法取 A 的 `replaceAll`（可读）。`escape.ts` 导出单个 `escapeHtml(value: unknown): string`。
 >
-> 007 的 0.4 若日后仍要做，改为**引用本 WI 的结论**，不得重新裁定。
+> 007 的 0.4 已经收工且没有碰这个裁定，所以本 WI 是 `escapeHtml` 语义的**唯一定义处**；日后任何一侧要改，改这里，不得在 007 那边另起一份。
 - `showToast` / `elementDebugInfo` / `getEventTargetElement` 从 `annotations.js` 移出来落这里——WI-14 的八模块行数合计约 1085、文件实际 1127，差额就是这三个。
 - 设计规格 §5 标注 `Toast` 组件**不存在**，本 WI 要把它建出来。
 - 44 处 `console.log`（`annotations.js` 33 ＋ `epub-renderer.js` 9 ＋ **`pagination.js` 2**；后者随 WI-9 §9.2 整文件删除，实际要改的是 42 处）换成 `debug.ts` 分层，由 `localStorage["reader3.debug"]` 控制、默认关；ESLint 开 `no-console` 但放行 warn / error。
@@ -890,7 +915,8 @@ WI-13 / WI-16 要照抄原型 `designs/reader-pro-next/`，而原型用的是**�
 3. `escape.ts` 只导出单个 `escapeHtml`；源码内 `escapeHtml` 的**定义**处（非引用处）计数为 1，四份旧实现（`library-search.js` `search.js` `ai.js` `settings.js`）的本地定义全部删除。
    - a. `escapeHtml(null)` 与 `escapeHtml(undefined)` 均返回空串（取 B 派语义，见上表）。
    - b. 参数化用例覆盖 `& < > " '` 五个字符各自的输出实体，逐一比对字面量。
-4. Toast 挂载后 N 毫秒自动消失，且同时最多存在一个 Toast 容器元素。`N` ＝ `--r3-duration-slow` 的 8 倍（从 `getComputedStyle` 读值再乘，断言用同一算式），见 §5.0 占位符表。
+4. Toast 挂载后 N 毫秒自动消失，且同时最多存在一个 Toast 容器元素。`N` ＝ `getComputedStyle` 读到的 `--r3-dwell-toast`（断言用同一个读值，既不写死常数、也不以任何 `--r3-duration-*` 为基），求值规则见 §5.0 占位符表，取值裁决见设计规格 §5.3。
+   - a. **同一条在 `prefers-reduced-motion: reduce` 下重跑一遍**（Playwright `emulate_media(reduced_motion="reduce")`）：`--r3-dwell-toast` 的解析值与默认下**逐字相等且不为 `0ms`**，Toast 仍然停留 N 毫秒之后才消失——此时进出场过渡确实降到 `0ms`（§3.5.3 单点降级），停留不受影响。**这一子条是本验收存在的理由**：旧写法以 `--r3-duration-slow` 为基，在这里会算出 `0 × 8 = 0`，于是「Toast 一挂载就消失」和「断言期望值为 0」同时成立，测试全绿而减少动效的用户一个字都读不到。
 5. `showToast` / `elementDebugInfo` / `getEventTargetElement` 在 `{前端源码根}/reader/` 下的定义处计数为 0（确实移走了）。
 
 ---
@@ -909,7 +935,9 @@ WI-13 / WI-16 要照抄原型 `designs/reader-pro-next/`，而原型用的是**�
 
 移动端 390×844 下 ollama 行的 `Enabled` 溢出（§7 实测第四项）在这一项修掉。
 
-**第 3 分区「外观」是新增的**，只放 **chrome 轴**：界面明暗三选一（跟随系统 / 浅色 / 深色）＋ 界面语言。**这里没有纸色**——纸色是另一根轴，控件在 WI-18 的阅读设置面板里（§11-R7）。三选一写 `reader3.ui.colorScheme`，`system` 时**移除** `<html data-theme>`；token 与 FOUC 脚本由 WI-10 提供，本 WI 只挂控件。
+**第 3 分区「外观」是新增的**，只放 **chrome 轴**：界面明暗三选一（跟随系统 / 浅色 / 深色）。**这里没有纸色**——纸色是另一根轴，控件在 WI-18 的阅读设置面板里（§11-R7）。三选一写 `reader3.ui.colorScheme`，`system` 时**移除** `<html data-theme>`；token 与 FOUC 脚本由 WI-10 提供，本 WI 只挂控件。
+
+> ~~此前这一分区还写着「＋ 界面语言」。~~ **2026-08-23 裁决：界面文案 zh-CN 为唯一交付语言**（此前 `spec-frontend-design.md` §0 定的「en 为主」已被推翻），**界面语言控件随之删掉**——只有一个 locale 时它是空操作。理由不在这里重述，见 `spec-frontend-design.md` §6.1（与那边删掉 `Auto suggested questions (future)` 同一条理由）。本分区因此**只有明暗三选一一组控件**，`涉及 testid` 栏里也没有语言控件的 testid。
 
 **涉及 testid**：`set-appearance-scheme-system` / `-light` / `-dark`、`set-provider-*`、`set-data-cache`、`set-data-conversations`、`set-data-reindex`、`set-export-json`、`set-export-settings`、`set-rag-chunks`、`set-rag-context`、`set-rag-embedding`、`set-confirm-dialog`、`set-confirm-ok`、`set-confirm-cancel`。
 
@@ -968,7 +996,7 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 7. 空库、筛选无结果、加载失败三种状态各自渲染对应 testid，且三者互斥（同一时刻只有一个可见）。
 8. `lib-theme-toggle` 连点三次回到初始态；`aria-label` 随态更新；三态与设置页「外观」互通（在设置页选 `dark` 后回书库，按钮显示 `dark`）。
 9. **迁出的样式不许带着硬编码走**：4b 产生的那些 `.css` 文件全部通过 **§9.3 的 token 硬编码 lint**，即 `library.html` 这一项从该 lint 的白名单里**划掉**。少了这一条，4b 就只是把 1075 行硬编码从模板搬进 CSS 文件——`<style` 计数归零了，`#rrggbb` 与离档字号一个没少。本条与 4b 必须同批转绿，不许分两次。
-10. **Track D 的 4A 半边在这里结账**：WI-1–WI-8 中标着 `〔实现类·前置 WI-9〕验于 013` 的**全部** 33 条验收已实际执行并全绿，条数与 §4.0 分布表一致。少了这一条，那 33 条从 `010` 的账上划走之后落不到任何账上——`010` 说「未激活」，`013` 从不提它们，等于谁都不欠。**判法**：跑一遍 §4.0 那 33 条，逐条二值记录，全绿才算本 WI 完成。
+10. **Track D 的 4A 半边在这里结账**：WI-1–WI-8 中标着 `〔实现类·前置 WI-9〕验于 013` 的**全部** 34 条验收已实际执行并全绿，条数与 §4.0 分布表一致。少了这一条，那 34 条从 `010` 的账上划走之后落不到任何账上——`010` 说「未激活」，`013` 从不提它们，等于谁都不欠。**判法**：跑一遍 §4.0 那 34 条，逐条二值记录，全绿才算本 WI 完成。
 
 ---
 
@@ -1088,7 +1116,7 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 
 **做什么**：按设计规格 §6.3 重做阅读器外壳。
 
-- **工具栏** 6 个 SVG 按钮 ＋ 新增 active 态，z-index 高于所有面板（修 D6：现状 `closeAllPanels()` 只关搜索和 AI，TOC / Notes 打开时点搜索按钮会超时）。
+- **工具栏** rail 5 个 SVG 按钮（目录 / 搜索 / 笔记 / AI ＋ 字体 `Aa`）＋ 新增 active 态，z-index 高于所有面板。**返回键不在 rail 上**，在页头 `rd-header-back`——理由见规格 §2.1.4 的 C1（返回没有激活态，混进 `aria-pressed` 组里会逼出一个假的 `aria-pressed="false"`）（修 D6：现状 `closeAllPanels()` 只关搜索和 AI，TOC / Notes 打开时点搜索按钮会超时）。
 - **面板互斥**：单一 `activePanel` 状态。≥1280px 用 push 布局，<1280px 用 overlay。
 - **焦点**：打开时焦点移入、Esc 关闭并**归还焦点**、Tab 在面板内循环。现状 `resetFocusAfterClose()` 只做了 blur。
 - **导航区**：**删除隐形 nav-zone**，改显式 `‹` / `›` 翻页按钮（带 `aria-label`），`<768px` 隐藏（该档由工具栏翻页）。章节导航（跳 spine）与页内翻页在语义上必须可区分。裁决见规格 §11-R2——原先的「`<1024px` 禁用」是用视口宽度代理触屏，代理是错的。
@@ -1098,7 +1126,7 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 
 **K3 硬约束（覆盖层挂载点）**：只允许两种挂载——`<body>` 直接子元素（生产现状，零改动即合规），或 `<dialog>` ＋ `showModal()` 进 top layer。挂在 `.reader-shell` 里不是禁止，但**每次都要证明**。`.page-flow` 已经带着 `will-change: transform`，就是那个反面教材。
 
-**涉及 testid**：`rd-toolbar`、`rd-toolbar-toc`、`rd-toolbar-notes`、`rd-toolbar-search`、`rd-toolbar-ai`、`rd-toolbar-settings`、`rd-toolbar-back`、`rd-panel-toc`、`rd-panel-notes`、`rd-panel-search`、`rd-panel-ai`、`rd-anno-toolbar`、`rd-anno-copy`、`rd-anno-note`、`rd-anno-ask`、`rd-anno-delete`、`rd-anno-color-yellow` / `-green` / `-pink` / `-blue`、`rd-note-editor`、`rd-note-tooltip`、`rd-degrade-s1`、`rd-page-prev`、`rd-page-next`。
+**涉及 testid**：`rd-toolbar`、`rd-toolbar-toc`、`rd-toolbar-notes`、`rd-toolbar-search`、`rd-toolbar-ai`、`rd-toolbar-settings`、`rd-header-back`、`rd-panel-toc`、`rd-panel-notes`、`rd-panel-search`、`rd-panel-ai`、`rd-anno-toolbar`、`rd-anno-copy`、`rd-anno-note`、`rd-anno-ask`、`rd-anno-delete`、`rd-anno-color-yellow` / `-green` / `-pink` / `-blue`、`rd-note-editor`、`rd-note-tooltip`、`rd-degrade-s1`、`rd-page-prev`、`rd-page-next`。
 
 **涉及降级状态**：DEG-S1（重做形态）。
 
@@ -1154,18 +1182,15 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 
 **前置 WI**：WI-15、WI-16。
 
-**做什么**：设计规格 §6.3 的阅读设置表：
+**做什么**：实现设计规格 [§6.3](./spec-frontend-design.md) 那张阅读设置控件表的四个控件——纸色主题 / 字号 / 行距 / 字体。
 
-| 项 | 范围 | 默认 | 存储 | 作用域 |
-|---|---|---|---|---|
-| 主题（纸色） | auto / paper / sepia / green / night | **auto** | `localStorage["reader3.reader.theme"]` | 值全局，视觉仅 `.reader-shell` ＋ iframe |
-| 字号 | 14–24px，步长 1 | 17 | `localStorage["reader3.reader.fontSize"]` | 仅 iframe |
-| 行高 | 1.4–2.4，步长 0.1 | 1.9 | `localStorage["reader3.reader.lineHeight"]` | 仅 iframe |
-| 字体 | system / serif 二选一 | system | `localStorage["reader3.reader.fontFamily"]` | 仅 iframe |
+> **值域、步长、默认值、存储 key、作用域五项的唯一定义处是规格 §6.3 的控件表，本 WI 不复述数值**（S12）。施工时照那张表取值；两处若不一致，改的是本文件，不是 §6.3。
+>
+> 这一段此前是那张表的**逐列副本**，副本与正本在行距值域上漂了 0.1 并同时存活（T-13）。删副本是那条裁决的落点之一，**别再抄回来**。
 
 > **纸色的白档叫 `paper`，不是 `white`**；key 命名空间是 `reader3.<区域>.<camelCase>`。两条都是规格 §11-R5 的裁决，理由是生产已发货 `reader3.library.rightPanelCollapsed`。
 >
-> **这一栏不是界面明暗。** 界面明暗是另一根轴（`data-theme`，控件在 header 与设置页「外观」分区，见 WI-13），存在 `reader3.ui.colorScheme` 里。本表只管纸色。裁决见规格 §11-R7，契约唯一定义处是 §3.3。
+> **这一栏不是界面明暗。** 界面明暗是另一根轴（`data-theme`，控件在 header 与设置页「外观」分区，见 WI-13），存在 `reader3.ui.colorScheme` 里。规格 §6.3 那张表只管纸色。裁决见规格 §11-R7，契约唯一定义处是 §3.3。
 >
 > **默认 `auto` 而不是 `paper`**：`auto` = 跟随界面明暗（light chrome → 白纸，dark chrome → 深纸），实现是「没有覆盖规则」而不是一段 JS 解析。绝对白纸配深界面是刺眼的开箱体验。
 
@@ -1227,7 +1252,10 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
     - f. **离线可用**：拦截并 abort 全部 `font` 类型网络请求后选 `serif` 仍正常渲染；service worker 预热后按 WI-20 的离线壳重新加载，字体网络请求数为 0。
 11. `baseline-1b` 零改动通过。
 12. 只存在 legacy `reader3-font-settings` 时加载阅读器：新 key 被写出，值等于 legacy 里的值，且实际渲染字号与行高等于 legacy 值（**偏好没被重置**）。
-13. legacy 值越界（例如字号 99）时钳到合法区间（24），不抛错、不回落默认值。
+13. legacy 值越界时钳到合法区间，不抛错、不回落默认值。三小条都要过：
+    - a. 字号 `99` → 上界 `24`；行距 `3.0` → 上界、`1.0` → 下界（**行距两端各测一次**）。
+    - b. **钳位在两条读取路径上一致。** 现状 `static/js/epub-renderer.js` 的 `getFontSettings()` 只写了 `Number(x) || 默认值`——挡 `NaN` 不挡越界，于是同一个越界值会让 iframe 按它渲染、而面板显示默认值，用户看到的当前值不是真实值、也调不回来。重写后不许再有第二套校验。
+    - c. **legacy 行距为上界时原样存活、不被钳**：存 `{"fontSize":17,"lineHeight":2.5}` → 新 key 读出 `2.5`，渲染行高为 `2.5`。这一条是 T-13 值域裁决（规格 §2.1.4 C5）的守卫——它一旦红了，说明值域被改回了容不下上界的区间，全体调到最大行距的老用户会**静默位移**。
 14. 迁移完成标记存在后再次加载：不再读 legacy key（把 legacy 改成另一个值，断言渲染不变）；且 `reader3.reader.theme` **未被写入**，选中项仍是 `auto`。
 15. 切纸色时 `<html>` 的 `data-reading-theme` 被改写（`auto` 也写出属性，不是移除），`data-theme` **不被触碰**；反过来切界面明暗时 `data-reading-theme` 不被触碰。
 16. `auto` 下切换界面明暗，iframe 内正文背景色随之改变；`paper` 下切换界面明暗，iframe 内正文背景色**不变**。
@@ -1344,7 +1372,7 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 |---|---|---|
 | 连按 `N＋1` 次 Tab / Shift+Tab | 该容器内**可聚焦元素的个数** | 用例开始时枚举容器子树里的可聚焦元素并计数，不写死常数。按 `N＋1` 次的意义是「绕满一圈再多一次」，只有取实际个数才成立 |
 | 几何误差 `≤N px` | **2** | 亚像素舍入与 1px 边框的合计容差。写死 2，不按元素调 |
-| Toast `N` 毫秒后消失 | `--r3-duration-slow` 的**整数倍**（默认 8 倍） | 从 `getComputedStyle` 读 `--r3-duration-slow` 再乘，断言也用同一个算式。写死 4000 会在动效档调整后变成孤儿常数 |
+| Toast `N` 毫秒后消失 | **`--r3-dwell-toast` 的解析值**（取值裁决在设计规格 §5.3，本表不重述秒数） | 从 `getComputedStyle` 读 `--r3-dwell-toast`，断言也用同一个读值。写死常数会变成孤儿；而**以 `--r3-duration-*` 为基更糟**——那一族在 `prefers-reduced-motion` 下是 `0ms`，算式会算出 0、断言照常通过，缺陷对它自己的测试不可见（诊断见规格 §5.3、§3.5.3 例外 3） |
 
 > 三条都是**可执行的求值规则**，不是「实施时自定」。任何一处把 `N` 换成裸常数（几何容差的 `2` 除外），视同违反本节。
 
@@ -1390,6 +1418,10 @@ E2E 侧：**不要写 Node Playwright Test 的 `webServer` 语法**，用 pytest
 - 截图比对
 
 **不测的东西**：WI-8 的 Skeleton 是过渡态，**矩阵里没有任何一条以骨架为断言目标**——断言它之后的东西。
+
+> **骨架为什么连样式都不在 E2E 里断。** 「读骨架的 `animation-name`」看起来是个静态断言，不涉及时序——但要读到它，骨架必须正在屏幕上，也就是必须抢在数据返回之前抓住那一帧。**在 E2E 里，「读骨架的静态样式」和「断言骨架出现」是同一个时序赌局**，只是前者不像。本矩阵 §5.1–§5.9 的全部 `F*` 行都是 `pytest-playwright` E2E（见上方执行器表），所以这个赌局是真的。
+>
+> 因此 `prefers-reduced-motion` 下骨架静止这条无障碍保证**不落在本矩阵里**，落成 WI-8 验收 2 / 3 的 **CSS 产物断言**。这不是降级：源码断言每次都跑，而一条抓不到加载窗口的 E2E 断言会静默地什么都没验——绿灯，零保证。同一条纪律本节开头已经写过一遍（「某个旧 class 不该再存在」不是 E2E 用例，是 lint 断言）。
 
 **testid 前缀**：书库 `lib-`、阅读器 `rd-`、设置 `set-`。canonical 正则在 0.5，从代码块复制、不要从表格复制。
 
@@ -1440,7 +1472,7 @@ E2E 侧：**不要写 Node Playwright Test 的 `webServer` 语法**，用 pytest
 
 | 用例 ID | 归属 WI | 断言目标 | 预期结果 |
 |---|---|---|---|
-| FB-R01 | WI-16 | `rd-toolbar-toc` / `-notes` / `-search` / `-ai` / `-settings` / `-back` | 六个按钮八态全过；每个都有 `aria-label`（不是 `title`）；active 态 `aria-pressed` 正确 |
+| FB-R01 | WI-16 | rail：`rd-toolbar-toc` / `-notes` / `-search` / `-ai` / `-settings`；页头：`rd-header-back` | 六个按钮八态全过（rail 5 ＋ 页头 1）；每个都有 `aria-label`（不是 `title`）；active 态 `aria-pressed` 正确 |
 | FB-R02 | WI-17 | `rd-page-prev` / `rd-page-next` | **不做防抖去重**——连点 3 次必须前进 3 页（见 FR-01）。首页时 prev 的行为按 FR-03 |
 | FB-R03 | WI-17 | `rd-chapter-prev` / `rd-chapter-next` | 首章 prev、末章 next 时 `disabled` 为真且不发请求 |
 | FB-R04 | WI-16 | `rd-anno-copy` / `-note` / `-ask` / `-delete` | 七个操作八态全过；`rd-anno-delete` 与其余项有视觉分隔；未选中标注时 delete `disabled` |
@@ -1453,6 +1485,7 @@ E2E 侧：**不要写 Node Playwright Test 的 `webServer` 语法**，用 pytest
 | FB-R11 | WI-16 | `rd-ai-send` / `rd-ai-stop` | 空输入时 send `disabled`；发送后 send 变 `disabled`、stop 可用；stop 后流终止且不再追加文本 |
 | FB-R12 | WI-16 | `rd-ai-new` / `rd-ai-clear` / `rd-ai-history` / `rd-ai-export` | 八态全过；`rd-ai-clear` 走确认弹层，不用 `confirm()` |
 | FB-R13 | WI-18 | `rd-pref-size-inc` / `-dec` | 14 时 dec `disabled`、24 时 inc `disabled`（边界两端各断言一次） |
+| FB-R13a | WI-18 | `rd-pref-leading` 的加/减控件 | 下界时减 `disabled`、上界时增 `disabled`（边界两端各断言一次，端点值取规格 §6.3 控件表）；从默认值连点增**恰好 6 次**到达上界，且每一步的显示值与 `localStorage["reader3.reader.lineHeight"]` 都是 1 位小数、不出现 `1.7000000000000002` 这类浮点残差。一条用例同时钉住端点可达、步长、默认值落在步进网格上、以及 `Math.round(x * 10) / 10` 没在重写中丢掉。⚠️ 加/减两个控件的 testid 尚未进 WI-18 的 testid 清单（那里行距只有 `rd-pref-leading` 一个），补名归 §4 的 testid 账本 |
 | FB-R14 | WI-18 | `rd-pref-theme-*` ×5（含 `-auto`） | 恰有一个 `aria-checked="true"`；无存储值时是 `-auto`；方向键可移动选中项 |
 | FB-R15 | WI-18 | `rd-pref-font-system` / `-serif` | 恰好两个选项；切换后 iframe 内正文 `font-family` 计算值改变 |
 | FB-R16 | WI-16 | `rd-toc-row` | 点击后跳到对应章节（断言 spine index 变化，不是断言元素存在） |
@@ -1519,7 +1552,7 @@ E2E 侧：**不要写 Node Playwright Test 的 `webServer` 语法**，用 pytest
 | FA-10 | WI-16 | §8-4 | AI 流式输出容器 | `aria-live="polite"`；流式追加时不重复播报已有内容（断言 `aria-atomic` 为 `false`） |
 | FA-11 | WI-3 | §8-4 | 索引进度 | `aria-live="polite"`；进度变化时文本更新 |
 | FA-12 | WI-1 | §8-4 | 降级横幅 | 横幅自带 `role="status"` ＋ `aria-live="polite"`；页面上承载同一条文案的 `aria-live` 区域数为 1（**不经 `LiveRegion` 二次播报**） |
-| FA-13 | WI-16 | §8-5 | `prefers-reduced-motion` | 面板动效 `transition-duration` 为 `0s`；WI-8 骨架 `animation-name` 为 `none` |
+| FA-13 | WI-16 | §8-5 | `prefers-reduced-motion` | 面板动效 `transition-duration` 为 `0s`。**骨架的同款保证不在本行**——见 §5.0「骨架为什么连样式都不在 E2E 里断」，它落在 WI-8 验收 2 / 3 的 CSS 产物断言上 |
 | FA-14 | WI-16 | §8-6 | 阅读器工具栏 6 个图标按钮 | 每个都有非空 `aria-label`；源码内这些按钮的 `title` 属性不再作为唯一可访问名 |
 | FA-15 | WI-16 | Tab 顺序 | 阅读器主界面 | Tab 序列等于视觉顺序（工具栏 → 正文 → 页脚），断言聚焦元素 testid 的序列 |
 | FA-16 | WI-13 | Tab 顺序 | 书库三栏 | 序列为 左栏 → 中栏 → 右栏，逐个断言 |
@@ -1667,11 +1700,11 @@ E2E 侧：**不要写 Node Playwright Test 的 `webServer` 语法**，用 pytest
 | FT-02 | WI-10 | 组件样式文件 | 对 `--p-*` 的直接引用次数为 0（组件只许引 Tier 2） |
 | FT-03 | WI-10 | `--r3-warning` / `--r3-error` ＋ 四个 `-subtle` | 10 种组合下都有定义 |
 | FT-04 | WI-7 | `--r3-hl-*-rgb` | 10 种组合下都解析为三个数字 |
-| FT-05 | WI-7 | **`{前端源码根}` 下的 `.css`** | `color-mix(` 出现次数为 0。**范围不能写「全仓库 CSS」**——那样今天就真空通过（九处全在原型 HTML 的内联 `<style>` 里），见 WI-7 验收 1 |
-| FT-06 | WI-7 | 九个原使用点（`.note-chip.is-*` ×4、`.anno.is-marker.is-*` ×4、`.anno.is-note` ×1） | 全部存在于源码根**且**形如 `rgb(var(--r3-hl-*-rgb) / α)`，α 分别为 .35（4 处）、.45（4 处）、.18（1 处） |
+| FT-05 | WI-7 | **`{前端源码根}` 下的生产 `.css`** | 九个角色的底色声明里字面颜色值命中数为 0（`color-mix(`、`#rrggbb`、`rgb(`／`rgba(` 后跟数字，三类合计）。**判生产代码，不判 `designs/`**——按 `color-mix(` 计数写今天就真空通过，见 WI-7 验收 1 |
+| FT-06 | WI-7 | 九个角色（chip ×4、marker ×4、笔记标记 ×1，清单见 WI-7 的角色表） | 全部存在于**生产 CSS** 且形如 `rgb(var(--r3-hl-*-rgb) / α)`，α 分别为 .35（4 处）、.45（4 处）、.18（1 处）。五个新写、四个改写 |
 | FT-07 | WI-7 | 亮纸 marker 四色 | `paper` / `sepia` / `green` ＋ `auto`@light 四种纸下，合成后与该纸墨色对比度均 ≥4.5:1（计算值断言，**不乘 chrome**） |
 | FT-08 | WI-7 | 夜纸 marker 四色 | `night` ＋ `auto`@dark 两种纸下，背景 alpha 不等于 1，**且**带非背景提示：`text-decoration-line` 非 `none` 或 `border-left-width` 大于 0（黄 3.02 / 绿 3.94 实色不达标，且 paper-night 下解集为空） |
-| FT-09 | WI-7 | `.anno.is-note` | 解析背景色不等于 `--r3-accent` 解析色（D-5 之后品牌蓝会与选区、focus ring 撞色） |
+| FT-09 | WI-7 | 角色 9（生产端笔记标记，今天是 `mark.annotation.annotation--note`） | 解析背景色不等于 `--r3-accent` 解析色（D-5 之后品牌蓝会与选区、focus ring 撞色） |
 | FT-10 | WI-10 | chrome 轴 | `data-theme="dark"` 下 `body` 背景色计算值与 light 不同；`--r3-text` 对 `--r3-bg` ≥4.5:1。**跑满 5 个 reading 值，结果必须一致**（chrome 不受纸色影响） |
 | FT-11 | WI-18 | 两轴持久化 | 两个 key 两个属性：切纸色写 `reader3.reader.theme` ＋ `<html data-reading-theme>`（`auto` 也写出属性），不动 `data-theme`；切界面明暗写 `reader3.ui.colorScheme` ＋ `<html data-theme>`（`system` 是**移除**属性），不动 `data-reading-theme`。各自刷新后与渲染一致 |
 | FT-12 | WI-18 | 字号作用域 | 改字号只影响 iframe 内文本，iframe 外元素字号不变（**仅 iframe** 作用域） |

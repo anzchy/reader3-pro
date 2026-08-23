@@ -2,7 +2,7 @@
 
 - **对应阶段**: Phase 1a（测试安全网 · 后端）
 - **进入条件**: Phase 0（007）全部合入
-- **退出条件**: CI 绿灯成为合并门槛；42 条路由契约全绿；API v1 冻结；性能基准记录在案。见 `plan-tech-stack-migration.md` §7
+- **退出条件**: 测试门禁生效（**本地 tdd-guardian**，非 required check——见 §7）；42 条路由契约全绿；API v1 冻结；性能基准记录在案。见 `plan-tech-stack-migration.md` §7
 - **下游**: **一切**。Phase 2 / 3 / 4 的每一次重构都靠这张网判断「有没有改坏」。没有它，后面每个阶段都是盲改
 - **契约**: 本分支产出的路由契约即 API v1 冻结基线
 
@@ -130,7 +130,14 @@ Phase 2/3 要动缓存和存储格式，没有基线就无法判断改动是优�
 
 e2e lane 留给 009 接。
 
-**CI 绿灯成为合并门槛，这条本身就是 008 的退出条件之一**——把工作流建起来但不设为 required check，等于没建。
+**门禁在本地，不在 GitHub——2026-08-24 改。** 全仓 CI 统一为**仅发版触发**（`release.published` ＋ `push.tags`），所以上面这个工作流**不设 required check**：一个日常不跑的检查设成 required，只会把每个 PR 卡死在「Expected — Waiting for status」上。
+
+门禁改由 `.claude/tdd-guardian/config.json` 的两条 lane 承担，它们已经配好了时机：`unit` 在 `taskCompleted` / `commit`，`e2e` 在 `push`。**008 的退出条件因此从「CI 成为合并门槛」改为「本地门禁真的会拦下红的提交」**——要在退出前实测一次：故意写一个失败用例，确认 `commit` 被拦。
+
+**代价写明白，两条**：
+
+1. **本地门禁绕得过。** `git commit --no-verify` 一行就跳过。它挡的是手滑，不是决心。
+2. **它从不在干净环境里跑。** 而 `scripts/smoke_installed_wheel.py` 存在的**全部理由**就是这个缺口——2026-08-23 那次 starlette 1.6.0 的 500，本地 `uv run` 与 pytest 全程绿灯，只有干净环境看得见。改基之后这条护栏只在发版那天响，**中间攒下的依赖漂移会一次性堆在发版当天**。
 
 ---
 
@@ -155,7 +162,7 @@ Phase 4 的 TypeScript 前端就是照着这份冻结的 v1 写的。冻结的�
 - [ ] ruff `BLE` / `S110` 生效；三档异常规则成文；四处点名站点修完
 - [ ] `[tool.ruff]` / `[tool.mypy]` 进 `pyproject.toml`
 - [ ] 六项性能基准记录在案；20 本合成书库 fixture 可用
-- [ ] GitHub Actions 建好，**且设为 required check**
+- [ ] GitHub Actions 建好（**仅发版触发，不设 required check**——理由见 §7）；本地 tdd-guardian 门禁实测能拦下红的提交
 - [ ] API v1 冻结公告写进 `AGENTS.md`
 
 ---

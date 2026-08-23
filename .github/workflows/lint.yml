@@ -6,12 +6,31 @@
 # 混进 `contracts` 就会把「零依赖」这个性质弄丢，那条性质是让 lint 在最早期、
 # 还没有 tests/ 的分支上也能跑起来的前提。
 # 测试 CI 由 008 单独建（tests/ 目录那时才有），与本文件不合并。
+#
+# **触发时机：只在发版时跑，日常 push 不跑。**（2026-08-23 按要求改）
+# 两条发版路径都认，因为本仓库两种都用过：
+#   - `git push origin v1.5.0`（只打 tag，不建 Release）→ `push.tags`
+#   - 在 GitHub 上 Publish 一个 Release       → `release.published`
+# 从 UI 建 Release 会顺带产生 tag push，两条会同时命中；下面的 concurrency
+# 按 ref 归组并取消旧的，所以不会跑两遍。
+#
+# 代价要写明白：**这些 lint 从「每次 push 的护栏」降级成了「发版前的关门检查」。**
+# 中间攒下的违规不会有人告诉你，会一次性堆在发版那天。两个补偿手段：
+#   - `workflow_dispatch`：想验的时候在 Actions 页面手点，或 `gh workflow run lint.yml`
+#   - 本地：`python3 scripts/lint_e2e_selectors.py`（另两条同理）零依赖，随手能跑
 name: lint
 
 on:
+  release:
+    types: [published]
   push:
-    branches: ["**"]
-  pull_request:
+    tags: ["v*"]
+  workflow_dispatch:
+
+# 同一个 tag 被 release 事件和 tag push 各触发一次时，只留最新的那次。
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   contracts:
@@ -46,7 +65,8 @@ jobs:
       - uses: astral-sh/setup-uv@v5
 
       # 这个 bug 只在装了 wheel 之后才看得见：`uv run` 走源码树，永远是好的。
-      # 所以它必须由 CI 每次构建来验，不能靠人记得。
+      # 本文件改成仅发版触发之后，这一步就是**发版前最后一道自动关门检查**——
+      # 中间攒下的打包问题不会有人提前告诉你。日常想验：`python3 scripts/check_wheel_contents.py`。
       - name: 打 wheel 并逐文件对账（templates/ 与 static/ 下不许漏）
         run: python3 scripts/check_wheel_contents.py
 

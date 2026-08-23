@@ -41,7 +41,7 @@
 | # | 决策 | 影响 |
 |---|---|---|
 | D-1 | **保留横向分页**（epub.js `flow: paginated`），不改为垂直滚动 | Reader 正文继续以 CSS 多列分页；原型用 `column-width = viewport width` + `translateX` 复刻该模型 |
-| D-2 | **英文为主语言** | 推翻本文 §0 早期的 zh-CN 假设与迁移计划 §7.5 的同一假设；G-16 的中英混排按“全部英文”收敛，`html lang="en"` 由此成为准确标记（关闭 §13 第 534 行的语言标记问题） |
+| D-2 | ~~**英文为主语言**~~ —— **已于 2026-08-23 被推翻** | **语言的唯一定义处是 [`docs/plans/20260817-frontend-ui-refactor/spec-frontend-design.md`](../../../docs/plans/20260817-frontend-ui-refactor/spec-frontend-design.md) §0**，新结论与推翻理由都在那里，本行不重述。本行原文存档：「推翻本文 §0 早期的 zh-CN 假设与迁移计划 §7.5 的同一假设；G-16 的中英混排按“全部英文”收敛，`html lang="en"` 由此成为准确标记（关闭 §13 的语言标记问题）」——其中 G-16 的收敛方向与 `html lang` 两项随之作废，§13 的语言标记问题重新打开，均改以 §0 为准。§14.1 的 G-16 本身是**现状描述**，不受影响 |
 | D-3 | **实现深色模式与阅读主题** | 关闭 G-03；两根独立的轴——`data-theme` 管界面明暗，`data-reading-theme` 管纸色、只作用于正文区。**取值、挂载点与默认值以设计规格 §3.3 为准**（2026-08-17 裁决 R7 后本行原写的「paper / sepia / green / night」已不完整，改为五值且默认 `auto`） |
 | D-4 | **废弃 Classic Library** | §3.3、§4.2、§6.6、G-02、G-08 与截图 `11-library-classic-*` 转为历史记录；不再修复 `library-search-*` / `library-panel-*` 的 ID 不匹配，`READER3_LIBRARY_UI=classic` 分支随迁移一并移除 |
 | D-5 | **品牌色改为 `#3b82f6`** | 取代 §9 的 `#ff6b00` 及其 hover `#e65f00` / light `#fff7f0` / muted `rgba(255,107,0,.1)` 派生值 |
