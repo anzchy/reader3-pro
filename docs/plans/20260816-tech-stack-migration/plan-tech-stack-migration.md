@@ -189,7 +189,7 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 | 0.5 | **testid 定名：先改原型，再回贴模板**；规则写入 CI lint（**两条不同的 lint**，见下） |
 | 0.6 | 事实性修复：`.gitignore` 冲突标记、版本号、`ai_settings.example.json` |
 | 0.7 | 删除死代码 `SearchIndex` / `BookIndex.from_book_pkl` / `SearchIndex.build_from_library`（A5 的「第四处」），使 `book_store.py` 的合并范围收敛到三处 |
-| 0.8 | **token 悬空引用 lint**：`var(--x)` 里的 `x` 必须有定义（与 0.5 的两条 lint 是**第三条**，管的是 CSS 变量不是 testid） |
+| 0.8 | **token 悬空引用 lint**：`var(--x)` 里的 `x` 必须有定义，**`var(--x, fallback)` 带 fallback 也算违规**（与 0.5 的两条 lint 是**第三条**，管的是 CSS 变量不是 testid） |
 
 各项的具体内容：
 
@@ -224,7 +224,11 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 
 > **0.8 为什么值得单列一条。** CSS 自定义属性引用不存在的名字**不报错**——`var(--typo)` 静默回落到继承值，页面照常渲染，只是颜色变成了别的东西。降级横幅正是最不能出这个错的地方（长得像普通提示 = 降级没被看见）。设计规格里实测到过三处：§6.4 引用的 `--r3-warn` / `--r3-danger` 从未定义（Codex 复审 #8），§6.2 引用的 `--r3-sidebar-w` / `--r3-right-w` 从未定义，`--r3-text-quiet` 只在三个阅读主题里被赋值、`:root` 无定义。**三处都已在 007 修掉**，但没有 lint 就会再长出来。
 >
+> **fallback 也算违规**，因为 fallback 恰好是这条 lint 要防的那个故障的伪装：`var(--r3-error, #ccc)` 在 token 缺失时不会露馅，横幅照常渲染成一个灰色的普通提示——比静默回落更难被发现，因为它看起来是「有人考虑过」。要 fallback 就先把 token 定义出来。
+>
 > 实现约十行：扫 `designs/reader-pro-next/`、`static/css/`、`templates/*.html` 与设计规格里的 CSS 块，收集所有 `--x:` 定义与所有 `var(--x)` 引用，求差集。定义在别处（如浏览器内置或第三方）的走白名单。
+>
+> **扫描范围会再扩一次，且已有归属。** 上面五处都是**现状**的样式所在地；`{前端源码根}`（Vite ＋ TS 的新目录，013 建）落地后，本 lint 必须同时扫它，否则 013／014 迁进去的样式全部脱离本 lint。前端计划有三条验收依赖它在源码根下生效（`plan-frontend-ui-refactor.md` 的 WI-7 验收 3、WI-10、WI-16），**扩范围这件事由该计划的 WI-9 验收 12 交付**，改动落回本行。此前两边都默认对方会做。
 
 **验收**: 两个 P0 修复并人工 smoke；`--port` 与 `/api/health` 可用；testid 在原型与模板两侧一致且三条 lint 生效。完整门槛见 §7。
 

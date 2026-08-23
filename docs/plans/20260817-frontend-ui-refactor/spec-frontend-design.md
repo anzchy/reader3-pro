@@ -1,7 +1,8 @@
 # Reader3 Pro 前端设计规格
 
 - **日期**: 2026-08-15（2026-08-16 修订）
-- **状态**: 提议（待批准）
+- **修订**: 2026-08-20 —— 补 §3.5 层级（z-index）与动效 token、§3.4 控件尺寸档（含 rail / header / 搜索命中底色三个悬空值）、§5 与 §11 的 `Modal` 选型裁决
+- **状态**: 已批准
 - **范围**: `settings.html` / `library.html` / `reader.html` **外壳**三页
 
 > ### 权威范围
@@ -152,11 +153,17 @@ Tier 2  Semantic（角色，逐主题重定义）     --r3-*
   --p-green-950:#14321f; --p-amber-950:#3a2a08;
   --p-red-950:#3b1717;   --p-cyan-950:#10283d;
 
-  /* Annotation — 亮/暗两组，暗色下原色在深底上刺眼 */
-  --p-hl-yellow:#fbbf24; --p-hl-green:#4ade80;
-  --p-hl-pink:#f87171;   --p-hl-blue:#60a5fa;
-  --p-hl-yellow-dk:#8a6d1f; --p-hl-green-dk:#2f6b3d;
-  --p-hl-pink-dk:#7d3b3b;   --p-hl-blue-dk:#2f5580;
+  /* Annotation — 亮/暗两组，暗色下原色在深底上刺眼。
+     **存 RGB 三元组，alpha 留在使用点**（裁决见 plan WI-7；本节是这一族的唯一定义处）。
+     三元组是本体，`--p-hl-*` 由它派生，供不需要 alpha 的场合直接用。 */
+  --p-hl-yellow-rgb:251 191 36;  --p-hl-green-rgb:74 222 128;
+  --p-hl-pink-rgb:248 113 113;   --p-hl-blue-rgb:96 165 250;
+  --p-hl-yellow-dk-rgb:138 109 31; --p-hl-green-dk-rgb:47 107 61;
+  --p-hl-pink-dk-rgb:125 59 59;    --p-hl-blue-dk-rgb:47 85 128;
+  --p-hl-yellow:rgb(var(--p-hl-yellow-rgb)); --p-hl-green:rgb(var(--p-hl-green-rgb));
+  --p-hl-pink:rgb(var(--p-hl-pink-rgb));     --p-hl-blue:rgb(var(--p-hl-blue-rgb));
+  --p-hl-yellow-dk:rgb(var(--p-hl-yellow-dk-rgb)); --p-hl-green-dk:rgb(var(--p-hl-green-dk-rgb));
+  --p-hl-pink-dk:rgb(var(--p-hl-pink-dk-rgb));     --p-hl-blue-dk:rgb(var(--p-hl-blue-dk-rgb));
 }
 ```
 
@@ -209,10 +216,15 @@ Tier 2  Semantic（角色，逐主题重定义）     --r3-*
   --r3-success-subtle:var(--p-green-100); --r3-warning-subtle:var(--p-amber-100);
   --r3-error-subtle:var(--p-red-100);     --r3-info-subtle:var(--p-cyan-100);
 
+  /* 搜索命中底色。属 chrome 轴，与 --r3-hl-* 是两个角色，见下方说明 */
+  --r3-search-hit:#fde68a;
+
   /* reading 轴 auto 档的取值——不是 chrome 自己的角色，见上面规则 3 */
   --r3-page-bg:#ffffff; --r3-page-ink:#1f2937; --r3-page-quiet:#64748b;
-  --r3-hl-yellow:var(--p-hl-yellow); --r3-hl-green:var(--p-hl-green);
-  --r3-hl-pink:var(--p-hl-pink);     --r3-hl-blue:var(--p-hl-blue);
+  --r3-hl-yellow-rgb:var(--p-hl-yellow-rgb); --r3-hl-green-rgb:var(--p-hl-green-rgb);
+  --r3-hl-pink-rgb:var(--p-hl-pink-rgb);     --r3-hl-blue-rgb:var(--p-hl-blue-rgb);
+  --r3-hl-yellow:rgb(var(--r3-hl-yellow-rgb)); --r3-hl-green:rgb(var(--r3-hl-green-rgb));
+  --r3-hl-pink:rgb(var(--r3-hl-pink-rgb));     --r3-hl-blue:rgb(var(--r3-hl-blue-rgb));
 
   --r3-shadow-sm:0 1px 3px rgb(0 0 0 / .05);
   --r3-shadow-md:0 2px 10px rgb(0 0 0 / .05);
@@ -238,10 +250,13 @@ Tier 2  Semantic（角色，逐主题重定义）     --r3-*
   --r3-error:var(--p-red-400);     --r3-info:var(--p-cyan-400);
   --r3-success-subtle:var(--p-green-950); --r3-warning-subtle:var(--p-amber-950);
   --r3-error-subtle:var(--p-red-950);     --r3-info-subtle:var(--p-cyan-950);
+  --r3-search-hit:#7c5f12;         /* 原型暗色 --highlight */
   /* auto 档在 dark chrome 下的取值 */
   --r3-page-bg:#131c2e; --r3-page-ink:#dbe3ef; --r3-page-quiet:#93a3bb;
-  --r3-hl-yellow:var(--p-hl-yellow-dk); --r3-hl-green:var(--p-hl-green-dk);
-  --r3-hl-pink:var(--p-hl-pink-dk);     --r3-hl-blue:var(--p-hl-blue-dk);
+  --r3-hl-yellow-rgb:var(--p-hl-yellow-dk-rgb); --r3-hl-green-rgb:var(--p-hl-green-dk-rgb);
+  --r3-hl-pink-rgb:var(--p-hl-pink-dk-rgb);     --r3-hl-blue-rgb:var(--p-hl-blue-dk-rgb);
+  --r3-hl-yellow:rgb(var(--r3-hl-yellow-rgb)); --r3-hl-green:rgb(var(--r3-hl-green-rgb));
+  --r3-hl-pink:rgb(var(--r3-hl-pink-rgb));     --r3-hl-blue:rgb(var(--r3-hl-blue-rgb));
   --r3-shadow-sm:0 1px 3px rgb(0 0 0 / .4);
   --r3-shadow-md:0 2px 10px rgb(0 0 0 / .4);
   --r3-shadow-lg:0 4px 20px rgb(0 0 0 / .6);
@@ -259,16 +274,35 @@ html[data-reading-theme="night"] .reader-shell { --r3-page-bg:var(--p-paper-nigh
 html[data-reading-theme="paper"] .reader-shell,
 html[data-reading-theme="sepia"] .reader-shell,
 html[data-reading-theme="green"] .reader-shell {
-  --r3-hl-yellow:var(--p-hl-yellow); --r3-hl-green:var(--p-hl-green);
-  --r3-hl-pink:var(--p-hl-pink);     --r3-hl-blue:var(--p-hl-blue);
+  --r3-hl-yellow-rgb:var(--p-hl-yellow-rgb); --r3-hl-green-rgb:var(--p-hl-green-rgb);
+  --r3-hl-pink-rgb:var(--p-hl-pink-rgb);     --r3-hl-blue-rgb:var(--p-hl-blue-rgb);
+  --r3-hl-yellow:rgb(var(--r3-hl-yellow-rgb)); --r3-hl-green:rgb(var(--r3-hl-green-rgb));
+  --r3-hl-pink:rgb(var(--r3-hl-pink-rgb));     --r3-hl-blue:rgb(var(--r3-hl-blue-rgb));
 }
 html[data-reading-theme="night"] .reader-shell {
-  --r3-hl-yellow:var(--p-hl-yellow-dk); --r3-hl-green:var(--p-hl-green-dk);
-  --r3-hl-pink:var(--p-hl-pink-dk);     --r3-hl-blue:var(--p-hl-blue-dk);
+  --r3-hl-yellow-rgb:var(--p-hl-yellow-dk-rgb); --r3-hl-green-rgb:var(--p-hl-green-dk-rgb);
+  --r3-hl-pink-rgb:var(--p-hl-pink-dk-rgb);     --r3-hl-blue-rgb:var(--p-hl-blue-dk-rgb);
+  --r3-hl-yellow:rgb(var(--r3-hl-yellow-rgb)); --r3-hl-green:rgb(var(--r3-hl-green-rgb));
+  --r3-hl-pink:rgb(var(--r3-hl-pink-rgb));     --r3-hl-blue:rgb(var(--r3-hl-blue-rgb));
 }
 ```
 
 > **`--p-paper-white` 现在只有 `paper` 一档在用**（`auto` 直接吃 chrome 的 `#ffffff`）。两者同值不是巧合，是 `auto` 在亮色下**就该**长得像 `paper`——区别只在切到 dark chrome 时 `paper` 不动、`auto` 跟着走。
+
+> **`--r3-hl-*-rgb` 与 `--r3-hl-*` 必须在四个块里各写一遍，不能只在 `:root` 派生一次。** 自定义属性的值在**声明它的那个元素上**就完成 `var()` 代换；写成 `:root { --r3-hl-yellow: rgb(var(--r3-hl-yellow-rgb)) }` 之后，`.reader-shell` 里再改 `--r3-hl-yellow-rgb` 不会反向影响已经算好的 `--r3-hl-yellow`，夜纸的高亮会静默停在亮色上。四个块（`:root`、`[data-theme=dark]`、三种亮纸、夜纸）各自成对声明，是为了避开这个代换时机。
+>
+> **本节 ＋ §3.2 是 `--p-hl-*-rgb` / `--r3-hl-*-rgb` 这一族的唯一定义处。** plan 的 WI-7 只引用它、不重述值——那边负责的是**九处使用点的 alpha**（.35 / .45 / .18），不负责 token 本身长什么样。
+>
+> **`--r3-search-hit` 不是第五个 `--r3-hl-*`，别合并。** 取原型 `--highlight`（亮 `#fde68a` / 暗 `#7c5f12`），原型里它唯一的用途就是搜索结果的 `<mark>`（`index.html:170`）。两者角色不同：
+>
+> | | `--r3-search-hit` | `--r3-hl-*` |
+> |---|---|---|
+> | 语义 | 搜索命中的**临时**底 | 用户标注的**持久**底 |
+> | 生命周期 | 随查询词变化，退出搜索即消失 | 写进 `notes.json`，跨会话存在 |
+> | 取值 | 一个，不分颜色 | 四个，对应 `MarkerColor` 枚举 |
+> | 所属轴 | chrome（搜索命中出现在书库列表、TOC、笔记面板——都在 iframe 外） | reading（高亮画在纸上，见规则 3） |
+>
+> 合并的诱惑在于「亮色下 `#fde68a` 和 `--p-hl-yellow` 看着差不多」。但一旦合并，用户把标注色改成绿之后搜索命中会跟着变绿，而搜索命中在书库页也要用——那里根本没有 reading 轴。
 
 **状态色实测对比度**（2026-08-16，WCAG 2.1 相对亮度公式）——这四组不是挑好看的，是挑过线的：
 
@@ -299,7 +333,25 @@ html[data-reading-theme="night"] .reader-shell {
 
 ### 3.4 间距 / 圆角 / 字阶
 
-间距沿用现值（4/8/16/24/32/48），重命名为 `--r3-space-{xs,sm,md,lg,xl,2xl}`。圆角**取原型实测值**并命名：`--r3-radius-sm:6px`、`--r3-radius-md:10px`、`--r3-radius-lg:16px`、`--r3-radius-full:999px`（原型 `--radius-{sm,md,lg}` 一一对应）。本节此前写的「沿用 4/6/8/12」是**现状生产**的值，不是目标值——目标是原型。
+间距沿用现值（4/8/16/24/32/48），重命名为 `--r3-space-{xs,sm,md,lg,xl,2xl}`；圆角**取原型实测值**并命名（原型 `--radius-{sm,md,lg}` 一一对应）。本节此前写的「沿用 4/6/8/12」是**现状生产**的值，不是目标值——目标是原型。
+
+这两族此前只有散文，没有可照抄的字面量；`plan §9.3` 的 token 硬编码 lint 第 5、6 两类（裸 `padding`/`margin`/`gap`、裸 `border-radius`）以它们为唯一合法出口，所以必须写成 CSS：
+
+```css
+--r3-space-xs:  4px;
+--r3-space-sm:  8px;
+--r3-space-md: 16px;
+--r3-space-lg: 24px;
+--r3-space-xl: 32px;
+--r3-space-2xl:48px;
+
+--r3-radius-sm:    6px;
+--r3-radius-md:   10px;
+--r3-radius-lg:   16px;
+--r3-radius-full:999px;
+```
+
+> **间距阶只有这六档，圆角只有这四档，没有第七个和第五个。** `plan §9.2` 实测现状里有 `12` / `14` / `23` / `999` 四种离档圆角——`999` 对应 `--r3-radius-full`，其余三种在迁移时各自 snap 到 `sm` / `md` / `lg`，snap 之后不许再回头加档。要加档就要先说明它承担的是哪个新角色。
 
 布局宽度（§6.2 的三栏 Grid 引用，此前未定义）：
 
@@ -307,21 +359,39 @@ html[data-reading-theme="night"] .reader-shell {
 --r3-sidebar-w:232px;  /* 书库左栏，取原型 --sidebar-width */
 --r3-right-w:336px;    /* 书库右栏，取原型 --insights-width */
 --r3-right-w-collapsed:48px;
+--r3-rail-w:56px;      /* 阅读器右侧竖排工具栏宽，取原型 --rail-width */
+--r3-header-h:60px;    /* 页头高，取原型 --header-height */
 ```
+
+`--r3-rail-w` 与 `--r3-header-h` 是**补的悬空值**：原型 `index.html` 定义了 `--rail-width: 56px` 与 `--header-height: 60px` 并在 12 处引用（rail 宽、`.reader-sheet.is-right` 的右偏移、以及 `calc(100vh - var(--header-height))` 这类高度算式），本节此前只收了三个书库宽度，翻译到生产时这两个会没有对应 token、退化成硬编码 px。
+
+**控件尺寸档**（下面 §5.1 的 `.r3-btn` 引用）：
+
+```css
+--r3-control-h:     34px;  /* 默认档按钮 / 输入框 / select 高 */
+--r3-control-h-sm:  28px;  /* --sm 档 */
+--r3-control-px:    14px;  /* 控件左右内边距 */
+--r3-control-gap:    6px;  /* 控件内图标与文字间距 */
+```
+
+> **控件高度与内边距不属于间距阶，这四个值故意不落在 4/8/16/24/32/48 上。** 间距阶量的是**元素之间**的距离，控件尺寸量的是**控件自身**的盒子——后者由字号 ＋ 行高 ＋ 上下内边距 ＋ 边框倒推而来（14px 字 × 1.4 行高 ≈ 20px，＋ 上下各 6px ＋ 2px 边框 = 34px），跟布局节奏无关。硬把 34 抬到 32 或压到 40 会改变按钮与同行输入框的对齐，是为了对齐一张与它无关的表而制造视觉回归。
+>
+> **反过来也一样：不许拿 `--r3-space-*` 表达控件高度。** `--r3-space-xl` 恰好是 32px，离 34 很近，但它是间距角色；有人为了「统一」把按钮高改成 `var(--r3-space-xl)` 之后，任何一次间距阶调整都会顺带改掉全站按钮高度。
+
 
 字阶是**新增**——现状没有字号 token，全站硬编码 px：
 
 ```css
---r3-text-2xs:11px; --r3-text-xs:12px;  --r3-text-sm:13px; --r3-text-base:14px;
---r3-text-md:16px;  --r3-text-lg:18px;  --r3-text-xl:22px; --r3-text-2xl:28px;
+--r3-font-size-2xs:11px; --r3-font-size-xs:12px;  --r3-font-size-sm:13px; --r3-font-size-base:14px;
+--r3-font-size-md:16px;  --r3-font-size-lg:18px;  --r3-font-size-xl:22px; --r3-font-size-2xl:28px;
 --r3-leading-tight:1.4; --r3-leading-normal:1.6; --r3-leading-reading:1.9;
 ```
 
-**`--r3-text-2xs:11px` 是补的**（裁决见 §11-R4）。原字阶只有 7 档、最小 12px，是在没测原型的情况下写的：原型实际用了 **12 个字号字面量**，其中 **44 处在 14px 以下**、只有 7 处等于 14px。强行把 11px 抬到 12px 会压掉徽章／eyebrow 与次级元数据之间的层级。
+**`--r3-font-size-2xs:11px` 是补的**（裁决见 §11-R4）。原字阶只有 7 档、最小 12px，是在没测原型的情况下写的：原型实际用了 **12 个字号字面量**，其中 **44 处在 14px 以下**、只有 7 处等于 14px。强行把 11px 抬到 12px 会压掉徽章／eyebrow 与次级元数据之间的层级。
 
 原型字面量按下表 snap，**这是唯一的映射，实施时不得再自行取整**：
 
-| 原型值 | 用量 | → token | 说明 |
+| 原型值 | 用量 | → token（`--r3-font-size-` 前缀省略） | 说明 |
 |---|---|---|---|
 | 10px | 1 | `2xs` 11px | `.stale-dot` |
 | 11px | 7 | `2xs` 11px | eyebrow / 状态 pill / 计数 |
@@ -338,7 +408,101 @@ html[data-reading-theme="night"] .reader-shell {
 
 > 上表有三处会产生可见位移：15→16、17→18、20→22。这是把设计收进字阶的代价，接受。`17px` 与阅读器正文默认字号（§6.3，14–24px 可调）无关——那是 iframe 内的正文，不走 UI 字阶。
 
+> ⚠️ **字阶叫 `--r3-font-size-*`，不叫 `--r3-text-*`。** `--r3-text` / `--r3-text-muted` / `--r3-text-subtle` / `--r3-text-disabled` / `--r3-text-on-accent` / `--r3-text-quiet` 在 §3.3 里**已经是六个文字颜色 token**；字阶再占 `--r3-text-` 前缀，同一个前缀就同时表示颜色和字号，`--r3-text-sm` 与 `--r3-text-subtle` 靠肉眼分不出角色。**跨角色禁令**：任何 token 前缀只承担一个角色——颜色是 `--r3-text-*`，字号是 `--r3-font-size-*`，行高是 `--r3-leading-*`，间距是 `--r3-space-*`，控件尺寸是 `--r3-control-*`。把字号 token 用在 `color` 上、或把颜色 token 用在 `font-size` 上，都是错误，而不是风格问题。
+
 **字体**：`--r3-font-sans` 沿用系统栈。`--r3-font-serif` 现在指向 Google Fonts 的 `Noto Serif SC`——**这是个离线故障点**（自托管应用连外网 CDN，断网即回退且首屏跳字）。改为 self-host 思源宋体子集，或直接回退到系统 `PingFang SC` / `Songti SC`。
+
+### 3.5 层级（z-index）与动效
+
+#### 3.5.1 z-index：9 档有序枚举
+
+现状实测（2026-08-20，`grep -roE 'z-index: *[0-9]+' src/`）：**生产 CSS** 里散着 **19 个不同的 z-index 字面量**——
+
+```
+1  2  10  20  30  40  45  50  60  90  100  950  1000  1001  1100  1200  1300  1350  1400
+```
+
+跨三个数量级，且**没有一个是 token**。`45` 与 `1350` 这种值只有一种来源：某个层压不住另一个，就地 +5。这种写法的失败模式不是"层错了"，是**层对了但没人知道为什么对**——下一次谁再 +5 就又翻过去。
+
+> **上面这次实测只覆盖 `src/`。** 原型 `designs/reader-pro-next/index.html` 另有一套自己的阶梯——13 处、10 个不同值（`2 5 30 40 50 55 60 90 100 200`），与生产的 19 个只有部分重合。**两套都要 snap 到下面这 9 档**，但原型侧的逐值映射表归 [前端计划](./plan-frontend-ui-refactor.md) 的 **WI-10 §10.1.1** 维护，**本节不抄那张表**——抄进来就是第二份，跟 §3.4 字阶那张 snap 表不同（那张表的定义处就在本文）。本节只负责定义档位本身。
+
+归成 9 档。`sticky` 及以上每档相隔 100——留这个空隙是为了将来插一档时不用给其余八档重编号：
+
+```css
+--r3-z-base:      0;    /* 常规文档流 */
+--r3-z-raised:   10;    /* 卡片内抬升：角标、hover 覆盖、拖拽把手 */
+--r3-z-sticky:  100;    /* 页内粘性：页头、栏目头 */
+--r3-z-panel:   200;    /* 侧栏 / 抽屉 / TOC / 笔记 / 搜索 / AI 面板 */
+--r3-z-overlay: 300;    /* 面板遮罩 */
+--r3-z-toolbar: 400;    /* 阅读器右侧竖排工具栏 */
+--r3-z-popover: 500;    /* 标注工具栏、气泡、下拉、tooltip */
+--r3-z-toast:   600;    /* 全局 Toast */
+--r3-z-skip:    700;    /* 跳转链接（skip link）—— 键盘逃生口，聚焦时必须压过一切 */
+```
+
+**四条硬规则：**
+
+1. **完整偏序：`base < raised < sticky < panel < overlay < toolbar < popover < toast < skip`。** 这是全站层叠关系的**唯一**定义，也是它的**机器可验形式**——散文里的「必须高于」测不了，token 的数值大小关系测得了。这条偏序里有两段是被具体故障逼出来的，不是排版审美：
+   - **`toolbar > overlay > panel`** —— 即 §6.3「右侧工具栏」那条要求（工具栏必须高于所有面板与遮罩、任何面板打开时都保持可点击）。D6 记录的实测故障（TOC / Notes 打开后点击 `#reader-search-toggle` 直接超时，遮罩吃掉了点击）就是这段被违反的样子。§6.3 那句已改为引用本表，两处不再各说各的。
+   - **`skip > toast`** —— 见规则 2。
+
+   本文其余各节（§6.3、§6.4、§8）**一律不重述任何一段大小关系**，需要时引用本条。
+2. **`--r3-z-skip` 是最高档，且是唯一允许高于 `--r3-z-toolbar` 的元素。** 三点理由：
+   - **不能并进 `--r3-z-toast`。** 同值时叠放顺序由 DOM 顺序决定，而 skip-link 按定义在文档**最前**、Toast 容器通常挂在**最后**——并档的结果就是 Toast 稳定盖住 skip-link。这是**无障碍回归**（键盘用户的逃生口被一条自动出现的提示挡住），不是理论隐患，所以它必须靠数值而不是靠 DOM 顺序赢。
+   - **占最高档不影响任何常规层叠**，因为它平时不可见：原型 `index.html:178-183` 的写法是 `position: absolute; top: -48px` 移出视口，`:focus { top: 12px }` 才落下来。一个只在聚焦瞬间存在的元素，无论排多高都碰不到别的层。
+   - **例外仅此一个。** 除 skip-link 外，任何元素都不许高于 `--r3-z-toolbar`——工具栏之上只剩 `popover` / `toast` / `skip` 三档，各有明确归属，没有"再高一点"的空位。
+3. **`Modal` 不占任何一档。** 见 §11.2 的裁决：`<dialog>.showModal()` 把元素放进 **top layer**，位于所有 z-index 之上，`z-index` 对它**无效**。给 `.r3-modal` 写 `z-index: 9999` 是死代码，且会误导后来者以为 modal 参与这套排序。非模态弹层（下拉、气泡、标注工具条）不走 `<dialog>`，它们归 `--r3-z-popover`。
+4. **组件 CSS 里出现裸 `z-index: <数字>` 一律违规。** 只许 `z-index: var(--r3-z-*)`。需要新层级时**改这张表**（`sticky` 以上每档相隔 100，插一档不动其他值），不许在使用点自行加数。这条可被 lint 机械执行：扫组件 CSS 里 `z-index:` 后不跟 `var(--r3-z-` 的行。
+
+> 迁移期例外只有一条：`--dedao-*` 时代的旧 CSS 在被重写之前保留原字面量，不逐个改。新写的、改过的、以及 Phase 4 重写过的文件一律按本表。
+
+#### 3.5.2 动效：三档时长 ＋ 三条缓动
+
+现状实测（同日，扫 `src/` 的 `transition` 声明）：**7 个不同的时长字面量**——`0.15s` / `0.2s` / `150ms` / `160ms` / `180ms` / `300ms` / `500ms`。其中 `0.15s` 与 `150ms` 是同一个值的两种写法，`160ms` / `180ms` 与 `150ms` 肉眼不可分辨。
+
+但关键事实是：`dedao-theme.css:93-95` **已经有** `--dedao-transition-{fast,normal,slow}` = `150ms` / `300ms` / `500ms` 三档，且全站大量引用。所以三档**是沿用，不是新发明**，映射 1:1 无损：
+
+| 现有 token | 现值 | → 新 token | 新值 |
+|---|---|---|---|
+| `--dedao-transition-fast` | `150ms ease` | `--r3-duration-fast` | `150ms` |
+| `--dedao-transition-normal` | `300ms ease` | `--r3-duration-normal` | `300ms` |
+| `--dedao-transition-slow` | `500ms ease` | `--r3-duration-slow` | `500ms` |
+
+唯一的变化是**把缓动从时长里拆出来**：现值把 `ease` 焊死在 token 里，导致想换缓动就得换时长档。拆开后时长与缓动可自由组合。
+
+```css
+--r3-duration-fast:   150ms;  /* 悬停、按下、focus ring、颜色过渡 */
+--r3-duration-normal: 300ms;  /* 面板/抽屉滑入滑出、横幅出现、翻页 */
+--r3-duration-slow:   500ms;  /* 主题切换、整页态变化 */
+--r3-ease-standard:   cubic-bezier(0.2, 0, 0, 1);   /* 进出场通用 */
+--r3-ease-decelerate: cubic-bezier(0, 0, 0, 1);     /* 入场 */
+--r3-ease-accelerate: cubic-bezier(0.3, 0, 1, 1);   /* 出场 */
+```
+
+游离的 `0.2s`（＝200ms）/ `160ms` / `180ms` 一律 snap 到 `fast`，`0.15s` 统一写成 `150ms`。**这几处不产生可感知差异**：最大偏移是 200ms → 150ms 的 50ms，且落在同一个"快速反馈"知觉区间内。与 §3.4 字阶 snap 的三处（15→16 / 17→18 / 20→22 有可见位移、需要接受代价）不同，动效这边**没有代价**。
+
+#### 3.5.3 `prefers-reduced-motion`：单点降级
+
+§8 第 5 条要求「尊重 `prefers-reduced-motion`：面板动效降级为瞬时」。**那条要求的落地形式就是下面这段，两处不是两套要求。**
+
+```css
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --r3-duration-fast:   0ms;
+    --r3-duration-normal: 0ms;
+    --r3-duration-slow:   0ms;
+  }
+}
+```
+
+**组件一律不自己处理 `prefers-reduced-motion`。** 只要组件的 `transition-duration` / `animation-duration` 全部引用这三个 token，这一处重定义就覆盖全站；组件里再写一遍 `@media (prefers-reduced-motion)` 是重复且必然漂移的。
+
+> 两个已知的例外必须自己处理，因为它们不是"时长为 0 就等于关掉"：
+>
+> 1. **无限循环动画**——生产现有三条：`dedao-theme.css` 的 `dedao-pulse 2s`、`dedao-skeleton-loading 1.5s`、`dedao-spin 0.8s`。它们的时长本来就不在上面三档里（它们不是过渡），置 0 也不等于关掉。这类必须 `animation: none` 并改用静态形态（静止的骨架块、文字状态）。
+> 2. **`scroll-behavior: smooth`**（`css/reader.css:33`，TOC 点击跳章）——它不读 duration token，要单独在同一个 `@media` 块里改成 `auto`。
+>
+> 除这两类外，出现在组件 CSS 里的 `@media (prefers-reduced-motion)` 都应被删掉，改为引用 token。
 
 ---
 
@@ -392,18 +556,24 @@ Plan 的 Phase 1b 会写 Playwright E2E 并作为 Phase 4 的合并门槛。如�
 |---|---|---|
 | `Button` | `.toolbar-btn` / `.mini-btn` / `.btn` / `.rt-btn` / `.nav-btn` / `.ai-btn` / `.drawer-btn` **七套** | 收敛为 `.r3-btn` ＋ 下方 5 个修饰符（§5.1） |
 | `Badge / Pill` | `.badge` / `.status-pill` / `.chunk-pill` | 收敛为 `.r3-badge` + 状态色修饰符 |
-| `Modal` | `<dialog class="modal">` ×5，结构一致 | 保留 `<dialog>`（原生 a11y 好），抽 `.r3-modal` |
+| `Modal` | `<dialog class="modal">` ×5，结构一致 | **原生 `<dialog>` ＋ `showModal()`**（已裁决，见 §11.2），抽 `.r3-modal`；原型的 `div[role=dialog]` 改掉 |
 | `Drawer / Panel` | `#reader-search-drawer` / `#reader-ai-panel` / `#toc-mode` / `#notes-mode` 各写一套 | 统一 `.r3-panel` + 进出场动效 + 焦点陷阱 |
 | `FormField` | `.form-field`/`.form-label`/`.form-error` | 保留，补 `aria-describedby` 绑定 |
 | `EmptyState` | 仅 library 有 `.empty-state` | 抽为共用；search / chat / notes 结果为空时统一使用 |
 | `Toast` | **不存在**，现用 `.status` `<span>` 就地显示 | 新增；破坏性操作反馈需要它 |
 | `Skeleton` | **不存在**，现为 `-` 或 `Loading...` 文本 | 新增；书库卡片与统计数字用骨架屏 |
 
-> ⚠️ **`Modal` 一行的"保留 `<dialog>`"说的是现有 Jinja 模板；原型 `components.jsx` 的 `Modal` 是 `div.overlay` ＋ `role="dialog"`，已经不是原生 `<dialog>` 了。** 两边选型未收敛。这条差异在 §6.4 的 DEG-S5 上会咬人（原生 `<dialog>` 的 Esc 关闭要靠 `cancel` 事件 `preventDefault()` 才拦得住，div 版只要不接 Esc 即可），由 Track D 裁定并回写本表。
+> ✅ **`Modal` 选型已裁决（2026-08-20，§11.2）：原生 `<dialog>` ＋ `showModal()`，`div[role=dialog]` 落选。** 现有 Jinja 模板的 5 个 `<dialog class="modal">` **不动**（它们本来就是对的），要改的是原型 `components.jsx` 里那个 `div.overlay` ＋ `role="dialog"`。DEG-S5 的「不可 Esc 关闭」不构成反对理由——`<dialog>` 的 `cancel` 事件可取消，一行 `preventDefault()` 即禁掉 Esc。完整理由见 §11.2。
+>
+> 三条派生约束：
+>
+> 1. **`.r3-modal` 不设 `z-index`**（§3.5.1 规则 2，top layer 在所有 z-index 之上，写了也无效）。
+> 2. **遮罩用 `::backdrop`**，不再手写 `div.overlay`——手写遮罩就是原型那条路，会把 modal 拖回 z-index 体系里。
+> 3. **非模态弹层不用 `<dialog>`**：下拉、气泡、标注工具条走普通元素 ＋ `--r3-z-popover`。`<dialog>` 只用于真正的模态（需要阻断背景交互的那种）。
 
 ### 5.1 `Button` 的 canonical 变体集（裁决见 §11-R3）
 
-`.r3-btn` 为基类：描边中性、`height:34px`、`padding:0 14px`、`gap:6px`、`border-radius: var(--r3-radius-sm)`。修饰符只有五个：
+`.r3-btn` 为基类：描边中性、`height: var(--r3-control-h)`、`padding: 0 var(--r3-control-px)`、`gap: var(--r3-control-gap)`、`border-radius: var(--r3-radius-sm)`。修饰符只有五个：
 
 | 修饰符 | 用途 | 原型对应 | 备注 |
 |---|---|---|---|
@@ -411,7 +581,9 @@ Plan 的 Phase 1b 会写 Playwright E2E 并作为 Phase 4 的合并门槛。如�
 | `--danger` | 破坏性操作 | `.btn-danger-solid` | **改名**：`-solid` 是实现细节，不进变体名 |
 | `--ghost` | 无边框低强度操作 | 现有 **12 个裸类**（`.text-button` / `.link-button` / `.collapse-button` / `.row-more` / tab 类…） | 原型没有统一 ghost，全是就地写的 `border:0; background:none` |
 | `--icon` | 纯图标方形按钮 | `.btn-icon` | 必带 `aria-label`（§8.6） |
-| `--sm` | 尺寸档，`height:28px` | `.btn-sm`（10 处） | **本规格此前漏了尺寸档**，补上；可与上面四个叠加 |
+| `--sm` | 尺寸档，`height: var(--r3-control-h-sm)` | `.btn-sm`（10 处） | **本规格此前漏了尺寸档**，补上；可与上面四个叠加 |
+
+> **上面四个尺寸值本轮从裸 px 改为 token 引用，视觉零变化。** `34` / `14` / `6` / `28` 一个都没动，只是搬进 §3.4 的控件尺寸档。此前它们是本节仅存的四个裸 px——同一行的 `border-radius: var(--r3-radius-sm)` 说明作者知道该怎么写，只是当时 §3.4 没有可引用的控件尺寸 token，于是就地写了字面量。**它们不该被 snap 到间距阶**，理由见 §3.4 控件尺寸档下方那条。
 
 **`.btn-secondary` 删除。** 原型里它的全部声明是 `background: var(--surface)`，而基类 `.btn` 已经是同一个值——**它是空操作**，24 处引用降级为裸 `.r3-btn`，零视觉变化。
 
@@ -558,7 +730,7 @@ function bodySignature(body) {
 | 左右留白 | 最小 `clamp(16px, 5vw, 64px)`，保证工具栏不压正文 |
 | 验收 | 1440×900 与 390×844 两档下，任取一段测量行长均落在区间内 |
 
-**右侧工具栏**：保留 6 个 SVG 按钮（返回 / 目录 / 搜索 / AI / 字体 / 笔记）。**新增**：当前激活面板的按钮需要选中态（现在打开 TOC 后工具栏无任何反馈）。工具栏 `z-index` 必须高于所有面板与遮罩，且任何面板打开时都保持可点击。
+**右侧工具栏**：保留 6 个 SVG 按钮（返回 / 目录 / 搜索 / AI / 字体 / 笔记）。**新增**：当前激活面板的按钮需要选中态（现在打开 TOC 后工具栏无任何反馈）。工具栏用 `z-index: var(--r3-z-toolbar)`，该档按 §3.5.1 定义即高于 `--r3-z-panel` 与 `--r3-z-overlay`，任何面板打开时都保持可点击。**层级关系只在 §3.5.1 定义一次，本节不复述数值。**
 
 **面板互斥（D6）**：TOC / 笔记 / 搜索 / AI / 字体 五个面板同时只允许一个打开。`toolbar.js` 现在只处理了 search 与 ai 两个的互斥（`closeAllPanels` 只关这两个），TOC 和 notes 可以和它们叠加。统一到一个 `activePanel` 状态。
 
@@ -637,7 +809,7 @@ function bodySignature(body) {
 2. 对比度：正文 ≥ 4.5:1，大字 ≥ 3:1，**六组纸/墨各自验证**——四种绝对纸色（paper / sepia / green / night）＋ `auto` 在 light 与 dark chrome 下解析出的两组（sepia 与 green 底色最容易不达标）。这六组与 chrome 无关，**不乘 8**。§3.3 的四组状态色同标准，**亮色档最容易漏**——原先的 500 档在白底上只有 2.15–3.76:1，已按实测换成 700 档。
 3. 键盘可达：§6.3 的 `.theme-option` / `.font-option` 现在是裸 `<div>`，完全不可聚焦——必须改 `role="radio"` + `tabindex`。
 4. 动态区域：搜索结果、AI 流式输出、索引进度用 `aria-live="polite"`（`#aria-live` 已存在，扩大使用）。
-5. 尊重 `prefers-reduced-motion`：面板动效降级为瞬时。
+5. 尊重 `prefers-reduced-motion`：面板动效降级为瞬时。**落地形式见 §3.5.3 的单点降级**（一处把三个 duration token 重定义为 `0ms`，组件不各自处理）——这一条与 §3.5.3 是同一条要求的两面，不是两套。
 6. 图标按钮一律有 `aria-label`（现状 reader 工具栏用 `title`，屏幕阅读器支持不可靠）。
 
 ---
@@ -725,6 +897,33 @@ function bodySignature(body) {
 
 顺带记两条小的：原型 `prefs` 默认是 `size: 18` / `leading: 1.85`，规格 §6.3 写 17 / 1.9。**规格赢**——17 / 1.9 与现状生产显示的值一致，改默认值会让老用户的阅读版式无故位移。原型的默认 `readingTheme: "paper"` 按上面的裁决改为 `auto`。
 
-**尚未裁决**（不在本轮）：§5 的 `Modal` 选型（原生 `<dialog>` vs `div[role=dialog]`），仍挂在 Track D。
-
 **已裁决但尚未落到原型的**（原型仍带旧值，见其 README「已被裁决推翻」表）：R3 的 ghost 收敛、R4 的字阶 snap、以及图标改 SVG。三项都是 WI-10 / WI-11 的实施内容，目标值已由本节锁死。
+
+### 11.2 R8 —— `Modal` 选型（**已裁决 2026-08-20：原生 `<dialog>`**）
+
+这是本计划**唯一被 GSTACK VERDICT 点名的阻塞项**，此前一直挂在 Track D 名下写着「尚未裁决」。现裁决如下，理由完整记在这里以便复查。
+
+| | 原生 `<dialog>` ＋ `showModal()` | `div` ＋ `role="dialog"` |
+|---|---|---|
+| 现有 Jinja 模板 | ✅ 5 个 `<dialog class="modal">` 已经是这个 | — |
+| 原型 `components.jsx` | — | ✅ `div.overlay` ＋ `role="dialog"` |
+| **裁决** | **赢** | 落选 |
+
+**理由（五条，第 1 条是推翻性的）：**
+
+1. **`div` 方案的唯一动机建立在一个错误前提上。** 当初选 `div` 的理由是「DEG-S5 冲突对话框必须不能被 Esc 与遮罩点击关闭」（§6.4 设计要求第 3 条：DEG-S5 不可关闭，必须做出选择），而 §5 原注以为原生 `<dialog>` 拦不住 Esc。**拦得住**：
+   - Esc —— `<dialog>` 的 `cancel` 事件**是可取消的**，`dialog.addEventListener('cancel', e => e.preventDefault())` 一行即禁掉 Esc 关闭。
+   - 遮罩点击 —— 原生 `<dialog>` 点 `::backdrop` **本来就不关闭**。现在满世界见到的「点遮罩关闭」是手写代码额外加上去的（比较 `event.target === dialog` 再 `close()`），**不加就没有**。
+
+   两条要求在 `<dialog>` 上都能满足，而且是"不写代码"就满足其一。动机没了，`div` 方案就只剩成本。
+2. **`showModal()` 把元素放进 top layer，脱离任何祖先的 `position` / `transform` / `filter` 包含块。** 这正好解掉 [`contracts/annotation-host-contracts.md`](./contracts/annotation-host-contracts.md) K3 记录的最高危隐患——`position: fixed` 的浮层被祖先链上的包含块制造者击穿，表现为「元素可见、位置错了」这种 E2E 照样绿的失效。前端计划 WI-14 的 K3 硬约束把 `<dialog>` ＋ `showModal()` 列为**两种默认安全的挂法之一**。`div` 方案要自己处理这件事，且处理不当不报错。
+3. **四项 a11y 行为浏览器白送，`div` 方案要各写一遍并各测一遍**：焦点陷阱（Tab 不出 dialog）、兄弟节点自动 `inert`（背景不可点、不进 tab 序、对屏幕阅读器隐藏）、`::backdrop` 伪元素、以及多层 dialog 的 Esc 分层（最上层先关）。这四项每一项都是"写错了不报错、只是残疾"的类型，正好是 §8 契约里最难用 E2E 兜住的部分。
+4. **顺带解掉一个 z-index 层级。** top layer 在所有 z-index 之上，Modal 因此**不占 §3.5.1 的任何一档**——9 档枚举里没有 modal 这一行不是漏写。`div` 方案则必须占一档，而且要占在 `--r3-z-toast` 之上还是之下会变成一个真问题（Toast 弹在 modal 上方还是被盖住）。
+5. **支持度不构成风险。** Chrome 37（2014-08）/ Firefox 98（2022-03）/ Safari 15.4（2022-03）—— 自 2022-03 起为 Baseline widely available，`::backdrop` 与 `inert` 同期。**零 fallback、零 polyfill**。本项目是自托管应用，目标浏览器就是用户自己的现代浏览器。
+
+**落地边界（写进实施）：**
+
+- **只有真正的模态用 `<dialog>`** —— 需要阻断背景交互的那种：§6.1 的破坏性操作二次确认、§6.2 的 5 个模态、§6.4 的 DEG-S5 冲突对话框（后者另加 `role="alertdialog"`，见 §6.4 设计要求第 2 条）。
+- **非模态弹层不用 `<dialog>`**：下拉、气泡、标注工具条、tooltip 走普通元素 ＋ `--r3-z-popover`。`<dialog>` 不带 `showModal()`（即 `show()`）也能非模态显示，但那样既拿不到 top layer 也拿不到焦点陷阱，等于只借了个标签名——不要这么用。
+- **DEG-S5 的两条禁用是显式代码**，不是默认行为的副产品：`cancel` 事件 `preventDefault()`，且**不要**添加遮罩点击关闭的监听器。这两行要有注释说明它们是 §6.4 第 3 条的实现，否则后来者会当成漏写补上。
+- **原型 `components.jsx` 的 `Modal` 改为原生 `<dialog>`**，与 R3 / R4 / 图标改 SVG 同属"已裁决但尚未落到原型"，归 WI-10 / WI-11。
