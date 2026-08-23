@@ -1,3 +1,9 @@
+// 0.4（007）：包成 IIFE，顶层符号不再挂到 window 上。
+// 此前这四个文件各自定义一份 escapeHtml，同一页里谁后加载谁赢——reader.html
+// 同时加载 search.js 与 ai.js，两份实现对 null/undefined 的处理并不相同。
+// 无导出：四个文件都自初始化，实测无任何跨文件符号引用。
+// 函数体不整体缩进，是为了不让这次的两行包裹淹没在 1900 行 whitespace diff 里。
+(() => {
 function escapeHtml(text) {
   return String(text)
     .replaceAll("&", "&amp;")
@@ -253,3 +259,4 @@ document.addEventListener("DOMContentLoaded", () => {
   const ui = new LibrarySearchUI();
   ui.init();
 });
+})();
