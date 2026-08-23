@@ -67,7 +67,7 @@
 |---|---|
 | `--r3-warn` / `--r3-danger` | 重命名为 `--r3-warning` / `--r3-error`，并补齐四个同名 `-subtle` 底色 |
 | `--r3-sidebar-w` / `--r3-right-w` | 补定义（否则 `grid-template-columns` 整条失效，三栏塌成默认布局） |
-| `--r3-text-quiet` | 补 `:root` 下的定义（它是 chrome 轴的角色色，此前只在阅读主题块里出现过） |
+| `--r3-text-quiet` | ~~补 `:root` 下的定义~~ → **2026-08-23 直接删除**：全仓库 0 个 `var()` 消费者，两个主题下都与 `--r3-text-subtle` / `--r3-text-muted` 重复；「安静文字」在阅读轴上由 `--r3-page-quiet` 承担。见 spec §3.3 文字色实测对比度表 |
 
 ⚠️ **对比度不达标的是浅色档的 500**，不是夜间档——白底上绿 2.28 / 琥珀 2.15 / 红 3.76 / 青 3.68，已按实测改成浅色 700 档、夜间 400 档。这一点在旧记录里被写反过，不要沿用错的版本。
 
@@ -666,6 +666,21 @@ WI-1 到 WI-20 全部以这三项落地为前置，下面各 WI 的「前置 WI�
 >
 > ⚠️ **同样不接受任何行内抑制注释**（`/* *-disable */`、`/* *-disable-next-line */`、以及所选工具的等价写法）。上一段管的是「豁免清单能不能变长」，这一段管的是「能不能绕过清单」——两件事，都要堵。理由与 §4 对 testid 命名 lint 的裁定完全一致：**「加个 lint 例外」这条路不成立，lint 例外会让整条约束失效**。工具链尚未选型（WI-9 定），所以这里禁的是**行为**不是某个具体语法：无论最终选哪个工具，它的行内抑制能力都必须在配置里关掉，并由 WI-9 验收 11 断言白名单中不含抑制条目。
 
+**工具链裁决（2026-08-23，已问过 Codex 并综合）**：选 **stylelint ＋ `stylelint-declaration-strict-value` ＋ `postcss-html`，外面套一层自写的棘轮包装**，不自己用 Python 写 CSS 值解析。
+
+- **为什么不自写**：0.8 那条 lint 能零依赖，是因为它的模式是 `--x:` 与 `var(--x)` 两条正则就能穷尽的。本条不是——它要判的是**复合值与简写**里的字面量（`border: 1px solid #eee`、`box-shadow`、`linear-gradient`、`transition`）。用正则做这件事等于手搓半个 PostCSS，且会长成一堆脆弱的特例。
+- **为什么"多一份依赖"不是代价**：Node 工具链在本 WI 已是既定成本（`package.json` ＋ Vite ＋ Vitest ＋ jsdom，WI-14 还要 ESLint ＋ dependency-cruiser）。B 方案的零依赖优势在 ET-1 落地那一刻就归零。
+- **`postcss-html` 是必需项不是可选项**：现状的大头样式在 Jinja 模板的 `<style>` 块里（`library.html` 1075 行、`reader.html` 1403 行）。不挂 `customSyntax` 就等于只扫了 `.css`，白名单的大头一行都抓不到。
+
+**四个必须在实现时堵住的坑**（Codex 提出，全部采纳，其中第 2、4 条修正了初版设计）：
+
+1. **`postcss-html` 看不见 JS 写出去的样式**——`el.style.x = "6px"`、`style.setProperty()`、`style.textContent`、注入的 CSS 字符串。这部分归 WI-14 的 ESLint AST 规则。⚠️ **规则的靶子是"受管属性"，不是"所有 `.style` 赋值"**：运行时几何（浮动工具条的 `top`/`left`、进度条的 `width` 百分比、`transform`）是计算值不是设计 token，禁掉它们等于逼人绕路；禁的是把 `color` / `font-size` / `padding` / `border-radius` / `z-index` / 时长这几类**写成字面量**。
+2. **`declaration-strict-value` 把「任意 CSS 变量」都算合格，不区分命名空间。** 这是最要命的一条：不额外校验的话，`var(--dedao-orange)` 会**通过** lint——620 处遗留 `--dedao-*` 引用会全体显示为「已 token 化」，整条棘轮在迁移没开始时就是绿的。包装器必须自己判命名空间：**组件侧只允许 `var(--r3-*)`**；`var(--p-*)` 只在 Tier 1 里定义 `--r3-*` 时合法（这就是 §3.2 两层 token 的规矩），出现在组件里同样是违规。（该插件是否真的没有 allowlist 选项，实现时验一次；没有就在包装器里做。）
+3. **简写展开不是完整 CSS 语义解析。** 开了 `expandShorthand` 之后 `background` / `transition` / `box-shadow` / 带函数或变量的复合值仍会误报漏报。**v1 只管明确的长属性**，简写按实测逐条纳入，每纳入一条先写一个「合法复合值」fixture 断言它不误报。上面第 4 类的 `transition` 简写、以及 `box-shadow`，都排在 v1 之后。
+4. **棘轮比的是违规指纹集合，不是违规总数。** 只比总数会放过「删掉一处旧违规、在别处新增一处」——数字不变，债没还。基线是指纹集合，CI 断言 `实测 ⊆ 基线`；基线文件**只许删条目，不许加条目**。指纹取 `文件:选择器:属性`，**不含行号**——行号会被任何无关编辑冲掉，带行号的基线活不过一个 PR。多人协作时以目标分支的最新基线重跑再 rebase，避免两个 PR 互相覆盖基线。
+
+**不与 0.8 的悬空 lint 合并。** 两条问的是相反的问题（「这里用没用合法 token」vs「被引用的 token 有没有定义」），而且 0.8 必须保持零依赖：它现在跑在 `.github/workflows/lint.yml` 的 `contracts` job 里，那个 job **不装任何依赖**。合并会把 Node 安装拖进最早的一条 CI。两条可以共享扫描清单，但保持两条独立的失败信息。
+
 **跨计划**：`pyproject.toml` 的 `package-data` 要跟着改——vendored 文件从 `static/js/vendor/` 换成 Vite 产物，0.2 修好的非递归 glob 会再次失配。wheel 内容测试断言 `dist/` 进了 wheel，归 `008-test-safety-net`。这两条的实施在技术栈迁移那侧，本 WI 只负责不把它们漏掉。
 
 **涉及 testid**：无。
@@ -696,6 +711,8 @@ WI-1 到 WI-20 全部以这三项落地为前置，下面各 WI 的「前置 WI�
 11. **token 硬编码 lint 存在且不是空跑**（§9.3）：它随第 3 条那条命令一起执行；**两个反例都要验**——
     - a. 在任一受管文件里故意写一行 `color: #ff0000;`，该命令**非零退出**；删掉后**恢复零退出**。
     - b. 再单独写一行 `border-radius: 23px;`（§9.2 实测存在的离档形态），同样**非零退出**；删掉后**恢复零退出**。**第二个反例是必需的**：只验颜色的话，§9.3 违规项第 5–7 类（间距 / 圆角 / 尺寸 / 行高）可以整条不实现，而这条验收照样通过——那正是本轮要堵的洞。
+    - c. **第三个反例针对命名空间**（§9.3 坑 2）：故意写一行 `color: var(--dedao-orange);`，该命令**非零退出**。少了这一条，`declaration-strict-value` 会把 620 处遗留 `--dedao-*` 全判为合格，棘轮在迁移开工前就是绿的。
+    - d. **棘轮是指纹集合不是计数**（§9.3 坑 4）：删掉基线里任一条违规、同时在另一个文件新增一条同类违规，该命令仍**非零退出**。
     - c. 白名单的初值以文件为单位记录，**且不含任何行内抑制条目**（§9.3 的行内抑制禁令）；有一条断言保证白名单条目数**只减不增**。该断言在本 WI 交付时接进第 3 条那条命令；CI 宿主由迁移侧 `008` 建，`008` 落地后同一条断言接进 CI，本 WI 不负责建 CI。
 12. **0.8 的扫描范围已扩到 `{前端源码根}`**：`007` 的 token 悬空 lint 原扫描集是 `designs/reader-pro-next/`、`static/css/`、`templates/*.html` 与设计规格里的 CSS 块（见 `plan-tech-stack-migration.md:229`），**不含本 WI 新建的源码根**。本 WI 把它扩过去，并在迁移计划那一处同步登记（0.8 的定义归 007，扩范围这个动作归本 WI）。少了这一条，WI-1 验收 7、WI-7 验收 3、WI-10 验收里那些「0.8 通过」，都是在一个 lint 根本没扫的目录上宣布通过。
 
@@ -763,7 +780,7 @@ WI-13 / WI-16 要照抄原型 `designs/reader-pro-next/`，而原型用的是**�
 | `--surface-muted` | `--r3-surface-sunken` | 原型 muted ＝**下沉面**，不是 hover 面。按名字直译会映错角色 |
 | `--ink` / `--text` | `--r3-text` | 原型两个名同角色，合并为一个 |
 | `--muted` | `--r3-text-muted` | |
-| `--quiet` | `--r3-text-subtle` | |
+| `--quiet` | `--r3-text-subtle` | **取值不照抄原型**：原型 `#94a3b8`（亮）/ `#64748b`（暗）均不过 4.5:1，spec §3.3 已改成 `#707070` / `#7a8aa2` |
 | `--border` | `--r3-border` | |
 | `--border-strong` | `--r3-border-strong` | |
 | `--blue-500` | `--r3-accent` | D-5 品牌蓝 |
@@ -1915,7 +1932,7 @@ TOC 点击与笔记跳转都是**整页导航**，走 `@app.get("/read/{book_id}
 | ET-10 | 44 处 `console.log` 换 `debug.ts` 分层 | WI-11 | MEDIUM | ET-1 |
 | ET-11 | `settings.html` 内联样式归零（防回潮） | WI-12 | MEDIUM | ET-4 |
 | ET-13 | `commands.ts` DOM 禁令改 ESLint `no-restricted-globals` | WI-14 | MEDIUM | ET-1 |
-| ET-18 | 定 `--r3-text-quiet` 合规值 ＋ 补 §3.3 对比度表 | WI-10 | MEDIUM | **必须在 WI-10 建 token 层之前定值**，否则建完再改是返工 |
+| ET-18 | ~~定 `--r3-text-quiet` 合规值 ＋ 补 §3.3 对比度表~~ | WI-10 | — (已闭) | 2026-08-23 裁定：删 `--r3-text-quiet`；`--r3-text-subtle` 提到 `--p-gray-550` `#707070`（亮）/ `#7a8aa2`（暗），`sepia`/`green` 的 `--r3-page-quiet` 提到 `#7a6449`/`#506856`；`--r3-text-disabled` 标记为 WCAG 1.4.3 豁免。已回写 spec §3.2/§3.3/§3.4。WI-10 直接照 spec 建 token 层 |
 | ET-19 | 把规格 §3.5 的 z-index 与动效 token 实现进 WI-10 的 token 层 | WI-10 | MEDIUM | **必须在 WI-10 之前**；WI-16 的三覆盖层几何门槛依赖层级 token。⚠️ 规格 §3.5 已于 2026-08-20 落地（z-index 九档有序枚举 ＋ 动效三档时长与三条缓动 ＋ `prefers-reduced-motion` 单点降级），本条不是「去写规格」，是「把已写好的 §3.5 落成 Tier 2 定义」 |
 | ET-7 | 修 `CLAUDE.md:158/161/166` 过期条目 | WI-9 | LOW | ET-5 |
 | ET-20 | 修 `spec:541` 的「唯一一个存储 key」错误证据 | WI-10 | LOW | — |

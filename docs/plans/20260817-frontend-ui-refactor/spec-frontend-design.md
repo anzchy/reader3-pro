@@ -136,8 +136,9 @@ Tier 2  Semantic（角色，逐主题重定义）     --r3-*
   /* Neutral — 中性灰阶，替代散落的 #333/#666/#999/#ccc */
   --p-gray-0:#ffffff;  --p-gray-50:#fafafa;  --p-gray-100:#f5f5f5;
   --p-gray-200:#eeeeee; --p-gray-300:#e5e5e5; --p-gray-400:#cccccc;
-  --p-gray-500:#999999; --p-gray-600:#666666; --p-gray-700:#4a4a4a;
-  --p-gray-800:#333333; --p-gray-900:#1f2d3d; --p-gray-950:#17222e;
+  --p-gray-500:#999999; --p-gray-550:#707070; --p-gray-600:#666666;
+  --p-gray-700:#4a4a4a; --p-gray-800:#333333; --p-gray-900:#1f2d3d;
+  --p-gray-950:#17222e;
 
   /* Reading surfaces — 四个阅读主题的纸色，取原型实测值 */
   --p-paper-white:#ffffff; --p-paper-sepia:#f6ecd8;
@@ -195,10 +196,9 @@ Tier 2  Semantic（角色，逐主题重定义）     --r3-*
 
   --r3-text:          var(--p-gray-800);
   --r3-text-muted:    var(--p-gray-600);
-  --r3-text-subtle:   var(--p-gray-500);
-  --r3-text-disabled: var(--p-gray-400);
+  --r3-text-subtle:   var(--p-gray-550);   /* 不是 gray-500——见下方对比度表 */
+  --r3-text-disabled: var(--p-gray-400);   /* 1.47:1，WCAG 1.4.3 豁免，别"修" */
   --r3-text-on-accent:var(--p-gray-0);
-  --r3-text-quiet:    var(--p-gray-500);   /* 此前只在阅读主题里出现，:root 无定义 */
 
   --r3-border:        var(--p-gray-300);
   --r3-border-subtle: #f0f0f0;
@@ -241,8 +241,7 @@ Tier 2  Semantic（角色，逐主题重定义）     --r3-*
   --r3-surface-raised:#1c2740; --r3-surface-sunken:#182335;
   --r3-surface-hover:#182335;
   --r3-text:#e2e8f0; --r3-text-muted:#94a3b8;
-  --r3-text-subtle:#64748b; --r3-text-disabled:#475569;
-  --r3-text-quiet:#93a3bb;
+  --r3-text-subtle:#7a8aa2; --r3-text-disabled:#475569;
   --r3-border:#263349; --r3-border-subtle:#1c2740; --r3-border-strong:#35476a;
   --r3-accent:var(--p-blue-400);   /* D-5 改蓝后同步；原值 #ff8534 是暖橙时代的残留 */
   --r3-accent-subtle:var(--p-blue-950);
@@ -266,8 +265,8 @@ Tier 2  Semantic（角色，逐主题重定义）     --r3-*
    auto 故意没有规则——它就是「不覆盖 chrome 给的 page-* 与 hl-*」。
    别把它当漏写补上，补上就又变成一根轴了。 */
 html[data-reading-theme="paper"] .reader-shell { --r3-page-bg:var(--p-gray-0);      --r3-page-ink:#1f2937; --r3-page-quiet:#64748b; }
-html[data-reading-theme="sepia"] .reader-shell { --r3-page-bg:var(--p-paper-sepia); --r3-page-ink:#4a3b28; --r3-page-quiet:#8a7455; }
-html[data-reading-theme="green"] .reader-shell { --r3-page-bg:var(--p-paper-green); --r3-page-ink:#24382a; --r3-page-quiet:#5b7563; }
+html[data-reading-theme="sepia"] .reader-shell { --r3-page-bg:var(--p-paper-sepia); --r3-page-ink:#4a3b28; --r3-page-quiet:#7a6449; }
+html[data-reading-theme="green"] .reader-shell { --r3-page-bg:var(--p-paper-green); --r3-page-ink:#24382a; --r3-page-quiet:#506856; }
 html[data-reading-theme="night"] .reader-shell { --r3-page-bg:var(--p-paper-night); --r3-page-ink:#c2ccdb; --r3-page-quiet:#7e8ca3; }
 
 /* 高亮跟纸走，不跟 chrome 走：三种亮纸用亮色高亮，夜纸用暗色高亮 */
@@ -303,6 +302,34 @@ html[data-reading-theme="night"] .reader-shell {
 > | 所属轴 | chrome（搜索命中出现在书库列表、TOC、笔记面板——都在 iframe 外） | reading（高亮画在纸上，见规则 3） |
 >
 > 合并的诱惑在于「亮色下 `#fde68a` 和 `--p-hl-yellow` 看着差不多」。但一旦合并，用户把标注色改成绿之后搜索命中会跟着变绿，而搜索命中在书库页也要用——那里根本没有 reading 轴。
+
+**文字色实测对比度**（2026-08-23，WCAG 2.1 相对亮度公式；每格取**该角色在本主题下最差的底**，不是最好看的那个底）：
+
+| 角色 | 门槛 | 亮色 chrome（最差底 `--r3-bg` `#f5f5f5`） | 暗色 chrome（最差底 `--r3-surface-sunken` `#182335`） |
+|---|---|---|---|
+| `--r3-text` | 4.5 | `#333333` **11.59** | `#e2e8f0` **12.80** |
+| `--r3-text-muted` | 4.5 | `#666666` **5.27** | `#94a3b8` **6.15** |
+| `--r3-text-subtle` | 4.5 | `#707070` **4.54** ← 原 `#999999` 只有 **2.61** | `#7a8aa2` **4.50** ← 原 `#64748b` 只有 **3.32** |
+| `--r3-text-disabled` | **豁免** | `#cccccc` 1.47 | `#475569` 2.08 |
+
+| 阅读轴角色 | 门槛 | 纸底 | ink | quiet |
+|---|---|---|---|---|
+| `auto` / 亮 chrome | 4.5 | `#ffffff` | `#1f2937` **14.68** | `#64748b` **4.76** |
+| `auto` / 暗 chrome | 4.5 | `#131c2e` | `#dbe3ef` **13.17** | `#93a3bb` **6.65** |
+| `paper` | 4.5 | `#ffffff` | `#1f2937` **14.68** | `#64748b` **4.76** |
+| `sepia` | 4.5 | `#f6ecd8` | `#4a3b28` **9.20** | `#7a6449` **4.78** ← 原 `#8a7455` 只有 **3.80** |
+| `green` | 4.5 | `#dcece0` | `#24382a` **10.22** | `#506856` **4.95** ← 原 `#5b7563` 只有 **4.11** |
+| `night` | 4.5 | `#10151f` | `#c2ccdb` **11.27** | `#7e8ca3` **5.37** |
+
+> **`--r3-text-disabled` 的 1.47 / 2.08 是合规的，不是缺陷。** WCAG 2.1 SC 1.4.3 明文豁免"失效（inactive）的用户界面组件"。把它调到 4.5:1 会让禁用态看起来跟可用态一样，反而破坏可达性。**任何自动对比度检查在这两个值上报出的问题都要按"已知豁免"关掉**，别顺手"修"。
+>
+> **门槛为什么一律写 4.5 而不是大字的 3:1。** §3.4 的字阶最大只到 `xl` 22px 常规字重——AA 的"大字"定义是 ≥18.66px **粗体** 或 ≥24px，本设计一个都够不着。所以 UI 里**没有**能吃 3:1 的文字，只有非文字元素（边框、图标、焦点环）走 1.4.11 的 3:1。
+>
+> **亮色下 muted 与 subtle 只差 0.73，肉眼几乎分不出——这是 4.5:1 硬门槛的必然结果，不是取值没调好。** 白底上 4.5:1 把可用的中性灰压死在 `#767676`–`#000` 这一段；原型之所以能在亮色下拉开 `--muted` `#64748b`（5.1）与 `--quiet` `#94a3b8`（2.5）的差距，纯粹是因为后者不合规。**要在亮色下表达第三层级，用字号、字重、留白，别再往上调灰度**——调不动了。暗色底反过来宽松，`6.15` vs `4.50` 是真能看出来的差。
+>
+> **`--p-gray-500` `#999999` 现在没有任何 `--r3-*` 角色引用它。** 保留是因为它仍是 legacy `--dedao-light` 的迁移落点。**但它 2.61:1，只能用于非文字（分隔线、装饰图形），一旦出现在 `color:` 上就是缺陷。**
+>
+> **删掉的 `--r3-text-quiet`。** 它曾是第六个文字色 token，全仓库 `var()` 消费者为 **0**；亮色下与 `--r3-text-subtle` 同取 `--p-gray-500`（完全同值），暗色下 `#93a3bb` 与 `--r3-text-muted` `#94a3b8` 的对比度差 **0.01**——两个主题下都是重复角色。阅读轴上"安静文字"这个角色由 `--r3-page-quiet` 承担（五个主题都有定义）。它是 §11-R7 拆两根轴之前的残留，已于 2026-08-23 删除。
 
 **状态色实测对比度**（2026-08-16，WCAG 2.1 相对亮度公式）——这四组不是挑好看的，是挑过线的：
 
@@ -408,7 +435,7 @@ html[data-reading-theme="night"] .reader-shell {
 
 > 上表有三处会产生可见位移：15→16、17→18、20→22。这是把设计收进字阶的代价，接受。`17px` 与阅读器正文默认字号（§6.3，14–24px 可调）无关——那是 iframe 内的正文，不走 UI 字阶。
 
-> ⚠️ **字阶叫 `--r3-font-size-*`，不叫 `--r3-text-*`。** `--r3-text` / `--r3-text-muted` / `--r3-text-subtle` / `--r3-text-disabled` / `--r3-text-on-accent` / `--r3-text-quiet` 在 §3.3 里**已经是六个文字颜色 token**；字阶再占 `--r3-text-` 前缀，同一个前缀就同时表示颜色和字号，`--r3-text-sm` 与 `--r3-text-subtle` 靠肉眼分不出角色。**跨角色禁令**：任何 token 前缀只承担一个角色——颜色是 `--r3-text-*`，字号是 `--r3-font-size-*`，行高是 `--r3-leading-*`，间距是 `--r3-space-*`，控件尺寸是 `--r3-control-*`。把字号 token 用在 `color` 上、或把颜色 token 用在 `font-size` 上，都是错误，而不是风格问题。
+> ⚠️ **字阶叫 `--r3-font-size-*`，不叫 `--r3-text-*`。** `--r3-text` / `--r3-text-muted` / `--r3-text-subtle` / `--r3-text-disabled` / `--r3-text-on-accent` 在 §3.3 里**已经是五个文字颜色 token**；字阶再占 `--r3-text-` 前缀，同一个前缀就同时表示颜色和字号，`--r3-text-sm` 与 `--r3-text-subtle` 靠肉眼分不出角色。**跨角色禁令**：任何 token 前缀只承担一个角色——颜色是 `--r3-text-*`，字号是 `--r3-font-size-*`，行高是 `--r3-leading-*`，间距是 `--r3-space-*`，控件尺寸是 `--r3-control-*`。把字号 token 用在 `color` 上、或把颜色 token 用在 `font-size` 上，都是错误，而不是风格问题。
 
 **字体**：`--r3-font-sans` 沿用系统栈。`--r3-font-serif` 现在指向 Google Fonts 的 `Noto Serif SC`——**这是个离线故障点**（自托管应用连外网 CDN，断网即回退且首屏跳字）。改为 self-host 思源宋体子集，或直接回退到系统 `PingFang SC` / `Songti SC`。
 
