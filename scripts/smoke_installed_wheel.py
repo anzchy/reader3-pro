@@ -106,6 +106,23 @@ def build_book(py: Path, books_dir: Path, workdir: Path) -> str:
     return "smoke_data"
 
 
+def stop_and_drain(server: subprocess.Popen) -> str:
+    """先让服务退出，再读它的输出——顺序反了会永久阻塞。
+
+    `stdout=PIPE` 时 `.read()` 等的是 EOF，而 EOF 要等进程退出才来。进程还活着
+    就读，会一直挂着。这条路径只在**检查失败时**才走，所以绿的时候永远暴露不出
+    问题：守卫平时看着好好的，真抓到 bug 的那一刻反而卡死，把「四个路由 500」
+    变成「CI 跑了六小时然后超时」。2026-08-24 实测撞到。
+    """
+    server.terminate()
+    try:
+        out, _ = server.communicate(timeout=10)
+    except subprocess.TimeoutExpired:
+        server.kill()
+        out, _ = server.communicate()
+    return out or ""
+
+
 def get(url: str, timeout: float = 10.0) -> tuple[int, str]:
     try:
         with urllib.request.urlopen(url, timeout=timeout) as r:
@@ -138,7 +155,7 @@ def main() -> int:
             ready = False
             while time.monotonic() < deadline:
                 if server.poll() is not None:
-                    out = server.stdout.read() if server.stdout else ""
+                    out = stop_and_drain(server)
                     print("服务进程提前退出：\n" + out[-2000:], file=sys.stderr)
                     return 1
                 try:
@@ -170,7 +187,7 @@ def main() -> int:
                 print("装出来的 wheel 起不来或渲染不了：", file=sys.stderr)
                 for f in failures:
                     print("  - " + f, file=sys.stderr)
-                out = server.stdout.read() if server.stdout else ""
+                out = stop_and_drain(server)
                 print("服务端输出尾部：\n" + out[-2000:], file=sys.stderr)
                 return 1
         finally:
