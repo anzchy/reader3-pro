@@ -8,6 +8,12 @@
 
 > **引用规则**：用**符号名**与 **testid** 定位，不写代码行号。
 
+> **008 留给本分支的一个必做动作**：`.claude/tdd-guardian/config.json` 里 `e2e` lane 的
+> `gateOn` 现在是**空的**——008 打开本地门禁时，空的 e2e 目录会让每一次 push 永远
+> `never passed`，逼所有人常年挂 `TDD_GUARD_BYPASS`。**加第一条 e2e 用例和 `live_server`
+> fixture 的那个 commit，必须在同一个 commit 里把 `gateOn` 改回 `["push"]`。**
+> 恢复条件的唯一定义处是那条 lane 自己的 `description`，本文不复述。
+
 > **跨计划**：[前端计划](../../20260817-frontend-ui-refactor/README.md)的测试矩阵**引用本文的用例 ID**（`R-1`…`R-6` / `W-1`…`W-10` / `K-1`…`K-6` / `X-1` / `X-2`）与 §0.5 的激活分组，**不重写这些用例**。前端矩阵新增的是本文范围之外的东西：按钮态、面板互斥与焦点、键盘与 a11y、数据态、响应式、主题解析。两边出现冲突时，标注 E2E 的用例定义以本文为准。
 
 ---
