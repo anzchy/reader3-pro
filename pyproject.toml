@@ -42,10 +42,15 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # Lanes are directory-split (see .claude/tdd-guardian/config.json):
-#   tests/unit + tests/contract -> unit lane   (taskCompleted, commit)
-#   tests/e2e                   -> e2e lane    (push)
-# The unit lane excludes tests/e2e explicitly; do not add addopts that
-# re-include it, or the tight loop starts driving a browser.
+#   tests/unit + tests/contract -> unit lane       (taskCompleted, commit)  ~2s
+#   tests/integration           -> packaging lane  (push)                   ~17s
+#   tests/e2e                   -> e2e lane        (push)
+# The unit lane names its two directories explicitly, so the slow lanes stay out
+# of the tight loop by directory, not by marker. Do not add addopts that widen
+# it, or every commit starts building a wheel and driving a browser.
+#
+# A bare `pytest` runs everything including the slow ones -- that is intended for
+# a human running the full suite. Use `-m "not slow"` to skip them.
 markers = [
     "slow: takes more than a second; excluded from the tight loop",
 ]

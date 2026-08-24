@@ -1,9 +1,10 @@
 """Shared pytest fixtures for the reader3 test suite.
 
 Lane layout (see .claude/tdd-guardian/config.json):
-    tests/unit/      in-process, no I/O beyond tmp_path
-    tests/contract/  FastAPI TestClient against the real router tree
-    tests/e2e/       Playwright against a live server
+    tests/unit/         in-process, no I/O beyond tmp_path
+    tests/contract/     FastAPI TestClient against the real router tree
+    tests/integration/  builds and installs a wheel, starts a real server (@slow)
+    tests/e2e/          Playwright against a live server
 """
 
 import os
