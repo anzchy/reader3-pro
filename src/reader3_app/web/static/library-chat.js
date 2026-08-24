@@ -1,6 +1,13 @@
 (() => {
   "use strict";
 
+  // 有界枚举 → 静态映射表，值是字面量（设计规格 §4 规则 5）。
+  // 与 designs/reader-pro-next/components.jsx 的 LIB_CHAT_MSG_TESTID 一一对应。
+  const LIB_CHAT_MSG_TESTID = {
+    user: "lib-chat-msg-user",
+    assistant: "lib-chat-msg-assistant",
+  };
+
   function qs(sel, root = document) {
     return root.querySelector(sel);
   }
@@ -178,6 +185,7 @@
     renderMessage(msg) {
       const wrap = document.createElement("div");
       wrap.className = `chat-msg ${msg.role === "user" ? "is-user" : "is-assistant"}`;
+      wrap.setAttribute("data-testid", LIB_CHAT_MSG_TESTID[msg.role] || LIB_CHAT_MSG_TESTID.assistant);
       wrap.dataset.messageId = String(msg.id || "");
 
       const role = document.createElement("div");

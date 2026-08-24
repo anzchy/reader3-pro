@@ -1,6 +1,6 @@
 [project]
 name = "reader3"
-version = "0.1.0"
+version = "1.4.0"   # 与 git tag 对齐；发 tag 时两处一起改
 description = "Simple EPUB reader web app"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -32,4 +32,40 @@ include-package-data = true
 where = ["src"]
 
 [tool.setuptools.package-data]
-"reader3_app.web" = ["templates/*.html", "static/*"]
+# setuptools 的 `*` 不递归。写成 `static/*` 会漏掉 static/js、static/css、
+# static/vendor 三个子目录，wheel 装出来阅读器直接白屏（reader.css、
+# annotations.js、epub.min.js 全缺）。本地 `uv run` 走源码树，看不见这个问题。
+# `**` 需要 setuptools>=62.3；build-system 已要求 >=68，见 [build-system]。
+# scripts/check_wheel_contents.py 是这条的守卫（CI 里的 wheel job），别删。
+"reader3_app.web" = ["templates/*.html", "static/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Lanes are directory-split (see .claude/tdd-guardian/config.json):
+#   tests/unit + tests/contract -> unit lane       (taskCompleted, commit)  ~2s
+#   tests/integration           -> packaging lane  (push)                   ~17s
+#   tests/e2e                   -> e2e lane        (push)
+# The unit lane names its two directories explicitly, so the slow lanes stay out
+# of the tight loop by directory, not by marker. Do not add addopts that widen
+# it, or every commit starts building a wheel and driving a browser.
+#
+# A bare `pytest` runs everything including the slow ones -- that is intended for
+# a human running the full suite. Use `-m "not slow"` to skip them.
+markers = [
+    "slow: takes more than a second; excluded from the tight loop",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["src/reader3_app"]
+omit = ["*/__init__.py"]
+
+[dependency-groups]
+dev = [
+    "hypothesis>=6.165.9",
+    "mypy>=2.3.1",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "pytest-playwright>=0.9.0",
+    "ruff>=0.16.3",
+]

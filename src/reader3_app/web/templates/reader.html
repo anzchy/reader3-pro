@@ -1423,6 +1423,7 @@
                 {% set is_active = current_chapter.href == item.file_href %}
                 <a href="#" onclick="findAndGo('{{ item.file_href }}')"
                    class="toc-link {% if is_active %}active{% endif %}"
+                   data-testid="rd-toc-row"
                    data-file-href="{{ item.file_href }}">
                     {{ item.title }}
                 </a>
@@ -1437,9 +1438,9 @@
     <!-- Header removed - navigation moved to right toolbar -->
 
     <!-- Main Layout -->
-    <div class="reader-layout">
+    <div class="reader-layout" data-testid="rd-shell">
         <!-- TOC Sidebar -->
-        <div id="toc-mode" aria-hidden="true">
+        <div id="toc-mode" aria-hidden="true" data-testid="rd-toc-panel">
             <div class="toc-shell">
                 <div class="toc-nav-links">
                     <a href="/">Library</a>
@@ -1447,7 +1448,7 @@
                 </div>
                 <div class="toc-card">
                     <div class="toc-search">
-                        <input type="text" id="toc-search-input" placeholder="Search chapters..." autocomplete="off" />
+                        <input type="text" id="toc-search-input" data-testid="rd-toc-filter" placeholder="Search chapters..." autocomplete="off" />
                     </div>
                     <div class="toc-body" id="toc-list-root">
                         {{ render_toc(book.toc) }}
@@ -1457,30 +1458,30 @@
         </div>
 
         <!-- Main Content -->
-        <div id="reader">
+        <div id="reader" data-testid="rd-stage">
             <div id="main">
                 <div class="content-container">
                     <div class="pagination-container" id="pagination-container">
-                        <div id="epub-viewer" aria-live="polite"></div>
-                        <div class="epub-missing" id="epub-missing">
+                        <div id="epub-viewer" data-testid="rd-viewport" aria-live="polite"></div>
+                        <div class="epub-missing" id="epub-missing" data-testid="rd-error">
                             未找到原始 EPUB 文件。请删除 `books/{{ book_id }}/` 后重新运行 `reader3` 重新处理图书。
                         </div>
                     </div>
 
                     <!-- Chapter navigation (outside iframe) -->
-                    <div class="chapter-nav">
+                    <div class="chapter-nav" data-testid="rd-chapter-nav">
                         {% if prev_idx is not none %}
-                            <a href="/read/{{ book_id }}/{{ prev_idx }}" class="nav-btn" id="prev-chapter-link">Previous</a>
+                            <a href="/read/{{ book_id }}/{{ prev_idx }}" class="nav-btn" id="prev-chapter-link" data-testid="rd-chapter-prev">Previous</a>
                         {% else %}
                             <span class="nav-btn disabled">Previous</span>
                         {% endif %}
 
-                        <span class="nav-indicator">
+                        <span class="nav-indicator" data-testid="rd-chapter-count">
                             Section {{ chapter_index + 1 }} of {{ book.spine|length }}
                         </span>
 
                         {% if next_idx is not none %}
-                            <a href="/read/{{ book_id }}/{{ next_idx }}" class="nav-btn" id="next-chapter-link">Next</a>
+                            <a href="/read/{{ book_id }}/{{ next_idx }}" class="nav-btn" id="next-chapter-link" data-testid="rd-chapter-next">Next</a>
                         {% else %}
                             <span class="nav-btn disabled">Next</span>
                         {% endif %}
@@ -1490,14 +1491,14 @@
         </div>
 
         <!-- Navigation Zones for page turning -->
-        <div class="nav-zone-left" id="nav-zone-left" title="Previous page"></div>
-        <div class="nav-zone-right" id="nav-zone-right" title="Next page"></div>
+        <div class="nav-zone-left" id="nav-zone-left" data-testid="rd-page-prev" title="Previous page"></div>
+        <div class="nav-zone-right" id="nav-zone-right" data-testid="rd-page-next" title="Next page"></div>
 
         <!-- Reading Progress Indicator -->
-        <div class="reading-progress" id="reading-progress">当前阅读至 0%</div>
+        <div class="reading-progress" id="reading-progress" data-testid="rd-page-indicator">当前阅读至 0%</div>
 
         <!-- Notes Panel -->
-        <div id="notes-mode" aria-hidden="true">
+        <div id="notes-mode" aria-hidden="true" data-testid="rd-notes-panel">
             <div class="notes-shell">
                 <div class="notes-card">
                     <div class="notes-header">
@@ -1517,8 +1518,8 @@
                     </div>
                     <div class="notes-body" id="notes-body"></div>
                     <div class="notes-footer">
-                        <button type="button" class="notes-footer-btn" id="notes-review-btn">点评此书</button>
-                        <button type="button" class="notes-footer-btn notes-footer-btn-primary" id="notes-copy-btn">复制全部笔记·<span id="notes-copy-count">0</span></button>
+                        <button type="button" class="notes-footer-btn" id="notes-review-btn" data-testid="rd-notes-review">点评此书</button>
+                        <button type="button" class="notes-footer-btn notes-footer-btn-primary" id="notes-copy-btn" data-testid="rd-notes-copy-all">复制全部笔记·<span id="notes-copy-count">0</span></button>
                     </div>
                 </div>
             </div>
@@ -1526,42 +1527,42 @@
     </div>
 
     <!-- Right Toolbar -->
-    <div id="right-toolbar" aria-label="Reader tools">
+    <div id="right-toolbar" aria-label="Reader tools" data-testid="rd-rail">
         <a href="/" class="rt-btn" title="Back to Library">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
         </a>
-        <button type="button" class="rt-btn" id="reader-toc-toggle" title="Table of Contents">
+        <button type="button" class="rt-btn" id="reader-toc-toggle" data-testid="rd-rail-toc" title="Table of Contents">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
         </button>
-        <button type="button" class="rt-btn" id="reader-search-toggle" title="Search">
+        <button type="button" class="rt-btn" id="reader-search-toggle" data-testid="rd-rail-search" title="Search">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
         </button>
-        <button type="button" class="rt-btn" id="reader-ai-toggle" title="AI Assistant">
+        <button type="button" class="rt-btn" id="reader-ai-toggle" data-testid="rd-rail-ai" title="AI Assistant">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><circle cx="9" cy="10" r="2"/><circle cx="15" cy="10" r="2"/><path d="M9 16h6"/></svg>
         </button>
-        <button type="button" class="rt-btn" id="reader-font-toggle" title="Font Settings">
+        <button type="button" class="rt-btn" id="reader-font-toggle" data-testid="rd-rail-font" title="Font Settings">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><text x="4" y="18" font-size="14" font-weight="600" font-family="serif" fill="currentColor" stroke="none">Aa</text></svg>
         </button>
-        <button type="button" class="rt-btn" id="reader-notes-toggle" title="Notes">
+        <button type="button" class="rt-btn" id="reader-notes-toggle" data-testid="rd-rail-notes" title="Notes">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
         </button>
     </div>
 
     <!-- Font Settings Popup -->
-    <div id="font-settings-popup" aria-hidden="true">
+    <div id="font-settings-popup" aria-hidden="true" data-testid="rd-font-popover">
         <div class="font-settings-section">
             <div class="font-settings-label">主题</div>
             <div class="theme-options">
-                <div class="theme-option is-active">白色</div>
-                <div class="theme-option">黄色</div>
-                <div class="theme-option">护眼</div>
-                <div class="theme-option">夜间</div>
+                <div class="theme-option is-active" data-testid="rd-pref-theme-paper">白色</div>
+                <div class="theme-option" data-testid="rd-pref-theme-sepia">黄色</div>
+                <div class="theme-option" data-testid="rd-pref-theme-green">护眼</div>
+                <div class="theme-option" data-testid="rd-pref-theme-night">夜间</div>
             </div>
         </div>
 
         <div class="font-settings-section">
             <div class="font-settings-label">文字</div>
-            <div class="size-control">
+            <div class="size-control" data-testid="rd-pref-size">
                 <button type="button" class="size-btn" id="font-size-decrease" title="减小字号">−</button>
                 <div class="size-value">
                     <div class="size-value-num" id="font-size-value">17</div>
@@ -1573,7 +1574,7 @@
 
         <div class="font-settings-section">
             <div class="font-settings-label">段落间距</div>
-            <div class="size-control">
+            <div class="size-control" data-testid="rd-pref-leading">
                 <button type="button" class="size-btn" id="line-height-decrease" title="减小间距">−</button>
                 <div class="size-value">
                     <div class="size-value-num" id="line-height-value">1.9</div>
@@ -1586,55 +1587,55 @@
         <div class="font-settings-section">
             <div class="font-settings-label">字体</div>
             <div class="font-options">
-                <div class="font-option is-active">系统字体</div>
-                <div class="font-option">得到今楷</div>
-                <div class="font-option">汉仪旗黑</div>
-                <div class="font-option">思源宋体</div>
+                <div class="font-option is-active" data-testid="rd-pref-font-system">系统字体</div>
+                <div class="font-option" data-testid="rd-pref-font-kai">得到今楷</div>
+                <div class="font-option" data-testid="rd-pref-font-hei">汉仪旗黑</div>
+                <div class="font-option" data-testid="rd-pref-font-song">思源宋体</div>
             </div>
         </div>
     </div>
 
     <!-- Annotation Toolbar -->
-    <div id="annotation-toolbar" role="toolbar" aria-hidden="true">
+    <div id="annotation-toolbar" role="toolbar" aria-hidden="true" data-testid="rd-anno-toolbar">
         <div class="anno-color-row" id="anno-color-row" aria-label="Marker colors">
-            <button type="button" class="anno-color" data-color="yellow" aria-label="yellow"></button>
-            <button type="button" class="anno-color" data-color="green" aria-label="green"></button>
-            <button type="button" class="anno-color" data-color="pink" aria-label="pink"></button>
-            <button type="button" class="anno-color" data-color="blue" aria-label="blue"></button>
+            <button type="button" class="anno-color" data-color="yellow" aria-label="yellow" data-testid="rd-anno-color-yellow"></button>
+            <button type="button" class="anno-color" data-color="green" aria-label="green" data-testid="rd-anno-color-green"></button>
+            <button type="button" class="anno-color" data-color="pink" aria-label="pink" data-testid="rd-anno-color-pink"></button>
+            <button type="button" class="anno-color" data-color="blue" aria-label="blue" data-testid="rd-anno-color-blue"></button>
         </div>
         <div class="anno-actions" role="group" aria-label="Annotation actions">
-            <button type="button" class="anno-btn" data-action="copy">Copy</button>
-            <button type="button" class="anno-btn" data-action="marker">Marker</button>
-            <button type="button" class="anno-btn" data-action="wavy">Wavy</button>
-            <button type="button" class="anno-btn" data-action="underline">Underline</button>
-            <button type="button" class="anno-btn" data-action="delete">Delete</button>
-            <button type="button" class="anno-btn" data-action="note">Add Note</button>
-            <button type="button" class="anno-btn" data-action="ask_ai">Ask AI</button>
+            <button type="button" class="anno-btn" data-action="copy" data-testid="rd-anno-copy">Copy</button>
+            <button type="button" class="anno-btn" data-action="marker" data-testid="rd-anno-type-marker">Marker</button>
+            <button type="button" class="anno-btn" data-action="wavy" data-testid="rd-anno-type-wavy">Wavy</button>
+            <button type="button" class="anno-btn" data-action="underline" data-testid="rd-anno-type-underline">Underline</button>
+            <button type="button" class="anno-btn" data-action="delete" data-testid="rd-anno-delete">Delete</button>
+            <button type="button" class="anno-btn" data-action="note" data-testid="rd-anno-note">Add Note</button>
+            <button type="button" class="anno-btn" data-action="ask_ai" data-testid="rd-anno-ask">Ask AI</button>
         </div>
     </div>
 
     <!-- Note Editor -->
-    <div id="note-editor" role="dialog" aria-hidden="true">
-        <textarea id="note-editor-text" placeholder="Write your thoughts..."></textarea>
+    <div id="note-editor" role="dialog" aria-hidden="true" data-testid="rd-modal" data-modal="note-editor">
+        <textarea id="note-editor-text" data-testid="rd-note-editor-input" placeholder="Write your thoughts..."></textarea>
         <div class="note-editor-actions">
-            <button type="button" id="note-editor-cancel">Cancel</button>
-            <button type="button" id="note-editor-save">Save</button>
+            <button type="button" id="note-editor-cancel" data-testid="rd-modal-cancel" data-modal="note-editor">Cancel</button>
+            <button type="button" id="note-editor-save" data-testid="rd-modal-primary" data-modal="note-editor">Save</button>
         </div>
     </div>
     <div id="note-tooltip" aria-hidden="true"></div>
 
     <!-- Search Drawer -->
-    <div id="reader-search-drawer" aria-hidden="true">
+    <div id="reader-search-drawer" aria-hidden="true" data-testid="rd-search-panel">
         <div class="drawer-header">
             <div class="drawer-search-row">
-                <input type="text" id="reader-search-input" placeholder="Search..." autocomplete="off" />
+                <input type="text" id="reader-search-input" data-testid="rd-search-input" placeholder="Search..." autocomplete="off" />
                 <button type="button" class="drawer-btn" id="reader-search-clear" title="Clear">Clear</button>
-                <button type="button" class="drawer-btn drawer-cancel" id="reader-search-close">Close</button>
+                <button type="button" class="drawer-btn drawer-cancel" id="reader-search-close" data-testid="rd-sheet-close" data-sheet="rd-search-panel">Close</button>
             </div>
             <div class="drawer-options">
                 <label class="drawer-case">
                     Mode
-                    <select id="reader-search-mode">
+                    <select id="reader-search-mode" data-testid="rd-search-mode">
                         <option value="keyword">keyword</option>
                         <option value="semantic">semantic</option>
                         <option value="hybrid">hybrid</option>
@@ -1645,18 +1646,18 @@
                     Case sensitive
                 </label>
                 <button type="button" class="drawer-btn" id="reader-index-btn" style="display:none;">Index</button>
-                <span id="reader-index-status"></span>
+                <span id="reader-index-status" data-testid="rd-search-index-status"></span>
             </div>
         </div>
         <div class="search-results" id="reader-search-panel">
             <div class="search-status" id="reader-search-status"></div>
-            <div class="search-results-list" id="reader-search-results"></div>
+            <div class="search-results-list" id="reader-search-results" data-testid="rd-search-results"></div>
         </div>
     </div>
 
     <!-- AI Panel -->
-    <div id="reader-ai-panel" aria-hidden="true">
-        <div class="ai-resize-handle" id="ai-resize-handle" title="Drag to resize"></div>
+    <div id="reader-ai-panel" aria-hidden="true" data-testid="rd-ai-panel">
+        <div class="ai-resize-handle" id="ai-resize-handle" data-testid="rd-sheet-resizer" data-sheet="rd-ai-panel" title="Drag to resize"></div>
         <div class="ai-header">
             <div>
                 <div class="ai-title">AI Reading Assistant</div>
@@ -1668,10 +1669,10 @@
                     <option value="text">TXT</option>
                     <option value="json">JSON</option>
                 </select>
-                <button type="button" class="ai-btn" id="reader-ai-export">Export</button>
-                <button type="button" class="ai-btn" id="reader-ai-new-chat">New chat</button>
-                <button type="button" class="ai-btn" id="reader-ai-clear">Clear</button>
-                <button type="button" class="ai-btn" id="reader-ai-close">Close</button>
+                <button type="button" class="ai-btn" id="reader-ai-export" data-testid="rd-ai-export">Export</button>
+                <button type="button" class="ai-btn" id="reader-ai-new-chat" data-testid="rd-ai-new">New chat</button>
+                <button type="button" class="ai-btn" id="reader-ai-clear" data-testid="rd-ai-clear">Clear</button>
+                <button type="button" class="ai-btn" id="reader-ai-close" data-testid="rd-sheet-close" data-sheet="rd-ai-panel">Close</button>
             </div>
         </div>
         <div class="ai-body">
@@ -1679,7 +1680,7 @@
                 <div class="ai-threads-head">
                     <div class="ai-threads-title">History</div>
                 </div>
-                <div class="ai-threads-list" id="reader-ai-threads"></div>
+                <div class="ai-threads-list" id="reader-ai-threads" data-testid="rd-ai-history-list"></div>
             </div>
             <div class="ai-chat">
                 <div class="ai-quick-actions">
@@ -1687,11 +1688,11 @@
                     <button type="button" class="ai-btn" data-ai-summary-type="highlights">Highlights</button>
                     <button type="button" class="ai-btn" data-ai-summary-type="background">Background</button>
                 </div>
-                <div class="ai-messages" id="reader-ai-messages"></div>
+                <div class="ai-messages" id="reader-ai-messages" data-testid="rd-ai-thread"></div>
                 <div class="ai-input">
-                    <textarea id="reader-ai-input" placeholder="Ask about this book... (Enter to send)"></textarea>
-                    <button type="button" class="ai-send" id="reader-ai-send">Send</button>
-                    <button type="button" class="ai-stop" id="reader-ai-stop" style="display:none;">Stop</button>
+                    <textarea id="reader-ai-input" data-testid="rd-ai-input" placeholder="Ask about this book... (Enter to send)"></textarea>
+                    <button type="button" class="ai-send" id="reader-ai-send" data-testid="rd-ai-send">Send</button>
+                    <button type="button" class="ai-stop" id="reader-ai-stop" data-testid="rd-ai-stop" style="display:none;">Stop</button>
                 </div>
             </div>
         </div>

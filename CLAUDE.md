@@ -170,7 +170,8 @@ JavaScript uses vanilla ES6+ (no frameworks). CSS is plain CSS (no preprocessors
 
 ## Constitution Principles (Summary)
 
-Reader3 Pro follows 7 core principles in `.specify/memory/constitution.md`:
+Reader3 Pro follows 7 core principles. This list is the authority — the former
+`.specify/memory/constitution.md` was removed with the spec-kit toolchain (2026-08-16):
 
 1. **Data Structures First**: All entities as `@dataclass` with type annotations
 2. **Simplicity Over Engineering**: YAGNI - no abstractions beyond FastAPI/BeautifulSoup
@@ -184,30 +185,75 @@ Reader3 Pro follows 7 core principles in `.specify/memory/constitution.md`:
 
 ## Feature Development Workflow
 
-Uses spec-driven development with numbered feature branches:
+**The spec-kit framework is no longer used.** `.specify/` and the `/speckit.*` commands were
+removed on 2026-08-16. Do not attempt to invoke them.
 
-**Branch naming**: `{number}-{short-name}` (e.g., `001-search-features`, `002-ai-assistant`)
+### Where documents live
 
-**Specs directory**: `specs/{number}-{short-name}/` contains:
-- `spec.md` - User stories, requirements, success criteria
-- `plan.md` - Technical design, architecture decisions
-- `tasks.md` - Implementation tasks organized by user story
-- `data-model.md` - Entity definitions
-- `contracts/` - API specifications (OpenAPI YAML)
+| Directory | Contents | Lifecycle |
+|---|---|---|
+| `docs/plans/{date}-{topic}/` | One self-contained body of planning work: plans, specs, contracts, review records, per-branch task lists | Living until the work ships |
+| `docs/plans/*.md` | Standalone plans that aren't part of a larger effort | Living |
+| `specs/_archive/` | Historical spec-kit records for shipped features | **Frozen. Code is authoritative. Never implement from here.** |
+| `designs/` | Design references and executable prototypes | Living |
 
-**Feature status**:
-- `001-search-features`: Keyword + semantic search (✅ Completed)
-- `002-ai-assistant`: Multi-provider AI with RAG (✅ Completed)
-- `003-add-book-notes`: Book annotation system (📋 Spec phase)
-- `004-library-bulk-indexing`: 3-pane UI, collections, bulk indexing (✅ Completed)
-- `005-dedao-style-ui-reorganization`: Dedao-style UI for library and reader (✅ Completed)
-- `006-hot-fix`: Full-screen paginated reader with annotations (🚧 In progress)
+**A planning effort is one folder.** Everything a plan needs to be read and executed —
+the plan itself, its design spec, its interface contracts, its review record, and its work
+items — lives together under one dated folder. Don't scatter these across `docs/`, `specs/`,
+and `docs/contracts/`; a reader who opens the folder should need nothing outside it except
+the code and `designs/`.
 
-**Speckit commands**:
-- `/speckit.specify` - Create feature specification
-- `/speckit.clarify` - Resolve ambiguous requirements
-- `/speckit.plan` - Generate technical implementation plan
-- `/speckit.tasks` - Generate implementation task breakdown
+**Two folders may split one effort, but never one fact.** When an effort is large enough to
+split (as the 007–015 work is), each folder carries a 「权威范围」 table naming the facts it
+defines. The tables must not overlap, and every other mention of a fact links to its one
+definition instead of restating it — restating is how the two copies drift apart.
+
+There are two active efforts today, and they are two halves of one program:
+
+| Folder | Half | Branches |
+|---|---|---|
+| [`docs/plans/20260816-tech-stack-migration/`](docs/plans/20260816-tech-stack-migration/README.md) | Backend layering, storage format, test net + CI, **branch numbering** | 007, 008, 009, 011, 012, 015 (CLI) |
+| [`docs/plans/20260817-frontend-ui-refactor/`](docs/plans/20260817-frontend-ui-refactor/README.md) | Design system, degradation states, `annotations.js` split, frontend TDD matrix | 010, 013, 014, 015 (PWA) |
+
+Start at either `README.md`. Each folder holds **exactly one plan document** —
+`plan-tech-stack-migration.md` and `plan-frontend-ui-refactor.md` respectively. (The migration
+folder used to carry a second plan, `plan-ui-migration-sequencing.md`; it was merged into
+`plan-tech-stack-migration.md` on 2026-08-17 with its section numbers preserved, and deleted.)
+The frontend folder has **no `tasks/` directory** — its work items are `### WI-N:` headings
+inside `plan-frontend-ui-refactor.md` so that `/tdd-guardian:workflow` can consume them directly.
+
+`specs/` now contains only `_archive/`. It holds 171 unchecked `- [ ]` items that all describe
+already-shipped or abandoned work. See [`specs/_archive/README.md`](specs/_archive/README.md)
+before reading anything in there — `003-add-book-notes` in particular describes an annotation
+system that was never built that way (the shipped one came from `006-hot-fix`).
+
+### Branch naming
+
+`{number}-{short-name}`. **Numbers are allocated in one place only**: §9 of
+[`plan-tech-stack-migration.md`](docs/plans/20260816-tech-stack-migration/plan-tech-stack-migration.md).
+Do not invent a new number without updating that table.
+
+| Milestone | Branch | Plan folder | Status |
+|---|---|---|---|
+| M0 — Phase 0 contracts + hygiene | `007-hygiene-and-contracts` | migration | 🚧 In progress |
+| M1 — tests + CI + API freeze | `008-test-safety-net` | migration | Tasks drafted |
+| M1b — Playwright E2E | `009-e2e-annotations` | migration | Tasks drafted |
+| MD — design degradation states | `010-design-degradation-states` | **frontend** | WI-1 – WI-8 |
+| M2 — backend refactor | `011-backend-refactor` | migration | Allocated |
+| M3 — storage migration | `012-storage-format` | migration | Allocated |
+| M4a — TS shell + settings + library | `013-ts-frontend-shell` | **frontend** | WI-9 – WI-13 |
+| M4b — TS reader | `014-ts-frontend-reader` | **frontend** | WI-14 – WI-19 |
+| M5 — launch + PWA | `015-launch-experience` | migration (CLI) ＋ **frontend** (PWA) | Allocated / WI-20 |
+
+"Allocated" means the number is reserved but no branch exists yet. "Tasks drafted" means
+`docs/plans/20260816-tech-stack-migration/tasks/{branch}.md` exists. "WI-n – WI-m" means the
+work items live in `docs/plans/20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md` §4;
+frontend branches have no task files.
+
+### Shipped features (implemented; see code, not specs)
+
+Keyword + semantic search · multi-provider AI with RAG · 3-pane library with collections and bulk
+indexing · Dedao-style UI · full-screen paginated reader with annotations.
 
 ## Data Flow
 

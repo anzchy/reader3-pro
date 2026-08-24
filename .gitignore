@@ -31,9 +31,25 @@ wheels/
 
 .codex/
 
-<<<<<<< Updated upstream
-.moat/
-=======
 # Moat task system
 .moat/
->>>>>>> Stashed changes
+
+# tdd-guardian generated artifacts
+.claude/tdd-guardian/state.json
+.claude/tdd-guardian/receipts.json
+# one timestamped pair per workflow run; keep config.json, drop the run logs
+.claude/tdd-guardian/plan-*.md
+.claude/tdd-guardian/tests-*.md
+
+# pytest / coverage artifacts
+.pytest_cache/
+coverage-unit.json
+.coverage
+.gstack/
+
+# vmark editor locks
+.vmark/
+
+# Codex CLI byproduct (contains account id)
+error.log
+/.tokenize

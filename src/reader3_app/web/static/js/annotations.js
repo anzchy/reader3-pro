@@ -293,6 +293,7 @@
         const mark = doc.createElement("mark");
         const style = segmentStyle(r.seg);
         mark.className = style.classes.join(" ");
+        mark.setAttribute("data-testid", "rd-anno-span");
         mark.setAttribute("data-annotation-ids", JSON.stringify(style.ids));
         mark.setAttribute("data-annotation-id", style.ids[0] || "");
         if (style.noteText) mark.setAttribute("data-note-text", style.noteText);
@@ -349,6 +350,7 @@
         const style = segmentStyle({ anns: [ann] });
         const mark = doc.createElement("mark");
         mark.className = style.classes.join(" ");
+        mark.setAttribute("data-testid", "rd-anno-span");
         mark.setAttribute("data-annotation-ids", JSON.stringify(style.ids));
         mark.setAttribute("data-annotation-id", style.ids[0] || "");
         if (style.noteText) mark.setAttribute("data-note-text", style.noteText);

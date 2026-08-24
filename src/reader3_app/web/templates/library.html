@@ -1087,33 +1087,33 @@
 </head>
 <body data-ai-default-provider="{{ ai_default_provider }}">
     <!-- Header -->
-    <header class="library-header">
-        <div class="header-logo">Reader3 Pro</div>
+    <header class="library-header" data-testid="lib-topbar">
+        <div class="header-logo" data-testid="lib-brand">Reader3 Pro</div>
         <nav class="header-nav">
-            <a href="/" class="nav-link active">My Library</a>
-            <a href="/settings" class="nav-link">Settings</a>
+            <a href="/" class="nav-link active" data-testid="lib-topbar-nav-library">My Library</a>
+            <a href="/settings" class="nav-link" data-testid="lib-topbar-nav-settings">Settings</a>
         </nav>
         <div class="header-actions">
-            <button type="button" class="toolbar-btn toolbar-btn--primary" id="add-books-btn">Add books</button>
+            <button type="button" class="toolbar-btn toolbar-btn--primary" id="add-books-btn" data-testid="lib-topbar-add-books">Add books</button>
         </div>
     </header>
 
     <!-- Main Layout -->
-    <div class="library-layout" id="library-layout">
+    <div class="library-layout" id="library-layout" data-testid="lib-shell">
         <!-- Left Sidebar -->
-        <aside class="library-sidebar" id="library-sidebar" aria-label="Library Sidebar">
+        <aside class="library-sidebar" id="library-sidebar" data-testid="lib-sidebar" aria-label="Library Sidebar">
             <div class="sidebar-section">
                 <div class="sidebar-section-title">Types</div>
                 <div class="filter-list" role="list">
-                    <button type="button" class="filter-btn is-active" data-scope="all" role="listitem">
+                    <button type="button" class="filter-btn is-active" data-scope="all" role="listitem" data-testid="lib-sidebar-scope-all">
                         <span class="filter-label">All Books</span>
                         <span class="badge" id="count-all">{{ counts.all }}</span>
                     </button>
-                    <button type="button" class="filter-btn" data-scope="format:epub" role="listitem">
+                    <button type="button" class="filter-btn" data-scope="format:epub" role="listitem" data-testid="lib-sidebar-scope-epub">
                         <span class="filter-label">EPUB</span>
                         <span class="badge" id="count-epub">{{ counts.epub }}</span>
                     </button>
-                    <button type="button" class="filter-btn" data-scope="format:pdf" role="listitem" disabled title="PDF not supported yet">
+                    <button type="button" class="filter-btn" data-scope="format:pdf" role="listitem" data-testid="lib-sidebar-scope-pdf" disabled title="PDF not supported yet">
                         <span class="filter-label">PDF</span>
                         <span class="badge" id="count-pdf">{{ counts.pdf }}</span>
                     </button>
@@ -1123,7 +1123,7 @@
             <div class="sidebar-section">
                 <div class="sidebar-section-row">
                     <div class="sidebar-section-title">Collections</div>
-                    <button type="button" class="icon-btn" id="collections-create" aria-label="Create collection">+</button>
+                    <button type="button" class="icon-btn" id="collections-create" data-testid="lib-sidebar-create-collection" aria-label="Create collection">+</button>
                 </div>
                 <div class="collections-error" id="collections-error" {% if not collections_error %}hidden{% endif %}>
                     {{ collections_error }}
@@ -1133,7 +1133,7 @@
                 </div>
                 <div class="collections-list" id="collections-list" aria-label="Collections List">
                     {% for c in collections %}
-                        <div class="collection-row" data-collection-id="{{ c.id }}">
+                        <div class="collection-row" data-collection-id="{{ c.id }}" data-testid="lib-sidebar-collection">
                             <button type="button" class="collection-btn" data-scope="collection:{{ c.id }}">
                                 <span class="collection-name">{{ c.name }}</span>
                                 <span class="badge">{{ c.book_count }}</span>
@@ -1153,24 +1153,24 @@
         </aside>
 
         <!-- Main Content -->
-        <main class="library-main" aria-label="Library">
+        <main class="library-main" aria-label="Library" data-testid="lib-main">
             <div class="library-toolbar" role="region" aria-label="Library Toolbar">
                 <div class="toolbar-left">
                     <label class="search-input" aria-label="Filter books by title">
                         <span class="search-icon" aria-hidden="true">🔍</span>
-                        <input type="text" id="title-filter" placeholder="Find books..." autocomplete="off" />
+                        <input type="text" id="title-filter" data-testid="lib-toolbar-filter" placeholder="Find books..." autocomplete="off" />
                     </label>
                 </div>
                 <div class="toolbar-right" role="group" aria-label="Library Actions">
-                    <button type="button" class="icon-btn" id="sort-btn" aria-label="Sort A to Z">A→Z</button>
+                    <button type="button" class="icon-btn" id="sort-btn" data-testid="lib-toolbar-sort" aria-label="Sort A to Z">A→Z</button>
                     <button type="button" class="icon-btn" id="view-toggle-btn" aria-label="Toggle grid and list view">▦</button>
-                    <button type="button" class="icon-btn" id="select-toggle-btn" aria-label="Toggle selection mode">✓</button>
-                    <div class="selection-group" id="selection-group" hidden>
+                    <button type="button" class="icon-btn" id="select-toggle-btn" data-testid="lib-toolbar-select-mode" aria-label="Toggle selection mode">✓</button>
+                    <div class="selection-group" id="selection-group" data-testid="lib-bulk-bar" hidden>
                         <span class="selected-count" id="selected-count">0 selected</span>
-                        <button type="button" class="toolbar-btn" id="select-all-btn">Select all</button>
-                        <button type="button" class="toolbar-btn" id="clear-selection-btn">Clear</button>
-                        <button type="button" class="toolbar-btn" id="add-to-collection-btn" disabled>Add to collection</button>
-                        <button type="button" class="toolbar-btn toolbar-btn--primary" id="index-selected-btn" disabled>Index selected</button>
+                        <button type="button" class="toolbar-btn" id="select-all-btn" data-testid="lib-bulk-select-all">Select all</button>
+                        <button type="button" class="toolbar-btn" id="clear-selection-btn" data-testid="lib-bulk-select-none">Clear</button>
+                        <button type="button" class="toolbar-btn" id="add-to-collection-btn" data-testid="lib-bulk-collection" disabled>Add to collection</button>
+                        <button type="button" class="toolbar-btn toolbar-btn--primary" id="index-selected-btn" data-testid="lib-bulk-index" disabled>Index selected</button>
                     </div>
                 </div>
             </div>
@@ -1181,14 +1181,14 @@
 
             {% if not books %}
                 <div class="empty-state">
-                    <div class="empty-title">No processed books found</div>
+                    <div class="empty-title" data-testid="lib-empty">No processed books found</div>
                     <div class="empty-subtitle">Run <code>uv run reader3 path/to/book.epub</code> and refresh.</div>
                 </div>
             {% endif %}
 
-            <section class="library-shelf" id="library-grid-view" aria-label="Books">
+            <section class="library-shelf" id="library-grid-view" data-testid="lib-book-grid" aria-label="Books">
                 {% for book in books %}
-                    <article class="book-card" data-book-id="{{ book.id }}" data-format="{{ book.format }}" data-title="{{ book.title|lower }}" data-author="{{ book.author|lower }}">
+                    <article class="book-card" data-testid="lib-book-card" data-book-id="{{ book.id }}" data-format="{{ book.format }}" data-title="{{ book.title|lower }}" data-author="{{ book.author|lower }}">
                         <input type="checkbox" class="select-checkbox" aria-label="Select {{ book.title }}" />
                         <div class="book-badges" aria-hidden="true">
                             <span class="status-pill is-loading" data-status="loading">Loading...</span>
@@ -1207,7 +1207,7 @@
                 {% endfor %}
             </section>
 
-            <section class="library-list-view" id="library-list-view" aria-label="Books List" hidden>
+            <section class="library-list-view" id="library-list-view" data-testid="lib-book-table" aria-label="Books List" hidden>
                 <table class="books-table">
                     <thead>
                         <tr>
@@ -1221,7 +1221,7 @@
                     </thead>
                     <tbody>
                         {% for book in books %}
-                            <tr class="book-row" data-book-id="{{ book.id }}" data-format="{{ book.format }}" data-title="{{ book.title|lower }}" data-author="{{ book.author|lower }}">
+                            <tr class="book-row" data-testid="lib-book-row" data-book-id="{{ book.id }}" data-format="{{ book.format }}" data-title="{{ book.title|lower }}" data-author="{{ book.author|lower }}">
                                 <td class="cell-title">
                                     <input type="checkbox" class="select-checkbox" aria-label="Select {{ book.title }}" />
                                     <div class="list-title">{{ book.title }}</div>
@@ -1243,19 +1243,19 @@
         </main>
 
         <!-- Right Panel Toggle -->
-        <button type="button" class="right-collapse-toggle" id="right-collapse-toggle" aria-label="Hide right panel" title="Hide right panel">›</button>
+        <button type="button" class="right-collapse-toggle" id="right-collapse-toggle" data-testid="lib-insights-collapse" aria-label="Hide right panel" title="Hide right panel">›</button>
 
         <!-- Right Panel -->
-        <aside class="library-right" id="library-right" aria-label="Right Panel">
+        <aside class="library-right" id="library-right" data-testid="lib-insights" aria-label="Right Panel">
             <nav class="right-tabbar" id="right-tabbar" role="tablist" aria-label="Right Panel Tabs">
-                <button type="button" class="tab-btn is-active" data-tab="dashboard" aria-label="Dashboard" role="tab" aria-selected="true">Dashboard</button>
-                <button type="button" class="tab-btn" data-tab="chat" aria-label="Chat" role="tab" aria-selected="false">Chat</button>
-                <button type="button" class="tab-btn" data-tab="search" aria-label="Search" role="tab" aria-selected="false">Search</button>
+                <button type="button" class="tab-btn is-active" data-tab="dashboard" aria-label="Dashboard" role="tab" data-testid="lib-panel-tab-dashboard" aria-selected="true">Dashboard</button>
+                <button type="button" class="tab-btn" data-tab="chat" aria-label="Chat" role="tab" data-testid="lib-panel-tab-chat" aria-selected="false">Chat</button>
+                <button type="button" class="tab-btn" data-tab="search" aria-label="Search" role="tab" data-testid="lib-panel-tab-search" aria-selected="false">Search</button>
             </nav>
 
             <div class="right-content" id="right-content">
                 <!-- Dashboard Tab -->
-                <section class="right-tab is-active" id="dashboard-tab" aria-label="Dashboard">
+                <section class="right-tab is-active" id="dashboard-tab" data-testid="lib-panel-dashboard" aria-label="Dashboard">
                     <div class="right-title">Dashboard</div>
                     <div class="stats-grid" aria-label="Library Stats">
                         <div class="stats-card">
@@ -1283,13 +1283,13 @@
                         <div class="stats-bar-label" id="stats-bar-label">-</div>
                     </div>
                     <div class="stats-actions">
-                        <button type="button" class="toolbar-btn" id="refresh-stats-btn">Refresh stats</button>
+                        <button type="button" class="toolbar-btn" id="refresh-stats-btn" data-testid="lib-panel-refresh-stats">Refresh stats</button>
                     </div>
                     <div class="stats-state" id="stats-state" aria-live="polite"></div>
                 </section>
 
                 <!-- Chat Tab -->
-                <section class="right-tab" id="chat-tab" aria-label="Chat">
+                <section class="right-tab" id="chat-tab" data-testid="lib-panel-chat" aria-label="Chat">
                     <div class="right-title">Chat</div>
                     <div class="chat-modes" role="group" aria-label="Chat scope">
                         <button type="button" class="mini-btn" disabled title="Coming soon">All books</button>
@@ -1299,7 +1299,7 @@
                     <div class="chat-controls">
                         <label class="form-field">
                             <div class="form-label">Book</div>
-                            <select id="chat-book-select">
+                            <select id="chat-book-select" data-testid="lib-chat-scope">
                                 <option value="" selected disabled>Select a book...</option>
                                 {% for book in books %}
                                     <option value="{{ book.id }}" data-book-uuid="{{ book.book_uuid }}">{{ book.title }}</option>
@@ -1315,31 +1315,31 @@
                             </select>
                         </label>
                     </div>
-                    <div class="chat-thread" id="chat-thread" aria-label="Chat Messages"></div>
+                    <div class="chat-thread" id="chat-thread" data-testid="lib-chat-thread" aria-label="Chat Messages"></div>
                     <div class="chat-composer" aria-label="Chat Composer">
-                        <textarea id="chat-input" rows="2" placeholder="Ask about this book..."></textarea>
+                        <textarea id="chat-input" data-testid="lib-chat-input" rows="2" placeholder="Ask about this book..."></textarea>
                         <div class="chat-actions">
-                            <button type="button" class="toolbar-btn" id="chat-stop-btn" disabled>Stop</button>
-                            <button type="button" class="toolbar-btn toolbar-btn--primary" id="chat-send-btn" disabled>Send</button>
+                            <button type="button" class="toolbar-btn" id="chat-stop-btn" data-testid="lib-chat-stop" disabled>Stop</button>
+                            <button type="button" class="toolbar-btn toolbar-btn--primary" id="chat-send-btn" data-testid="lib-chat-send" disabled>Send</button>
                         </div>
                     </div>
                     <div class="chat-status" id="chat-status" aria-live="polite"></div>
                 </section>
 
                 <!-- Search Tab -->
-                <section class="right-tab" id="search-tab" aria-label="Search">
+                <section class="right-tab" id="search-tab" data-testid="lib-panel-search" aria-label="Search">
                     <div class="right-title">Search</div>
                     <div class="search-box">
-                        <input type="text" id="library-panel-search-input" placeholder="Search across your library..." autocomplete="off" />
+                        <input type="text" id="library-panel-search-input" data-testid="lib-search-input" placeholder="Search across your library..." autocomplete="off" />
                         <div class="search-actions">
-                            <button type="button" class="search-btn" id="library-panel-search-clear">Clear</button>
+                            <button type="button" class="search-btn" id="library-panel-search-clear" data-testid="lib-search-clear">Clear</button>
                             <label>
-                                <input type="checkbox" id="library-panel-search-case" />
+                                <input type="checkbox" id="library-panel-search-case" data-testid="lib-search-case" />
                                 Case
                             </label>
                             <label>
                                 Mode
-                                <select id="library-panel-search-mode">
+                                <select id="library-panel-search-mode" data-testid="lib-search-mode">
                                     <option value="keyword">keyword</option>
                                     <option value="semantic">semantic</option>
                                     <option value="hybrid">hybrid</option>
@@ -1347,7 +1347,7 @@
                             </label>
                             <label>
                                 Sort
-                                <select id="library-panel-search-sort">
+                                <select id="library-panel-search-sort" data-testid="lib-search-sort">
                                     <option value="relevance">relevance</option>
                                     <option value="book_title">title</option>
                                     <option value="book_author">author</option>
@@ -1357,7 +1357,7 @@
                     </div>
                     <div class="library-search-panel" id="library-panel-search-panel" style="display:none;">
                         <div class="search-status" id="library-panel-search-status"></div>
-                        <div id="library-panel-search-results"></div>
+                        <div id="library-panel-search-results" data-testid="lib-search-results"></div>
                     </div>
                 </section>
             </div>
@@ -1365,10 +1365,10 @@
     </div>
 
     <!-- Add Books Modal -->
-    <dialog class="modal" id="add-books-modal" aria-label="Add books">
+    <dialog class="modal" id="add-books-modal" data-testid="lib-modal" data-modal="add-books" aria-label="Add books">
         <div class="modal-header">
             <div class="modal-title">Add books</div>
-            <button type="button" class="icon-btn" id="add-books-close" aria-label="Close">✕</button>
+            <button type="button" class="icon-btn" id="add-books-close" data-testid="lib-modal-close" data-modal="add-books" aria-label="Close">✕</button>
         </div>
         <div class="modal-body">
             <p>Process EPUBs into <code>books/*_data/</code> using:</p>
@@ -1376,60 +1376,60 @@
             <p>Then refresh this page.</p>
         </div>
         <div class="modal-actions">
-            <button type="button" class="toolbar-btn toolbar-btn--primary" id="add-books-ok">OK</button>
+            <button type="button" class="toolbar-btn toolbar-btn--primary" id="add-books-ok" data-testid="lib-modal-primary" data-modal="add-books">OK</button>
         </div>
     </dialog>
 
     <!-- Index Errors Modal -->
-    <dialog class="modal" id="index-errors-modal" aria-label="Indexing errors">
+    <dialog class="modal" id="index-errors-modal" data-testid="lib-modal" data-modal="index-errors" aria-label="Indexing errors">
         <div class="modal-header">
             <div class="modal-title">Indexing completed with errors</div>
-            <button type="button" class="icon-btn" id="index-errors-close" aria-label="Close">✕</button>
+            <button type="button" class="icon-btn" id="index-errors-close" data-testid="lib-modal-close" data-modal="index-errors" aria-label="Close">✕</button>
         </div>
         <div class="modal-body">
-            <div class="error-summary" id="index-errors-summary"></div>
+            <div class="error-summary" id="index-errors-summary" data-testid="lib-index-errors"></div>
         </div>
         <div class="modal-actions">
-            <button type="button" class="toolbar-btn toolbar-btn--primary" id="index-errors-ok">OK</button>
+            <button type="button" class="toolbar-btn toolbar-btn--primary" id="index-errors-ok" data-testid="lib-modal-primary" data-modal="index-errors">OK</button>
         </div>
     </dialog>
 
     <!-- Create Collection Modal -->
-    <dialog class="modal" id="create-collection-modal" aria-label="Create collection">
+    <dialog class="modal" id="create-collection-modal" data-testid="lib-modal" data-modal="create-collection" aria-label="Create collection">
         <div class="modal-header">
             <div class="modal-title">Create collection</div>
-            <button type="button" class="icon-btn" id="create-collection-close" aria-label="Close">✕</button>
+            <button type="button" class="icon-btn" id="create-collection-close" data-testid="lib-modal-close" data-modal="create-collection" aria-label="Close">✕</button>
         </div>
         <div class="modal-body">
             <label class="form-field">
                 <div class="form-label">Name</div>
-                <input type="text" id="create-collection-name" maxlength="60" autocomplete="off" />
+                <input type="text" id="create-collection-name" data-testid="lib-collection-name-input" maxlength="60" autocomplete="off" />
             </label>
             <div class="form-error" id="create-collection-error" hidden></div>
         </div>
         <div class="modal-actions">
-            <button type="button" class="toolbar-btn" id="create-collection-cancel">Cancel</button>
-            <button type="button" class="toolbar-btn toolbar-btn--primary" id="create-collection-submit">Create</button>
+            <button type="button" class="toolbar-btn" id="create-collection-cancel" data-testid="lib-modal-cancel" data-modal="create-collection">Cancel</button>
+            <button type="button" class="toolbar-btn toolbar-btn--primary" id="create-collection-submit" data-testid="lib-modal-primary" data-modal="create-collection">Create</button>
         </div>
     </dialog>
 
     <!-- Add to Collection Modal -->
-    <dialog class="modal" id="add-to-collection-modal" aria-label="Add selected books to collection">
+    <dialog class="modal" id="add-to-collection-modal" data-testid="lib-modal" data-modal="add-to-collection" aria-label="Add selected books to collection">
         <div class="modal-header">
             <div class="modal-title">Add to collection</div>
-            <button type="button" class="icon-btn" id="add-to-collection-close" aria-label="Close">✕</button>
+            <button type="button" class="icon-btn" id="add-to-collection-close" data-testid="lib-modal-close" data-modal="add-to-collection" aria-label="Close">✕</button>
         </div>
         <div class="modal-body">
             <div class="form-error" id="add-to-collection-error" hidden></div>
-            <div class="collections-picker" id="collections-picker"></div>
+            <div class="collections-picker" id="collections-picker" data-testid="lib-add-to-collection-select"></div>
         </div>
         <div class="modal-actions">
-            <button type="button" class="toolbar-btn" id="add-to-collection-cancel">Cancel</button>
+            <button type="button" class="toolbar-btn" id="add-to-collection-cancel" data-testid="lib-modal-cancel" data-modal="add-to-collection">Cancel</button>
         </div>
     </dialog>
 
     <!-- Screen Reader Announcements -->
-    <div class="sr-only" id="aria-live" aria-live="polite" aria-atomic="true"></div>
+    <div class="sr-only" id="aria-live" data-testid="lib-live-region" aria-live="polite" aria-atomic="true"></div>
 
     <!-- Scripts -->
     <script src="/static/library.js" defer></script>

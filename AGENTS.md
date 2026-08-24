@@ -13,7 +13,8 @@
 - `src/reader3_app/ai/`: AI assistant orchestration (providers, routing, RAG, disk conversations).
 - `config/`: Runtime settings (notably `config/ai_settings.json` is gitignored; see `config/ai_settings.example.json`).
 - `books/`: Local library root; processed books live in `books/<book_id>_data/` (may contain `book.pkl`, `book.epub`, `images/`, `ai_conversations/`, `chroma_db/`, `notes.json`).
-- `specs/`: Feature specs + checklists + API contracts (source of truth for acceptance behavior).
+- `docs/plans/{date}-{topic}/`: One self-contained body of planning work — plan, design spec, interface contracts, review record, work items. Two active efforts, two halves of one program: `docs/plans/20260816-tech-stack-migration/` (backend, test net, CI, **branch numbering**) and `docs/plans/20260817-frontend-ui-refactor/` (design system, degradation states, frontend TDD matrix). Start at either `README.md`. Their 「权威范围」 tables do not overlap — each fact is defined in exactly one of them.
+- `specs/_archive/`: Historical spec-kit records for already-shipped features. **Frozen — the code is authoritative. Never implement from here.** See `specs/_archive/README.md`.
 - `docs/`: Data locations, settings, and persistence details.
 - Generated/ignored (see `.gitignore`): `books/*_data/`, `.venv/`, `conversations/`, and typically `*.epub`.
 
@@ -42,7 +43,7 @@ There is no automated test suite currently. Validate changes by:
 
 1. Running `uv run reader3 <epub>` and confirming `books/*_data/book.pkl` and `books/*_data/images/` are created.
 2. Running `uv run reader3-server` and exercising library + reader flows in the browser.
-3. Using `specs/` acceptance scenarios when implementing new features (e.g., search).
+3. Using the acceptance criteria in the owning plan folder when implementing a planned feature: backend branches use `docs/plans/20260816-tech-stack-migration/tasks/{branch}.md`; frontend branches (010 / 013 / 014 / PWA) have **no task files** — their work items and acceptance criteria are the `### WI-N:` sections of `docs/plans/20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md`. Do not take acceptance criteria from `specs/_archive/` — those describe work that already shipped (or was abandoned).
 
 ## Commit & Pull Request Guidelines
 
@@ -53,7 +54,7 @@ Git history currently contains only `init commit`, so no strict convention exist
 - Prefer Conventional Commits (`feat:`, `fix:`, `chore:`, `test:`, `docs: ...`, `refactor: ...`); keep commits scoped and readable.
 - Note which tests were run and call out follow-ups or known gaps.
 
-For PRs: include a clear description, link relevant `specs/` docs/issues, and add screenshots or Markdown diffs for UI/output changes.
+For PRs: include a clear description, link the relevant plan/task document under `docs/plans/`, and add screenshots or Markdown diffs for UI/output changes.
 
 ## Security & Data Notes
 

@@ -1,0 +1,79 @@
+# 007 步骤 0.5 与 0.8 的三条 lint（`contracts` job），以及 0.2 的两重 wheel 检查（`wheel` job）。
+# 迁移计划 §7 Phase 0 的退出条件要求它们「在 CI 里生效」。
+#
+# 三条 lint 都是零依赖的标准库脚本，所以 `contracts` 这个 job 不装任何东西——
+# 不 uv sync、不 pip install。**wheel 检查故意另起一个 job**，因为它要 `uv build`：
+# 混进 `contracts` 就会把「零依赖」这个性质弄丢，那条性质是让 lint 在最早期、
+# 还没有 tests/ 的分支上也能跑起来的前提。
+# 测试 CI 由 008 单独建（tests/ 目录那时才有），与本文件不合并。
+#
+# **触发时机：只在发版时跑，日常 push 不跑。**（2026-08-23 按要求改）
+# 两条发版路径都认，因为本仓库两种都用过：
+#   - `git push origin v1.5.0`（只打 tag，不建 Release）→ `push.tags`
+#   - 在 GitHub 上 Publish 一个 Release       → `release.published`
+# 从 UI 建 Release 会顺带产生 tag push，两条会同时命中；下面的 concurrency
+# 按 ref 归组并取消旧的，所以不会跑两遍。
+#
+# 代价要写明白：**这些 lint 从「每次 push 的护栏」降级成了「发版前的关门检查」。**
+# 中间攒下的违规不会有人告诉你，会一次性堆在发版那天。两个补偿手段：
+#   - `workflow_dispatch`：想验的时候在 Actions 页面手点，或 `gh workflow run lint.yml`
+#   - 本地：`python3 scripts/lint_e2e_selectors.py`（另两条同理）零依赖，随手能跑
+name: lint
+
+on:
+  release:
+    types: [published]
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+# 同一个 tag 被 release 事件和 tag push 各触发一次时，只留最新的那次。
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts:
+    name: 契约 lint（testid ＋ token）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # 三条分开跑，且不用 `&&` 串联：失败时要能一眼看出是哪一条，
+      # 而不是「第一条挂了，后两条没跑，不知道它们是绿是红」。
+      - name: 选择器 lint（tests/e2e/ 只许用 data-testid 与 ARIA）
+        run: python3 scripts/lint_e2e_selectors.py
+
+      - name: 命名 lint（模板与原型的 testid 必须匹配 canonical 正则）
+        if: always()
+        run: python3 scripts/lint_testid_naming.py
+
+      - name: token 悬空引用 lint（var(--x) 的 x 必须有定义，带 fallback 也算违规）
+        if: always()
+        run: python3 scripts/lint_token_refs.py
+
+  wheel:
+    name: wheel 内容 ＋ 装出来能跑（0.2）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      # 这个 bug 只在装了 wheel 之后才看得见：`uv run` 走源码树，永远是好的。
+      # 本文件改成仅发版触发之后，这一步就是**发版前最后一道自动关门检查**——
+      # 中间攒下的打包问题不会有人提前告诉你。日常想验：`python3 scripts/check_wheel_contents.py`。
+      - name: 打 wheel 并逐文件对账（templates/ 与 static/ 下不许漏）
+        run: python3 scripts/check_wheel_contents.py
+
+      # 「文件进了 wheel」与「装出来能跑」会分开坏。2026-08-23 实测：内容检查
+      # 全绿，装出来每个 HTML 页面照样 500——依赖没上界，干净环境解析出
+      # starlette 1.6.0，旧的 TemplateResponse 签名在 1.x 里已删除。
+      # 这一步是**全仓库唯一按最新依赖解析的地方**，`uv.lock` 在这里故意不参与。
+      - name: 装进干净 venv 起真服务，四个路由不许 5xx
+        if: always()
+        run: python3 scripts/smoke_installed_wheel.py

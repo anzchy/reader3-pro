@@ -2,12 +2,16 @@
 Parses an EPUB file into a structured object that can be used to serve the book via a web interface.
 """
 
+import fcntl
+import glob
+import hashlib
 import os
 import pickle
 import shutil
+import sys
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Tuple
 from datetime import datetime
 from urllib.parse import unquote
 
@@ -171,6 +175,343 @@ def extract_metadata_robust(book_obj) -> BookMetadata:
     )
 
 
+# --- Durable publication (staging -> validate -> atomic swap) ---
+#
+# A book directory holds two kinds of files:
+#
+#   generated  book.pkl, book.epub, images/   - rebuilt from the source EPUB
+#   user-owned notes.json, ai_meta.json, ai_conversations/, chroma_db/
+#
+# Reprocessing regenerates the first kind and must be the identity on the
+# second. Everything generated is therefore built in a *sibling* staging
+# directory, validated by read-back, and only then swapped in one path at a
+# time. `book.pkl` is the commit marker: every reader keys a book's existence
+# on it, so it is written to the staging area first and swapped in LAST. A run
+# that dies at any point leaves either the old book or the new one, never a
+# half-published mixture, and never loses a user-owned byte.
+
+
+class ArtifactValidationError(ValueError):
+    """A staged artifact failed read-back validation, so nothing was committed.
+
+    Subclasses ``ValueError`` because it reports bad data, not a failed syscall.
+    """
+
+
+def _staging_dir(output_dir: str) -> str:
+    """The sibling staging directory for ``output_dir``.
+
+    A sibling (rather than a child, or a path in the system temp dir) guarantees
+    the same filesystem, which is what makes the final ``os.replace`` atomic.
+    """
+    normalized = os.path.normpath(output_dir)
+    return f"{normalized}.staging-{os.getpid()}"
+
+
+#: Name of the lock file a run holds inside its own staging directory.
+_LOCK_NAME = ".lock"
+
+
+def _acquire_staging_lock(staging: str) -> int:
+    """Take an exclusive, non-blocking flock on this run's staging directory.
+
+    Returns the open file descriptor; the caller must keep it open for the whole
+    run and close it at the end, because the lock lives on the open file
+    description rather than on the file.
+    """
+    fd = os.open(os.path.join(staging, _LOCK_NAME), os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+def _pid_is_running(pid: int) -> bool:
+    """Whether ``pid`` is a live process. A pid we may not signal still counts."""
+    if pid <= 0:
+        # Signalling 0 addresses our own process group and negatives address a
+        # whole group, so neither ever means "is this one process alive?".
+        return True
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return True
+    return True
+
+
+def _staging_dir_is_owned(leftover: str) -> bool:
+    """Whether some live run still owns ``leftover``.
+
+    Liveness is decided by the lock, not by the pid embedded in the directory
+    name. The kernel drops an ``flock`` when its holder dies however it dies, so
+    the lock cannot go stale; a pid can be recycled onto an unrelated process,
+    which would turn one SIGKILLed run into a book that can never be reprocessed
+    again. The pid check survives only as a fallback for a directory created
+    before its lock file existed.
+    """
+    lock_path = os.path.join(leftover, _LOCK_NAME)
+    if os.path.isfile(lock_path):
+        try:
+            fd = os.open(lock_path, os.O_RDWR)
+        except OSError:
+            return True
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            return True
+        finally:
+            os.close(fd)
+        return False
+
+    suffix = os.path.basename(leftover).rsplit(".staging-", 1)[-1]
+    return suffix.isdigit() and int(suffix) != os.getpid() and _pid_is_running(int(suffix))
+
+
+def _is_own_staging_name(leftover: str) -> bool:
+    """Whether ``leftover`` is named the way :func:`_staging_dir` names things.
+
+    The glob that finds leftovers is wider than the set of names this module
+    creates, and the excess is not hypothetical. A book folder is named
+    ``{epub_stem}_data``, so an EPUB legally called ``sample_data.staging-1.epub``
+    produces ``sample_data.staging-1_data`` — a real library folder that the
+    pattern ``sample_data.staging-*`` matches. So does a user's own
+    ``sample_data.staging-backup``. Neither has a lock file, so
+    :func:`_staging_dir_is_owned` reports them unowned and the caller would
+    delete them outright, ``notes.json`` and all: a data-loss path inside the
+    protocol that exists to prevent data loss.
+
+    A staging directory this module made always ends in a bare pid, and a real
+    book folder never can — ``_data`` is always appended, so its suffix can never
+    be all digits. Requiring digits therefore separates the two exactly.
+    """
+    suffix = os.path.basename(leftover).rsplit(".staging-", 1)[-1]
+    return suffix.isdigit()
+
+
+def _clear_staging_dirs(output_dir: str) -> None:
+    """Remove staging directories left behind by a previous crashed run.
+
+    A staging directory that a live run still holds a lock on belongs to a
+    concurrent reprocess of this same book. Deleting it would pull the floor out
+    from under that run, so this refuses instead: two processes rebuilding one
+    book at once is a mistake worth reporting, not racing.
+    """
+    normalized = os.path.normpath(output_dir)
+    # glob.escape: a book folder is named after the EPUB file, so it can legally
+    # contain '*', '?' or '[' — none of which may be read as a pattern here.
+    for leftover in glob.glob(f"{glob.escape(normalized)}.staging-*"):
+        if not _is_own_staging_name(leftover):
+            # Someone else's directory that merely matches the pattern. Not ours
+            # to reason about, and certainly not ours to delete.
+            continue
+        if _staging_dir_is_owned(leftover):
+            raise RuntimeError(
+                f"another process is already processing {normalized}; refusing to "
+                f"delete the staging directory it still holds a lock on: {leftover}"
+            )
+        shutil.rmtree(leftover, ignore_errors=True)
+
+
+def _fsync_path(path: str) -> None:
+    """fsync a file or directory so the rename that follows cannot outrun it.
+
+    Opening a directory read-only is POSIX-only; this deliberately does not
+    support Windows, which the project does not target.
+    """
+    flags = os.O_RDONLY
+    if os.path.isdir(path):
+        flags |= getattr(os, "O_DIRECTORY", 0)
+    fd = os.open(path, flags)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _digest(path: str) -> Tuple[str, int]:
+    """Return ``(sha256_hex, size)`` for a file, read in bounded blocks."""
+    hasher = hashlib.sha256()
+    size = 0
+    with open(path, 'rb') as f:
+        for block in iter(lambda: f.read(65536), b''):
+            hasher.update(block)
+            size += len(block)
+    return hasher.hexdigest(), size
+
+
+def _write_pickle_atomically(book: Book, target_path: str) -> None:
+    """Write ``book`` to ``target_path`` via a same-directory temp + os.replace.
+
+    The temp file lives in the destination directory so the rename is atomic;
+    it is flushed and fsynced before the rename, and removed if anything fails,
+    so a reader never observes a truncated or partial pickle.
+    """
+    tmp_path = f"{target_path}.tmp"
+    try:
+        with open(tmp_path, 'wb') as f:
+            pickle.dump(book, f)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, target_path)
+    except BaseException:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        raise
+    _fsync_path(os.path.dirname(target_path) or ".")
+
+
+def _validate_staged_artifacts(
+    staging: str,
+    source_epub: str,
+    image_digests: Dict[str, Tuple[str, int]],
+) -> None:
+    """Read every staged artifact back off disk before anything is swapped in.
+
+    Writing a file and getting no exception is not evidence that the bytes on
+    disk are the bytes intended, so each artifact is re-read and compared
+    against an independently known value: the pickle must unpickle to a Book
+    with a non-empty spine, the staged EPUB must hash equal to its *source*,
+    and every image must hash equal to the payload it was supposed to receive
+    (``image_digests`` comes from the EPUB item, never from the file that was
+    just written, or a bad write would validate against itself). On any mismatch this
+    raises and the caller discards the staging directory, leaving the previous
+    book byte-for-byte intact.
+    """
+    staged_pkl = os.path.join(staging, 'book.pkl')
+    try:
+        with open(staged_pkl, 'rb') as f:
+            reloaded = pickle.load(f)
+    except Exception as exc:
+        raise ArtifactValidationError(
+            f"staged book.pkl could not be read back: {exc}"
+        ) from exc
+    if not isinstance(reloaded, Book):
+        raise ArtifactValidationError(
+            f"staged book.pkl unpickled to {type(reloaded).__name__}, not a Book"
+        )
+    if not reloaded.spine:
+        raise ArtifactValidationError(
+            "staged book.pkl has an empty spine: the EPUB yielded no chapters"
+        )
+
+    staged_epub = os.path.join(staging, 'book.epub')
+    if not os.path.isfile(staged_epub):
+        raise ArtifactValidationError("staged book.epub is missing")
+    if _digest(staged_epub) != _digest(source_epub):
+        raise ArtifactValidationError(
+            "staged book.epub does not match the source EPUB"
+        )
+
+    for rel_path, expected in image_digests.items():
+        staged_image = os.path.join(staging, rel_path)
+        if not os.path.isfile(staged_image):
+            raise ArtifactValidationError(f"staged image is missing: {rel_path}")
+        if _digest(staged_image) != expected:
+            raise ArtifactValidationError(
+                f"staged image does not match what was written: {rel_path}"
+            )
+
+    for rel_path in set(reloaded.images.values()):
+        if not os.path.isfile(os.path.join(staging, rel_path)):
+            raise ArtifactValidationError(
+                f"book.pkl references an image that was not staged: {rel_path}"
+            )
+
+
+def _discard(path: str) -> None:
+    """Delete whatever sits at ``path``: directory, file or dangling symlink."""
+    if os.path.isdir(path) and not os.path.islink(path):
+        shutil.rmtree(path)
+    elif os.path.lexists(path):
+        os.unlink(path)
+
+
+def _restore(aside: Optional[str], live: str) -> None:
+    """Undo one step of the commit.
+
+    ``aside`` is where the superseded artifact was parked, or ``None`` when
+    there was no previous artifact at ``live`` — in which case undoing means
+    removing what this run put there, not putting anything back. Skipping that
+    case is what leaves a new ``book.epub`` beside an old ``book.pkl``.
+    """
+    _discard(live)
+    if aside is not None:
+        os.replace(aside, live)
+
+
+def _commit_staged_artifacts(staging: str, output_dir: str) -> None:
+    """Swap validated artifacts into ``output_dir``, marker last.
+
+    Two invariants, and the second is the one that is easy to lose:
+
+    1. ``book.pkl`` is written last, so a run that dies mid-commit never leaves
+       a marker pointing at artifacts that were never published.
+    2. The marker and the artifacts beside it always describe the *same*
+       version. "The old book.pkl is still loadable" is not enough — an old
+       pickle sitting next to a new EPUB and new images renders text that
+       disagrees with the EPUB and 404s on every image it references. So the
+       superseded ``book.epub`` and ``images/`` are renamed aside (into
+       staging, hence the same filesystem) before anything new lands, and any
+       failure before the marker rolls all of them back together.
+
+    Nothing here enumerates, reads or writes any path other than the three
+    generated ones, which is why user-owned files come through untouched.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+
+    live_epub = os.path.join(output_dir, 'book.epub')
+    live_images = os.path.join(output_dir, 'images')
+    undo: List[Tuple[Optional[str], str]] = []
+    committed = False
+    try:
+        # Move the superseded artifacts aside first. os.replace also refuses to
+        # overwrite a non-empty directory, so images/ has to move regardless.
+        # An artifact that was *absent* still gets an undo entry, with no place
+        # to restore from: rolling back has to remove what this run added, not
+        # only put back what it moved.
+        for live, aside_name in ((live_epub, 'book.epub.superseded'),
+                                 (live_images, 'images.superseded')):
+            if os.path.lexists(live):
+                aside = os.path.join(staging, aside_name)
+                os.replace(live, aside)
+                undo.append((aside, live))
+            else:
+                undo.append((None, live))
+
+        os.replace(os.path.join(staging, 'book.epub'), live_epub)
+        os.replace(os.path.join(staging, 'images'), live_images)
+        _fsync_path(output_dir)
+
+        # The marker. Once this lands the new book is the visible one, and the
+        # transaction is over: a later failure must not roll the artifacts back
+        # out from under a marker that already points at them.
+        os.replace(os.path.join(staging, 'book.pkl'), os.path.join(output_dir, 'book.pkl'))
+        committed = True
+        _fsync_path(output_dir)
+    except BaseException:
+        if not committed:
+            for parked, live in reversed(undo):
+                try:
+                    _restore(parked, live)
+                except OSError as undo_error:
+                    # Never let a failed rollback mask the original error - but
+                    # never let it pass in silence either. This is the one
+                    # outcome that leaves the book genuinely inconsistent, and
+                    # the operator cannot act on what they are not told.
+                    print(
+                        f"WARNING: could not restore {live} after a failed commit "
+                        f"({undo_error}); {output_dir} may be left inconsistent",
+                        file=sys.stderr,
+                    )
+        raise
+
+
 # --- Main Conversion Logic ---
 
 def process_epub(epub_path: str, output_dir: str) -> Book:
@@ -182,23 +523,56 @@ def process_epub(epub_path: str, output_dir: str) -> Book:
     # 2. Extract Metadata
     metadata = extract_metadata_robust(book)
 
-    # 3. Prepare Output Directories
-    os.makedirs(os.path.dirname(output_dir) or ".", exist_ok=True)
-    if os.path.exists(output_dir):
-        shutil.rmtree(output_dir)
-    images_dir = os.path.join(output_dir, 'images')
-    os.makedirs(images_dir, exist_ok=True)
+    # 3. Prepare a sibling staging directory.
+    # The output directory is NOT cleared: it holds the user's annotations,
+    # conversations and semantic index, none of which this function may touch.
+    # normpath first: dirname("books/x/") is "books/x", which would create the
+    # output directory itself as a side effect of preparing its parent.
+    os.makedirs(os.path.dirname(os.path.normpath(output_dir)) or ".", exist_ok=True)
+    _clear_staging_dirs(output_dir)
+    staging = _staging_dir(output_dir)
+    # exist_ok=False: if a leftover survived the cleanup above, its stale images
+    # would merge into this run and be committed. Fail instead of publishing them.
+    os.makedirs(staging, exist_ok=False)
+    # Taken immediately, and held until the staging tree is gone: it is what a
+    # later run consults to tell "still being written" from "left by a crash".
+    lock_fd = _acquire_staging_lock(staging)
+    images_dir = os.path.join(staging, 'images')
+    os.makedirs(images_dir)
 
-    # 4. Persist original EPUB for renderer compatibility
-    original_epub_path = os.path.join(output_dir, "book.epub")
     try:
-        shutil.copy2(epub_path, original_epub_path)
-    except Exception as exc:
-        print(f"Warning: failed to copy original EPUB to {original_epub_path}: {exc}")
+        final_book, image_digests = _build_into_staging(
+            book, metadata, epub_path, staging, images_dir
+        )
+        _validate_staged_artifacts(staging, epub_path, image_digests)
+        _commit_staged_artifacts(staging, output_dir)
+    finally:
+        os.close(lock_fd)
+        shutil.rmtree(staging, ignore_errors=True)
+
+    print(f"Saved structured data to {os.path.join(output_dir, 'book.pkl')}")
+    return final_book
+
+
+def _build_into_staging(
+    book, metadata: BookMetadata, epub_path: str, staging: str, images_dir: str
+) -> Tuple[Book, Dict[str, Tuple[str, int]]]:
+    """Write every generated artifact into ``staging``; return the Book and image digests.
+
+    Nothing here writes to the output directory, so any failure raised from
+    this function leaves the previously published book completely untouched.
+    """
+    # 4. Persist original EPUB for renderer compatibility.
+    # A failure here is fatal: publishing a book without its EPUB would leave
+    # the reader unable to render it, which is worse than not republishing.
+    original_epub_path = os.path.join(staging, "book.epub")
+    shutil.copy2(epub_path, original_epub_path)
+    _fsync_path(original_epub_path)
 
     # 5. Extract Images & Build Map
     print("Extracting images...")
     image_map = {} # Key: internal_path, Value: local_relative_path
+    image_digests: Dict[str, Tuple[str, int]] = {}
 
     for item in book.get_items():
         if item.get_type() == ebooklib.ITEM_IMAGE:
@@ -208,15 +582,22 @@ def process_epub(epub_path: str, output_dir: str) -> Book:
             safe_fname = "".join([c for c in original_fname if c.isalpha() or c.isdigit() or c in '._-']).strip()
 
             # Save to disk
+            payload = item.get_content()
             local_path = os.path.join(images_dir, safe_fname)
             with open(local_path, 'wb') as f:
-                f.write(item.get_content())
+                f.write(payload)
+                f.flush()
+                os.fsync(f.fileno())
 
             # Map keys: We try both the full internal path and just the basename
             # to be robust against messy HTML src attributes
             rel_path = f"images/{safe_fname}"
             image_map[item.get_name()] = rel_path
             image_map[original_fname] = rel_path
+            # Digest the payload, not the file just written: validation has to
+            # compare the staged bytes against what they were *supposed* to be.
+            # Hashing the file would make a bad write validate against itself.
+            image_digests[rel_path] = (hashlib.sha256(payload).hexdigest(), len(payload))
 
     # 6. Process TOC
     print("Parsing Table of Contents...")
@@ -289,13 +670,27 @@ def process_epub(epub_path: str, output_dir: str) -> Book:
         processed_at=datetime.now().isoformat()
     )
 
-    return final_book
+    # 9. Stage the commit marker. It is written last inside staging and swapped
+    # in last during the commit, so it is never the first thing readers see.
+    staged_pkl = os.path.join(staging, 'book.pkl')
+    with open(staged_pkl, 'wb') as f:
+        pickle.dump(final_book, f)
+        f.flush()
+        os.fsync(f.fileno())
+    _fsync_path(staging)
+
+    return final_book, image_digests
 
 
 def save_to_pickle(book: Book, output_dir: str):
+    """Publish ``book`` as ``output_dir/book.pkl`` without ever truncating the old one.
+
+    ``process_epub`` publishes its own marker as part of its atomic commit, so
+    nothing in this module calls this any more. It stays as the supported way
+    for other code to republish a Book it has modified in memory.
+    """
     p_path = os.path.join(output_dir, 'book.pkl')
-    with open(p_path, 'wb') as f:
-        pickle.dump(book, f)
+    _write_pickle_atomically(book, p_path)
     print(f"Saved structured data to {p_path}")
 
 
@@ -332,8 +727,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     base = os.path.splitext(os.path.basename(epub_file))[0]
     out_dir = str(Path(books_dir) / (base + "_data"))
 
+    # process_epub publishes book.pkl itself, as the last step of its atomic
+    # commit. Calling save_to_pickle here too would flip the marker twice.
     book_obj = process_epub(epub_file, out_dir)
-    save_to_pickle(book_obj, out_dir)
     print("\n--- Summary ---")
     print(f"Title: {book_obj.metadata.title}")
     print(f"Authors: {', '.join(book_obj.metadata.authors)}")

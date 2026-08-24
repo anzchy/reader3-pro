@@ -7,9 +7,9 @@
   <link rel="stylesheet" href="/static/settings.css">
 </head>
 <body>
-  <div class="container">
-    <div class="topbar">
-      <a class="link" href="/">← Back to Library</a>
+  <div class="container" data-testid="set-screen">
+    <div class="topbar" data-testid="set-topbar">
+      <a class="link" href="/" data-testid="set-topbar-back-to-library">← Back to Library</a>
       <div class="title">Settings</div>
     </div>
 
@@ -53,12 +53,12 @@
     <div class="section">
       <h2>Data</h2>
       <div class="row">
-        <button id="settings-clear-conversations" class="btn btn-danger">Clear conversations (IndexedDB)</button>
-        <button id="settings-clear-summaries" class="btn btn-danger">Clear summaries (IndexedDB)</button>
+        <button id="settings-clear-conversations" data-testid="set-data-conversations" class="btn btn-danger">Clear conversations (IndexedDB)</button>
+        <button id="settings-clear-summaries" data-testid="set-data-cache" class="btn btn-danger">Clear summaries (IndexedDB)</button>
         <span id="settings-data-status" class="status"></span>
       </div>
       <div class="row">
-        <button id="settings-export-config" class="btn">Export settings (no keys)</button>
+        <button id="settings-export-config" data-testid="set-export-settings" class="btn">Export settings (no keys)</button>
         <label class="btn" style="display:inline-flex; align-items:center; gap:8px;">
           Import settings
           <input id="settings-import-config" type="file" accept="application/json" style="display:none;" />

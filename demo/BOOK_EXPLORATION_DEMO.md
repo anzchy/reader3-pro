@@ -226,7 +226,7 @@ The book.pkl structure is well-suited for AI integration:
 
 ## References
 
-- **Feature Spec**: `specs/002-ai-assistant/spec.md`
+- **Feature Spec**: `specs/_archive/002-ai-assistant/spec.md`
 - **Search Implementation**: `search_service.py`
 - **Book Processing**: `reader3.py`
-- **Constitution**: `.specify/constitution.md`
+- **Constitution**: `CLAUDE.md` § Constitution Principles
