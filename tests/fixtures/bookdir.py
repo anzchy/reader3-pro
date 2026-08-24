@@ -77,3 +77,42 @@ def staging_leftovers(out: Path | str) -> List[str]:
     # is named after the EPUB file and may legally contain '*', '?' or '['.
     normalized = os.path.normpath(str(out))
     return sorted(_glob.glob(f"{_glob.escape(normalized)}.staging-*"))
+
+
+# --- damaged book directories (group 4: "scale and failure") ---------------
+#
+# A book directory can be broken in ways no EPUB can express, because the
+# damage happens after processing: a half-synced cloud folder, a killed
+# reindex, a user deleting what looked like a redundant copy of their book.
+# The loaders all key a book's existence on book.pkl, so each of these is a
+# different answer to "the marker is there, now what?".
+
+
+def break_book_pkl(out: Path | str) -> Path:
+    """Overwrite ``book.pkl`` with bytes that are not a pickle at all."""
+    path = Path(out) / "book.pkl"
+    path.write_bytes(b"\x80\x05not-a-pickle-at-all")
+    return path
+
+
+def truncate_book_pkl(out: Path | str, *, keep: int = 32) -> Path:
+    """Keep the first ``keep`` bytes of a real pickle: a valid opcode prefix, no STOP.
+
+    Distinct from :func:`break_book_pkl` on purpose -- garbage fails at the
+    first opcode, a truncation fails only after the loader has already
+    allocated part of the object graph.
+    """
+    path = Path(out) / "book.pkl"
+    path.write_bytes(path.read_bytes()[:keep])
+    return path
+
+
+def remove_book_epub(out: Path | str) -> Path:
+    """Delete ``book.epub``, leaving ``book.pkl`` claiming the book is published.
+
+    This is the shape the reader actually breaks in: the library page still
+    lists the book (it only looks for the marker) and epub.js then 404s.
+    """
+    path = Path(out) / "book.epub"
+    path.unlink()
+    return path
