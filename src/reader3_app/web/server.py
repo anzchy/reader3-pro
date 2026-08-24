@@ -159,6 +159,32 @@ class _Reader3Unpickler(pickle.Unpickler):
             module = "reader3_app.reader3"
         return super().find_class(module, name)
 
+def _book_uuid_or_none(book_folder: str) -> Optional[str]:
+    """解析 book_uuid，读不出来就降级成 None 并留痕，而不是让整页 500。
+
+    **这是第 2 档（捕获并转译），刻意不是第 1 档。** `ensure_book_uuid()` 在
+    `ai_meta.json` 读不懂时抛，那是对的 —— 旧行为是静默生成新 uuid 覆盖原文件，
+    用户全部 AI 会话当场失联且原值已被删除。但「抛」传到这两个调用点上就变成了
+    **一本书的元数据坏掉 → 整个书库首页 500 / 该书的阅读页 500**，用户连能修它的
+    界面都进不去。错误处理不该比错误本身更糟。
+
+    降级后的可观测证据有三处，不是静默：
+      1. 服务端 warning，点名是哪本书、错在哪；
+      2. 该书的 AI 端点 404（明确的缺失），而不是被换上一个新 uuid（无声的数据丢失）；
+      3. 前端 `library-chat.js` 已有的 `if (!this.bookUuid)` 分支会亮出提示。
+         模板必须渲染成空串才能命中它 —— Jinja 把 None 渲染成字符串 "None"，
+         那是个真值，会绕过整条降级路径。见 library.html / reader.html 的 `or ""`。
+
+    **原文件一个字节都不会被改。** 这是与旧行为的根本区别：坏掉的 ai_meta.json
+    仍然躺在那里，人可以修；旧代码会把它覆盖掉，谁也救不回来。
+    """
+    try:
+        return book_uuid_resolver.book_uuid_for_folder(book_folder)
+    except (OSError, ValueError) as e:
+        logger.warning("cannot resolve book_uuid for %s: %s", book_folder, e)
+        return None
+
+
 @app.get("/", response_class=HTMLResponse)
 async def library_view(request: Request):
     """Lists all available processed books."""
@@ -188,7 +214,7 @@ async def library_view(request: Request):
                         cover_image = None
 
                     cover_url = f"/read/{item}/images/{cover_image}" if cover_image else None
-                    book_uuid = book_uuid_resolver.book_uuid_for_folder(item)
+                    book_uuid = _book_uuid_or_none(item)
                     books.append({
                         "id": item,
                         "title": book.metadata.title,
@@ -507,7 +533,7 @@ async def read_chapter(request: Request, book_id: str, chapter_index: int):
     prev_idx = chapter_index - 1 if chapter_index > 0 else None
     next_idx = chapter_index + 1 if chapter_index < len(book.spine) - 1 else None
 
-    book_uuid = book_uuid_resolver.book_uuid_for_folder(book_id)
+    book_uuid = _book_uuid_or_none(book_id)
     cover_image = None
     try:
         images_dir = os.path.join(BOOKS_DIR, book_id, "images")
