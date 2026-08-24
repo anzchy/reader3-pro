@@ -65,7 +65,7 @@ class BookVectorIndex:
         with open(pkl_path, "rb") as f:
             try:
                 return _Reader3Unpickler(f).load()
-            except Exception:
+            except Exception:  # noqa: BLE001 - 第 3 档：同 search_service:238，退回默认 loader，真坏的 pickle 会在下一行抛
                 f.seek(0)
                 return pickle.load(f)
 
@@ -77,7 +77,7 @@ class BookVectorIndex:
         client = chromadb.PersistentClient(path=self.chroma_path)
         try:
             collection = client.get_collection(COLLECTION_NAME, embedding_function=embed_fn)
-        except Exception:
+        except Exception:  # noqa: BLE001 - 第 3 档：chromadb 在集合不存在时抛的类型跨版本不稳定，这里只能宽捕获后建集合；建失败会照常抛
             collection = client.create_collection(COLLECTION_NAME, embedding_function=embed_fn)
         return client, collection
 
@@ -97,7 +97,7 @@ class BookVectorIndex:
                 return False
             chunk_count = meta.get("chunk_count")
             return chunk_count is None or int(chunk_count) > 0
-        except Exception:
+        except Exception:  # noqa: BLE001 - 第 3 档：index_meta.json 读不出来就当作没索引，重新索引可完全恢复，不丢用户数据
             # If the meta file exists but is unreadable, assume not indexed.
             return False
 
@@ -175,7 +175,7 @@ class BookVectorIndex:
                 }
             with open(self.meta_path, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except Exception:
+        except Exception:  # noqa: BLE001 - 第 3 档：同上，返回值 status='unknown' 本身就是痕迹
             return {
                 "book_id": self.book_id,
                 "status": "unknown",

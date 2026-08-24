@@ -39,6 +39,55 @@ where = ["src"]
 # scripts/check_wheel_contents.py 是这条的守卫（CI 里的 wheel job），别删。
 "reader3_app.web" = ["templates/*.html", "static/**/*"]
 
+[tool.ruff]
+target-version = "py310"
+# 存量代码里长行很多，格式化不是本分支的事——line-length 只影响 E501，而 E501
+# 不在 select 里，写在这里是为了别让以后开 E 时突然多出几百条。
+line-length = 120
+src = ["src"]
+
+[tool.ruff.lint]
+# 只开异常规则，不开全家桶。AGENTS.md 「异常处理规则（三档）」里每一档都指名
+# 由这里的某条规则做二值判定；判定不了的规则是装饰，所以这份 select 就是那份
+# 规则的执行者，一一对应：
+#   BLE001 第 1 档  业务逻辑不许 `except Exception`
+#   S110   第 3 档  裸 `except: pass` 一律禁止
+# 想加新规则（F、E、I……）请单开一个分支：008 是安全网分支，全量 lint 会淹掉
+# 异常规则的信号，而异常规则正是这里要守的那条。
+select = ["BLE001", "S110"]
+
+[tool.ruff.lint.per-file-ignores]
+# 测试里断言「这里会抛什么」经常需要宽捕获，那是断言不是吞异常。
+"tests/**" = ["BLE001", "S110"]
+
+[tool.mypy]
+# 先宽松，能跑、不报一屏，后续分阶段收紧——一上来 strict 只会得到一份没人看的
+# 输出，然后被 `--no-error-summary` 掉。当前宽松度：
+#   - 不要求函数有注解（disallow_untyped_defs = false）：存量大量无注解函数；
+#   - 无注解函数的函数体不检查（check_untyped_defs = false）：同上；
+#   - ignore_missing_imports：ebooklib / chromadb / sentence_transformers 没有
+#     stub，缺了它们的报错和类型无关，是噪声。
+# 收紧路线（各自跟着模块的重构走，不在 008 一次做完）：
+#   1) check_untyped_defs = true
+#   2) disallow_untyped_defs = true，先只对 src/reader3_app/ai/**
+#   3) strict
+python_version = "3.10"
+files = ["src"]
+ignore_missing_imports = true
+disallow_untyped_defs = false
+check_untyped_defs = false
+warn_unused_ignores = false
+warn_redundant_casts = true
+no_implicit_optional = true
+exclude = ["^src/reader3_app/web/static/"]
+# 存量噪声：008 首次开 mypy 时全仓 24 条错，分布是
+#   arg-type 10 / union-attr 6 / assignment 3 / var-annotated 2 / no-redef 2 / call-arg 1
+# 前五类都是「Optional 没收窄」「dict 里取出来的 Any」这种存量形状问题，跟着各自
+# 模块的重构清（收紧顺序：先 ai/**，再 search/vector，最后 web/server）。
+# **call-arg 故意留着**：它现在只报一条，而那一条是真 bug（008 报告里记了）——
+# 把它一起关掉，等于用配置把 mypy 找到的唯一实锤盖住。
+disable_error_code = ["arg-type", "union-attr", "assignment", "var-annotated", "no-redef"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # Lanes are directory-split (see .claude/tdd-guardian/config.json):

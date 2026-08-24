@@ -166,7 +166,7 @@ def unique_chapter_orders_from_passages(passages: Iterable[dict], *, limit: int 
     for p in passages or []:
         try:
             order = int(p.get("chapter_order"))  # type: ignore[call-arg]
-        except Exception:
+        except Exception:  # noqa: BLE001 - 第 3 档：跳过一条 chapter_order 形状不对的检索结果，只影响这次上下文里少一章；类型待收窄为 (TypeError, ValueError)
             continue
         if order in seen:
             continue

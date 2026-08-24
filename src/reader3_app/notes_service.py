@@ -32,10 +32,10 @@ def load_annotations(books_dir: str, book_id: str) -> List[Annotation]:
                 continue
             try:
                 out.append(Annotation.from_dict(raw))
-            except Exception:
+            except Exception:  # noqa: BLE001 - FIXME(012): 无正当理由——标注是用户产生的数据，一条读不出来就被丢掉，随后 save_annotations 把它从 notes.json 里永久抹去
                 continue
         return out
-    except Exception:
+    except Exception:  # noqa: BLE001 - FIXME(012): 无正当理由——整份 notes.json 读不出来返回空列表，下一次保存即清空全书标注；这是不可再生的用户数据
         return []
 
 

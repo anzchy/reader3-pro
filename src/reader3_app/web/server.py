@@ -118,7 +118,7 @@ def _library_template_name() -> str:
 def _validate_collection_id(collection_id: str) -> str:
     try:
         return str(uuid.UUID(str(collection_id)))
-    except Exception:
+    except Exception:  # noqa: BLE001 - 第 2 档：HTTP 边界，转译成 400 且 detail 说明原因；类型待收窄为 ValueError
         raise HTTPException(status_code=400, detail="Invalid collection_id")
 
 @app.on_event("startup")
@@ -140,11 +140,11 @@ def load_book_cached(folder_name: str) -> Optional[Book]:
         with open(file_path, "rb") as f:
             try:
                 book = _Reader3Unpickler(f).load()
-            except Exception:
+            except Exception:  # noqa: BLE001 - 第 3 档：旧 pickle 的模块路径解析失败时退回默认 loader，真坏的 pickle 由下面 147 处理
                 f.seek(0)
                 book = pickle.load(f)
         return book
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - 第 2 档：坏掉的 book.pkl 只让这一本书从书库消失，其余照常；已 print 留痕（该换成 logger，见 008 报告）
         print(f"Error loading book {folder_name}: {e}")
         return None
 
@@ -184,7 +184,7 @@ async def library_view(request: Request):
                             pick_from = preferred or candidates
                             if pick_from:
                                 cover_image = sorted(pick_from, key=lambda x: (len(x), x.lower()))[0]
-                    except Exception:
+                    except Exception:  # noqa: BLE001 - 第 3 档：封面挑选失败只影响一张缩略图，书本身照常打开
                         cover_image = None
 
                     cover_url = f"/read/{item}/images/{cover_image}" if cover_image else None
@@ -385,7 +385,7 @@ def _validate_stats_scope(scope: str) -> tuple[str, Optional[str], Optional[str]
         raw = scope.split(":", 1)[1].strip()
         try:
             cid = str(uuid.UUID(raw))
-        except Exception:
+        except Exception:  # noqa: BLE001 - 第 2 档：HTTP 边界，转译成 400 Invalid scope；类型待收窄为 ValueError
             raise HTTPException(status_code=400, detail="Invalid scope")
         return (f"collection:{cid}", None, cid)
     raise HTTPException(status_code=400, detail="Invalid scope")
@@ -429,7 +429,7 @@ def _compute_stats_for_scope(scope: str) -> LibraryStats:
                 cc = status.get("chunk_count")
                 if isinstance(cc, int):
                     chunks_total += cc
-        except Exception:
+        except Exception:  # noqa: BLE001 - FIXME(011): 无正当理由——单本索引统计失败被跳过，首页那个百分比就静默偏小，没有任何痕迹说明它不准
             continue
 
     indexed_percent = 0
@@ -464,7 +464,7 @@ async def api_library_stats(scope: str = "all", fresh: bool = False):
         stats = _compute_stats_for_scope(validated_scope).to_dict()
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - 第 2 档：HTTP 边界，转译成 500 且 detail 带上原因
         raise HTTPException(status_code=500, detail=str(e))
 
     _stats_cache[cache_key] = (now, stats)
@@ -517,7 +517,7 @@ async def read_chapter(request: Request, book_id: str, chapter_index: int):
             pick_from = preferred or candidates
             if pick_from:
                 cover_image = sorted(pick_from, key=lambda x: (len(x), x.lower()))[0]
-    except Exception:
+    except Exception:  # noqa: BLE001 - 第 3 档：同 187，封面挑选失败只影响一张缩略图
         cover_image = None
     safe_book_id = os.path.basename(book_id)
     cover_url = f"/read/{safe_book_id}/images/{cover_image}" if cover_image else None
@@ -732,7 +732,7 @@ async def api_create_annotation(book_id: str, chapter_index: int, payload: Creat
     if position is not None:
         try:
             position = int(position)
-        except Exception:
+        except Exception:  # noqa: BLE001 - 第 3 档：position 解析不出来就退回 None，标注仍靠 quote/prefix/suffix 锚定；类型待收窄为 (TypeError, ValueError)
             position = None
     if position is not None and position < 0:
         position = 0
@@ -968,7 +968,7 @@ async def api_index_book(book_id: str, body: IndexRequest):
         return status
     except RuntimeError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - 第 2 档：HTTP 边界，转译成 500 且 detail 带上原因
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -980,7 +980,7 @@ async def api_index_status(book_id: str):
         return idx.status()
     except RuntimeError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - 第 2 档：HTTP 边界，转译成 500 且 detail 带上原因
         raise HTTPException(status_code=500, detail=str(e))
 
 class AIMessage(BaseModel):
@@ -1580,7 +1580,7 @@ async def api_test_provider(provider_name: str, body: TestProviderRequest):
             max_tokens=16,
             timeout_s=min(10, provider_cfg.timeout_s),
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - 第 2 档：连通性自测的返回值就是 success/message，失败原因原样交给前端
         return {
             "success": False,
             "provider": name,
@@ -1605,7 +1605,7 @@ async def api_ollama_status():
     try:
         info = _http_get_json(root + "/api/version", timeout_s=2)
         return {"running": True, "base_url": root, "version": info.get("version")}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - 第 2 档：ollama 探活的返回值就是 running/error，失败原因原样交给前端
         return {"running": False, "base_url": root, "error": str(e)}
 
 
@@ -1632,7 +1632,7 @@ async def api_ollama_models():
                 }
             )
         return {"models": out, "base_url": root}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - 第 2 档：HTTP 边界，转译成 503 且 detail 带上原因
         raise HTTPException(status_code=503, detail=str(e))
 
 
@@ -1640,7 +1640,7 @@ async def api_ollama_models():
 async def api_ai_list_conversations(book_uuid: str, provider: Optional[str] = None):
     try:
         book_folder = book_uuid_resolver.folder_for_book_uuid(book_uuid)
-    except Exception:
+    except Exception:  # noqa: BLE001 - 第 2 档：HTTP 边界，解析不出 book_uuid 即「这本书不存在」→404；类型待收窄为 (KeyError, ValueError)
         raise HTTPException(status_code=404, detail="Book not found")
     settings = load_ai_settings()
     threads = list_disk_conversations_combined(
@@ -1657,7 +1657,7 @@ async def api_ai_list_conversations(book_uuid: str, provider: Optional[str] = No
 async def api_ai_get_conversation(book_uuid: str, conversation_id: str):
     try:
         book_folder = book_uuid_resolver.folder_for_book_uuid(book_uuid)
-    except Exception:
+    except Exception:  # noqa: BLE001 - 第 2 档：HTTP 边界，解析不出 book_uuid 即「这本书不存在」→404；类型待收窄为 (KeyError, ValueError)
         raise HTTPException(status_code=404, detail="Book not found")
     try:
         settings = load_ai_settings()
@@ -1670,7 +1670,7 @@ async def api_ai_get_conversation(book_uuid: str, conversation_id: str):
         )
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Conversation not found")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - 第 2 档：HTTP 边界，转译成 400 且 detail 带上原因
         raise HTTPException(status_code=400, detail=str(e))
     return thread.to_dict()
 
@@ -1687,7 +1687,7 @@ class SaveConversationRequest(BaseModel):
 async def api_ai_put_conversation(book_uuid: str, conversation_id: str, body: SaveConversationRequest):
     try:
         book_folder = book_uuid_resolver.folder_for_book_uuid(book_uuid)
-    except Exception:
+    except Exception:  # noqa: BLE001 - 第 2 档：HTTP 边界，解析不出 book_uuid 即「这本书不存在」→404；类型待收窄为 (KeyError, ValueError)
         raise HTTPException(status_code=404, detail="Book not found")
     provider = (body.provider or "").strip().lower()
     if provider not in SUPPORTED_AI_PROVIDERS:
@@ -1730,7 +1730,7 @@ async def api_ai_put_conversation(book_uuid: str, conversation_id: str, body: Sa
             project_conversations_root=_project_conversations_root(settings),
             storage_mode=_conversation_disk_storage_mode(settings),
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - 第 2 档：HTTP 边界，转译成 400 且 detail 带上原因
         raise HTTPException(status_code=400, detail=str(e))
     return {"ok": True}
 
@@ -1739,7 +1739,7 @@ async def api_ai_put_conversation(book_uuid: str, conversation_id: str, body: Sa
 async def api_ai_delete_conversation(book_uuid: str, conversation_id: str):
     try:
         book_folder = book_uuid_resolver.folder_for_book_uuid(book_uuid)
-    except Exception:
+    except Exception:  # noqa: BLE001 - 第 2 档：HTTP 边界，解析不出 book_uuid 即「这本书不存在」→404；类型待收窄为 (KeyError, ValueError)
         raise HTTPException(status_code=404, detail="Book not found")
     try:
         settings = load_ai_settings()
@@ -1750,7 +1750,7 @@ async def api_ai_delete_conversation(book_uuid: str, conversation_id: str):
             conversation_id=conversation_id,
             project_conversations_root=_project_conversations_root(settings),
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - 第 2 档：HTTP 边界，转译成 400 且 detail 带上原因
         raise HTTPException(status_code=400, detail=str(e))
     return None
 
@@ -1815,7 +1815,7 @@ def _conversation_to_markdown(thread: dict) -> str:
 async def api_ai_export_conversation(book_uuid: str, conversation_id: str, format: str = "json"):
     try:
         book_folder = book_uuid_resolver.folder_for_book_uuid(book_uuid)
-    except Exception:
+    except Exception:  # noqa: BLE001 - 第 2 档：HTTP 边界，解析不出 book_uuid 即「这本书不存在」→404；类型待收窄为 (KeyError, ValueError)
         raise HTTPException(status_code=404, detail="Book not found")
     try:
         settings = load_ai_settings()
@@ -1828,7 +1828,7 @@ async def api_ai_export_conversation(book_uuid: str, conversation_id: str, forma
         ).to_dict()
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Conversation not found")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - 第 2 档：HTTP 边界，转译成 400 且 detail 带上原因
         raise HTTPException(status_code=400, detail=str(e))
 
     fmt = str(format or "json").strip().lower()
@@ -1898,7 +1898,7 @@ def _parse_summary_payload(text: str, *, summary_type: str) -> dict:
 async def api_ai_rag_retrieve(body: AIRagRequest):
     try:
         book_folder = book_uuid_resolver.folder_for_book_uuid(body.book_uuid)
-    except Exception:
+    except Exception:  # noqa: BLE001 - 第 2 档：HTTP 边界，解析不出 book_uuid 即「这本书不存在」→404；类型待收窄为 (KeyError, ValueError)
         raise HTTPException(status_code=404, detail="Book not found")
     try:
         passages, retrieval_time_ms = retrieve_passages(
@@ -1923,7 +1923,7 @@ async def api_ai_summary(
 ):
     try:
         book_folder = book_uuid_resolver.folder_for_book_uuid(book_uuid)
-    except Exception:
+    except Exception:  # noqa: BLE001 - 第 2 档：HTTP 边界，解析不出 book_uuid 即「这本书不存在」→404；类型待收窄为 (KeyError, ValueError)
         raise HTTPException(status_code=404, detail="Book not found")
 
     provider_name, api_key, base_url, model, timeout_s = _get_provider_runtime(body.provider, body.model)
@@ -2047,7 +2047,7 @@ async def api_ai_summary(
 async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequest, stream: bool = False):
     try:
         book_folder = book_uuid_resolver.folder_for_book_uuid(book_uuid)
-    except Exception:
+    except Exception:  # noqa: BLE001 - 第 2 档：HTTP 边界，解析不出 book_uuid 即「这本书不存在」→404；类型待收窄为 (KeyError, ValueError)
         raise HTTPException(status_code=404, detail="Book not found")
 
     question = (body.question or "").strip()
@@ -2167,7 +2167,7 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
                                 continue
                             try:
                                 obj = json.loads(raw.decode("utf-8", errors="replace") or "{}")
-                            except Exception:
+                            except Exception:  # noqa: BLE001 - 第 3 档：ollama 流里解析不了的一行直接跳过，下一行还会来；终止条件是 done 事件，不是这一行
                                 continue
                             if not isinstance(obj, dict):
                                 continue
@@ -2182,7 +2182,7 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
                                 finish_reason = str(obj.get("done_reason") or finish_reason)
                                 break
                     loop.call_soon_threadsafe(push, {"type": "done", "model": model_out, "finish_reason": finish_reason})
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 - 第 2 档：worker 线程的最外层，失败经 error 事件送到客户端，痕迹在 SSE 流里
                     loop.call_soon_threadsafe(push, {"type": "error", "message": str(e)})
 
             async def worker_non_stream() -> None:
@@ -2198,7 +2198,7 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
                         max_tokens=body.max_tokens,
                         timeout_s=timeout_s,
                     )
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 - 第 2 档：worker 协程的最外层，失败经 error 事件送到客户端，痕迹在 SSE 流里
                     await q.put({"type": "error", "message": str(e)})
                     return
                 await q.put({"type": "chunk", "delta": resp.text})

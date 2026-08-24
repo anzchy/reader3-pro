@@ -31,14 +31,14 @@ def _post_json(url: str, *, payload: Dict[str, Any], timeout_s: int) -> Tuple[in
                 return int(resp.status), {}
             try:
                 parsed = json.loads(body)
-            except Exception:
+            except Exception:  # noqa: BLE001 - 第 2 档：响应体不是 JSON 时原样塞进 error.message，痕迹在返回值里
                 parsed = {"error": {"message": body}}
             return int(resp.status), parsed
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace") if getattr(e, "fp", None) else ""
         try:
             parsed = json.loads(body or "{}")
-        except Exception:
+        except Exception:  # noqa: BLE001 - 第 2 档：错误响应体不是 JSON 时原样塞进 error.message，痕迹在返回值里
             parsed = {"error": {"message": body or str(e)}}
         return int(getattr(e, "code", 500) or 500), parsed
 
@@ -93,7 +93,7 @@ def ollama_chat_completions(
     if resp.get("eval_count") is not None:
         try:
             token_count = int(resp.get("eval_count"))
-        except Exception:
+        except Exception:  # noqa: BLE001 - 第 3 档：eval_count 解析失败只让 token_count 为空，它是遥测，不是回答内容
             token_count = None
 
     return ProviderResponse(

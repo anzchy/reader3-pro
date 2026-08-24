@@ -35,7 +35,7 @@ def _post_json(url: str, *, payload: Dict[str, Any], timeout_s: int) -> Tuple[in
         body = e.read().decode("utf-8", errors="replace") if getattr(e, "fp", None) else ""
         try:
             parsed = json.loads(body or "{}")
-        except Exception:
+        except Exception:  # noqa: BLE001 - 第 2 档：错误响应体不是 JSON 时原样塞进 error.message，痕迹在返回值里
             parsed = {"error": {"message": body or str(e)}}
         return int(getattr(e, "code", 500) or 500), parsed
 

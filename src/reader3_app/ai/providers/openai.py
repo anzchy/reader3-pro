@@ -33,7 +33,7 @@ def _post_json(
         body = e.read().decode("utf-8", errors="replace") if getattr(e, "fp", None) else ""
         try:
             parsed = json.loads(body or "{}")
-        except Exception:
+        except Exception:  # noqa: BLE001 - 第 2 档：错误响应体不是 JSON 时原样塞进 error.message，痕迹在返回值里
             parsed = {"error": {"message": body or str(e)}}
         return int(getattr(e, "code", 500) or 500), parsed
 
@@ -105,7 +105,7 @@ def openai_chat_completions(
     if isinstance(usage, dict) and usage.get("completion_tokens") is not None:
         try:
             token_count = int(usage.get("completion_tokens"))
-        except Exception:
+        except Exception:  # noqa: BLE001 - 第 3 档：token_count 解析失败退回估算值；它是遥测，不是回答内容
             token_count = None
     if token_count is None:
         token_count = _estimate_tokens(text)

@@ -235,7 +235,7 @@ def load_book_cached(book_id: str, books_dir: str) -> object:
     with open(path, "rb") as f:
         try:
             return _Reader3Unpickler(f).load()
-        except Exception:
+        except Exception:  # noqa: BLE001 - 第 3 档：旧 pickle 的模块路径解析失败时退回默认 loader；真读不出来的 pickle 会在下一行的 pickle.load 里照样抛
             # Fallback: try the default loader (works when pickles were created
             # with stable module paths).
             f.seek(0)
@@ -458,7 +458,7 @@ def search_book(book_id: str, query: SearchQuery, *, books_dir: str) -> SearchRe
                     break
                 results.append(r)
             total_matches += len(semantic)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - 第 2 档：语义检索不可用时仍返回关键词结果，降级已 log 到 info
             logger.info("hybrid semantic unavailable for %s: %s", book_id, e)
 
     elapsed = (time.perf_counter() - start_time) * 1000
@@ -519,7 +519,7 @@ def search_library(
         for bid in book_ids:
             try:
                 status = BookVectorIndex(bid, books_dir=books_dir).status().get("status", "unknown")
-            except Exception:
+            except Exception:  # noqa: BLE001 - 第 3 档：索引状态探测失败只影响 UI 上的一个标签，返回值 'unknown' 本身就是痕迹；搜索不依赖它
                 status = "unknown"
             index_status_by_book[bid] = str(status)
 
@@ -618,14 +618,14 @@ def search_library(
                         logger.info("hybrid deps missing: %s", msg)
                     else:
                         unindexed.append(book_id)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 - 第 2 档：同 461，单本书的语义检索不可用不该让整次搜索失败，已 log 到 info
                     logger.info("hybrid semantic unavailable for %s: %s", book_id, e)
 
             if total_hits <= 0:
                 continue
             grouped[book_id] = results_for_book
             book_stats[book_id] = (total_hits, earliest_key or 0)
-        except Exception:
+        except Exception:  # noqa: BLE001 - 第 2 档：单本书搜索失败记进 failed 列表，痕迹在响应体里
             failed.append(book_id)
 
     def sort_key_for_book(book_id: str) -> Tuple:

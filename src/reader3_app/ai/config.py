@@ -100,7 +100,7 @@ def load_ai_settings(path: str = DEFAULT_SETTINGS_PATH) -> Dict[str, Any]:
         if not isinstance(raw, dict):
             return default_settings_dict()
         return _merge_defaults(raw)
-    except Exception:
+    except Exception:  # noqa: BLE001 - FIXME(011): 无正当理由——坏掉的 ai_settings.json 被静默换成默认值，随后一次 save 就把用户的 API key 覆盖掉，和 ensure_book_uuid 的旧 bug 同一类
         return default_settings_dict()
 
 
