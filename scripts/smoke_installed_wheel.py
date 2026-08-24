@@ -162,7 +162,11 @@ def main() -> int:
                     if get(f"{base}/api/health", timeout=2)[0] == 200:
                         ready = True
                         break
-                except Exception:
+                except OSError:
+                    # 服务还没起来：连接被拒 / 超时，都是 OSError 的子类
+                    # （URLError 也是）。窄到 OSError 而不是 Exception，是为了让
+                    # get() 自己的 bug（TypeError 之类）当场炸出来——否则它会伪装
+                    # 成「30 秒没等到 /api/health」，把人引去查服务而不是查脚本。
                     time.sleep(0.5)
             if not ready:
                 print(f"{STARTUP_TIMEOUT_S}s 内没等到 /api/health", file=sys.stderr)

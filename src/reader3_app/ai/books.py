@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 from dataclasses import dataclass
@@ -9,6 +10,8 @@ from uuid import UUID, uuid4
 
 
 AI_META_FILENAME = "ai_meta.json"
+
+logger = logging.getLogger("reader3.ai.books")
 
 
 @dataclass(frozen=True)
@@ -29,20 +32,27 @@ def _ai_meta_path(books_dir: str, book_folder: str) -> str:
 
 
 def _read_ai_meta(path: str) -> Optional[Dict[str, str]]:
+    """读 ai_meta.json：不存在返回 None，**读不懂就抛**。
+
+    这两件事以前都返回 None，于是 ensure_book_uuid() 无法分辨「这本书还没有
+    uuid」和「这本书的 uuid 我读不出来」，把后者也当成前者去覆盖——用户的 AI
+    会话全靠 book_uuid 关联，覆盖一次就永久失联。OSError（权限、坏盘）同理，
+    直接冒上去。
+    """
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        if not isinstance(data, dict):
-            return None
-        out: Dict[str, str] = {}
-        for k, v in data.items():
-            if isinstance(k, str) and isinstance(v, str):
-                out[k] = v
-        return out
     except FileNotFoundError:
         return None
-    except Exception:
-        return None
+    except json.JSONDecodeError as e:
+        raise ValueError(f"{path} is not valid JSON: {e}") from e
+    if not isinstance(data, dict):
+        raise ValueError(f"{path} is not a JSON object (got {type(data).__name__})")
+    out: Dict[str, str] = {}
+    for k, v in data.items():
+        if isinstance(k, str) and isinstance(v, str):
+            out[k] = v
+    return out
 
 
 def ensure_book_uuid(books_dir: str, book_folder: str) -> str:
@@ -54,8 +64,14 @@ def ensure_book_uuid(books_dir: str, book_folder: str) -> str:
     if raw:
         try:
             return str(UUID(raw))
-        except Exception:
-            pass
+        except ValueError as e:
+            # 第 1 档：读不懂的 book_uuid 不许当成「没有」。旧代码在这里 pass，
+            # 于是下面那段生成新 uuid 并覆盖原文件——原值就此消失，用户所有 AI
+            # 会话当场失联且救不回来。人还能修一个自己读得到的文件。
+            raise ValueError(
+                f"{meta_path} holds a book_uuid that is not a UUID ({raw!r}); "
+                "refusing to overwrite it -- fix or delete the file"
+            ) from e
 
     new_uuid = str(uuid4())
     meta["book_uuid"] = new_uuid
@@ -83,7 +99,13 @@ class BookUuidResolver:
             full = os.path.join(self.books_dir, item)
             if not os.path.isdir(full):
                 continue
-            self._load_folder(item)
+            try:
+                self._load_folder(item)
+            except (OSError, ValueError) as e:
+                # 第 2 档：这个扫描跑在服务启动时。一本书的 ai_meta.json 坏了不该
+                # 让整个书库起不来——跳过并留痕。该书的 AI 端点随后 404（明确的
+                # 缺失），而不是被悄悄换上一个新 uuid（无声的数据丢失）。
+                logger.warning("skipping %s: cannot resolve its book_uuid: %s", item, e)
 
     def _load_folder(self, book_folder: str) -> None:
         book_folder = _safe_folder_name(book_folder)

@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
+
+logger = logging.getLogger("reader3.ai.conversations")
 
 CONVERSATIONS_DIRNAME = "ai_conversations"
 SCHEMA_VERSION = 1
@@ -157,7 +160,7 @@ def _list_conversations_from_dir(root: str, *, provider: Optional[str] = None) -
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-        except Exception:
+        except Exception:  # noqa: BLE001 - FIXME(011): 无正当理由——一个坏会话文件从列表里静默消失，用户只会看到历史少了一条，无痕迹可查；至少要收窄到 (OSError, json.JSONDecodeError) 并 log
             continue
         if not isinstance(data, dict):
             continue
@@ -328,8 +331,18 @@ def list_conversations_combined(
     if project_conversations_root:
         try:
             items.extend(list_project_conversations(project_conversations_root, book_uuid=book_uuid, provider=provider))
-        except Exception:
-            pass
+        except OSError as e:
+            # 第 2 档：project-root 存储读不动（权限、坏盘、被别的进程挪走）时，
+            # 返回「只有 per-book 那一半」比整个列表 500 更有用——但必须留痕：
+            # 用户看到的是一段凭空消失的历史，运维得有东西可查。
+            # 只吞 OSError；book_uuid 不合法这类调用方 bug 由 ValueError 冒上去。
+            logger.warning(
+                "project-root conversations unavailable for book_uuid=%s under %s: %s; "
+                "returning per-book conversations only",
+                book_uuid,
+                project_conversations_root,
+                e,
+            )
     return _dedupe_conversation_list(items)
 
 

@@ -1321,6 +1321,25 @@ def _sse_event(event: str, data: Any) -> bytes:
     return f"event: {event}\ndata: {payload}\n\n".encode("utf-8")
 
 
+def _push_event(queue: "asyncio.Queue[dict]", evt: dict) -> bool:
+    """把一个流式事件塞进 SSE 队列，返回它有没有真的进去。
+
+    第 2 档：这是 worker 线程与事件循环之间的边界。丢一个 chunk 等于用户的答案
+    少了一截，而那截还会被当成模型的完整回答存进会话——所以只吞 QueueFull
+    （唯一「不是 bug、只是背压」的情况），并且留一条 warning。其余异常
+    （循环已关闭、队列不是队列）冒上去，交给调用方的错误路径。
+    """
+    try:
+        queue.put_nowait(evt)
+    except asyncio.QueueFull:
+        ai_logger.warning(
+            "dropped a streamed %s event: SSE queue is full, the answer will be truncated",
+            str(evt.get("type") or "unknown"),
+        )
+        return False
+    return True
+
+
 @app.get("/api/health")
 async def api_health():
     """就绪探针。009 的 Playwright `webServer` 与 Phase 5 的 `reader3 launch` 都用它。
@@ -1841,16 +1860,29 @@ def _parse_summary_payload(text: str, *, summary_type: str) -> dict:
     raw = (text or "").strip()
     if not raw:
         return {"overview": "", "highlights": [], "background": ""}
+    payload: Any = None
     try:
-        payload = __import__("json").loads(raw)
-        if isinstance(payload, dict):
-            overview = str(payload.get("overview") or "")
-            background = str(payload.get("background") or "")
-            highlights_raw = payload.get("highlights") or []
-            highlights = [str(x) for x in highlights_raw] if isinstance(highlights_raw, list) else []
-            return {"overview": overview, "highlights": highlights, "background": background}
-    except Exception:
-        pass
+        payload = json.loads(raw)
+    except ValueError as e:
+        # 第 3 档：模型直接回散文是预期的降级路径，不是错误——但它得留痕，
+        # 否则「为什么这本书的 highlights 永远是空的」无从查起。
+        # 只吞 JSONDecodeError（ValueError 子类）：RecursionError / MemoryError
+        # 这类「不是散文，是出事了」的失败必须冒上去，不然用户拿到的是一段被
+        # 当成 overview 的括号。字段组装也因此移出 try——它出错是我们的 bug。
+        ai_logger.debug("summary reply is not JSON (summary_type=%s): %s", summary_type, e)
+
+    if isinstance(payload, dict):
+        overview = str(payload.get("overview") or "")
+        background = str(payload.get("background") or "")
+        highlights_raw = payload.get("highlights") or []
+        highlights = [str(x) for x in highlights_raw] if isinstance(highlights_raw, list) else []
+        return {"overview": overview, "highlights": highlights, "background": background}
+    if payload is not None:
+        ai_logger.debug(
+            "summary reply parsed as %s, not an object (summary_type=%s)",
+            type(payload).__name__,
+            summary_type,
+        )
 
     st = (summary_type or "full").strip().lower()
     if st == "highlights":
@@ -2103,10 +2135,7 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
             loop = asyncio.get_running_loop()
 
             def push(evt: dict) -> None:
-                try:
-                    q.put_nowait(evt)
-                except Exception:
-                    pass
+                _push_event(q, evt)
 
             def worker_ollama() -> None:
                 url = _ollama_root_base_url(base_url or "http://localhost:11434") + "/api/chat"
