@@ -57,7 +57,9 @@
 | 两文件提交协议、读取状态机三态 | [`plan-tech-stack-migration.md`](../20260816-tech-stack-migration/plan-tech-stack-migration.md) Phase 3 |
 | 第二轮 Codex 评审台账（一次评审的记录不拆开） | [`review-codex.md`](../20260816-tech-stack-migration/review-codex.md)，其中五条前端项在 `plan-frontend-ui-refactor.md` §6 继承 |
 
-`007-hygiene-and-contracts` 的 **0.4 / 0.5 / 0.8 三项是本计划的前置契约**，在那条分支上实施，本计划只消费。
+> **下一个该开哪条分支**，看 [`../20260824-frontend-backend-plan-progress.md`](../20260824-frontend-backend-plan-progress.md)——执行顺序的唯一定义处。
+
+`007-hygiene-and-contracts` 的 **0.4 / 0.5 / 0.8 三项是本计划的前置契约**，在那条分支上实施，本计划只消费。**✅ 三项已交付并随 007 于 2026-08-24 合入 `master`，前置全部解除**（合入记录见[那边的「合入记录」一节](../20260816-tech-stack-migration/tasks/007-hygiene-and-contracts.md)，本文不重述）。
 
 ## 不在这个文件夹里的东西
 

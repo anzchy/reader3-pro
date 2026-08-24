@@ -7,8 +7,9 @@
 > 本文只回答一个问题：**原型里那个旧名，现在叫什么。**
 
 改名已落地于 `designs/reader-pro-next/`（`app.jsx` / `components.jsx` / `reader.jsx` / `settings.jsx`）。
-生产模板 `src/reader3_app/web/templates/*.html` 侧的回贴尚未开始——那一半的完成判据见迁移计划 §7 Phase 0
-「testid 在原型与模板两侧一致」。
+生产模板 `src/reader3_app/web/templates/*.html` 与生成 DOM 侧的回贴**也已完成**（2026-08-23，随 007 于
+2026-08-24 合入 `master`）：模板侧现有 126 个唯一 testid，反向新造为 0，两条 lint 违规数归零。迁移计划
+§7 Phase 0 的「testid 在原型与模板两侧一致」一条**已满足**。
 
 ---
 

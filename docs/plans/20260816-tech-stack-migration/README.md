@@ -43,11 +43,13 @@
 
 前端计划**引用**上面这些定义，不重述。反过来，双层 token、组件清单、逐页规格、iframe 边界的 A/B/C 三重断言、降级状态 DEG-S1–DEG-S5、标注宿主契约 K1–K6 一律由前端计划定义，本文件夹只链接。
 
+> **下一个该开哪条分支**，看 [`../20260824-frontend-backend-plan-progress.md`](../20260824-frontend-backend-plan-progress.md)——执行顺序的唯一定义处。本文件夹定义依赖，那份定义顺序。
+
 ## `tasks/`
 
 一个分支一个文件，`tasks/{分支名}.md`。**只放后端与工程基建分支**；前端分支不再有独立任务文件，它们的工作项写在前端计划正文的 `### WI-N:` 里。
 
-- [`tasks/007-hygiene-and-contracts.md`](./tasks/007-hygiene-and-contracts.md) —— Phase 0 七项止血，含现状实测（0.1 / 0.7 已完成、0.6 部分完成）与哪几项适合交给 `/tdd-guardian:workflow`。其中 0.4 / 0.5 / 0.8 产出的是**前端计划的前置契约**
+- [`tasks/007-hygiene-and-contracts.md`](./tasks/007-hygiene-and-contracts.md) —— Phase 0 七项止血，含逐项验收与哪几项适合交给 `/tdd-guardian:workflow`。其中 0.4 / 0.5 / 0.8 产出的是**前端计划的前置契约**。**✅ 八项全部完成，分支已于 2026-08-24 合入 `master`**——合入记录（PR / 合并 commit / CI 首跑）定义在该文件的「合入记录」一节
 - [`tasks/008-test-safety-net.md`](./tasks/008-test-safety-net.md) —— Phase 1a 的测试网：覆盖率门槛策略、42 条路由契约、异常处理规则、性能基准、CI
 - [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) —— Phase 1b 的 E2E 用例清单（读路径 / 写路径 / K1–K6 / DEG-S1–DEG-S4），含 `baseline-1b` 与按阶段激活的 acceptance 分组。前端计划的测试矩阵**引用本文的用例 ID**，不重写用例
 

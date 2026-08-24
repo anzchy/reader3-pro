@@ -215,6 +215,13 @@ There are two active efforts today, and they are two halves of one program:
 | [`docs/plans/20260816-tech-stack-migration/`](docs/plans/20260816-tech-stack-migration/README.md) | Backend layering, storage format, test net + CI, **branch numbering** | 007, 008, 009, 011, 012, 015 (CLI) |
 | [`docs/plans/20260817-frontend-ui-refactor/`](docs/plans/20260817-frontend-ui-refactor/README.md) | Design system, degradation states, `annotations.js` split, frontend TDD matrix | 010, 013, 014, 015 (PWA) |
 
+**Which branch to open next** is a third fact, owned by neither folder:
+[`docs/plans/20260824-frontend-backend-plan-progress.md`](docs/plans/20260824-frontend-backend-plan-progress.md)
+is the progress dashboard and **the sole definition site for the execution order**. The two plan
+folders define *dependencies* (who waits on whom); that file defines *sequence* (who goes first) —
+the dependency graph permits several legal orders and they do not cost the same. Its status column
+mirrors the milestone table below; when they disagree, the table below wins.
+
 Start at either `README.md`. Each folder holds **exactly one plan document** —
 `plan-tech-stack-migration.md` and `plan-frontend-ui-refactor.md` respectively. (The migration
 folder used to carry a second plan, `plan-ui-migration-sequencing.md`; it was merged into
@@ -235,7 +242,7 @@ Do not invent a new number without updating that table.
 
 | Milestone | Branch | Plan folder | Status |
 |---|---|---|---|
-| M0 — Phase 0 contracts + hygiene | `007-hygiene-and-contracts` | migration | 🚧 In progress |
+| M0 — Phase 0 contracts + hygiene | `007-hygiene-and-contracts` | migration | ✅ Merged (PR #18) |
 | M1 — tests + CI + API freeze | `008-test-safety-net` | migration | Tasks drafted |
 | M1b — Playwright E2E | `009-e2e-annotations` | migration | Tasks drafted |
 | MD — design degradation states | `010-design-degradation-states` | **frontend** | WI-1 – WI-8 |
@@ -245,7 +252,9 @@ Do not invent a new number without updating that table.
 | M4b — TS reader | `014-ts-frontend-reader` | **frontend** | WI-14 – WI-19 |
 | M5 — launch + PWA | `015-launch-experience` | migration (CLI) ＋ **frontend** (PWA) | Allocated / WI-20 |
 
-"Allocated" means the number is reserved but no branch exists yet. "Tasks drafted" means
+"✅ Merged" means the branch is on `master` and its phase is closed; the merge facts (PR, merge
+commit, CI run) are defined in that branch's task file, not here. "Allocated" means the number is
+reserved but no branch exists yet. "Tasks drafted" means
 `docs/plans/20260816-tech-stack-migration/tasks/{branch}.md` exists. "WI-n – WI-m" means the
 work items live in `docs/plans/20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md` §4;
 frontend branches have no task files.

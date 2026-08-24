@@ -31,7 +31,7 @@
 > | 现状审计（是什么样）＋ 已拍板的五条产品决策 | [`designs/reader-pro-next/spec/reader-pro-spec.md`](../../../designs/reader-pro-next/spec/reader-pro-spec.md) |
 > | 原型相对现状补齐了什么、还差什么 | [`designs/reader-pro-next/spec/reader-pro-next-parity.md`](../../../designs/reader-pro-next/spec/reader-pro-next-parity.md) |
 > | **Phase 1b E2E 用例清单**（读路径 / 写路径 / K1–K6 / DEG-S1–DEG-S4） | [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) |
-> | **Phase 0 七项的现状实测**与哪几项适合交给 `/tdd-guardian:workflow` | [`tasks/007-hygiene-and-contracts.md`](./tasks/007-hygiene-and-contracts.md) |
+> | **Phase 0 八项的逐项验收、合入记录**与哪几项适合交给 `/tdd-guardian:workflow` | [`tasks/007-hygiene-and-contracts.md`](./tasks/007-hygiene-and-contracts.md) |
 > | **覆盖率门槛策略**、42 条路由契约的三层组织、异常处理规则 | [`tasks/008-test-safety-net.md`](./tasks/008-test-safety-net.md) |
 >
 > 之所以立"只索引不复述"这条规矩：此前三份计划各自复述对方的内容，其中三处代码行号引用在
@@ -442,14 +442,14 @@ pickle 是实际的迁移阻塞点与安全隐患（`pickle.load` 对不可信�
 
 | 阶段 | 进入条件 | 退出条件 |
 |---|---|---|
-| Phase 0 | — | P0-1/P0-2 修复并人工 smoke（**六项 checklist 的正文在 [`tasks/007-hygiene-and-contracts.md`](./tasks/007-hygiene-and-contracts.md) §8.1**，本文只引用不重述）；`--port` 与 `/api/health` 可用；testid 在原型与模板两侧一致；**两条 lint 都在 CI 里生效**——选择器 lint（约束 `tests/e2e/`）与命名 lint（约束模板与原型，正则以 §6 步骤 0.5 的 **canonical 代码块**为准，违规数归零）；**0.8 的 token 悬空引用 lint 在 CI 里生效且为 0**。三条 lint 落在 `.github/workflows/lint.yml` 的同一个 job 里，分三步跑 |
+| Phase 0 ✅ | — | **门槛已全部满足，阶段于 2026-08-24 关闭**（合入记录见 [`tasks/007-hygiene-and-contracts.md`](./tasks/007-hygiene-and-contracts.md) 的「合入记录」，本表不重述）。P0-1/P0-2 修复并人工 smoke（**六项 checklist 的正文在 [`tasks/007-hygiene-and-contracts.md`](./tasks/007-hygiene-and-contracts.md) §8.1**，本文只引用不重述）；`--port` 与 `/api/health` 可用；testid 在原型与模板两侧一致；**两条 lint 都在 CI 里生效**——选择器 lint（约束 `tests/e2e/`）与命名 lint（约束模板与原型，正则以 §6 步骤 0.5 的 **canonical 代码块**为准，违规数归零）；**0.8 的 token 悬空引用 lint 在 CI 里生效且为 0**。三条 lint 落在 `.github/workflows/lint.yml` 的同一个 job 里，分三步跑 |
 | Phase 1a | Phase 0 | 测试门禁生效（**本地 tdd-guardian**，非 required check——见本节 soak 小节的改基说明）；42 路由契约测试通过；**API v1 形状冻结**；性能基准记录在案 |
-| Phase 1b | 0.3 + 0.5 | **`baseline-1b` 组**在**本地 `e2e` lane** 绿灯并入 `soak-log.md` 台账（原写「主 CI（非 nightly）」，2026-08-24 随 CI 改为仅发版触发而改基，见本节 soak 小节）；**用例覆盖写路径**（四类型创建 / 改色 / 删除 / 笔记保存，断言为刷新后回到同一段文字）；K2–K5 与 K1/K6 的**现状特征化**条各一条正向证据；连续 3 次全量运行零 flaky；其余组**用例写完并 review**，以 skip 形态存在。⚠️ K1/K6 的新行为与 DEG-S1–DEG-S4 的横幅**不在本阶段门槛内**——它们要到 4B.1 / Phase 3 / 4A.4 才存在，写进 1b 会形成依赖环。分组见 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) §0.5 |
+| Phase 1b | 0.3 + 0.5 | **本行的展开（G1/G2 两道门）在 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) §8，本表不重述**。**`baseline-1b` 组**在**本地 `e2e` lane** 绿灯并入 `soak-log.md` 台账（原写「主 CI（非 nightly）」，2026-08-24 随 CI 改为仅发版触发而改基，见本节 soak 小节）；**用例覆盖写路径**（四类型创建 / 改色 / 删除 / 笔记保存，断言为刷新后回到同一段文字）；K2–K5 与 K1/K6 的**现状特征化**条各一条正向证据；连续 3 次全量运行零 flaky；其余组**用例写完并 review**，以 skip 形态存在。⚠️ K1/K6 的新行为与 DEG-S1–DEG-S4 的横幅**不在本阶段门槛内**——它们要到 4B.1 / Phase 3 / 4A.4 才存在，写进 1b 会形成依赖环。分组见 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) §0.5 |
 | Track D | Phase 0 | DEG-S1–DEG-S5 设计完成并回写设计规格 §6.4；合同 2 剩余两项收口；loading 骨架屏补齐 |
 | Phase 2a | 1a | 每个 router < 500 行；`book_store` **三处** loader 合并（第四处已作为死代码删除，见附录 A 的 A5）；**notes 乐观并发落地**；行为不变由 1a 证明 |
 | Phase 2b | 2a | 跨库搜索性能相对基准可量化改善；`_normalize_with_map` 差分测试通过 |
 | Phase 3 | 2b + Track D **且 soak 门槛达标**（三路汇合，见 §9.1） | 新书完全不依赖 pickle；存量可一键迁移；**`--migrate` 原地读写，不复用摄取路径**；**DEG-S1–DEG-S4 在当时的 UI 里可见**——即 **`acceptance-p3` 组解开 skip 并绿灯**（朴素横幅形态）；真实 iframe 标注迁移 E2E 通过 |
-| Phase 4A | 1b | wheel 内容测试通过；settings 与 library 切换后 `baseline-1b` **零改动**全绿；**4A.4 另需 `acceptance-4a4` 组解开 skip 并绿灯**（DEG-S1–DEG-S4 改版形态）；Classic 已删除 |
+| Phase 4A | **1b 的 G1**（用例完成门；不必等 G2/soak） | wheel 内容测试通过；settings 与 library 切换后 `baseline-1b` **零改动**全绿；**4A.4 另需 `acceptance-4a4` 组解开 skip 并绿灯**（DEG-S1–DEG-S4 改版形态）；Classic 已删除 |
 | Phase 4B | Phase 3 **且** 4A.4 | 拆分后 `baseline-1b` 全绿；**4B.1 另需 `acceptance-4b1` 组解开 skip 并绿灯**（K1 响亮失败、K6 抛错——这两条行为本阶段才产生）；各模块 ≤400 行；依赖方向机器可验（`dependency-cruiser` 四条规则，见[前端计划](../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) 的 WI-14）；**iframe 内部改动不超出设计规格 §6.0 允许的范围**（判据以 §6.0「判定标准（canonical）」为准的**三重断言 A/B/C**，本表不复述）；**三个浮层过 `containingBlockAncestor() === null`，且工具条位置用矩形几何断言**（4B.2 硬门槛，K3）；**K1–K6 各有一条能失败的断言**；进度值全站一致 |
 | Phase 5 | 4B | 单命令进入阅读；PWA 版本切换不撕裂 |
 
@@ -463,7 +463,7 @@ pickle 是实际的迁移阻塞点与安全隐患（`pickle.load` 对不可信�
 >
 > **数值一个不动**——≥10 次 / ≥5 个工作日是 R9 评审后用户亲自裁定维持的（见「GSTACK REVIEW REPORT」的 R9 行），改基不碰它。换的只有计数基准：
 >
-> - 每次 `baseline-1b` 全量运行往 **`soak-log.md`** 追一行：**UTC 时间戳 ＋ commit sha ＋ 结果 ＋ 单次时长**。跨度按台账首行与第十行的日期算。该台账由 009 建，它是 `baseline-1b` 的产物之一。
+> - 每次 `baseline-1b` 全量运行往 **`soak-log.md`** 追一行，字段见下方「台账字段（canonical）」。跨度按台账首行与第十行的日期算。该台账由 009 建，它是 `baseline-1b` 的产物之一。
 > - 「连续」的清零规则不变：中途任何一次红清零重计，flaky 与 broken 仍不做区分。
 >
 > **必须写明丢了什么**：本地计数丢掉的是「**独立、干净环境**」这一性质。而依赖漂移、时区、缓存这三类，正是上面「跨度条款」想逼出来的东西——它们恰恰在同一台机器上最不容易复现。所以改基之后，跨度条款只剩「日历时间」这一半效力，「环境多样性」那一半没有了。唯一的补偿不在 soak 里：**发版关门检查里跑一次 `baseline-1b` 全量**。这是本条策略的**已知代价，不是疏漏**。
@@ -473,6 +473,53 @@ pickle 是实际的迁移阻塞点与安全隐患（`pickle.load` 对不可信�
 - 「连续」指中途任何一次红都清零重计——flaky 与 broken 在这里不做区分，一条会偶发失败的 E2E 当不了数据迁移的验收基准。
 - 跨度条款是为了逼出**时间维度**的不稳定（缓存、时区、依赖漂移、并发），这类问题在同一天连跑十次是照不出来的。
 - 这道门槛只卡 Phase 3。Phase 4A 不受影响，可继续并行推进。
+
+#### 台账字段（canonical）＋ 什么会让计数作废
+
+> **本小节 2026-08-24 补，起因是 Codex 复核指出「10 次绿」在原规则下可以由互不可比的十次拼出来。**
+> 原文只定义了「红清零」，没定义**被测对象变了算不算清零**。于是下面这条路径是合法的：跑三次绿 →
+> 改掉两条 flaky 断言 → 再跑七次绿 → 宣布达标。**十次绿里没有任何两次测的是同一套东西**，而门槛
+> 想买的恰恰是「同一套东西稳定了一段时间」。这是规则漏洞，不是执行者的问题。
+
+**台账字段**——`soak-log.md` 每行八列，缺一列该行不计数：
+
+| 列 | 含义 | 怎么取 |
+|---|---|---|
+| `ts_utc` | UTC 时间戳 | `date -u +%Y-%m-%dT%H:%M:%SZ` |
+| `commit` | 被测生产代码的 sha | `git rev-parse --short HEAD` |
+| `result` | `green` / `red` | e2e lane 退出码 |
+| `duration_s` | 单次全量时长（秒） | 运行器输出 |
+| `suite_hash` | **`baseline-1b` 组用例 ＋ harness 配置的内容哈希** | 见下方口令，**这一列是 ① 的执行机制** |
+| `browser` | 浏览器标识与版本，如 `chromium-1140` | `npx playwright --version` ＋ 浏览器构建号 |
+| `os` | 运行平台，如 `darwin-25.3.0` | `uname -sr` |
+| `log` | 该次运行的日志/报告路径 | 运行器产物目录 |
+
+**三类清零触发器，全部二值可判，不需要任何人判断「这次改动算不算大」：**
+
+1. **`suite_hash` 变了** —— 清零。哈希覆盖 `baseline-1b` 组的用例文件、Playwright 配置、以及该组用到的 fixtures。**改一条断言、修一条 flaky、动一次 webServer 探针，都从零重数。**
+2. **`browser` 或 `os` 变了** —— 清零。浏览器升级换的是被测运行时。
+3. **任意一次 `red`** —— 清零（原有规则，不变）。
+
+**明确不清零的：生产代码变（`commit` 变）**。那正是这道门槛要观察的信号——E2E 在一份持续演进的代码上连续保持绿，才是它的全部意义。同理，**其余 skip 分组的用例怎么改都不清零**，它们不在 `suite_hash` 的覆盖范围里。
+
+> **这条规则很严，严是故意的，但它必须留一个出口，否则会重蹈「改基前不可达」的覆辙。** 出口就是
+> 上面那句「其余分组随便改」：soak 期间你仍然可以推进 009 的其他组、可以推进 011、可以改生产代码。
+> **被冻的只有 `baseline-1b` 这一组的用例本身**——而它到那时本来就该是冻结状态：1b 的出口条件已经
+> 要求它「连续 3 次全量运行零 flaky」，还在频繁修改它，说明 1b 根本没出门。
+>
+> **已知代价，写下来**：如果 soak 期间发现 `baseline-1b` 有条用例写错了，你只有两个选择——带着错误
+> 用例跑完十次，或者改掉它并从零重数。**没有第三条路，也不应该有**：能被「就改这一点点」绕过的门槛
+> 不是门槛。
+
+**`suite_hash` 的取法**（一条命令，写进 `soak-log.md` 表头，运行器直接调）：
+
+```bash
+# baseline-1b 组用例 + harness 配置 + fixtures 的内容哈希，前 12 位
+{ git ls-files -s tests/e2e/baseline-1b playwright.config.* tests/e2e/fixtures   | git hash-object --stdin; } | cut -c1-12
+```
+
+> 路径以 009 落地时的实际目录为准；**若目录名不同，改的是这条命令，不是规则**。命令本身连同它算出的
+> 第一个哈希值一起写进 `soak-log.md` 的表头，这样台账自带复核方式。
 
 > 来源：2026-08-16 eng-review 的 Outside Voice。Codex 主张把 Phase 3 整体挪到 4B 之后，理由之一是「Phase 1 的测试尚无 CI 历史，保护力未经检验」。排序未采纳（见 §4），但这半句成立，转为本门槛。
 
@@ -545,16 +592,22 @@ M1b 与 MD 可与 M1/M2 交错推进；M4a 可与 M2/M3 交错推进；**M3 与 
 |---|---|---|
 | Phase 0 | — | 全部 |
 | Phase 1a | 0 | 2a |
-| Phase 1b | 0.3 + 0.5 | 4A；**Phase 3**（经 soak 门槛） |
+| Phase 1b | 0.3 + 0.5 | 4A（要 **G1**）；**Phase 3**（要 **G2** 之后再连绿十次） |
 | Track D | 0 | **Phase 3**（DEG-S1–DEG-S5 原型） |
 | Phase 2a | 1a | 2b |
 | Phase 2b | 2a | Phase 3 |
-| **Phase 3** | **2b ＋ Track D ＋ 1b 的 soak** ——三路汇合 | 4B |
-| Phase 4A | 1b | 4B（其中 4A.4 项） |
+| **Phase 3** | **2b ＋ Track D ＋ 1b 的 soak**（从 **G2** 起算）——三路汇合 | 4B |
+| Phase 4A | 1b 的 **G1** | 4B（其中 4A.4 项） |
 | Phase 4B | Phase 3 ＋ 4A.4 | 5 |
 | Phase 5 | 4B | — |
 
 关键路径：`0 → 1a → 2a → 2b → 3 → 4B → 5`。1b 与 Track D 不在关键路径上，**但它们的完成时间必须早于 2b 结束**，否则 Phase 3 干等——而 1b 那份等待是 soak 的日历时间，无法压缩。结论是：**1b 与 Track D 要在 Phase 0 一结束就动，不能排到 2a/2b 之后**。
+
+> **「就动」不等于「排在 008 前面」。** 2026-08-24 与 Codex 复核后确定的实际开工顺序，以及为什么
+> soak 应当与 011 同期跑而不是抢在它前面，定义在
+> [`docs/plans/20260824-frontend-backend-plan-progress.md`](../20260824-frontend-backend-plan-progress.md)。
+> 本表定义的是**依赖**（谁等谁），那份文档定义的是**顺序**（先做谁），两者不冲突：顺序必须满足依赖，
+> 但依赖不唯一决定顺序。
 
 ---
 

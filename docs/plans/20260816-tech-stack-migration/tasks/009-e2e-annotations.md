@@ -2,8 +2,8 @@
 
 - **对应阶段**: Phase 1b（Playwright E2E）起写，后续阶段逐组激活
 - **进入条件**: Phase 0 的 0.3（`--port` + `/api/health`）与 0.5（`data-testid` 全量补齐）完成。见 `docs/plans/20260816-tech-stack-migration/plan-tech-stack-migration.md` §6
-- **退出条件**: **`baseline-1b` 组**全量绿灯，并在 `soak-log.md` 留下可计数的记录（**不再要求「主 CI 绿灯」**——CI 已统一为仅发版触发，改基说明见迁移计划 §7 的 soak 小节）。其余组各自在所属阶段的出口生效，见 §0.5
-- **下游**: Phase 4A / 4B 的进入条件；Phase 3 的 **soak 门槛**数的就是 **`baseline-1b`** 这一组（次数、跨度、计数基准的唯一定义处是迁移计划 §7，本行不复述）。**本分支还要建 `soak-log.md` 台账**——改基之后 soak 数的是它，没有它就没法计数
+- **退出条件**: **两道门，分开记，见 §8**——**G1 用例完成门**（`baseline-1b` 写完并绿、其余组以 skip 形态写完并 review）与 **G2 基线稳定门**（零 flaky ＋ 台账开张 ＋ `suite_hash` 冻结）。**不再要求「主 CI 绿灯」**——CI 已统一为仅发版触发，改基说明见迁移计划 §7 的 soak 小节。其余组各自在所属阶段的出口生效，见 §0.5
+- **下游**: Phase 4A 的进入条件是 **G1**；**Phase 3 的 soak 计数从 G2 达成之日起才开始数**（次数、跨度、台账字段、清零规则的唯一定义处是迁移计划 §7 的 soak 小节，本文件不复述）。**本分支还要建 `soak-log.md` 台账**——改基之后 soak 数的是它，没有它就没法计数
 - **契约**: K1–K6 见 `docs/plans/20260817-frontend-ui-refactor/contracts/annotation-host-contracts.md`；降级状态 DEG-S1–DEG-S5 见 `docs/plans/20260817-frontend-ui-refactor/spec-frontend-design.md` §6.4
 
 > **引用规则**：用**符号名**与 **testid** 定位，不写代码行号。
@@ -182,13 +182,29 @@ child frame 内 document.createRange() → 写入 iframe 的 Selection
 
 ## 8. 退出门槛
 
-### Phase 1b 的退出门槛 = 仅 `baseline-1b` 组
+> ⚠️ **2026-08-24：本节拆成两道门。** 起因是 Codex 复核指出「009 阻塞 Phase 3」其实是**两件不同的事**
+> 被记在了一行里：**用例写完了没有**，和**基线稳不稳**。两者的完成时间可以差很远，把它们混记会产生一个
+> 具体的误判——用例刚写完就以为可以开始数 soak，而此时 `suite_hash` 还在天天变，按 §7 的清零规则那些
+> 绿一次都不算数。**分开记之后，「soak 从哪天开始数」有了确定答案：G2 达成那天。**
+>
+> 下游也随之分开：**Phase 4A 要的是 G1**（有一套能跑的 E2E 就够了），**Phase 3 要的是 G2 之后再连绿十次**。
+
+### G1 —— 用例完成门
 
 - **`baseline-1b` 组**在**本地 `e2e` lane**（`gateOn: push`）绿灯，并往 `soak-log.md` 记账（原写「主 CI（非 nightly）」，随 CI 改为仅发版触发而改基——见迁移计划 §7）
 - 选择器 lint 通过：全套用例（含尚未激活的组）零 class / 结构选择器
+- 其余各组**用例已写完并通过 review**，以 skip 形态存在——写完是 1b 的门槛，跑绿不是
+
+**G1 达成即解锁 Phase 4A。** 它不解锁 soak 计数。
+
+### G2 —— 基线稳定门
+
 - **零 flaky**：`baseline-1b` 连续 3 次全量运行无偶发失败才算达标。理由见 soak 门槛——一条会偶发失败的 E2E 当不了 Phase 3 数据迁移的验收基准，而 flaky 会让计数反复清零
 - 单次全量运行时长记录在案（后续 soak 期间要跑十次以上，时长本身就是可行性约束）
-- 其余各组**用例已写完并通过 review**，以 skip 形态存在——写完是 1b 的门槛，跑绿不是
+- **`soak-log.md` 已建，八列字段齐全**（字段定义在迁移计划 §7 的「台账字段（canonical）」，本文不重述），表头写明 `suite_hash` 的取法命令与当前值
+- **`suite_hash` 进入冻结状态**——从这一刻起再改 `baseline-1b` 的用例或 harness，soak 计数从零重来。所以 G2 的真实含义是「**你愿意为这套用例的当前形态背书**」，不是「它今天碰巧绿了」
+
+**G2 达成之日 = soak 计数第 1 行的日期。** Phase 3 从这里开始数 ≥10 次 / ≥5 个工作日。
 
 ### 其余各组的门槛归属
 
