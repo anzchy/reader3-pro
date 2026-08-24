@@ -1,0 +1,101 @@
+# 008 的测试 CI。`lint.yml` 的头部注释里 007 已经定过：测试 CI 单独建一个文件，
+# 与那边不合并——因为两者的依赖前提不同（`lint.yml` 的 `contracts` job 刻意零依赖，
+# 好让它在还没有 `tests/` 的早期分支上也能跑；这里必须 `uv sync`）。
+#
+# **本文件刻意不做的三件事**（它们在 `lint.yml` 里已有唯一定义处，重复记账只会漂移）：
+#   - 两条 testid lint 与 token 悬空引用 lint → `lint.yml` 的 `contracts` job
+#   - wheel 内容对账（`check_wheel_contents.py`）  → `lint.yml` 的 `wheel` job
+#   - 装出来能跑（`smoke_installed_wheel.py`）      → `lint.yml` 的 `wheel` job
+#     （同一个脚本另有一份 pytest 包装在 `tests/integration/`，由本地 packaging lane
+#      在 push 时跑。CI 这一遍环境更干净，是第三档节奏，见那个文件的 docstring。）
+#
+# **触发时机：只在发版时跑，日常 push 不跑**，与 `lint.yml` 同口径。
+# 两条发版路径都认（只打 tag / 在 GitHub 上 Publish Release），concurrency 按 ref
+# 归组取消旧的，所以同一个 tag 不会跑两遍。
+#
+# **本工作流不设 required check，这是故意的。** 一个日常不跑的检查设成 required，
+# 只会把每个 PR 卡死在「Expected — Waiting for status」上。日常门禁由
+# `.claude/tdd-guardian/config.json` 的三条 lane 承担：unit 在 taskCompleted/commit，
+# packaging 与 e2e 在 push。
+#
+# 代价写明白，两条（与 `lint.yml` 同源）：
+#   1. **本地门禁绕得过**——`git commit --no-verify` 一行就跳过。它挡的是手滑，不是决心。
+#   2. **中间攒下的问题会一次性堆在发版当天。** 补偿手段是 `workflow_dispatch`：
+#      想验的时候 `gh workflow run tests.yml`，或在 Actions 页面手点。
+#
+# ⚠️ **action 版本尚未在 CI 里实跑验证过。** `workflow_dispatch` 只对**默认分支上存在的
+# workflow** 生效，所以本文件在 008 合入 `master` 之前无法被触发一次。合入后的第一件事：
+# `gh workflow run tests.yml` 跑一遍，绿了再谈别的。下面的步骤命令本身在本地验过。
+name: tests
+
+on:
+  release:
+    types: [published]
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: 静态检查 ＋ unit lane（含覆盖率门禁）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version-file: "pyproject.toml"
+
+      # `--frozen` 让 uv.lock 参与解析。这与 `lint.yml` 的 wheel job 刚好相反——
+      # 那边故意不用 lock，因为它守的就是「依赖漂移在干净环境里炸掉」。
+      # 两个方向都要有人测，所以两处不能统一。
+      - name: uv sync
+        run: uv sync --frozen --all-groups
+
+      # 四步分开跑、且都带 `if: always()`：失败时要能一眼看出是哪一步，
+      # 而不是「第一步挂了，后三步没跑，不知道它们是绿是红」。
+      - name: ruff（含 BLE 盲捕与 S110 裸 pass，规则见 AGENTS.md）
+        run: uv run ruff check src/ tests/ scripts/
+
+      # 这里**故意没有** `ruff format --check`。
+      # `pyproject.toml` 里的 `line-length = 120` 是为了「以后开 E501 时别一次
+      # 多出几百条」而设的上限，不是格式目标。拿它当格式目标跑 `ruff format`，
+      # 会把测试里刻意折行的断言和参数列表合并成 120 字符长行——全仓 34/55 个
+      # 文件会被改，可读性只降不升。格式化如果要做，是它自己的一个机械分支，
+      # 不是安全网分支顺手夹带的。
+
+      - name: mypy
+        if: always()
+        run: uv run mypy src/
+
+      # 与 `.claude/tdd-guardian/config.json` 的 unit lane 同一条命令。
+      # 两处必须一致：本地绿 CI 红（或反过来）会让人不再相信任一处。
+      - name: unit lane（tests/unit ＋ tests/contract，含覆盖率）
+        if: always()
+        run: >
+          uv run pytest tests/unit tests/contract
+          --cov=src/reader3_app
+          --cov-report=json:coverage-unit.json
+          --cov-report=term
+
+      # 覆盖率阈值的唯一定义处是 `.claude/tdd-guardian/config.json` 的
+      # `coverageThresholds`，本文件不重述数字——读它、按它判。
+      - name: 覆盖率门禁（阈值读 tdd-guardian 配置，本文件不重述）
+        if: always()
+        run: python3 scripts/check_coverage_gate.py
+
+      - name: 保留覆盖率报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-unit
+          path: coverage-unit.json
+          if-no-files-found: warn
