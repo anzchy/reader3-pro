@@ -481,9 +481,15 @@ async def serve_epub(book_id: str):
 
 
 @app.get("/read/{book_id}", response_class=HTMLResponse)
-async def redirect_to_first_chapter(book_id: str):
-    """Helper to just go to chapter 0."""
-    return await read_chapter(book_id=book_id, chapter_index=0)
+async def redirect_to_first_chapter(request: Request, book_id: str):
+    """Helper to just go to chapter 0.
+
+    ``request`` 必须显式接下来再透传：``read_chapter`` 要拿它渲染模板，漏了会
+    在**每一次**调用上 TypeError，也就是这条路由一直是 500 而不是 404。它逃过
+    人眼是因为书库页链接直接指向 ``/read/{id}/0``，只有手敲 URL 的人会撞上。
+    mypy 的 ``call-arg`` 抓到了它 —— 这是本仓库开 mypy 的第一笔收益。
+    """
+    return await read_chapter(request=request, book_id=book_id, chapter_index=0)
 
 @app.get("/read/{book_id}/{chapter_index}", response_class=HTMLResponse)
 async def read_chapter(request: Request, book_id: str, chapter_index: int):
