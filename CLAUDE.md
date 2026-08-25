@@ -49,8 +49,11 @@ uv lock --upgrade
 
 ### AI Assistant Setup
 ```bash
-# Copy example config
+# Copy example config. chmod is not optional: cp inherits the umask (usually 0644)
+# and this file holds plaintext API keys. Saving via /settings rewrites it 0600,
+# but hand-editing the copied file never reaches that path.
 cp config/ai_settings.example.json config/ai_settings.json
+chmod 600 config/ai_settings.json
 
 # Configure via Web UI: http://127.0.0.1:8123/settings
 # Or edit config/ai_settings.json directly (API keys never returned to browser)
@@ -147,6 +150,8 @@ Each book has two identifiers:
 - **book_folder**: Filesystem name (e.g., `dracula_data`) - used for file paths
 - **book_uuid**: Stable UUID in `{book_folder}/ai_meta.json` - used for conversation tracking
 
+Why two identifiers, and the rule that an unreadable `ai_meta.json` degrades to `uuid=None` rather than being overwritten: [ADR-0003](docs/adr/0003-dual-book-identity.md).
+
 ## Frontend Development
 
 Templates in `src/reader3_app/web/templates/`:
@@ -174,10 +179,10 @@ Reader3 Pro follows 7 core principles. This list is the authority — the former
 `.specify/memory/constitution.md` was removed with the spec-kit toolchain (2026-08-16):
 
 1. **Data Structures First**: All entities as `@dataclass` with type annotations
-2. **Simplicity Over Engineering**: YAGNI - no abstractions beyond FastAPI/BeautifulSoup
-3. **File-Based State Management**: Filesystem IS the database (`*_data/` directories)
+2. **Simplicity Over Engineering**: YAGNI - no abstractions beyond FastAPI/BeautifulSoup → [ADR-0008](docs/adr/0008-tech-stack-boundary.md)
+3. **File-Based State Management**: Filesystem IS the database (`*_data/` directories) → [ADR-0001](docs/adr/0001-filesystem-as-database.md), write protocol [ADR-0007](docs/adr/0007-crash-safe-publish-protocol.md), on-disk format [ADR-0009](docs/adr/0009-book-format-manifest-jsonl.md)
 4. **HTML Content Sanitization**: XSS prevention via `html.escape()` and `clean_html_content()`
-5. **Path Security**: Validate book IDs against enumerated directories, use `os.path.basename()`
+5. **Path Security**: Validate book IDs against enumerated directories, use `os.path.basename()` → [ADR-0012](docs/adr/0012-security-boundaries.md), provider egress [ADR-0006](docs/adr/0006-provider-egress-single-gate.md)
 6. **Explicit Over Implicit**: Type hints everywhere, clear naming, documented distinctions
 7. **Performance Through Caching**: `@lru_cache` for expensive operations
 
@@ -194,8 +199,11 @@ removed on 2026-08-16. Do not attempt to invoke them.
 |---|---|---|
 | `docs/plans/{date}-{topic}/` | One self-contained body of planning work: plans, specs, contracts, review records, per-branch task lists | Living until the work ships |
 | `docs/plans/*.md` | Standalone plans that aren't part of a larger effort | Living |
+| `docs/adr/` | Architecture decision records — the **why** behind long-lived constraints, one file per decision ([index](docs/adr/README.md), admission rule in [ADR-0000](docs/adr/0000-use-adrs.md)) | **Survives** the archival of `docs/plans/`; never edited after Accepted, only superseded |
 | `specs/_archive/` | Historical spec-kit records for shipped features | **Frozen. Code is authoritative. Never implement from here.** |
 | `designs/` | Design references and executable prototypes | Living |
+
+**ADRs are not plans.** A plan compares options and tracks execution; an ADR records the outcome that must outlive the plan. When an ADR becomes the sole definition site of a rule, the plan section it came from keeps its heading and becomes a one-line link (「搬，不抄」). Read the Accepted ADRs before touching a data model, a public interface, or anything that crosses modules; to go against one, write a superseding ADR first.
 
 **A planning effort is one folder.** Everything a plan needs to be read and executed —
 the plan itself, its design spec, its interface contracts, its review record, and its work

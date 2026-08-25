@@ -55,3 +55,8 @@ coverage.xml
 # Codex CLI byproduct (contains account id)
 error.log
 .tokenize/
+
+# local AI-tooling byproducts (audit findings, codex session id, prompt drafts)
+.cc-suite/
+.context/
+.prompts/

@@ -51,10 +51,11 @@
 |---|---|
 | **分支编号分配（全仓库唯一真相源）** | [`20260816-tech-stack-migration/plan-tech-stack-migration.md` §9](../20260816-tech-stack-migration/plan-tech-stack-migration.md) |
 | Phase 依赖图、各 Phase 进入 / 退出门槛、soak 门槛 | 同上 §9.1 / §7 |
-| `data-testid` 命名 canonical 正则、三条 lint（选择器 / 命名 / token 悬空）的边界 | 同上 §6（0.5、0.8） |
+| `data-testid` 命名 canonical 正则 | `scripts/lint_testid_naming.py` 的 `CANONICAL`（裁决见 [`docs/adr/0013`](../../adr/0013-testid-invariant.md)） |
+| 三条 lint（选择器 / 命名 / token 悬空）的边界 | 同上 §6（0.5、0.8） |
 | Playwright E2E 用例 ID 与激活分组 | [`tasks/009-e2e-annotations.md`](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
 | API v1 冻结清单、覆盖率门槛数值 | [`tasks/008-test-safety-net.md`](../20260816-tech-stack-migration/tasks/008-test-safety-net.md) |
-| 两文件提交协议、读取状态机三态 | [`plan-tech-stack-migration.md`](../20260816-tech-stack-migration/plan-tech-stack-migration.md) Phase 3 |
+| 两文件提交协议、读取状态机三态 | [`docs/adr/0007`](../../adr/0007-crash-safe-publish-protocol.md) |
 | 第二轮 Codex 评审台账（一次评审的记录不拆开） | [`review-codex.md`](../20260816-tech-stack-migration/review-codex.md)，其中五条前端项在 `plan-frontend-ui-refactor.md` §6 继承 |
 
 > **下一个该开哪条分支**，看 [`../20260824-frontend-backend-plan-progress.md`](../20260824-frontend-backend-plan-progress.md)——执行顺序的唯一定义处。

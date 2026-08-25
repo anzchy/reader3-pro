@@ -80,7 +80,7 @@
 
 无警告、无备份。`ai_meta.json` 被删的后果比看上去重：`book_uuid` 变了，历史会话就和这本书断开了。
 
-**修法**：staging 目录 + 完整校验 + 原子切换。**顺序照 Phase 3 的「两文件提交协议」**——那是唯一定义处（`plan-tech-stack-migration.md` Phase 3），本文不复述。staging 目录必须和目标同父目录，否则 `os.replace` 跨文件系统不原子。
+**修法**：staging 目录 + 完整校验 + 原子切换。**顺序照「两文件提交协议」**——那是唯一定义处（今在 [ADR-0007](../../../adr/0007-crash-safe-publish-protocol.md)，2026-08-26 自 `plan-tech-stack-migration.md` Phase 3 迁出），本文不复述。staging 目录必须和目标同父目录，否则 `os.replace` 跨文件系统不原子。
 
 **测试目标**（`tests/unit/`）：
 
@@ -169,7 +169,7 @@ uv build → 解包 wheel → 断言 templates/、static/js/、static/css/、sta
 
 **这是两条不同的 lint，不是一条**——对照表见 `plan-tech-stack-migration.md` §6 步骤 0.5 下方的注。一句话概括：**选择器 lint 约束测试代码，命名 lint 约束模板与原型**。只有前者的话，模板里照样可以新增 `reader-search-hit` 这种名字，命名方案随即失守。
 
-canonical 正则在 `plan-tech-stack-migration.md` §6 的「canonical 正则（唯一真相源）」代码块里。**从那个代码块复制，不要从任何表格里复制**——表格单元格内 `|` 必须转义成 `\|`，复制出去会得到一条永不命中的正则，lint 全绿而命名方案毫无约束。本文不复述那个正则，正是为了不制造第二个复制源。
+canonical 正则的唯一定义处今在 `scripts/lint_testid_naming.py` 的 `CANONICAL` 常量（[ADR-0013](../../../adr/0013-testid-invariant.md)；007 当时它还在 `plan-tech-stack-migration.md` §6 的代码块里）。**从那个常量复制，不要从任何表格里复制**——表格单元格内 `|` 必须转义成 `\|`，复制出去会得到一条永不命中的正则，lint 全绿而命名方案毫无约束。本文不复述那个正则，正是为了不制造第二个复制源。
 
 命名 lint 必须**显式点名设计规格 §4.1 那 24 个带 `reader-` / `library-` 前缀的 testid**：它们形似合规，批量改名时最容易被当成「已经对了」跳过，而正则会把它们判为不合规——正是要的效果。
 

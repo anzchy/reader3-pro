@@ -37,8 +37,8 @@ SCAN_GLOBS = (
     "src/reader3_app/web/templates/*.html",
 )
 
-# canonical 正则。唯一真相源是 plan-tech-stack-migration.md §6 步骤 0.5 的 regex 代码块，
-# 从那个代码块复制，不要从它上面的 Markdown 表格里复制（表格里的 | 被转义成 \|）。
+# canonical 正则。这里就是唯一真相源（裁决见 docs/adr/0013-testid-invariant.md）——
+# 文档一律链接到这个常量，不要在任何 Markdown 表格里另抄一份（表格里的 | 会被转义成 \|）。
 CANONICAL = re.compile(r"^(?:lib|rd|set)-[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 ATTR_LITERAL_RE = re.compile(r'data-testid\s*=\s*"([^"]*)"')

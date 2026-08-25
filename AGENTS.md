@@ -74,6 +74,8 @@ You can override the default `books/` directory via `READER3_BOOKS_DIR`.
 
 ## API v1 冻结（008 起生效）
 
+> 规则与理由的唯一定义处：[ADR-0011](docs/adr/0011-api-v1-freeze.md)。本节是它的操作摘要。
+
 **`tests/contract/routes.snapshot` 是 v1 的定义处。** 它由 `app.routes` 生成，
 `tests/contract/test_route_inventory.py` 拿运行时的路由集合与它比对。别处（文档、
 计划、本文件）都不重复那份清单——重复的清单只会漂移，然后没人知道哪份是真的。
@@ -139,8 +141,20 @@ For PRs: include a clear description, link the relevant plan/task document under
 
 ## Security & Data Notes
 
+> 三条安全边界（受限 unpickler、路径校验位置、凭据文件 `mkstemp`）见 [ADR-0012](docs/adr/0012-security-boundaries.md)；provider 出网单出口见 [ADR-0006](docs/adr/0006-provider-egress-single-gate.md)。
+
 - `book.pkl` is loaded via `pickle`; only process trusted EPUBs and avoid accepting untrusted uploads without hardening.
 - Don’t commit generated `*_data/` outputs or large binaries unless explicitly intended.
+
+## 架构决策记录（ADR）
+
+长期有效的架构决策记在 [`docs/adr/`](docs/adr/README.md)（索引与准入标准见 [ADR-0000](docs/adr/0000-use-adrs.md)）。`docs/plans/` 随 015 归档，ADR 不归档。
+
+- 改动跨模块、动数据模型或公开接口之前，先读索引里 Accepted 的 ADR；违反其中任一条，先写 superseding ADR，不直接改代码。
+- 新决策先以 `Proposed` 写入，合入实现的那个 PR 把它改成 `Accepted`。
+- 已 Accepted 的 ADR 不改正文：要变就新开一份并 supersede 旧的，旧文只改 Status 一行。
+- 同一 commit 里，ADR 成为唯一定义处的那段正文在原处只留一行链接（「搬，不抄」）。
+- PR 描述里写明触碰了哪份 ADR，或明确写「无架构影响」。
 
 ## Documentation Rule (Technical Details)
 

@@ -31,15 +31,18 @@
 
 | 事实 | 唯一定义处 |
 |---|---|
-| 两文件提交协议（`manifest.json` ＋ `chapters.jsonl`） | `plan-tech-stack-migration.md` Phase 3 |
-| 读取状态机三态（missing / corrupt / valid） | `plan-tech-stack-migration.md` Phase 3 |
-| `data-testid` 命名正则（canonical 代码块） | `plan-tech-stack-migration.md` §6（0.5） |
+| 两文件提交协议（`manifest.json` ＋ `chapters.jsonl`）、读取状态机三态 | [`docs/adr/0007`](../../adr/0007-crash-safe-publish-protocol.md)（2026-08-26 自 Phase 3 迁出） |
+| 存储格式、双写 / 日落、`--migrate` 硬约束 | [`docs/adr/0009`](../../adr/0009-book-format-manifest-jsonl.md) |
+| `data-testid` 命名正则 | `scripts/lint_testid_naming.py` 的 `CANONICAL`（裁决见 [`docs/adr/0013`](../../adr/0013-testid-invariant.md)） |
 | 三条 lint 的约束边界（选择器 / 命名 / token 悬空） | `plan-tech-stack-migration.md` §6（0.5、0.8） |
 | Phase 依赖图与关键路径 | `plan-tech-stack-migration.md` §9.1 |
 | 每个 Phase 的进入 / 退出门槛、soak 门槛 | `plan-tech-stack-migration.md` §7 |
 | **分支编号分配（全仓库唯一真相源）** | `plan-tech-stack-migration.md` §9 |
 | Playwright E2E 用例清单与激活分组 | `tasks/009-e2e-annotations.md` |
-| API v1 冻结清单、覆盖率门槛数值 | `tasks/008-test-safety-net.md` |
+| API v1 冻结**规则** | [`docs/adr/0011`](../../adr/0011-api-v1-freeze.md)（清单本身是 `tests/contract/routes.snapshot`） |
+| 覆盖率门槛数值 | `.claude/tdd-guardian/config.json`（拓扑与理由见 [`docs/adr/0010`](../../adr/0010-test-and-ci-topology.md)） |
+
+「为什么」一类的长期决策不在本文件夹：它们在 [`docs/adr/`](../../adr/README.md)，本文件夹随 015 归档，ADR 不归档。
 
 前端计划**引用**上面这些定义，不重述。反过来，双层 token、组件清单、逐页规格、iframe 边界的 A/B/C 三重断言、降级状态 DEG-S1–DEG-S5、标注宿主契约 K1–K6 一律由前端计划定义，本文件夹只链接。
 

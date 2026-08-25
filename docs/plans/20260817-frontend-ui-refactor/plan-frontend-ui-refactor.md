@@ -123,12 +123,13 @@
 |---|---|
 | 分支编号分配（全仓库唯一真相源） | [`20260816-tech-stack-migration/plan-tech-stack-migration.md` §9](../20260816-tech-stack-migration/plan-tech-stack-migration.md) |
 | Phase 依赖图、各 Phase 进入 / 退出门槛、soak 门槛 | 同上 §9.1 / §7 |
-| `data-testid` 命名 canonical 正则、三条 lint 的边界 | 同上 §6（0.5、0.8） |
+| `data-testid` 命名 canonical 正则 | `scripts/lint_testid_naming.py` 的 `CANONICAL`（裁决见 [`docs/adr/0013`](../../adr/0013-testid-invariant.md)） |
+| 三条 lint 的边界 | 同上 §6（0.5、0.8） |
 | Playwright E2E 用例 ID（`R-1`…`R-6` / `W-1`…`W-10` / `K-1`…`K-6` / `X-1` / `X-2`）与激活分组 | [`tasks/009-e2e-annotations.md`](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
 | API v1 冻结清单、覆盖率门槛数值 | [`tasks/008-test-safety-net.md`](../20260816-tech-stack-migration/tasks/008-test-safety-net.md) |
-| 两文件提交协议、读取状态机三态 | [`plan-tech-stack-migration.md`](../20260816-tech-stack-migration/plan-tech-stack-migration.md) Phase 3 |
+| 两文件提交协议、读取状态机三态 | [`docs/adr/0007`](../../adr/0007-crash-safe-publish-protocol.md) |
 
-**testid 命名**：canonical 正则在 0.5，写在技术栈迁移计划的代码块里——**从代码块里复制，不要从 Markdown 表格里复制**（表格里 `|` 被转义成 `\|`）。本计划涉及的所有新建元素一律 `lib-` / `rd-` / `set-` 三前缀之一。原型原有 138 个 testid 站点**零个合规**，其中 24 个带 `reader-` / `library-` 前缀的**看起来像合规但不是**。重命名本身归 0.5，**已于 2026-08-23 完成**（新旧对照见 [`contracts/testid-rename-map.md`](../20260816-tech-stack-migration/contracts/testid-rename-map.md)）；本计划只负责新元素首次就写对。
+**testid 命名**：canonical 正则的唯一定义处是 `scripts/lint_testid_naming.py` 的 `CANONICAL` 常量（[ADR-0013](../../adr/0013-testid-invariant.md)），从那里 import 或复制，不要从任何 Markdown 表格里复制。本计划涉及的所有新建元素一律 `lib-` / `rd-` / `set-` 三前缀之一。原型原有 138 个 testid 站点**零个合规**，其中 24 个带 `reader-` / `library-` 前缀的**看起来像合规但不是**。重命名本身归 0.5，**已于 2026-08-23 完成**（新旧对照见 [`contracts/testid-rename-map.md`](../20260816-tech-stack-migration/contracts/testid-rename-map.md)）；本计划只负责新元素首次就写对。
 
 **分支落点**：Track D → `010-design-degradation-states`；WI-9–WI-13 → `013-ts-frontend-shell`；WI-14–WI-19 → `014-ts-frontend-reader`；WI-20 → `015-launch-experience`。编号来源见上表第一行。
 
@@ -1425,7 +1426,7 @@ E2E 侧：**不要写 Node Playwright Test 的 `webServer` 语法**，用 pytest
 >
 > 因此 `prefers-reduced-motion` 下骨架静止这条无障碍保证**不落在本矩阵里**，落成 WI-8 验收 2 / 3 的 **CSS 产物断言**。这不是降级：源码断言每次都跑，而一条抓不到加载窗口的 E2E 断言会静默地什么都没验——绿灯，零保证。同一条纪律本节开头已经写过一遍（「某个旧 class 不该再存在」不是 E2E 用例，是 lint 断言）。
 
-**testid 前缀**：书库 `lib-`、阅读器 `rd-`、设置 `set-`。canonical 正则在 0.5，从代码块复制、不要从表格复制。
+**testid 前缀**：书库 `lib-`、阅读器 `rd-`、设置 `set-`。canonical 正则见 `scripts/lint_testid_naming.py` 的 `CANONICAL`（[ADR-0013](../../adr/0013-testid-invariant.md)）。
 
 ---
 
