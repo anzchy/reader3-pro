@@ -2,11 +2,17 @@
 
 - **对应阶段**: Phase 1b（Playwright E2E）起写，后续阶段逐组激活
 - **进入条件**: Phase 0 的 0.3（`--port` + `/api/health`）与 0.5（`data-testid` 全量补齐）完成。见 `docs/plans/20260816-tech-stack-migration/plan-tech-stack-migration.md` §6
-- **退出条件**: **`baseline-1b` 组**全量绿灯，并在 `soak-log.md` 留下可计数的记录（**不再要求「主 CI 绿灯」**——CI 已统一为仅发版触发，改基说明见迁移计划 §7 的 soak 小节）。其余组各自在所属阶段的出口生效，见 §0.5
-- **下游**: Phase 4A / 4B 的进入条件；Phase 3 的 **soak 门槛**数的就是 **`baseline-1b`** 这一组（次数、跨度、计数基准的唯一定义处是迁移计划 §7，本行不复述）。**本分支还要建 `soak-log.md` 台账**——改基之后 soak 数的是它，没有它就没法计数
+- **退出条件**: **两道门，分开记，见 §8**——**G1 用例完成门**（`baseline-1b` 写完并绿、其余组以 skip 形态写完并 review）与 **G2 基线稳定门**（零 flaky ＋ 台账开张 ＋ `suite_hash` 冻结）。**不再要求「主 CI 绿灯」**——CI 已统一为仅发版触发，改基说明见迁移计划 §7 的 soak 小节。其余组各自在所属阶段的出口生效，见 §0.5
+- **下游**: Phase 4A 的进入条件是 **G1**；**Phase 3 的 soak 计数从 G2 达成之日起才开始数**（次数、跨度、台账字段、清零规则的唯一定义处是迁移计划 §7 的 soak 小节，本文件不复述）。**本分支还要建 `soak-log.md` 台账**——改基之后 soak 数的是它，没有它就没法计数
 - **契约**: K1–K6 见 `docs/plans/20260817-frontend-ui-refactor/contracts/annotation-host-contracts.md`；降级状态 DEG-S1–DEG-S5 见 `docs/plans/20260817-frontend-ui-refactor/spec-frontend-design.md` §6.4
 
 > **引用规则**：用**符号名**与 **testid** 定位，不写代码行号。
+
+> **008 留给本分支的一个必做动作**：`.claude/tdd-guardian/config.json` 里 `e2e` lane 的
+> `gateOn` 现在是**空的**——008 打开本地门禁时，空的 e2e 目录会让每一次 push 永远
+> `never passed`，逼所有人常年挂 `TDD_GUARD_BYPASS`。**加第一条 e2e 用例和 `live_server`
+> fixture 的那个 commit，必须在同一个 commit 里把 `gateOn` 改回 `["push"]`。**
+> 恢复条件的唯一定义处是那条 lane 自己的 `description`，本文不复述。
 
 > **跨计划**：[前端计划](../../20260817-frontend-ui-refactor/README.md)的测试矩阵**引用本文的用例 ID**（`R-1`…`R-6` / `W-1`…`W-10` / `K-1`…`K-6` / `X-1` / `X-2`）与 §0.5 的激活分组，**不重写这些用例**。前端矩阵新增的是本文范围之外的东西：按钮态、面板互斥与焦点、键盘与 a11y、数据态、响应式、主题解析。两边出现冲突时，标注 E2E 的用例定义以本文为准。
 
@@ -182,13 +188,29 @@ child frame 内 document.createRange() → 写入 iframe 的 Selection
 
 ## 8. 退出门槛
 
-### Phase 1b 的退出门槛 = 仅 `baseline-1b` 组
+> ⚠️ **2026-08-24：本节拆成两道门。** 起因是 Codex 复核指出「009 阻塞 Phase 3」其实是**两件不同的事**
+> 被记在了一行里：**用例写完了没有**，和**基线稳不稳**。两者的完成时间可以差很远，把它们混记会产生一个
+> 具体的误判——用例刚写完就以为可以开始数 soak，而此时 `suite_hash` 还在天天变，按 §7 的清零规则那些
+> 绿一次都不算数。**分开记之后，「soak 从哪天开始数」有了确定答案：G2 达成那天。**
+>
+> 下游也随之分开：**Phase 4A 要的是 G1**（有一套能跑的 E2E 就够了），**Phase 3 要的是 G2 之后再连绿十次**。
+
+### G1 —— 用例完成门
 
 - **`baseline-1b` 组**在**本地 `e2e` lane**（`gateOn: push`）绿灯，并往 `soak-log.md` 记账（原写「主 CI（非 nightly）」，随 CI 改为仅发版触发而改基——见迁移计划 §7）
 - 选择器 lint 通过：全套用例（含尚未激活的组）零 class / 结构选择器
+- 其余各组**用例已写完并通过 review**，以 skip 形态存在——写完是 1b 的门槛，跑绿不是
+
+**G1 达成即解锁 Phase 4A。** 它不解锁 soak 计数。
+
+### G2 —— 基线稳定门
+
 - **零 flaky**：`baseline-1b` 连续 3 次全量运行无偶发失败才算达标。理由见 soak 门槛——一条会偶发失败的 E2E 当不了 Phase 3 数据迁移的验收基准，而 flaky 会让计数反复清零
 - 单次全量运行时长记录在案（后续 soak 期间要跑十次以上，时长本身就是可行性约束）
-- 其余各组**用例已写完并通过 review**，以 skip 形态存在——写完是 1b 的门槛，跑绿不是
+- **`soak-log.md` 已建，八列字段齐全**（字段定义在迁移计划 §7 的「台账字段（canonical）」，本文不重述），表头写明 `suite_hash` 的取法命令与当前值
+- **`suite_hash` 进入冻结状态**——从这一刻起再改 `baseline-1b` 的用例或 harness，soak 计数从零重来。所以 G2 的真实含义是「**你愿意为这套用例的当前形态背书**」，不是「它今天碰巧绿了」
+
+**G2 达成之日 = soak 计数第 1 行的日期。** Phase 3 从这里开始数 ≥10 次 / ≥5 个工作日。
 
 ### 其余各组的门槛归属
 
@@ -202,3 +224,35 @@ child frame 内 document.createRange() → 写入 iframe 的 Selection
 **一个不成组的例外**：R-6 属 `baseline-1b`，但它的**栏宽参数**要到 4B.3 才有对象可测。这是往既有用例上加参数，不是新开一组，因此不进上表；它的门槛写在[前端计划](../../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md)的 4B.3 工作项退出门槛里。
 
 > **不要把未激活组的 skip 当成永久豁免。** 每个阶段的出口 checklist 里都要有一行「本阶段应激活的组已解开 skip 且绿灯」，否则 skip 会一路带到 Phase 5。
+
+## 原定从 008 转交的两条，已在 008 内结清（2026-08-26 收回）
+
+这两条一度判为「在 008 修是修错地方」并转交 009。当天晚些时候两条都在 008 拿到了
+**不依赖时序、也不依赖 012 fixture** 的做法，于是收回：`.cc-suite/audits/audit-008-tests-findings.md`
+里 tests/19 与 tests/23 的状态已从 `transferred → 009` 改为 `fixed (WI-14)`。
+
+**009 不再欠这两条。** 下面留的是「008 钉住了什么」与「009 仍可加什么」的边界，
+避免 009 重复做一遍，也避免以为已经全覆盖了。
+
+### 原 tests/19：SSE 增量性
+
+008 已钉住：`test_流式提问是边生成边推送而不是攒够一次性吐`（`tests/contract/test_scenarios.py`）。
+用握手代替掐表——假 provider 交出第 i 行的前提是第 i-1 个 chunk 已经发出去，所以「攒够
+一次性吐」的实现必然红，而判定里没有任何墙上时钟。它手搓 ASGI scope 直接驱动 app：
+starlette 的 `_TestClientTransport.handle_request` 以 `raw_kwargs = {"stream": io.BytesIO()}`
+起手，整段响应体落完才把 `httpx.Response` 交出来，所以 `client.stream()` + `iter_text()`
+看到的先后是 TestClient 的，不是应用的。变异证据：把 chunk 攒到 `done` 再冲，新用例红，
+原 `test_流式提问按meta_chunk_done的顺序推事件` 全绿。
+
+009 仍可加（可选，非欠账）：**首字延迟**是浏览器侧的用户可感属性，008 那条证明的是
+「服务端是增量发的」，不是「前端是增量渲染的」。要覆盖后者，就在 Playwright 里断言
+DOM 增量更新次数 > 1。
+
+### 原 tests/23：受损书目录的降级
+
+008 已钉住：`tests/contract/test_degraded_bookdir_and_images.py` 覆盖缺 `book.epub` 的
+书目录——library 页仍渲染，取 epub 得 404 而不是 500（MUTANT-M 精确 1 红）；顺带覆盖
+「点名一个目录当图片」得 404 而不是 500。
+
+009 仍可加（可选，非欠账）：`book.pkl` **损坏**（而非缺失）这一态没覆盖，它要等 012 的
+ADR-0007 三态读定下来；届时在 E2E 里补 reader 页的降级表现。

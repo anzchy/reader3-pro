@@ -31,7 +31,7 @@
 > | 现状审计（是什么样）＋ 已拍板的五条产品决策 | [`designs/reader-pro-next/spec/reader-pro-spec.md`](../../../designs/reader-pro-next/spec/reader-pro-spec.md) |
 > | 原型相对现状补齐了什么、还差什么 | [`designs/reader-pro-next/spec/reader-pro-next-parity.md`](../../../designs/reader-pro-next/spec/reader-pro-next-parity.md) |
 > | **Phase 1b E2E 用例清单**（读路径 / 写路径 / K1–K6 / DEG-S1–DEG-S4） | [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) |
-> | **Phase 0 七项的现状实测**与哪几项适合交给 `/tdd-guardian:workflow` | [`tasks/007-hygiene-and-contracts.md`](./tasks/007-hygiene-and-contracts.md) |
+> | **Phase 0 八项的逐项验收、合入记录**与哪几项适合交给 `/tdd-guardian:workflow` | [`tasks/007-hygiene-and-contracts.md`](./tasks/007-hygiene-and-contracts.md) |
 > | **覆盖率门槛策略**、42 条路由契约的三层组织、异常处理规则 | [`tasks/008-test-safety-net.md`](./tasks/008-test-safety-net.md) |
 >
 > 之所以立"只索引不复述"这条规矩：此前三份计划各自复述对方的内容，其中三处代码行号引用在
@@ -135,7 +135,7 @@ Phase 3  JSONL + 指纹 + generation swap  ←── 三路汇合 ────�
 
 > 这两项的**实测结论与收口方案**在前端计划的 WI-7 / WI-10 里（第一项实测后发现是 **alpha 问题不是颜色问题**，九处而非八处）。本表只持有「它们尚未冻结」这个顺序事实。
 
-**合同 3 的规则**：Phase 2a / 2b 不得改变任何响应形状（纯重构，契约测试即证明）；Phase 3 只能**新增**字段，不得改名、不得改语义、不得改默认值。这是 expand–migrate–contract 的标准做法，也是两条线不互相阻塞的全部秘诀。
+**合同 3 的规则**：正文已迁至 [ADR-0011](../../adr/0011-api-v1-freeze.md)（唯一定义处）。
 
 ---
 
@@ -212,15 +212,9 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 >
 > 只有前者不足以保住契约：选择器 lint 全绿，模板里照样可以新增 `reader-search-hit` 这种名字，命名方案随即失守。命名 lint 必须**显式点名设计规格 §4.1 那 24 个带 `reader-` / `library-` 前缀的 testid**——它们形似合规，批量改名时最容易被当成「已经对了」跳过，而正则会把它们判为不合规，正是要的效果。138 个站点全部需要改名，lint 的初始状态就是「138 条违规」，改完归零。（此前记的 134 少算了 `Sheet` 的四个 `testId=` prop——只 grep `data-testid=` 的口径看不见它们。对账见 [`contracts/testid-rename-map.md`](./contracts/testid-rename-map.md) §1。）
 
-#### canonical 正则（唯一真相源）
+#### canonical 正则（唯一定义处已迁至 `scripts/lint_testid_naming.py`）
 
-配置 lint 时**从这个代码块复制，不要从上面的表格里复制**：Markdown 表格单元格内的 `|` 必须写成 `\|`，直接复制出去会得到 `^(lib\|rd\|set)-…`，它匹配的是**字面的反斜杠加竖线**，永远不会命中任何 testid——lint 会全绿，而命名方案毫无约束。
-
-```regex
-^(?:lib|rd|set)-[a-z0-9]+(?:-[a-z0-9]+)*$
-```
-
-改用非捕获组 `(?:…)` 是因为这里只做匹配、不取分组；捕获组在部分 lint 工具里会被当作提取意图。
+正则的唯一定义处是 `scripts/lint_testid_naming.py` 的 `CANONICAL` 常量，裁决见 [ADR-0013](../../adr/0013-testid-invariant.md)；本文不再保留副本（此前这里的代码块与上表并存，表格里 `|` 被转义成 `\|`，曾是复制错源的来源——正是把定义处挪进可执行文件的原因）。配置或对照时从该文件 import / 复制。
 
 > **0.8 为什么值得单列一条。** CSS 自定义属性引用不存在的名字**不报错**——`var(--typo)` 静默回落到继承值，页面照常渲染，只是颜色变成了别的东西。降级横幅正是最不能出这个错的地方（长得像普通提示 = 降级没被看见）。设计规格里实测到过三处：§6.4 引用的 `--r3-warn` / `--r3-danger` 从未定义（Codex 复审 #8），§6.2 引用的 `--r3-sidebar-w` / `--r3-right-w` 从未定义，`--r3-text-quiet` 只在三个阅读主题里被赋值、`:root` 无定义。**三处都已在 007 修掉**，但没有 lint 就会再长出来。
 >
@@ -303,82 +297,29 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 
 ### Phase 3 —— 存储去 pickle 化
 
-pickle 是实际的迁移阻塞点与安全隐患（`pickle.load` 对不可信输入等于任意代码执行；现有 `_Reader3Unpickler` 只是兼容 shim，非受限反序列化器）。
+目标格式（`manifest.json` + `chapters.jsonl`）、双写与日落规则、`reader3 --migrate` 的硬约束（原地读写、禁止复用摄取路径、不得改变 `book_fingerprint()`）的正文已迁至 [ADR-0009](../../adr/0009-book-format-manifest-jsonl.md)（唯一定义处）；写入协议与读取三态见 [ADR-0007](../../adr/0007-crash-safe-publish-protocol.md)。本节只留任务清单，不复述约束：
 
-- [ ] 设计版本化中立格式：
-  ```
-  books/{book_id}_data/
-  ├── manifest.json      # 元数据 + 格式版本 + spine/TOC 结构
-  ├── chapters.jsonl     # 每行一章：{id, href, title, content, text, order}
-  ├── book.epub
-  ├── images/
-  ├── notes.json
-  ├── ai_meta.json
-  └── chroma_db/
-  ```
-- [ ] 摄取时双写（新格式 + book.pkl）；读取优先新格式，pkl 的地位见下方「读取状态机」
+- [ ] 版本化中立格式落地（ADR-0009 Decision Outcome）
+- [ ] 摄取时双写；读取按三态（ADR-0007）
 - [ ] `book_store.py` 封装格式判断，调用方无感知
-- [ ] **落地下方的「两文件提交协议」与「读取状态机」**——`manifest.json` + `chapters.jsonl` 是一次**两文件提交**，没有协议就会出现 manifest 指向半写 chapters 的状态
-- [ ] 提供 `reader3 --migrate <book_id>` 将存量书库转换为新格式。
-      **硬约束：`--migrate` 原地读写，禁止复用摄取路径。** 摄取路径在写入任何内容前 `shutil.rmtree(output_dir)`（见附录 A 的 A1），而 `notes.json` / `ai_meta.json` / `chroma_db/` 全在 `output_dir` 里——`--migrate` 一旦借道摄取，就会在"迁移成功"的同时抹掉用户标注、AI 会话与向量索引。实现上 `--migrate` 只允许：读 `book.pkl`（或 `book.epub`）→ 写 `manifest.json` + `chapters.jsonl` → 校验 → 结束，全程不删任何既有文件
+- [ ] `reader3 --migrate <book_id>`，遵守 ADR-0009 的硬约束与配套断言
 - [ ] Chroma 索引重建改为 **generation swap**（见附录 A「其余未讨论但会咬人的问题」）
-- [ ] 稳定一个大版本后移除 pickle 写入路径
+- [ ] 稳定一个大版本后移除 pickle 写入路径（版本号见 ADR-0009 Migration Strategy）
 - [ ] **降级状态在 UI 里可见**：A1 的分级降级（notes stale / 索引 stale）与 A2 的 pickle 回退告警一旦无 UI，就是静默的用户数据损坏。设计规格 §6.4 的 **DEG-S1–DEG-S4** 必须在本阶段可见——哪怕先落成现有 Jinja 模板里的朴素横幅，Phase 4 再按规格重做
 
-#### 两文件提交协议（canonical，全仓库唯一定义处）
+#### 两文件提交协议（唯一定义处已迁至 ADR-0007）
 
-> **本小节是 `manifest.json` + `chapters.jsonl` 写入顺序的唯一定义处。** §4 的回滚条目、附录 A 中 A2 的 pickle 回退条款只引用本小节，不复述步骤。
-
-把一本书的存储从一个文件（`book.pkl`）拆成两个，就引入了一个 pickle 时代不存在的失败态：**manifest 已落盘、chapters 只写了一半**。此时 `manifest.json` 里的 `offset_bytes` / `length_bytes` 指向文件尾之后，`load_chapter()` seek 过去读到的是截断数据或空串——而 `manifest.json` 本身格式完好，任何「文件在不在 / JSON 解不解得开」的检查都会判它健康。摄取、`--migrate`、未来任何重写存储的路径都必须走同一套顺序：
-
-1. 写 `chapters.jsonl.tmp`（同目录，保证与目标同一文件系统，`os.replace` 才是原子的）
-2. `f.flush()` + `os.fsync(f.fileno())` — 数据落到盘，不只是落到 page cache
-3. 边写边记录每章的 `offset_bytes` / `length_bytes` / 内容 hash；写完再记全文件 `size_bytes` 与 `sha256`
-4. 写 `manifest.json.tmp`，把第 3 步的全部数字嵌进去
-5. `flush()` + `fsync()` manifest.tmp
-6. **在任何 `os.replace` 之前**做一次全量回读校验：按 manifest 里的 offset 逐章 seek `chapters.jsonl.tmp`，每章 JSON 解得开、`id`/`order` 对得上、hash 相符。校验失败就删两个 tmp 文件退出，目录里的旧状态一个字节没动
-7. `os.replace("chapters.jsonl.tmp", "chapters.jsonl")` → `os.fsync(dirfd)`
-8. `os.replace("manifest.json.tmp", "manifest.json")` → `os.fsync(dirfd)` — **manifest 是 commit marker，必须最后一个换**
-
-顺序的全部意义在第 7、8 步：chapters 先就位、manifest 后就位，于是"manifest 指向半写文件"在任何时刻的崩溃点上都不可能出现。反过来的残留是良性的——只有 `chapters.jsonl` 没有 `manifest.json`，读取状态机判定为 `missing`，走旧格式；孤儿 tmp 文件下次运行覆盖即可。
+> `manifest.json` + `chapters.jsonl` 的八步写入顺序、marker-last 的意义，正文已迁至 [ADR-0007](../../adr/0007-crash-safe-publish-protocol.md)（唯一定义处）。§4 的回滚条目、附录 A 的 A2 条款与 `tasks/007` P0-1 只引用该 ADR，不复述步骤。
 
 ##### 两条协议缺口（Phase 0 的 P0-1 实施中撞出来，已在 `reader3.py` 落地）
 
-上面八步是按**一个数据文件 ＋ 一个 marker**写的。P0-1 真正要原子换掉的是**三件产物**（`book.pkl` ＋ `book.epub` ＋ `images/`），落地时发现协议在这两处不成立。Phase 3 把 pkl 换成 manifest + chapters 之后产物仍是三件（`manifest.json` ＋ `chapters.jsonl` ＋ `images/`），所以这两条同样适用，不要按八步原样照抄。
-
-**缺口 1：`os.replace` 换不动目录产物。** 第 7 步默认目标是普通文件——覆盖已存在的文件时 `os.replace` 是原子的，但目标是**非空目录**时它直接 `OSError: [Errno 39] ENOTEMPTY`。`images/` 就是目录。可行的补法只有一条：**先把旧目录 rename 到一边，再把新目录 rename 进来**。旧目录的落脚点必须与 `output_dir` 同文件系统（实现里就放 staging 目录内，staging 本来就与目标同盘），否则 rename 退化成跨设备拷贝，既不原子也不便宜。
-
-**缺口 2：三件产物时「marker 最后换」不足以保证一致性。** 八步协议里 marker 之外只有一件产物，所以"marker 最后"等价于"marker 在时其余都在"。三件产物时它只挡住了一个方向——挡不住**新 `book.epub` ＋ 新 `images/` 挨着旧 `book.pkl`**：marker 尚未翻，读取侧判为一致，实际拿到的是旧结构配新资源。协议必须补上失败路径的对称要求：**换 marker 之前的任何一步失败，都要把已经换进去的产物退回原样，按相反顺序退。**
-
-落地形态（`reader3.py:_commit_staged_artifacts`，49 条测试覆盖，含三轮故障注入）：
-
-1. 逐件把 live 产物 rename 进 staging（`book.epub.superseded` / `images.superseded`），同时记一条 undo 记录；**产物原本不存在时记 `(None, live)`** —— 这条最容易漏，漏了就只会「恢复存在过的」而不会「移除新加的」，中断后留下新产物挨着旧 marker，正是缺口 2 的反向失败
-2. 新 `book.epub`、新 `images/` rename 就位 → `fsync(dirfd)`
-3. **最后**换 `book.pkl`（marker）→ `fsync(dirfd)`
-4. marker 换成功之前的任何异常（含 `KeyboardInterrupt`，所以捕 `BaseException`）都倒序走 undo；undo 本身失败只能打 warning 到 stderr 并继续抛原异常——此时目录确实可能不一致，必须让人看见
-
-配套的两条测试性质，Phase 3 重跑时照抄：**回滚必须是 rename 不是 copy**（快照记 `inode` 与 `mtime_ns`，拷回一份字节相同的文件判 fail），以及**"保住用户数据"不许退化成"什么都没改"**（同时断言用户子树逐字节不变 **且** 新增文件集合恰好等于该次重新生成的那几件产物）。
-
-`--migrate` 不适用本节：它只**新增** manifest + chapters，不替换任何既有产物，走八步原文即可。
+缺口 1（`os.replace` 换不动目录产物）、缺口 2（三件产物时 marker-last 不够）及 `_commit_staged_artifacts` 的落地形态与两条测试性质，正文已迁至 [ADR-0007](../../adr/0007-crash-safe-publish-protocol.md)（唯一定义处）。
 
 #### 读取状态机（三态，禁止二态）
 
-`storage_format(book_id)` 不能只回答"新格式还是旧格式"，因为那把"没迁移"和"迁移坏了"归成了同一件事：
+三态判定表（missing / corrupt / valid）、`corrupt` 不回退的理由、以及 A2 环境变量只管「停写 pkl 之后」时间窗的澄清，正文已迁至 [ADR-0007](../../adr/0007-crash-safe-publish-protocol.md)（唯一定义处）。
 
-| 状态 | 判定 | 处置 |
-|---|---|---|
-| `missing` | `manifest.json` 不存在 | 读 `book.pkl`。这是双写期与未迁移存量书的**正常**状态，不告警 |
-| `corrupt` | manifest 存在，但 JSON 解不开 / 格式版本不认识 / `sha256` 或 `size_bytes` 与 `chapters.jsonl` 对不上 | **大声失败**：抛错、写日志、UI 出 DEG-S1–DEG-S4 横幅。**不静默回退 pkl** |
-| `valid` | manifest 存在且自洽 | 读新格式 |
-
-`corrupt` 之所以不回退，是因为上面的提交协议已经排掉了"写坏"这条路径——协议走完还 corrupt，意味着磁盘损坏、外部程序改文件、或者协议本身有 bug。这三种都需要人看见。静默回退 pkl 只会把它们藏到 pkl 也被删掉的那一天。
-
-这同时消掉了附录 A 中 A2 与本阶段的一处表面矛盾：A2 说 pickle 回退"默认关闭，需显式 `READER3_ALLOW_PICKLE=1`"，本阶段又说"读取优先新格式，回退 pkl"。两句话说的不是同一个时间窗——
-
-- **双写期**（移除 pkl 写入路径之前）：pkl 是与新格式**同期产出的对等产物**，不是遗留数据。`missing` 走 pkl 属正常流程，**不需要环境变量**。
-- **停写 pkl 之后**：目录里还剩的 pkl 才是真正的遗留数据，`missing` 走 pkl 才需要 `READER3_ALLOW_PICKLE=1` 显式开启并每次启动告警。
-
-**`--migrate` 不得改变 `book_fingerprint()`。** A1 的指纹涵盖原 EPUB hash、spine href/order、每个 XHTML 原始内容 hash、解析器版本——纯粹的存储格式转换一样都不碰。若迁移后指纹变了，A1 的分级降级会立刻生效，**全库用户标注一次性判 stale**。因此 Phase 3 的验收里那条"`notes.json` 三者字节不变"的测试要再加一句断言：迁移前后 `book_fingerprint(book_id)` 相等。
+**`--migrate` 不得改变 `book_fingerprint()`。** 规则与配套断言已迁至 [ADR-0009](../../adr/0009-book-format-manifest-jsonl.md)（唯一定义处，Migration Strategy 一节）。
 
 **进入条件**: Phase 2b 完成 **且** Track D 完成 **且** 1b 的标注 E2E 达到 **soak 门槛**——次数、跨度与**计数基准**三项的唯一定义处是 §7，本行不复述（2026-08-24 改基：数的是本地全量运行，不再是主 CI）。三路汇合，见 §9.1。
 
@@ -442,14 +383,14 @@ pickle 是实际的迁移阻塞点与安全隐患（`pickle.load` 对不可信�
 
 | 阶段 | 进入条件 | 退出条件 |
 |---|---|---|
-| Phase 0 | — | P0-1/P0-2 修复并人工 smoke（**六项 checklist 的正文在 [`tasks/007-hygiene-and-contracts.md`](./tasks/007-hygiene-and-contracts.md) §8.1**，本文只引用不重述）；`--port` 与 `/api/health` 可用；testid 在原型与模板两侧一致；**两条 lint 都在 CI 里生效**——选择器 lint（约束 `tests/e2e/`）与命名 lint（约束模板与原型，正则以 §6 步骤 0.5 的 **canonical 代码块**为准，违规数归零）；**0.8 的 token 悬空引用 lint 在 CI 里生效且为 0**。三条 lint 落在 `.github/workflows/lint.yml` 的同一个 job 里，分三步跑 |
+| Phase 0 ✅ | — | **门槛已全部满足，阶段于 2026-08-24 关闭**（合入记录见 [`tasks/007-hygiene-and-contracts.md`](./tasks/007-hygiene-and-contracts.md) 的「合入记录」，本表不重述）。P0-1/P0-2 修复并人工 smoke（**六项 checklist 的正文在 [`tasks/007-hygiene-and-contracts.md`](./tasks/007-hygiene-and-contracts.md) §8.1**，本文只引用不重述）；`--port` 与 `/api/health` 可用；testid 在原型与模板两侧一致；**两条 lint 都在 CI 里生效**——选择器 lint（约束 `tests/e2e/`）与命名 lint（约束模板与原型，正则以 §6 步骤 0.5 的 **canonical 代码块**为准，违规数归零）；**0.8 的 token 悬空引用 lint 在 CI 里生效且为 0**。三条 lint 落在 `.github/workflows/lint.yml` 的同一个 job 里，分三步跑 |
 | Phase 1a | Phase 0 | 测试门禁生效（**本地 tdd-guardian**，非 required check——见本节 soak 小节的改基说明）；42 路由契约测试通过；**API v1 形状冻结**；性能基准记录在案 |
-| Phase 1b | 0.3 + 0.5 | **`baseline-1b` 组**在**本地 `e2e` lane** 绿灯并入 `soak-log.md` 台账（原写「主 CI（非 nightly）」，2026-08-24 随 CI 改为仅发版触发而改基，见本节 soak 小节）；**用例覆盖写路径**（四类型创建 / 改色 / 删除 / 笔记保存，断言为刷新后回到同一段文字）；K2–K5 与 K1/K6 的**现状特征化**条各一条正向证据；连续 3 次全量运行零 flaky；其余组**用例写完并 review**，以 skip 形态存在。⚠️ K1/K6 的新行为与 DEG-S1–DEG-S4 的横幅**不在本阶段门槛内**——它们要到 4B.1 / Phase 3 / 4A.4 才存在，写进 1b 会形成依赖环。分组见 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) §0.5 |
+| Phase 1b | 0.3 + 0.5 | **本行的展开（G1/G2 两道门）在 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) §8，本表不重述**。**`baseline-1b` 组**在**本地 `e2e` lane** 绿灯并入 `soak-log.md` 台账（原写「主 CI（非 nightly）」，2026-08-24 随 CI 改为仅发版触发而改基，见本节 soak 小节）；**用例覆盖写路径**（四类型创建 / 改色 / 删除 / 笔记保存，断言为刷新后回到同一段文字）；K2–K5 与 K1/K6 的**现状特征化**条各一条正向证据；连续 3 次全量运行零 flaky；其余组**用例写完并 review**，以 skip 形态存在。⚠️ K1/K6 的新行为与 DEG-S1–DEG-S4 的横幅**不在本阶段门槛内**——它们要到 4B.1 / Phase 3 / 4A.4 才存在，写进 1b 会形成依赖环。分组见 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) §0.5 |
 | Track D | Phase 0 | DEG-S1–DEG-S5 设计完成并回写设计规格 §6.4；合同 2 剩余两项收口；loading 骨架屏补齐 |
 | Phase 2a | 1a | 每个 router < 500 行；`book_store` **三处** loader 合并（第四处已作为死代码删除，见附录 A 的 A5）；**notes 乐观并发落地**；行为不变由 1a 证明 |
 | Phase 2b | 2a | 跨库搜索性能相对基准可量化改善；`_normalize_with_map` 差分测试通过 |
 | Phase 3 | 2b + Track D **且 soak 门槛达标**（三路汇合，见 §9.1） | 新书完全不依赖 pickle；存量可一键迁移；**`--migrate` 原地读写，不复用摄取路径**；**DEG-S1–DEG-S4 在当时的 UI 里可见**——即 **`acceptance-p3` 组解开 skip 并绿灯**（朴素横幅形态）；真实 iframe 标注迁移 E2E 通过 |
-| Phase 4A | 1b | wheel 内容测试通过；settings 与 library 切换后 `baseline-1b` **零改动**全绿；**4A.4 另需 `acceptance-4a4` 组解开 skip 并绿灯**（DEG-S1–DEG-S4 改版形态）；Classic 已删除 |
+| Phase 4A | **1b 的 G1**（用例完成门；不必等 G2/soak） | wheel 内容测试通过；settings 与 library 切换后 `baseline-1b` **零改动**全绿；**4A.4 另需 `acceptance-4a4` 组解开 skip 并绿灯**（DEG-S1–DEG-S4 改版形态）；Classic 已删除 |
 | Phase 4B | Phase 3 **且** 4A.4 | 拆分后 `baseline-1b` 全绿；**4B.1 另需 `acceptance-4b1` 组解开 skip 并绿灯**（K1 响亮失败、K6 抛错——这两条行为本阶段才产生）；各模块 ≤400 行；依赖方向机器可验（`dependency-cruiser` 四条规则，见[前端计划](../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) 的 WI-14）；**iframe 内部改动不超出设计规格 §6.0 允许的范围**（判据以 §6.0「判定标准（canonical）」为准的**三重断言 A/B/C**，本表不复述）；**三个浮层过 `containingBlockAncestor() === null`，且工具条位置用矩形几何断言**（4B.2 硬门槛，K3）；**K1–K6 各有一条能失败的断言**；进度值全站一致 |
 | Phase 5 | 4B | 单命令进入阅读；PWA 版本切换不撕裂 |
 
@@ -463,7 +404,7 @@ pickle 是实际的迁移阻塞点与安全隐患（`pickle.load` 对不可信�
 >
 > **数值一个不动**——≥10 次 / ≥5 个工作日是 R9 评审后用户亲自裁定维持的（见「GSTACK REVIEW REPORT」的 R9 行），改基不碰它。换的只有计数基准：
 >
-> - 每次 `baseline-1b` 全量运行往 **`soak-log.md`** 追一行：**UTC 时间戳 ＋ commit sha ＋ 结果 ＋ 单次时长**。跨度按台账首行与第十行的日期算。该台账由 009 建，它是 `baseline-1b` 的产物之一。
+> - 每次 `baseline-1b` 全量运行往 **`soak-log.md`** 追一行，字段见下方「台账字段（canonical）」。跨度按台账首行与第十行的日期算。该台账由 009 建，它是 `baseline-1b` 的产物之一。
 > - 「连续」的清零规则不变：中途任何一次红清零重计，flaky 与 broken 仍不做区分。
 >
 > **必须写明丢了什么**：本地计数丢掉的是「**独立、干净环境**」这一性质。而依赖漂移、时区、缓存这三类，正是上面「跨度条款」想逼出来的东西——它们恰恰在同一台机器上最不容易复现。所以改基之后，跨度条款只剩「日历时间」这一半效力，「环境多样性」那一半没有了。唯一的补偿不在 soak 里：**发版关门检查里跑一次 `baseline-1b` 全量**。这是本条策略的**已知代价，不是疏漏**。
@@ -473,6 +414,53 @@ pickle 是实际的迁移阻塞点与安全隐患（`pickle.load` 对不可信�
 - 「连续」指中途任何一次红都清零重计——flaky 与 broken 在这里不做区分，一条会偶发失败的 E2E 当不了数据迁移的验收基准。
 - 跨度条款是为了逼出**时间维度**的不稳定（缓存、时区、依赖漂移、并发），这类问题在同一天连跑十次是照不出来的。
 - 这道门槛只卡 Phase 3。Phase 4A 不受影响，可继续并行推进。
+
+#### 台账字段（canonical）＋ 什么会让计数作废
+
+> **本小节 2026-08-24 补，起因是 Codex 复核指出「10 次绿」在原规则下可以由互不可比的十次拼出来。**
+> 原文只定义了「红清零」，没定义**被测对象变了算不算清零**。于是下面这条路径是合法的：跑三次绿 →
+> 改掉两条 flaky 断言 → 再跑七次绿 → 宣布达标。**十次绿里没有任何两次测的是同一套东西**，而门槛
+> 想买的恰恰是「同一套东西稳定了一段时间」。这是规则漏洞，不是执行者的问题。
+
+**台账字段**——`soak-log.md` 每行八列，缺一列该行不计数：
+
+| 列 | 含义 | 怎么取 |
+|---|---|---|
+| `ts_utc` | UTC 时间戳 | `date -u +%Y-%m-%dT%H:%M:%SZ` |
+| `commit` | 被测生产代码的 sha | `git rev-parse --short HEAD` |
+| `result` | `green` / `red` | e2e lane 退出码 |
+| `duration_s` | 单次全量时长（秒） | 运行器输出 |
+| `suite_hash` | **`baseline-1b` 组用例 ＋ harness 配置的内容哈希** | 见下方口令，**这一列是 ① 的执行机制** |
+| `browser` | 浏览器标识与版本，如 `chromium-1140` | `npx playwright --version` ＋ 浏览器构建号 |
+| `os` | 运行平台，如 `darwin-25.3.0` | `uname -sr` |
+| `log` | 该次运行的日志/报告路径 | 运行器产物目录 |
+
+**三类清零触发器，全部二值可判，不需要任何人判断「这次改动算不算大」：**
+
+1. **`suite_hash` 变了** —— 清零。哈希覆盖 `baseline-1b` 组的用例文件、Playwright 配置、以及该组用到的 fixtures。**改一条断言、修一条 flaky、动一次 webServer 探针，都从零重数。**
+2. **`browser` 或 `os` 变了** —— 清零。浏览器升级换的是被测运行时。
+3. **任意一次 `red`** —— 清零（原有规则，不变）。
+
+**明确不清零的：生产代码变（`commit` 变）**。那正是这道门槛要观察的信号——E2E 在一份持续演进的代码上连续保持绿，才是它的全部意义。同理，**其余 skip 分组的用例怎么改都不清零**，它们不在 `suite_hash` 的覆盖范围里。
+
+> **这条规则很严，严是故意的，但它必须留一个出口，否则会重蹈「改基前不可达」的覆辙。** 出口就是
+> 上面那句「其余分组随便改」：soak 期间你仍然可以推进 009 的其他组、可以推进 011、可以改生产代码。
+> **被冻的只有 `baseline-1b` 这一组的用例本身**——而它到那时本来就该是冻结状态：1b 的出口条件已经
+> 要求它「连续 3 次全量运行零 flaky」，还在频繁修改它，说明 1b 根本没出门。
+>
+> **已知代价，写下来**：如果 soak 期间发现 `baseline-1b` 有条用例写错了，你只有两个选择——带着错误
+> 用例跑完十次，或者改掉它并从零重数。**没有第三条路，也不应该有**：能被「就改这一点点」绕过的门槛
+> 不是门槛。
+
+**`suite_hash` 的取法**（一条命令，写进 `soak-log.md` 表头，运行器直接调）：
+
+```bash
+# baseline-1b 组用例 + harness 配置 + fixtures 的内容哈希，前 12 位
+{ git ls-files -s tests/e2e/baseline-1b playwright.config.* tests/e2e/fixtures   | git hash-object --stdin; } | cut -c1-12
+```
+
+> 路径以 009 落地时的实际目录为准；**若目录名不同，改的是这条命令，不是规则**。命令本身连同它算出的
+> 第一个哈希值一起写进 `soak-log.md` 的表头，这样台账自带复核方式。
 
 > 来源：2026-08-16 eng-review 的 Outside Voice。Codex 主张把 Phase 3 整体挪到 4B 之后，理由之一是「Phase 1 的测试尚无 CI 历史，保护力未经检验」。排序未采纳（见 §4），但这半句成立，转为本门槛。
 
@@ -545,63 +533,52 @@ M1b 与 MD 可与 M1/M2 交错推进；M4a 可与 M2/M3 交错推进；**M3 与 
 |---|---|---|
 | Phase 0 | — | 全部 |
 | Phase 1a | 0 | 2a |
-| Phase 1b | 0.3 + 0.5 | 4A；**Phase 3**（经 soak 门槛） |
+| Phase 1b | 0.3 + 0.5 | 4A（要 **G1**）；**Phase 3**（要 **G2** 之后再连绿十次） |
 | Track D | 0 | **Phase 3**（DEG-S1–DEG-S5 原型） |
 | Phase 2a | 1a | 2b |
 | Phase 2b | 2a | Phase 3 |
-| **Phase 3** | **2b ＋ Track D ＋ 1b 的 soak** ——三路汇合 | 4B |
-| Phase 4A | 1b | 4B（其中 4A.4 项） |
+| **Phase 3** | **2b ＋ Track D ＋ 1b 的 soak**（从 **G2** 起算）——三路汇合 | 4B |
+| Phase 4A | 1b 的 **G1** | 4B（其中 4A.4 项） |
 | Phase 4B | Phase 3 ＋ 4A.4 | 5 |
 | Phase 5 | 4B | — |
 
 关键路径：`0 → 1a → 2a → 2b → 3 → 4B → 5`。1b 与 Track D 不在关键路径上，**但它们的完成时间必须早于 2b 结束**，否则 Phase 3 干等——而 1b 那份等待是 soak 的日历时间，无法压缩。结论是：**1b 与 Track D 要在 Phase 0 一结束就动，不能排到 2a/2b 之后**。
 
+> **「就动」不等于「排在 008 前面」。** 2026-08-24 与 Codex 复核后确定的实际开工顺序，以及为什么
+> soak 应当与 011 同期跑而不是抢在它前面，定义在
+> [`docs/plans/20260824-frontend-backend-plan-progress.md`](../20260824-frontend-backend-plan-progress.md)。
+> 本表定义的是**依赖**（谁等谁），那份文档定义的是**顺序**（先做谁），两者不冲突：顺序必须满足依赖，
+> 但依赖不唯一决定顺序。
+
 ---
 
 ## 10. 决策依据
 
+三条依据（后端留 Python、前端迁 TypeScript、暂不做 Electron/Tauri）的正文——含 Python 生态绑定对照表、前端病灶清单、桌面壳的体积与引擎论证——已迁至 [ADR-0008](../../adr/0008-tech-stack-boundary.md)（唯一定义处）；其中「语义嵌入 / 向量库」两行的展开另见 [ADR-0004](../../adr/0004-chromadb-minilm-vector-search.md)。下面三个小标题只为保住既有锚点。
+
 ### 10.1 为什么后端留在 Python
 
-核心价值链三个环节 Python 生态强绑定：
-
-| 能力 | 现状 | TS 替代 | 迁移代价 |
-|---|---|---|---|
-| 语义嵌入 | sentence-transformers（本地多语言模型） | transformers.js（ONNX/WASM，性能与模型覆盖差一档；量化模型无法保证 embedding 一致，需全量重建索引） | 高 |
-| 向量库 | ChromaDB `PersistentClient`（进程内嵌入式，`vector_search.py`） | Chroma JS SDK 仅为 HTTP client，必须外置 Chroma server；或换 LanceDB/sqlite-vec 重写 | 中-高 |
-| EPUB 解析 | ebooklib + BeautifulSoup（spine/TOC 回退/图片重写/文本抽取，`reader3.py`） | Node 库存在但整套摄取管线需带 fixture 语料做行为对等验证（EPUB2/3、CJK、畸形 TOC） | 高 |
-| 搜索偏移映射 | `search_service.py` 的 Unicode casefold + 仅限拉丁文的变音符剥离 + 偏移回映 | JS Unicode 细节差异会导致高亮/标注错位 | 中 |
-
-当前真正的问题（零测试、零 CI、pickle 序列化、三处重复的 loader/unpickler、2400 行 server.py）**没有一个是换语言能解决的**。
+→ [ADR-0008](../../adr/0008-tech-stack-boundary.md) Considered Options 2（全栈 TypeScript 重写，为什么不）。
 
 ### 10.2 为什么前端迁 TypeScript
 
-现有 ~5,800 行 vanilla JS 的病灶全部源于"无模块系统 + 无类型"：
-
-- SSE 解析器在 `ai.js` 与 `library-chat.js` 复制两份
-- `escapeHtml()` 四处重复（ai.js / search.js / library-search.js / settings.js）
-- IndexedDB 样板在 `ai.js` 与 `settings.js` 重复
-- `annotations.js` 1,127 行巨石文件（CFI 解析 + 文本锚定 + 工具栏 UI + 笔记编辑器混杂）
-- `pagination.js`（336 行）为死代码；`library.css`/`ai.css` 疑似孤儿文件
-- reader.html / library.html 各含 1,000+ 行内联 CSS
-
-TS + ES modules + Vite 正好对症；构建产物仍是静态文件，FastAPI `StaticFiles` 挂载方式不变，部署零改动。
+→ [ADR-0008](../../adr/0008-tech-stack-boundary.md) Decision Drivers 与 Considered Options 3。
 
 ### 10.3 为什么暂不做 Electron/Tauri
 
-- 本项目是自托管单用户工具，无分发需求；Python 后端无法消失，只能 PyInstaller sidecar，架构复杂度翻倍。
-- 包体瓶颈在 Python ML 栈（本机 venv 实测 ~1.1GB，Torch 单项 368MB），不在壳；Tauri 的小壳省不掉这块。
-- **将来若确需桌面分发，选 Electron 而非 Tauri**（Codex 修正意见，已采纳）：epub.js 的 iframe 渲染、Selection API、CFI 标注对浏览器引擎高度敏感，Tauri 在 macOS/Linux 用 WebKit 会把跨引擎差异打在阅读器最脆弱的部位；Electron 统一 Chromium 是刚需。
-- 近期体验替代方案：`reader3 launch` 命令（起服务 → 健康检查 → 打开 PWA/Chrome `--app` 无边框窗口），零成本获得 90% 桌面感。
+→ [ADR-0008](../../adr/0008-tech-stack-boundary.md) Considered Options 4–5（Electron / Tauri）。
 
 ---
 
 ## 11. 明确不做的事（Non-goals）
 
-- ❌ 后端迁移 TypeScript / Node / Bun（8–16 全职工程周，收益为零，架构更复杂）
-- ❌ 现阶段 Electron 或 Tauri（无分发需求；若未来需要，选 Electron 保 Chromium 一致性）
-- ❌ 引入 SPA 框架或客户端路由
-- ❌ 引入 SQL 数据库（文件系统即数据库的宪法原则保留）
-- ❌ 更换嵌入模型或向量库（改动即全量重建索引 + 检索质量对等验证，无收益不动）
+- ❌ 后端迁移 TypeScript / Node / Bun → [ADR-0008](../../adr/0008-tech-stack-boundary.md)
+- ❌ 现阶段 Electron 或 Tauri → [ADR-0008](../../adr/0008-tech-stack-boundary.md)
+- ❌ 引入 SPA 框架或客户端路由 → [ADR-0008](../../adr/0008-tech-stack-boundary.md)
+- ❌ 引入 SQL 数据库 → [ADR-0001](../../adr/0001-filesystem-as-database.md)
+- ❌ 更换嵌入模型或向量库 → [ADR-0004](../../adr/0004-chromadb-minilm-vector-search.md)
+
+每条的理由只在对应 ADR 里写一次，本节不复述。
 
 ---
 
@@ -639,7 +616,7 @@ TS + ES modules + Vite 正好对症；构建产物仍是静态文件，FastAPI `
 
 **P0-1 数据丢失：重新处理一本书会静默删光该书全部用户标注。**
 `reader3.py` 的 `process_epub()` 在写入任何内容前 `shutil.rmtree(output_dir)`，而 `output_dir` 即 `books/{name}_data/`，`notes.json` / `ai_meta.json` / `chroma_db/` 均在其中。无警告、无备份。叠加缓存不失效（三处 `lru_cache` 的 key 均不含 mtime），服务器还会继续供着旧 `Book`。
-→ 改为 staging 目录 + 完整校验 + 原子切换，manifest 作为 commit marker（步骤见 Phase 3 的「两文件提交协议」——那是唯一定义处，Phase 0 先按同一顺序落 staging 切换）。**列入 Phase 0。**
+→ 改为 staging 目录 + 完整校验 + 原子切换，manifest 作为 commit marker（步骤见 [ADR-0007](../../adr/0007-crash-safe-publish-protocol.md)——那是唯一定义处，Phase 0 先按同一顺序落 staging 切换）。**列入 Phase 0。**
 ✅ **已完成**（`7a807c9`，分支 `007-hygiene-and-contracts`）。实施中发现八步协议覆盖不了三件产物，两条缺口已回写进该小节的「两条协议缺口」——Phase 3 动这块之前先读那里。缓存失效不在本项修复范围内，归 Phase 2a 的 `book_store.py`。
 
 **P0-2 发布损坏：打出的 wheel 阅读器不可用。**
@@ -672,8 +649,7 @@ Phase 1b 从 Phase 1 中拆出并降级为「仅阻塞 Phase 4」，使 Phase 2/
 
 - **A1 隐式契约显式化**：`manifest.json` 记录 `spine_fingerprint`。指纹须涵盖原 EPUB hash、spine href/order、每个 XHTML 的**原始内容** hash 与解析器版本——只 hash `chapter.text`（`extract_plain_text()` 的空白折叠产物）检测不到影响 CFI 的 HTML 结构变化。`notes.json` 与 chroma `meta.json` 各自存所绑定的指纹。
   **指纹不匹配按消费方分级降级，不阻断 `load_book()`**：notes 不匹配 → 停止套用标注并返回 stale；chroma 不匹配 → 索引标记 stale 提示重建。坏索引不得导致书打不开。
-- **A2 pickle 读取回退**保留但默认关闭，需显式 `READER3_ALLOW_PICKLE=1`，pkl 文件不删除。**须补退出机制**：写明停止 pkl 写入的版本号、删除 runtime fallback 的版本号、启用时每次启动明确告警、提供 `--migrate-all` 与未迁移库存清单；`--migrate` 使用专用 legacy loader，不要求用户先开全局环境变量。
-  > **环境变量只管停写 pkl 之后的时间窗**，双写期的 pkl 是对等产物不是遗留数据，无需开关；三态判定与两个时间窗的分界见 Phase 3 的「读取状态机」。
+- **A2 pickle 读取回退**：默认关闭、退出机制与「双写期 / 停写 pkl 之后」两个时间窗的分界，正文已迁至 [ADR-0009](../../adr/0009-book-format-manifest-jsonl.md)（唯一定义处）；三态判定见 [ADR-0007](../../adr/0007-crash-safe-publish-protocol.md)。
 - **A3 `static/dist/` 提交进 git**，Node/Vite 仅作构建期工具。须配 lockfile、固定 Node/Vite 版本、可重复构建 CI 检查，以及 wheel 内容测试（见 P0-2）。
 - **A4 PWA 缓存策略写死**：HTML 与 `/api/*` 一律 network-first 不缓存；只缓存内容哈希过的 `dist/` 资源与 vendor bundle；SW 内嵌 build version。**`skipWaiting()` + `clients.claim()` + activate 立即清旧缓存三者同用会撕裂版本**——仍打开的旧页面加载旧 hash chunk 会失败；改为保留前一代缓存（清 N-2），或强制提示并刷新全部 client。
 - **A5 `book_store.py` 先定接口契约再写实现**：

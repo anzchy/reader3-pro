@@ -44,6 +44,21 @@
 
 **全部八项已完成**（0.1 / 0.3 / 0.4 / 0.5 / 0.7 / 0.8 见各节的 ✅；0.2 与 0.6 于 2026-08-23 收尾），**六项人工 smoke 已走完**（§8.1）。
 
+### ✅ 合入记录（本文是这条事实的唯一定义处）
+
+**007 已于 2026-08-24 合入 `master`，Phase 0 关闭。** 别处提到「007 是否在主干上」一律链回这一节，不要重述数字。
+
+| 事实 | 值 | 复核命令 |
+|---|---|---|
+| PR | [#18](https://github.com/anzchy/reader3-pro/pull/18)，31 commits / 162 files / +16419 −4529 | `gh pr view 18` |
+| 合并 commit | `3f63135`（`Merge pull request #18 from anzchy:007-hygiene-and-contracts`） | `git log --oneline -1 master` |
+| 分支领先量 | **0** —— 分支上的东西一件不落全在主干 | `git rev-list --count master..007-hygiene-and-contracts` |
+| CI 首次实跑 | run `32679593647`，`workflow_dispatch` on `master`，**全绿**（契约 lint 7s / wheel 44s） | `gh run view 32679593647` |
+
+> **CI 那一行不是锦上添花，是这次合入真正解锁的东西。** `workflow_dispatch` 只对**默认分支上存在的 workflow** 生效，而合入之前 `master` 上一个 workflow 文件都没有——也就是说，「CI 改成仅发版触发、日常靠手点补偿」这套安排，在 007 合入之前**根本点不动**，补偿措施是张空头支票。run `32679593647` 是它第一次真的能跑，也是三条契约 lint 与 wheel 打包第一次在主干上被验过。
+>
+> 分支 `007-hygiene-and-contracts` 合入后**保留未删**（001–006 同样都还在远端），删不删随后再定。
+
 > ⚠️ **本行此前写着「0.3 已完成」，是错的。** 实测 `src/reader3_app/web/server.py` 里
 > 既没有 `READER3_PORT`、没有 `--port`，也没有 `/api/health`——`main()` 仍是写死的
 > `uvicorn.run(app, host="127.0.0.1", port=8123)`。2026-08-23 才真正实现。
@@ -65,7 +80,7 @@
 
 无警告、无备份。`ai_meta.json` 被删的后果比看上去重：`book_uuid` 变了，历史会话就和这本书断开了。
 
-**修法**：staging 目录 + 完整校验 + 原子切换。**顺序照 Phase 3 的「两文件提交协议」**——那是唯一定义处（`plan-tech-stack-migration.md` Phase 3），本文不复述。staging 目录必须和目标同父目录，否则 `os.replace` 跨文件系统不原子。
+**修法**：staging 目录 + 完整校验 + 原子切换。**顺序照「两文件提交协议」**——那是唯一定义处（今在 [ADR-0007](../../../adr/0007-crash-safe-publish-protocol.md)，2026-08-26 自 `plan-tech-stack-migration.md` Phase 3 迁出），本文不复述。staging 目录必须和目标同父目录，否则 `os.replace` 跨文件系统不原子。
 
 **测试目标**（`tests/unit/`）：
 
@@ -154,7 +169,7 @@ uv build → 解包 wheel → 断言 templates/、static/js/、static/css/、sta
 
 **这是两条不同的 lint，不是一条**——对照表见 `plan-tech-stack-migration.md` §6 步骤 0.5 下方的注。一句话概括：**选择器 lint 约束测试代码，命名 lint 约束模板与原型**。只有前者的话，模板里照样可以新增 `reader-search-hit` 这种名字，命名方案随即失守。
 
-canonical 正则在 `plan-tech-stack-migration.md` §6 的「canonical 正则（唯一真相源）」代码块里。**从那个代码块复制，不要从任何表格里复制**——表格单元格内 `|` 必须转义成 `\|`，复制出去会得到一条永不命中的正则，lint 全绿而命名方案毫无约束。本文不复述那个正则，正是为了不制造第二个复制源。
+canonical 正则的唯一定义处今在 `scripts/lint_testid_naming.py` 的 `CANONICAL` 常量（[ADR-0013](../../../adr/0013-testid-invariant.md)；007 当时它还在 `plan-tech-stack-migration.md` §6 的代码块里）。**从那个常量复制，不要从任何表格里复制**——表格单元格内 `|` 必须转义成 `\|`，复制出去会得到一条永不命中的正则，lint 全绿而命名方案毫无约束。本文不复述那个正则，正是为了不制造第二个复制源。
 
 命名 lint 必须**显式点名设计规格 §4.1 那 24 个带 `reader-` / `library-` 前缀的 testid**：它们形似合规，批量改名时最容易被当成「已经对了」跳过，而正则会把它们判为不合规——正是要的效果。
 

@@ -1,51 +1,35 @@
 from __future__ import annotations
 
-import json
 import time
-import urllib.error
-import urllib.request
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List
 
+from ._http import estimate_tokens, post_json
 from .types import ProviderResponse
 
 ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
 
 
-def _post_json(url: str, *, headers: Dict[str, str], payload: Dict[str, Any], timeout_s: int) -> Tuple[int, Dict[str, Any]]:
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(url, data=data, method="POST")
-    for k, v in headers.items():
-        req.add_header(k, v)
-    req.add_header("Content-Type", "application/json")
-    req.add_header("Accept", "application/json")
-
-    try:
-        with urllib.request.urlopen(req, timeout=timeout_s) as resp:
-            body = resp.read().decode("utf-8", errors="replace")
-            return int(resp.status), json.loads(body or "{}")
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", errors="replace") if getattr(e, "fp", None) else ""
-        try:
-            parsed = json.loads(body or "{}")
-        except Exception:
-            parsed = {"error": {"message": body or str(e)}}
-        return int(getattr(e, "code", 500) or 500), parsed
-
-
 def _extract_text(resp: Dict[str, Any]) -> str:
+    """把 content 里**所有**文本块按序拼起来（finding `ai/60`）。
+
+    Anthropic 的 `content` 是块列表，不是「一个块」。开了 extended thinking 或者带工具时，
+    `content[0]` 是 `thinking` / `tool_use`，没有 `"text"` 键——只读第 0 块就会漏掉真正的回答，
+    然后落到下面那两个键上：`output_text` / `text` 在 Messages API 上根本不存在，于是返回空串，
+    而 `stop_reason` 还是 `"end_turn"`。用户看到一片空白，app 报告一切正常。
+
+    写法照抄同 repo 的 `gemini._extract_text`——那份从一开始就是对的。
+    """
     content = resp.get("content")
     if isinstance(content, list) and content:
-        first = content[0] or {}
-        if isinstance(first, dict) and isinstance(first.get("text"), str):
-            return first["text"]
+        texts = []
+        for block in content:
+            if isinstance(block, dict) and isinstance(block.get("text"), str):
+                texts.append(block["text"])
+        if texts:
+            return "".join(texts).strip()
+    # 兜底留着：对别的响应形状无害，对 Messages API 是死键。
     return str(resp.get("output_text") or resp.get("text") or "").strip()
-
-
-def _estimate_tokens(text: str) -> int:
-    if not text:
-        return 0
-    return max(1, int(len(text) / 4))
 
 
 def anthropic_messages(
@@ -69,7 +53,7 @@ def anthropic_messages(
     }
 
     started = time.perf_counter()
-    status, resp = _post_json(ANTHROPIC_MESSAGES_URL, headers=headers, payload=payload, timeout_s=timeout_s)
+    status, resp = post_json(ANTHROPIC_MESSAGES_URL, headers=headers, payload=payload, timeout_s=timeout_s)
     _ = time.perf_counter() - started
 
     if status >= 400:
@@ -87,10 +71,10 @@ def anthropic_messages(
     if isinstance(usage, dict) and usage.get("output_tokens") is not None:
         try:
             token_count = int(usage.get("output_tokens"))
-        except Exception:
+        except Exception:  # noqa: BLE001 - 第 3 档：token_count 解析失败退回估算值；它是遥测，不是回答内容
             token_count = None
     if token_count is None:
-        token_count = _estimate_tokens(text)
+        token_count = estimate_tokens(text)
 
     return ProviderResponse(
         text=text,

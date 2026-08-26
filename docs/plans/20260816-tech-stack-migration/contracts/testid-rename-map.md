@@ -3,12 +3,13 @@
 > **权威范围**：本文是 0.5 批量改名的**唯一**新旧对照记录。
 > 命名方案本身（前缀、`{page}-{region}-{element}` 格式、字面量规则）定义在
 > [`spec-frontend-design.md` §4](../../20260817-frontend-ui-refactor/spec-frontend-design.md)，本文不重述；
-> canonical 正则定义在 [`plan-tech-stack-migration.md` §6 步骤 0.5 的代码块](../plan-tech-stack-migration.md)，本文不重述。
+> canonical 正则定义在 `scripts/lint_testid_naming.py` 的 `CANONICAL` 常量（[ADR-0013](../../../adr/0013-testid-invariant.md)），本文不重述。
 > 本文只回答一个问题：**原型里那个旧名，现在叫什么。**
 
 改名已落地于 `designs/reader-pro-next/`（`app.jsx` / `components.jsx` / `reader.jsx` / `settings.jsx`）。
-生产模板 `src/reader3_app/web/templates/*.html` 侧的回贴尚未开始——那一半的完成判据见迁移计划 §7 Phase 0
-「testid 在原型与模板两侧一致」。
+生产模板 `src/reader3_app/web/templates/*.html` 与生成 DOM 侧的回贴**也已完成**（2026-08-23，随 007 于
+2026-08-24 合入 `master`）：模板侧现有 126 个唯一 testid，反向新造为 0，两条 lint 违规数归零。迁移计划
+§7 Phase 0 的「testid 在原型与模板两侧一致」一条**已满足**。
 
 ---
 
@@ -297,7 +298,7 @@ E2E 定位写作 `[data-testid="lib-book-card"][data-book-id="…"]`——
 | 文档 | 它定义什么 | 本文不重述 |
 |---|---|---|
 | [`spec-frontend-design.md` §4 / §4.1](../../20260817-frontend-ui-refactor/spec-frontend-design.md) | 前缀方案、格式、五条规则、24 个危险项的警告 | ✔ |
-| [`plan-tech-stack-migration.md` §6 步骤 0.5](../plan-tech-stack-migration.md) | canonical 正则、两条 lint 的分工、Phase 0 退出条件 | ✔ |
+| [`plan-tech-stack-migration.md` §6 步骤 0.5](../plan-tech-stack-migration.md) | 两条 lint 的分工、Phase 0 退出条件（canonical 正则已迁到 `scripts/lint_testid_naming.py`，见 ADR-0013） | ✔ |
 | [`tasks/007-hygiene-and-contracts.md`](../tasks/007-hygiene-and-contracts.md) | 0.5 的验收 | ✔ |
 | 本文 | **旧名 → 新名的逐条映射**，及表达式站点的处理方式 | — |
 

@@ -24,7 +24,9 @@
 
 > ⚠️ **先跑哪一批，以 §4.0 为准，不是以上面的顺序为准。** Track D（WI-1–WI-8）的验收按 §4.0 拆成两半：**定义类**在 `010` 上跑，**实现类**（57 条里的 56 条）要等 WI-9 交付源码根与 Vitest 宿主，随 4A / 4B 一并激活。所以第一行调用串在 `010` 上消费的是**定义类那一半**，它结尾那句「每个工作项的验收标准必须逐条二元判定」在 `010` 上的判定对象是 §4.0 的 **`010` 退出门槛**，不是 WI-1–WI-8 的验收清单——那份清单里只有 1 条标着 `验于 010`。
 >
-> **实际意义上第一个能开工的 WI 是 WI-9**（裁定见 §5.0 执行器表下方）。它之前只有文档工作，而它压着的三个非 WI 前置——007 的 0.4 / 0.5 / 0.8——**已于 2026-08-23 在 `007-hygiene-and-contracts` 分支上全部交付，但该分支尚未合入 `master`（实测领先 28 个 commit）**。所以准确的状态是「**前置已交付，等合入**」，不是「前置已解除」：在 007 合入之前，`master` 上仍然没有那三条 lint，也没有回贴过的 testid。逐项状态见 §3。
+> **实际意义上第一个能开工的 WI 是 WI-9**（裁定见 §5.0 执行器表下方）。它之前只有文档工作，而它压着的三个非 WI 前置——007 的 0.4 / 0.5 / 0.8——**已于 2026-08-23 交付，并随 007 于 2026-08-24 合入 `master`（PR #18）——三项前置现已全部解除**，合入事实见 [`tasks/007-hygiene-and-contracts.md` 的「合入记录」](../20260816-tech-stack-migration/tasks/007-hygiene-and-contracts.md)。`master` 上现在有那三条 lint，也有回贴过的 testid。逐项状态见 §3。
+
+> ~~此前这里写着「前置已交付，等合入」。~~ 那个口径存在的唯一理由是 007 还挂在分支上；2026-08-24 合入后作废。
 >
 > ~~此前这里写的是「实测三项均未开工」。~~ 该判断作于 007 收尾之前，2026-08-23 被实测推翻——007 的八项全部转 ✅，见 [`tasks/007-hygiene-and-contracts.md`](../20260816-tech-stack-migration/tasks/007-hygiene-and-contracts.md)。
 
@@ -62,9 +64,9 @@
 | **0.7** 删死代码（`SearchIndex` / `BookIndex.from_book_pkl` / `SearchIndex.build_from_library`） | **已完成** | 同上。⚠️ `BookIndex` / `ChapterIndex` 两个 dataclass **仍是活代码，不要动** |
 | **0.6** 事实性修复 | **已完成**（2026-08-23 收尾：`.gitignore` 合并冲突标记、版本号对齐、示例配置补齐三项齐了） | 同上 |
 | **0.2 / 0.3 / 0.4 / 0.5 / 0.8** | **已完成**（2026-08-23） | 同上 |
-| 007 分支**是否已合入 `master`** | **否**——实测领先 28 个 commit。八项都在分支上，`master` 上一项都没有 | `git rev-list --count master..007-hygiene-and-contracts` |
+| 007 分支**是否已合入 `master`** | **✅ 是**（2026-08-24，PR #18）。领先量归 0，八项全在主干上 | [`tasks/007-hygiene-and-contracts.md` 的「合入记录」](../20260816-tech-stack-migration/tasks/007-hygiene-and-contracts.md) |
 
-> ~~此前这张表把 0.2 / 0.3 / 0.4 / 0.5 / 0.8 记为「未开始」、0.6 记为「部分完成」。~~ 那是 007 收尾前的实测，2026-08-23 全部转 ✅ 后作废。**但作废的是「未开工」，不是「可以当它已经在主干上」**——见 §0 结尾与 §3 的「已交付，等合入」口径。
+> ~~此前这张表把 0.2 / 0.3 / 0.4 / 0.5 / 0.8 记为「未开始」、0.6 记为「部分完成」。~~ 那是 007 收尾前的实测，2026-08-23 全部转 ✅ 后作废。此后 007 于 2026-08-24 合入 `master`，**「等合入」这个口径也随之作废**——现在它就是在主干上。
 
 **三处 token 悬空引用是 007 已经修好的**，本计划只消费结果、不重做：
 
@@ -121,12 +123,13 @@
 |---|---|
 | 分支编号分配（全仓库唯一真相源） | [`20260816-tech-stack-migration/plan-tech-stack-migration.md` §9](../20260816-tech-stack-migration/plan-tech-stack-migration.md) |
 | Phase 依赖图、各 Phase 进入 / 退出门槛、soak 门槛 | 同上 §9.1 / §7 |
-| `data-testid` 命名 canonical 正则、三条 lint 的边界 | 同上 §6（0.5、0.8） |
+| `data-testid` 命名 canonical 正则 | `scripts/lint_testid_naming.py` 的 `CANONICAL`（裁决见 [`docs/adr/0013`](../../adr/0013-testid-invariant.md)） |
+| 三条 lint 的边界 | 同上 §6（0.5、0.8） |
 | Playwright E2E 用例 ID（`R-1`…`R-6` / `W-1`…`W-10` / `K-1`…`K-6` / `X-1` / `X-2`）与激活分组 | [`tasks/009-e2e-annotations.md`](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
 | API v1 冻结清单、覆盖率门槛数值 | [`tasks/008-test-safety-net.md`](../20260816-tech-stack-migration/tasks/008-test-safety-net.md) |
-| 两文件提交协议、读取状态机三态 | [`plan-tech-stack-migration.md`](../20260816-tech-stack-migration/plan-tech-stack-migration.md) Phase 3 |
+| 两文件提交协议、读取状态机三态 | [`docs/adr/0007`](../../adr/0007-crash-safe-publish-protocol.md) |
 
-**testid 命名**：canonical 正则在 0.5，写在技术栈迁移计划的代码块里——**从代码块里复制，不要从 Markdown 表格里复制**（表格里 `|` 被转义成 `\|`）。本计划涉及的所有新建元素一律 `lib-` / `rd-` / `set-` 三前缀之一。原型原有 138 个 testid 站点**零个合规**，其中 24 个带 `reader-` / `library-` 前缀的**看起来像合规但不是**。重命名本身归 0.5，**已于 2026-08-23 完成**（新旧对照见 [`contracts/testid-rename-map.md`](../20260816-tech-stack-migration/contracts/testid-rename-map.md)）；本计划只负责新元素首次就写对。
+**testid 命名**：canonical 正则的唯一定义处是 `scripts/lint_testid_naming.py` 的 `CANONICAL` 常量（[ADR-0013](../../adr/0013-testid-invariant.md)），从那里 import 或复制，不要从任何 Markdown 表格里复制。本计划涉及的所有新建元素一律 `lib-` / `rd-` / `set-` 三前缀之一。原型原有 138 个 testid 站点**零个合规**，其中 24 个带 `reader-` / `library-` 前缀的**看起来像合规但不是**。重命名本身归 0.5，**已于 2026-08-23 完成**（新旧对照见 [`contracts/testid-rename-map.md`](../20260816-tech-stack-migration/contracts/testid-rename-map.md)）；本计划只负责新元素首次就写对。
 
 **分支落点**：Track D → `010-design-degradation-states`；WI-9–WI-13 → `013-ts-frontend-shell`；WI-14–WI-19 → `014-ts-frontend-reader`；WI-20 → `015-launch-experience`。编号来源见上表第一行。
 
@@ -134,7 +137,7 @@
 
 ## 3. 前置契约
 
-三项在 `007-hygiene-and-contracts` 实施、**本计划只消费不重述**。三项**都已在该分支上交付（2026-08-23）**，但**该分支尚未合入 `master`**——本节的口径统一是「**已交付，等合入**」，不是「前置已解除」：
+三项在 `007-hygiene-and-contracts` 实施、**本计划只消费不重述**。三项**已于 2026-08-23 交付，并随 007 于 2026-08-24 合入 `master`**（PR #18，见 [`tasks/007-hygiene-and-contracts.md` 的「合入记录」](../20260816-tech-stack-migration/tasks/007-hygiene-and-contracts.md)）——**前置已全部解除，`master` 上就是下面这个状态**：
 
 - **0.4** 四个落后 JS 文件（`library-search.js` / `search.js` / `ai.js` / `settings.js`）IIFE 化，顺带消掉四份互相覆盖的 `escapeHtml` 全局符号 —— **已完成，commit `f11b346`**。
   > ⚠️ **0.4 交付的是「IIFE 化 ＋ 消掉全局冲突」，不是「收敛」。** 四份 `escapeHtml` 实现今天仍是四份，只是各自关在自己的 IIFE 里不再互相覆盖。**把它们真正收敛成单一 `escape.ts` 仍是 WI-11 / ET-9 的活**，裁决（取哪派的空值语义、哪派的写法）也在 WI-11 里，不在 007。此前这里写的「0.4 `escapeHtml` 收敛 —— 决定 WI-11 里 `escape.ts` 的形状」把因果写反了，作废。
@@ -1423,7 +1426,7 @@ E2E 侧：**不要写 Node Playwright Test 的 `webServer` 语法**，用 pytest
 >
 > 因此 `prefers-reduced-motion` 下骨架静止这条无障碍保证**不落在本矩阵里**，落成 WI-8 验收 2 / 3 的 **CSS 产物断言**。这不是降级：源码断言每次都跑，而一条抓不到加载窗口的 E2E 断言会静默地什么都没验——绿灯，零保证。同一条纪律本节开头已经写过一遍（「某个旧 class 不该再存在」不是 E2E 用例，是 lint 断言）。
 
-**testid 前缀**：书库 `lib-`、阅读器 `rd-`、设置 `set-`。canonical 正则在 0.5，从代码块复制、不要从表格复制。
+**testid 前缀**：书库 `lib-`、阅读器 `rd-`、设置 `set-`。canonical 正则见 `scripts/lint_testid_naming.py` 的 `CANONICAL`（[ADR-0013](../../adr/0013-testid-invariant.md)）。
 
 ---
 

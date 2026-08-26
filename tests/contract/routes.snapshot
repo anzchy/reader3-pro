@@ -1,0 +1,64 @@
+# API v1 —— 冻结的路由清单。定义处：tasks/008-test-safety-net.md §4 第 1 层 与 §8。
+#
+# 一行一条 "METHOD /path"，全表按行文本排序。这份文件是给 code review 的 diff 看的：
+# 它存在的全部价值就是让「这次改动是故意的」在 PR 里一眼可见。所以不要换成 JSON blob，
+# 也不要在测试里硬编码路由条数——数字不是契约，集合才是。
+#
+# 改这份文件之前先读 §8：Phase 4 的 TypeScript 前端照着这份 v1 写，重写期间后端不动。
+# 任何增删改都要（1）先改这里，（2）在 PR 描述里写清破坏性与迁移路径。
+#
+# 【收录范围】全部收录，包括 FastAPI 自带的四条文档路由和 /static 挂载点。
+# 理由：快照的判据是「这个 ASGI app 现在对外服务哪些地址」，而不是「哪些地址是我们手写的」。
+# 按前缀排除框架路由要写一份排除名单，而排除名单会连带吞掉将来某条恰好同前缀的业务路由——
+# 那正是这份快照要防的事。代价是升级 FastAPI 若改了文档路由，这条测试会红一次；
+# 那一次红是应该被看见的（对外地址真的变了），确认后改这份文件即可。
+#
+# MOUNT 是 Starlette 的挂载点（子应用），没有 HTTP 方法，故单列一行。
+DELETE /api/ai/conversations/{book_uuid}/{conversation_id}
+DELETE /api/collections/{collection_id}
+DELETE /api/notes/{book_id}/{chapter_index}/{note_id}
+DELETE /api/settings/providers/{provider_name}
+GET /
+GET /api/ai/conversations/{book_uuid}
+GET /api/ai/conversations/{book_uuid}/{conversation_id}
+GET /api/ai/conversations/{book_uuid}/{conversation_id}/export
+GET /api/collections
+GET /api/collections/{collection_id}
+GET /api/health
+GET /api/index/{book_id}/status
+GET /api/library/stats
+GET /api/notes/{book_id}
+GET /api/notes/{book_id}/{chapter_index}
+GET /api/ollama/models
+GET /api/ollama/status
+GET /api/search/library
+GET /api/search/{book_id}
+GET /api/settings
+GET /api/settings/export
+GET /api/settings/providers
+GET /api/settings/providers/{provider_name}
+GET /docs
+GET /docs/oauth2-redirect
+GET /openapi.json
+GET /read/{book_id}
+GET /read/{book_id}/book.epub
+GET /read/{book_id}/images/{image_name}
+GET /read/{book_id}/{chapter_index}
+GET /redoc
+GET /settings
+MOUNT /static
+POST /api/ai/question/{book_uuid}
+POST /api/ai/rag/retrieve
+POST /api/ai/summary/{book_uuid}
+POST /api/collections
+POST /api/collections/{collection_id}/books
+POST /api/highlight/{book_id}/{chapter_order}
+POST /api/index/{book_id}
+POST /api/notes/{book_id}/{chapter_index}
+POST /api/settings/import
+POST /api/settings/providers/{provider_name}/test
+PUT /api/ai/conversations/{book_uuid}/{conversation_id}
+PUT /api/collections/{collection_id}
+PUT /api/notes/{book_id}/{chapter_index}/{note_id}
+PUT /api/settings
+PUT /api/settings/providers/{provider_name}

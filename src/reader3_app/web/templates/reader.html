@@ -1703,7 +1703,7 @@
     <script>
         window.Reader3Ctx = {
             bookId: "{{ book_id }}",
-            bookUuid: "{{ book_uuid }}",
+            bookUuid: "{{ book_uuid or '' }}",
             provider: "{{ ai_default_provider }}",
             chapterIndex: {{ chapter_index }},
             totalChapters: {{ book.spine|length }},

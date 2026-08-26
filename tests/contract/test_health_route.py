@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 from reader3_app.web.server import app
 
-client = TestClient(app)
+client = TestClient(app, base_url="http://127.0.0.1")
 
 
 def test_返回_200():

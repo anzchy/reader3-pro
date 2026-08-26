@@ -1,0 +1,1047 @@
+{
+  "schema": 1,
+  "generated_at": "2026-08-24T11:38:11+0800",
+  "repeat": 7,
+  "environment": {
+    "python": "3.10.18",
+    "implementation": "CPython",
+    "platform": "macOS-26.3.1-arm64-arm-64bit",
+    "machine": "arm64",
+    "processor": "arm",
+    "cpu_count": 10,
+    "load_avg": [
+      5.08,
+      5.69,
+      5.57
+    ],
+    "cpu_brand": "Apple M4",
+    "mem_bytes": "25769803776",
+    "power": "Now drawing from 'Battery Power' | -InternalBattery-0 (id=21626979)\t44%; discharging; 0:51 remaining present: true | lowpowermode=0"
+  },
+  "metrics": {
+    "cold_start": {
+      "import_server_ms": {
+        "unit": "ms",
+        "n": 7,
+        "median": 203.413,
+        "min": 189.934,
+        "max": 230.77,
+        "spread_pct": 20.1,
+        "samples": [
+          189.934,
+          190.21,
+          230.77,
+          203.6,
+          212.125,
+          203.413,
+          196.921
+        ]
+      },
+      "import_testclient_ms": {
+        "unit": "ms",
+        "n": 7,
+        "median": 28.847,
+        "min": 26.611,
+        "max": 33.773,
+        "spread_pct": 24.8,
+        "samples": [
+          27.708,
+          26.611,
+          33.773,
+          32.932,
+          28.847,
+          29.02,
+          26.921
+        ]
+      },
+      "startup_scan_ms": {
+        "unit": "ms",
+        "n": 7,
+        "median": 4.551,
+        "min": 4.327,
+        "max": 5.881,
+        "spread_pct": 34.1,
+        "samples": [
+          4.572,
+          4.51,
+          5.237,
+          5.881,
+          4.353,
+          4.551,
+          4.327
+        ]
+      },
+      "first_page_ms": {
+        "unit": "ms",
+        "n": 7,
+        "median": 8.794,
+        "min": 8.474,
+        "max": 10.208,
+        "spread_pct": 19.7,
+        "samples": [
+          8.474,
+          8.512,
+          9.839,
+          10.208,
+          8.794,
+          8.798,
+          8.552
+        ]
+      },
+      "ready_to_serve_ms": {
+        "unit": "ms",
+        "n": 7,
+        "median": 236.984,
+        "min": 221.332,
+        "max": 269.781,
+        "spread_pct": 20.4,
+        "samples": [
+          222.214,
+          221.332,
+          269.781,
+          242.413,
+          245.326,
+          236.984,
+          228.169
+        ]
+      },
+      "_wall_ms": {
+        "unit": "ms",
+        "n": 7,
+        "median": 310.175,
+        "min": 293.73,
+        "max": 358.682,
+        "spread_pct": 20.9,
+        "samples": [
+          298.005,
+          293.73,
+          347.524,
+          326.439,
+          358.682,
+          310.175,
+          299.196
+        ]
+      },
+      "peak_rss": {
+        "unit": "bytes",
+        "n": 7,
+        "median": 67305472.0,
+        "min": 66977792.0,
+        "max": 67452928.0,
+        "spread_pct": 0.7,
+        "samples": [
+          67305472.0,
+          66977792.0,
+          67452928.0,
+          67338240.0,
+          67436544.0,
+          67125248.0,
+          66977792.0
+        ]
+      },
+      "_library_size": 20
+    },
+    "ingest": {
+      "build_epub_ms": {
+        "unit": "ms",
+        "n": 7,
+        "median": 6.427,
+        "min": 6.201,
+        "max": 7.021,
+        "spread_pct": 12.8,
+        "samples": [
+          6.201,
+          6.876,
+          6.555,
+          6.427,
+          6.305,
+          6.413,
+          7.021
+        ]
+      },
+      "process_epub_ms": {
+        "unit": "ms",
+        "n": 7,
+        "median": 47.412,
+        "min": 42.292,
+        "max": 49.326,
+        "spread_pct": 14.8,
+        "samples": [
+          46.855,
+          49.326,
+          48.082,
+          47.412,
+          43.776,
+          42.292,
+          48.255
+        ]
+      },
+      "_wall_ms": {
+        "unit": "ms",
+        "n": 7,
+        "median": 135.039,
+        "min": 123.025,
+        "max": 137.847,
+        "spread_pct": 11.0,
+        "samples": [
+          128.364,
+          137.847,
+          131.664,
+          135.039,
+          137.218,
+          123.025,
+          135.679
+        ]
+      },
+      "epub_bytes": {
+        "unit": "bytes",
+        "n": 7,
+        "median": 11802.0,
+        "min": 11802.0,
+        "max": 11802.0,
+        "spread_pct": 0.0,
+        "samples": [
+          11802.0,
+          11802.0,
+          11802.0,
+          11802.0,
+          11802.0,
+          11802.0,
+          11802.0
+        ]
+      },
+      "pkl_bytes": {
+        "unit": "bytes",
+        "n": 7,
+        "median": 6000616.0,
+        "min": 6000616.0,
+        "max": 6000616.0,
+        "spread_pct": 0.0,
+        "samples": [
+          6000616.0,
+          6000616.0,
+          6000616.0,
+          6000616.0,
+          6000616.0,
+          6000616.0,
+          6000616.0
+        ]
+      },
+      "peak_rss": {
+        "unit": "bytes",
+        "n": 7,
+        "median": 96731136.0,
+        "min": 96518144.0,
+        "max": 96976896.0,
+        "spread_pct": 0.5,
+        "samples": [
+          96960512.0,
+          96731136.0,
+          96698368.0,
+          96763904.0,
+          96518144.0,
+          96976896.0,
+          96681984.0
+        ]
+      },
+      "_chars": 3000000,
+      "_text_chars_out": 3000008
+    },
+    "query": {
+      "inbook_small_first_ms": {
+        "unit": "ms",
+        "n": 7,
+        "median": 21.235,
+        "min": 19.004,
+        "max": 22.721,
+        "spread_pct": 17.5,
+        "samples": [
+          19.004,
+          20.922,
+          22.721,
+          20.958,
+          21.416,
+          21.235,
+          22.478
+        ]
+      },
+      "inbook_small_second_ms": {
+        "unit": "ms",
+        "n": 7,
+        "median": 15.505,
+        "min": 14.777,
+        "max": 16.839,
+        "spread_pct": 13.3,
+        "samples": [
+          14.777,
+          15.155,
+          16.839,
+          14.887,
+          15.615,
+          15.505,
+          16.582
+        ]
+      },
+      "inbook_huge_first_ms": {
+        "unit": "ms",
+        "n": 7,
+        "median": 1188.976,
+        "min": 1143.917,
+        "max": 1258.388,
+        "spread_pct": 9.6,
+        "samples": [
+          1143.917,
+          1210.201,
+          1163.047,
+          1188.976,
+          1215.081,
+          1178.625,
+          1258.388
+        ]
+      },
+      "inbook_huge_second_ms": {
+        "unit": "ms",
+        "n": 7,
+        "median": 99.18,
+        "min": 91.41,
+        "max": 113.917,
+        "spread_pct": 22.7,
+        "samples": [
+          92.246,
+          101.552,
+          99.18,
+          106.105,
+          99.039,
+          91.41,
+          113.917
+        ]
+      },
+      "library_first_ms": {
+        "unit": "ms",
+        "n": 7,
+        "median": 1188.813,
+        "min": 1128.574,
+        "max": 1283.507,
+        "spread_pct": 13.0,
+        "samples": [
+          1128.574,
+          1264.183,
+          1161.954,
+          1168.401,
+          1202.768,
+          1188.813,
+          1283.507
+        ]
+      },
+      "library_second_ms": {
+        "unit": "ms",
+        "n": 7,
+        "median": 1242.699,
+        "min": 1130.14,
+        "max": 1316.257,
+        "spread_pct": 15.0,
+        "samples": [
+          1130.14,
+          1242.699,
+          1259.103,
+          1316.257,
+          1188.143,
+          1185.369,
+          1248.738
+        ]
+      },
+      "inbook_small_speedup_x": 1.4,
+      "inbook_huge_speedup_x": 12.0,
+      "library_speedup_x": 1.0
+    },
+    "rss": {
+      "baseline_bytes": {
+        "unit": "bytes",
+        "n": 7,
+        "median": 21528576.0,
+        "min": 21413888.0,
+        "max": 21708800.0,
+        "spread_pct": 1.4,
+        "samples": [
+          21413888.0,
+          21692416.0,
+          21708800.0,
+          21430272.0,
+          21446656.0,
+          21528576.0,
+          21708800.0
+        ]
+      },
+      "after_import_bytes": {
+        "unit": "bytes",
+        "n": 7,
+        "median": 64520192.0,
+        "min": 64372736.0,
+        "max": 64798720.0,
+        "spread_pct": 0.7,
+        "samples": [
+          64798720.0,
+          64684032.0,
+          64520192.0,
+          64438272.0,
+          64372736.0,
+          64405504.0,
+          64585728.0
+        ]
+      },
+      "after_library_page_bytes": {
+        "unit": "bytes",
+        "n": 7,
+        "median": 76480512.0,
+        "min": 76349440.0,
+        "max": 76775424.0,
+        "spread_pct": 0.6,
+        "samples": [
+          76775424.0,
+          76644352.0,
+          76480512.0,
+          76464128.0,
+          76349440.0,
+          76431360.0,
+          76578816.0
+        ]
+      },
+      "after_library_search_bytes": {
+        "unit": "bytes",
+        "n": 7,
+        "median": 248217600.0,
+        "min": 248004608.0,
+        "max": 248512512.0,
+        "spread_pct": 0.2,
+        "samples": [
+          248512512.0,
+          248381440.0,
+          248217600.0,
+          248102912.0,
+          248004608.0,
+          248070144.0,
+          248332288.0
+        ]
+      },
+      "after_huge_search_bytes": {
+        "unit": "bytes",
+        "n": 7,
+        "median": 347308032.0,
+        "min": 346849280.0,
+        "max": 349044736.0,
+        "spread_pct": 0.6,
+        "samples": [
+          347504640.0,
+          347373568.0,
+          347209728.0,
+          347013120.0,
+          346849280.0,
+          349044736.0,
+          347308032.0
+        ]
+      },
+      "_platform_unit_note": "ru_maxrss on darwin read as bytes"
+    },
+    "counters": {
+      "unpickle": {
+        "pickle_load_fallback": {
+          "unit": "count",
+          "n": 7,
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0,
+          "spread_pct": null,
+          "samples": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "search_service": {
+          "unit": "count",
+          "n": 7,
+          "median": 60.0,
+          "min": 60.0,
+          "max": 60.0,
+          "spread_pct": 0.0,
+          "samples": [
+            60.0,
+            60.0,
+            60.0,
+            60.0,
+            60.0,
+            60.0,
+            60.0
+          ]
+        },
+        "vector_search": {
+          "unit": "count",
+          "n": 7,
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0,
+          "spread_pct": null,
+          "samples": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "web.server": {
+          "unit": "count",
+          "n": 7,
+          "median": 40.0,
+          "min": 40.0,
+          "max": 40.0,
+          "spread_pct": 0.0,
+          "samples": [
+            40.0,
+            40.0,
+            40.0,
+            40.0,
+            40.0,
+            40.0,
+            40.0
+          ]
+        }
+      },
+      "unpickle_grand_total": {
+        "unit": "count",
+        "n": 7,
+        "median": 100.0,
+        "min": 100.0,
+        "max": 100.0,
+        "spread_pct": 0.0,
+        "samples": [
+          100.0,
+          100.0,
+          100.0,
+          100.0,
+          100.0,
+          100.0,
+          100.0
+        ]
+      },
+      "normalize_calls": {
+        "unit": "count",
+        "n": 7,
+        "median": 549.0,
+        "min": 549.0,
+        "max": 549.0,
+        "spread_pct": 0.0,
+        "samples": [
+          549.0,
+          549.0,
+          549.0,
+          549.0,
+          549.0,
+          549.0,
+          549.0
+        ]
+      },
+      "normalize_chars": {
+        "unit": "count",
+        "n": 7,
+        "median": 984052.0,
+        "min": 984052.0,
+        "max": 984052.0,
+        "spread_pct": 0.0,
+        "samples": [
+          984052.0,
+          984052.0,
+          984052.0,
+          984052.0,
+          984052.0,
+          984052.0,
+          984052.0
+        ]
+      },
+      "vector_search_instrumented": true,
+      "steps": [
+        {
+          "step": "00_startup",
+          "unpickle": {
+            "web.server": 0,
+            "search_service": 0,
+            "vector_search": 0,
+            "pickle_load_fallback": 0
+          },
+          "normalize_calls": 0,
+          "normalize_chars": 0
+        },
+        {
+          "step": "01_library_page",
+          "unpickle": {
+            "web.server": 20,
+            "search_service": 0,
+            "vector_search": 0,
+            "pickle_load_fallback": 0
+          },
+          "normalize_calls": 0,
+          "normalize_chars": 0
+        },
+        {
+          "step": "02_reader_page",
+          "unpickle": {
+            "web.server": 21,
+            "search_service": 0,
+            "vector_search": 0,
+            "pickle_load_fallback": 0
+          },
+          "normalize_calls": 0,
+          "normalize_chars": 0
+        },
+        {
+          "step": "03_in_book_search",
+          "unpickle": {
+            "web.server": 21,
+            "search_service": 1,
+            "vector_search": 0,
+            "pickle_load_fallback": 0
+          },
+          "normalize_calls": 9,
+          "normalize_chars": 16132
+        },
+        {
+          "step": "04_library_page_again",
+          "unpickle": {
+            "web.server": 40,
+            "search_service": 1,
+            "vector_search": 0,
+            "pickle_load_fallback": 0
+          },
+          "normalize_calls": 9,
+          "normalize_chars": 16132
+        },
+        {
+          "step": "05_library_search_1",
+          "unpickle": {
+            "web.server": 40,
+            "search_service": 20,
+            "vector_search": 0,
+            "pickle_load_fallback": 0
+          },
+          "normalize_calls": 189,
+          "normalize_chars": 338772
+        },
+        {
+          "step": "05_library_search_2",
+          "unpickle": {
+            "web.server": 40,
+            "search_service": 40,
+            "vector_search": 0,
+            "pickle_load_fallback": 0
+          },
+          "normalize_calls": 369,
+          "normalize_chars": 661412
+        },
+        {
+          "step": "05_library_search_3",
+          "unpickle": {
+            "web.server": 40,
+            "search_service": 60,
+            "vector_search": 0,
+            "pickle_load_fallback": 0
+          },
+          "normalize_calls": 549,
+          "normalize_chars": 984052
+        }
+      ],
+      "_library_size": 20,
+      "_library_search_rounds": 3
+    },
+    "ttfb": {
+      "1": {
+        "ttfb_ms": {
+          "unit": "ms",
+          "n": 7,
+          "median": 7.525,
+          "min": 7.267,
+          "max": 7.635,
+          "spread_pct": 4.9,
+          "samples": [
+            7.267,
+            7.527,
+            7.355,
+            7.525,
+            7.361,
+            7.548,
+            7.635
+          ]
+        },
+        "_wall_ms": {
+          "unit": "ms",
+          "n": 7,
+          "median": 297.128,
+          "min": 276.389,
+          "max": 301.894,
+          "spread_pct": 8.6,
+          "samples": [
+            276.389,
+            297.036,
+            297.128,
+            301.825,
+            291.76,
+            299.009,
+            301.894
+          ]
+        },
+        "body_bytes": {
+          "unit": "bytes",
+          "n": 7,
+          "median": 49199.0,
+          "min": 49199.0,
+          "max": 49199.0,
+          "spread_pct": 0.0,
+          "samples": [
+            49199.0,
+            49199.0,
+            49199.0,
+            49199.0,
+            49199.0,
+            49199.0,
+            49199.0
+          ]
+        },
+        "per_book_ms": 7.525
+      },
+      "5": {
+        "ttfb_ms": {
+          "unit": "ms",
+          "n": 7,
+          "median": 7.826,
+          "min": 7.642,
+          "max": 7.893,
+          "spread_pct": 3.2,
+          "samples": [
+            7.642,
+            7.747,
+            7.826,
+            7.893,
+            7.834,
+            7.856,
+            7.826
+          ]
+        },
+        "_wall_ms": {
+          "unit": "ms",
+          "n": 7,
+          "median": 301.64,
+          "min": 294.786,
+          "max": 303.892,
+          "spread_pct": 3.0,
+          "samples": [
+            294.786,
+            300.762,
+            302.669,
+            297.012,
+            301.64,
+            303.892,
+            302.959
+          ]
+        },
+        "body_bytes": {
+          "unit": "bytes",
+          "n": 7,
+          "median": 58959.0,
+          "min": 58959.0,
+          "max": 58959.0,
+          "spread_pct": 0.0,
+          "samples": [
+            58959.0,
+            58959.0,
+            58959.0,
+            58959.0,
+            58959.0,
+            58959.0,
+            58959.0
+          ]
+        },
+        "per_book_ms": 1.565
+      },
+      "10": {
+        "ttfb_ms": {
+          "unit": "ms",
+          "n": 7,
+          "median": 8.115,
+          "min": 7.83,
+          "max": 8.334,
+          "spread_pct": 6.2,
+          "samples": [
+            8.09,
+            7.834,
+            8.29,
+            8.334,
+            8.134,
+            8.115,
+            7.83
+          ]
+        },
+        "_wall_ms": {
+          "unit": "ms",
+          "n": 7,
+          "median": 303.752,
+          "min": 299.394,
+          "max": 305.939,
+          "spread_pct": 2.2,
+          "samples": [
+            302.385,
+            305.238,
+            300.037,
+            304.403,
+            299.394,
+            305.939,
+            303.752
+          ]
+        },
+        "body_bytes": {
+          "unit": "bytes",
+          "n": 7,
+          "median": 71161.0,
+          "min": 71161.0,
+          "max": 71161.0,
+          "spread_pct": 0.0,
+          "samples": [
+            71161.0,
+            71161.0,
+            71161.0,
+            71161.0,
+            71161.0,
+            71161.0,
+            71161.0
+          ]
+        },
+        "per_book_ms": 0.811
+      },
+      "20": {
+        "ttfb_ms": {
+          "unit": "ms",
+          "n": 7,
+          "median": 8.646,
+          "min": 8.382,
+          "max": 8.736,
+          "spread_pct": 4.1,
+          "samples": [
+            8.494,
+            8.736,
+            8.646,
+            8.582,
+            8.721,
+            8.382,
+            8.71
+          ]
+        },
+        "_wall_ms": {
+          "unit": "ms",
+          "n": 7,
+          "median": 304.848,
+          "min": 301.545,
+          "max": 309.63,
+          "spread_pct": 2.7,
+          "samples": [
+            307.006,
+            304.2,
+            301.545,
+            304.848,
+            309.63,
+            303.128,
+            306.711
+          ]
+        },
+        "body_bytes": {
+          "unit": "bytes",
+          "n": 7,
+          "median": 95561.0,
+          "min": 95561.0,
+          "max": 95561.0,
+          "spread_pct": 0.0,
+          "samples": [
+            95561.0,
+            95561.0,
+            95561.0,
+            95561.0,
+            95561.0,
+            95561.0,
+            95561.0
+          ]
+        },
+        "per_book_ms": 0.432
+      },
+      "40": {
+        "ttfb_ms": {
+          "unit": "ms",
+          "n": 7,
+          "median": 9.678,
+          "min": 9.444,
+          "max": 9.966,
+          "spread_pct": 5.4,
+          "samples": [
+            9.678,
+            9.728,
+            9.453,
+            9.49,
+            9.802,
+            9.966,
+            9.444
+          ]
+        },
+        "_wall_ms": {
+          "unit": "ms",
+          "n": 7,
+          "median": 308.105,
+          "min": 302.069,
+          "max": 313.815,
+          "spread_pct": 3.8,
+          "samples": [
+            306.902,
+            307.539,
+            302.069,
+            308.105,
+            310.475,
+            313.815,
+            309.009
+          ]
+        },
+        "body_bytes": {
+          "unit": "bytes",
+          "n": 7,
+          "median": 144361.0,
+          "min": 144361.0,
+          "max": 144361.0,
+          "spread_pct": 0.0,
+          "samples": [
+            144361.0,
+            144361.0,
+            144361.0,
+            144361.0,
+            144361.0,
+            144361.0,
+            144361.0
+          ]
+        },
+        "per_book_ms": 0.242
+      },
+      "80": {
+        "ttfb_ms": {
+          "unit": "ms",
+          "n": 7,
+          "median": 12.381,
+          "min": 12.035,
+          "max": 12.823,
+          "spread_pct": 6.4,
+          "samples": [
+            12.823,
+            12.426,
+            12.381,
+            12.104,
+            12.483,
+            12.19,
+            12.035
+          ]
+        },
+        "_wall_ms": {
+          "unit": "ms",
+          "n": 7,
+          "median": 315.778,
+          "min": 308.737,
+          "max": 363.768,
+          "spread_pct": 17.4,
+          "samples": [
+            318.909,
+            312.037,
+            363.768,
+            309.734,
+            317.649,
+            315.778,
+            308.737
+          ]
+        },
+        "body_bytes": {
+          "unit": "bytes",
+          "n": 7,
+          "median": 241961.0,
+          "min": 241961.0,
+          "max": 241961.0,
+          "spread_pct": 0.0,
+          "samples": [
+            241961.0,
+            241961.0,
+            241961.0,
+            241961.0,
+            241961.0,
+            241961.0,
+            241961.0
+          ]
+        },
+        "per_book_ms": 0.155
+      },
+      "160": {
+        "ttfb_ms": {
+          "unit": "ms",
+          "n": 7,
+          "median": 18.298,
+          "min": 17.932,
+          "max": 18.966,
+          "spread_pct": 5.7,
+          "samples": [
+            18.122,
+            17.962,
+            18.966,
+            18.382,
+            18.298,
+            17.932,
+            18.467
+          ]
+        },
+        "_wall_ms": {
+          "unit": "ms",
+          "n": 7,
+          "median": 329.349,
+          "min": 324.659,
+          "max": 333.667,
+          "spread_pct": 2.7,
+          "samples": [
+            329.306,
+            324.659,
+            332.883,
+            329.349,
+            331.904,
+            328.231,
+            333.667
+          ]
+        },
+        "body_bytes": {
+          "unit": "bytes",
+          "n": 7,
+          "median": 438303.0,
+          "min": 438303.0,
+          "max": 438303.0,
+          "spread_pct": 0.0,
+          "samples": [
+            438303.0,
+            438303.0,
+            438303.0,
+            438303.0,
+            438303.0,
+            438303.0,
+            438303.0
+          ]
+        },
+        "per_book_ms": 0.114
+      },
+      "_fit": {
+        "slope_ms_per_book": 0.0672,
+        "intercept_ms": 7.319,
+        "r_squared": 0.9964
+      }
+    }
+  }
+}

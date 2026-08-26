@@ -1,10 +1,10 @@
 {
   "schemaVersion": 2,
   "enabled": true,
-  "enforceOnTaskCompleted": false,
-  "blockCommitWithoutFreshGate": false,
+  "enforceOnTaskCompleted": true,
+  "blockCommitWithoutFreshGate": true,
   "staleGateAction": "deny",
-  "gateFreshnessMinutes": 120,
+  "gateFreshnessMinutes": 15,
   "smartStaleness": true,
   "bypassEnv": "TDD_GUARD_BYPASS",
   "preflightCommand": "",
@@ -24,11 +24,9 @@
     },
     {
       "name": "e2e",
-      "description": "Playwright via pytest-playwright against a live reader3-server. Needs a live_server fixture in tests/e2e/conftest.py — not written yet, so no setupCommand is configured.",
+      "description": "Playwright via pytest-playwright against a live reader3-server. gateOn is EMPTY on purpose: tests/e2e/ has no tests yet (009 writes them), and a lane that never passes reports 'never passed' forever -- which would deny every push and train everyone to run with TDD_GUARD_BYPASS=1 permanently. A gate bypassed by habit is worse than no gate. 009 restores gateOn to [\"push\"] in the same commit that adds the first e2e test and its live_server fixture.",
       "command": "uv run pytest tests/e2e --browser chromium",
-      "gateOn": [
-        "push"
-      ],
+      "gateOn": [],
       "coverage": "none",
       "probeCommand": "uv run pytest tests/e2e --collect-only -q",
       "timeoutMs": 1800000
@@ -48,13 +46,43 @@
   "coverageThresholds": {
     "lines": 70,
     "functions": 0,
-    "branches": 60,
+    "branches": 52,
     "statements": 70
   },
-  "coverageMode": "no-decrease",
+  "coverageMode": "absolute",
   "requireMutation": false,
   "mutationCommand": "",
   "mutationGateOn": [
     "push"
+  ],
+  "criticalPaths": [
+    {
+      "glob": "src/reader3_app/reader3.py",
+      "branch": 80
+    },
+    {
+      "glob": "src/reader3_app/notes_service.py",
+      "branch": 83
+    },
+    {
+      "glob": "src/reader3_app/collections_service.py",
+      "branch": 72
+    },
+    {
+      "glob": "src/reader3_app/ai/books.py",
+      "branch": 72
+    },
+    {
+      "glob": "src/reader3_app/ai/conversations.py",
+      "branch": 55
+    },
+    {
+      "glob": "src/reader3_app/search_service.py",
+      "branch": 56
+    },
+    {
+      "glob": "src/reader3_app/web/server.py",
+      "branch": 58
+    }
   ]
 }

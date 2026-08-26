@@ -1302,7 +1302,7 @@
                             <select id="chat-book-select" data-testid="lib-chat-scope">
                                 <option value="" selected disabled>Select a book...</option>
                                 {% for book in books %}
-                                    <option value="{{ book.id }}" data-book-uuid="{{ book.book_uuid }}">{{ book.title }}</option>
+                                    <option value="{{ book.id }}" data-book-uuid="{{ book.book_uuid or '' }}">{{ book.title }}</option>
                                 {% endfor %}
                             </select>
                         </label>

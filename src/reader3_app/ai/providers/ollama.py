@@ -1,46 +1,40 @@
 from __future__ import annotations
 
-import json
-import urllib.error
-import urllib.request
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List
 
+from ._http import post_json, validated_url
 from .types import ProviderResponse
+
+DEFAULT_BASE_URL = "http://localhost:11434"
 
 
 def _normalize_base_url(base_url: str) -> str:
     base = (base_url or "").strip().rstrip("/")
     if not base:
-        base = "http://localhost:11434"
+        base = DEFAULT_BASE_URL
     # Accept either http://host:11434 or http://host:11434/v1 in config.
     if base.endswith("/v1"):
         base = base[: -len("/v1")]
     return base.rstrip("/")
 
 
-def _post_json(url: str, *, payload: Dict[str, Any], timeout_s: int) -> Tuple[int, Dict[str, Any]]:
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(url, data=data, method="POST")
-    req.add_header("Content-Type", "application/json")
-    req.add_header("Accept", "application/json")
+def _error_message(status: int, resp: Dict[str, Any]) -> str:
+    """从错误体里取出真正的原因（finding `ai/73`）。
 
-    try:
-        with urllib.request.urlopen(req, timeout=timeout_s) as resp:
-            body = resp.read().decode("utf-8", errors="replace")
-            if not (body or "").strip():
-                return int(resp.status), {}
-            try:
-                parsed = json.loads(body)
-            except Exception:
-                parsed = {"error": {"message": body}}
-            return int(resp.status), parsed
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", errors="replace") if getattr(e, "fp", None) else ""
-        try:
-            parsed = json.loads(body or "{}")
-        except Exception:
-            parsed = {"error": {"message": body or str(e)}}
-        return int(getattr(e, "code", 500) or 500), parsed
+    Ollama 的错误体是 `{"error": "<字符串>"}`，不是 `{"error": {"message": ...}}`。
+    原来只判 dict，于是「model not found」「out-of-memory」这类唯一有用的信息全部落空，
+    再回落到 `resp["message"]`——那在这个 API 上是**助手消息 dict**，于是用户拿到的是
+    一个 stringify 过的 `{'role': 'assistant', ...}`。两种串味都在这里收口：
+    两种 `error` 形状都认，助手消息一概不认，取不到就说实话报状态码。
+    """
+    err = resp.get("error")
+    if isinstance(err, str) and err.strip():
+        return err.strip()
+    if isinstance(err, dict):
+        detail = err.get("message")
+        if isinstance(detail, str) and detail.strip():
+            return detail.strip()
+    return f"Ollama API error ({status})"
 
 
 def ollama_chat_completions(
@@ -52,7 +46,7 @@ def ollama_chat_completions(
     max_tokens: int,
     timeout_s: int,
 ) -> ProviderResponse:
-    base = _normalize_base_url(base_url)
+    base = validated_url(_normalize_base_url(base_url) or None, default=DEFAULT_BASE_URL)
     url = base + "/api/chat"
 
     chat_messages: List[Dict[str, Any]] = []
@@ -72,15 +66,9 @@ def ollama_chat_completions(
         "options": {"num_predict": max(64, min(int(max_tokens), 4096))},
     }
 
-    status, resp = _post_json(url, payload=payload, timeout_s=timeout_s)
+    status, resp = post_json(url, payload=payload, timeout_s=timeout_s)
     if status >= 400:
-        msg = None
-        err = resp.get("error")
-        if isinstance(err, dict):
-            msg = err.get("message")
-        if msg is None:
-            msg = str(resp.get("message") or "")
-        raise RuntimeError(msg or f"Ollama API error ({status})")
+        raise RuntimeError(_error_message(status, resp))
 
     msg = resp.get("message") or {}
     if not isinstance(msg, dict):
@@ -93,7 +81,7 @@ def ollama_chat_completions(
     if resp.get("eval_count") is not None:
         try:
             token_count = int(resp.get("eval_count"))
-        except Exception:
+        except Exception:  # noqa: BLE001 - 第 3 档：eval_count 解析失败只让 token_count 为空，它是遥测，不是回答内容
             token_count = None
 
     return ProviderResponse(

@@ -45,6 +45,8 @@ wheels/
 .pytest_cache/
 coverage-unit.json
 .coverage
+# scripts/check_coverage_gate.py 读它，读完就没用了；别提交
+coverage.xml
 .gstack/
 
 # vmark editor locks
@@ -52,4 +54,9 @@ coverage-unit.json
 
 # Codex CLI byproduct (contains account id)
 error.log
-/.tokenize
+.tokenize/
+
+# local AI-tooling byproducts (audit findings, codex session id, prompt drafts)
+.cc-suite/
+.context/
+.prompts/
