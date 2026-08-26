@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import pickle
 import re
 import time
 import unicodedata
@@ -11,6 +10,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from functools import lru_cache
 from typing import Optional, List, Tuple, Dict, Union
+
+from .safe_pickle import load_book_file
 
 logger = logging.getLogger("reader3.search")
 
@@ -231,34 +232,13 @@ def _book_pkl_path(book_id: str, books_dir: str) -> str:
 
 @lru_cache(maxsize=10)
 def load_book_cached(book_id: str, books_dir: str) -> object:
-    path = _book_pkl_path(book_id, books_dir)
-    with open(path, "rb") as f:
-        try:
-            return _Reader3Unpickler(f).load()
-        except Exception:  # noqa: BLE001 - 第 3 档：旧 pickle 的模块路径解析失败时退回默认 loader；真读不出来的 pickle 会在下一行的 pickle.load 里照样抛
-            # Fallback: try the default loader (works when pickles were created
-            # with stable module paths).
-            f.seek(0)
-            return pickle.load(f)
+    """Read a book through the allow-listed unpickler, with no fallback loader.
 
-
-class _Reader3Unpickler(pickle.Unpickler):
+    The `pickle.load` fallback that used to sit here ran on exactly the streams
+    the restricted pass refused, which made the restriction decorative. A
+    `book.pkl` that the allow-list cannot read now raises; see `safe_pickle`.
     """
-    Backwards-compatible unpickler.
-
-    Some `book.pkl` files may have been created while running `reader3.py` as a
-    script, resulting in references like `__main__.Book`. Map those back to the
-    importable `reader3` module.
-    """
-
-    _REMAP = {"Book", "BookMetadata", "ChapterContent", "TOCEntry"}
-
-    def find_class(self, module: str, name: str):  # type: ignore[override]
-        if module == "__main__" and name in self._REMAP:
-            module = "reader3_app.reader3"
-        if module == "reader3" and name in self._REMAP:
-            module = "reader3_app.reader3"
-        return super().find_class(module, name)
+    return load_book_file(_book_pkl_path(book_id, books_dir))
 
 
 def list_book_ids(books_dir: str) -> List[str]:
@@ -667,6 +647,19 @@ def search_library(
     return result_set, book_order
 
 
+def _utf16_offset(text: str, code_point_index: int) -> int:
+    """Translate a Python code-point index into a UTF-16 code-unit index.
+
+    Python string indices count **code points**; the browser's DOM Range API
+    counts **UTF-16 code units**. A non-BMP character (emoji, CJK Extension B+
+    ideograph, historic script) is one code point but two code units, so any
+    such character before a match pushes the two systems apart by one unit
+    each. Without this translation a highlight drifts left in exactly the
+    books a Chinese-language reader is most likely to open.
+    """
+    return len(text[:code_point_index].encode("utf-16-le")) // 2
+
+
 def highlight_ranges_for_chapter(
     book_id: str,
     chapter_order: int,
@@ -676,6 +669,22 @@ def highlight_ranges_for_chapter(
     case_sensitive: bool,
     books_dir: str,
 ) -> Tuple[List[Dict[str, Union[int, str]]], int, Optional[int]]:
+    """Locate `search_term` in one chapter and return highlight ranges.
+
+    Every range carries the same span twice, in two different units:
+
+    - ``start`` / ``end`` — **code-point** offsets into ``chapter.text``, i.e.
+      plain Python string indices. These are the historical fields; the current
+      frontend still consumes them, so they are kept byte-for-byte as they were.
+    - ``start_utf16`` / ``end_utf16`` — **UTF-16 code-unit** offsets over the
+      same text. These are what a browser needs: ``String.prototype.length``,
+      ``Range.setStart`` and DOM text-node offsets are all counted in UTF-16
+      code units. New frontend code should read these two and ignore the pair
+      above.
+
+    The two pairs are equal for text that is entirely inside the BMP and differ
+    by one unit per non-BMP character at or before the offset.
+    """
     trimmed = validate_search_term(search_term)
     if not trimmed:
         return [], 0, None
@@ -699,12 +708,21 @@ def highlight_ranges_for_chapter(
             max_spans=1000,
         )
 
+    chapter_text = getattr(chapter, "text", "") or ""
+    # All-BMP text (plain ASCII, ordinary Hanzi) has identical offsets in both
+    # systems, so skip the per-offset re-encoding for the common case.
+    all_bmp = len(chapter_text.encode("utf-16-le")) // 2 == len(chapter_text)
+
     ranges: List[Dict[str, Union[int, str]]] = []
     for i, (start, end) in enumerate(matches):
         ranges.append(
             {
+                # Code-point offsets: the existing contract, read by today's frontend.
                 "start": start,
                 "end": end,
+                # UTF-16 code-unit offsets: what DOM Range / String.length expect.
+                "start_utf16": start if all_bmp else _utf16_offset(chapter_text, start),
+                "end_utf16": end if all_bmp else _utf16_offset(chapter_text, end),
                 "style": "search-match",
                 "occurrence_index": i,
             }
