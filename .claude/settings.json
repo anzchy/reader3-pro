@@ -1,6 +1,9 @@
 {
   "enabledPlugins": {
     "docs-guardian@xiaolai": true,
-    "tdd-guardian@xiaolai": true
+    "tdd-guardian@xiaolai": true,
+    "ui-tokenize@xiaolai": true,
+    "ui-responsive@xiaolai": true,
+    "jack-prompting@jack-cheng-marketplace": true
   }
 }
