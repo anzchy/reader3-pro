@@ -24,6 +24,11 @@ ARIA 定位走 Playwright 的 get_by_role / get_by_label / get_by_text 等 API�
 :nth-child 及其同类、xpath=/css=/text= 引擎前缀、以及 .nth(i) 这种按位置定位
 ——.nth(i) 不在计划原文的三项里，但它坏在同一个地方（重排即失效），所以一并拦。
 真要放行某一处，在下面 ALLOW_INLINE 那行注释掉的记号旁写明理由。
+
+``frame_locator`` 也在扫描之列（2026-08-26 补）。它此前不在名单里，因为写这条 lint
+时 tests/e2e/ 还是空的，没人写过跨 iframe 的定位。009 的 harness spike 一落地就
+暴露了这个洞：进 epub.js 的 iframe 要给一个 iframe 元素的选择器，那一处天然拿不到
+testid，本该被拦下来**显式放行**，而不是从没被看见过。
 """
 
 import re
@@ -40,7 +45,8 @@ SCAN_GLOBS = (
 
 # 取这些调用的第一个字符串实参。覆盖 Playwright 的 Python 与 JS 两套 API 名。
 LOCATOR_CALL_RE = re.compile(
-    r"""\.(?:locator|query_selector_all|query_selector|querySelectorAll|querySelector
+    r"""\.(?:locator|frame_locator|frameLocator
+        |query_selector_all|query_selector|querySelectorAll|querySelector
         |wait_for_selector|waitForSelector|is_visible|isVisible|click|fill|type|hover
         |press|check|uncheck|select_option|selectOption|text_content|textContent
         |get_attribute|getAttribute|inner_text|innerText|count)\s*\(\s*
