@@ -44,9 +44,13 @@ maxsize=4）加上 Python 自己的模块 import 缓存，意味着**同进程�
 
 ## 安全
 
-所有落盘一律在 `tempfile.TemporaryDirectory()` 里。**绝不指向真实的 `books/`**：
-`reader3.process_epub()` 会在输出目录旁开 staging 并 `os.replace` 覆盖，而标注是
-用户产生的、错了不能重新生成的数据。
+所有落盘一律在临时目录里。**绝不指向真实的 `books/`**：`reader3.process_epub()`
+会在输出目录旁开 staging 并 `os.replace` 覆盖，而标注是用户产生的、错了不能重新
+生成的数据。
+
+这条不再只是一句注释 —— 注释拦不住任何东西。`resolve_books_dir()` 在派发任何
+worker 之前校验 `--books-dir`，只放行本次运行自己造的一次性目录（`_new_scratch()`
+落的标记 + `mkdtemp` 的前缀，两条同时成立）。判据与理由见那两个函数的 docstring。
 """
 
 from __future__ import annotations
@@ -80,6 +84,73 @@ DEFAULT_SIZES = (1, 5, 10, 20)
 #: `search_service._normalize_with_map` 的重复计算只有在「同一批书被反复搜」时
 #: 才现形。搜一次的计数是「必要开销」，搜三次减搜一次才是「浪费」。
 LIBRARY_SEARCH_ROUNDS = 3
+
+#: 父进程 `mkdtemp` 的前缀，以及它在自己造的目录里落下的所有权标记。
+#: 两个一起构成 `resolve_books_dir` 的白名单判据 —— 见那个函数的 docstring。
+SCRATCH_PREFIX = "reader3-bench-"
+SCRATCH_MARKER = ".reader3-bench-scratch"
+
+
+# --------------------------------------------------------------------------- #
+# 所有权护栏：`--books-dir` 只接受本次运行自己造的一次性目录
+# --------------------------------------------------------------------------- #
+
+
+def _new_scratch(stack: List[str]) -> Path:
+    """开一个一次性目录、登记进清理栈、落下所有权标记。
+
+    父侧**唯一**允许造 worker 工作目录的地方。日后谁再写一处裸 `mkdtemp`，那个目录
+    没有标记，worker 会当场拒绝、基准整跑失败 —— 这个设计是失败关闭的：新增的漏洞
+    表现为「基准跑不起来」，而不是「悄悄放行到真书库」。
+    """
+    tmp = tempfile.mkdtemp(prefix=SCRATCH_PREFIX)
+    stack.append(tmp)
+    root = Path(tmp)
+    (root / SCRATCH_MARKER).write_text(
+        "reader3-pro 性能基准的一次性目录，可安全删除。\n", encoding="utf-8"
+    )
+    return root
+
+
+def resolve_books_dir(raw: Optional[str]) -> Path:
+    """校验 worker 的 `--books-dir`，返回解析后的绝对路径；不合格就退出。
+
+    **所有权证明，不是黑名单。** 黑名单（「不许是 books/」「不许在仓库里」）永远漏一
+    个写法；白名单只放行「本脚本这次运行自己造的目录」。判据两条同时成立：
+
+      1. 祖先链（含自身）上存在一个目录，名字以 `SCRATCH_PREFIX` 开头；
+      2. **且**那个目录里有 `SCRATCH_MARKER` 标记文件。
+
+    只看名字，会被一个恰好叫 `reader3-bench-x` 的真目录骗过；只看标记，会被随手丢进
+    真书库的一个同名文件解开。两条一起才关得住。
+
+    这里退出而不是抛异常：worker 是子进程，父侧 `run_worker` 只认退出码。
+
+    macOS 上 `mkdtemp` 给的是 `/var/folders/...`，而 `/var` 是指向 `/private/var` 的
+    软链，所以两侧一律 `resolve()` 之后再比 —— 否则同一个目录会因为一次 `resolve()`
+    的有无被判成两个。
+    """
+    if not raw:
+        sys.exit(
+            "worker 需要 --books-dir，但没给。\n"
+            "--worker 是内部接口，正确的跑法是 `uv run python scripts/bench.py`，"
+            "由父进程自己建一次性目录再派发。"
+        )
+
+    path = Path(raw).resolve()
+    for candidate in (path, *path.parents):
+        if candidate.name.startswith(SCRATCH_PREFIX) and (candidate / SCRATCH_MARKER).is_file():
+            return path
+
+    sys.exit(
+        f"拒绝 --books-dir {path}：它不在本次运行自己造的一次性目录里。\n"
+        f"（判据：祖先链上要有一个名字以 {SCRATCH_PREFIX!r} 开头、且内含 "
+        f"{SCRATCH_MARKER!r} 标记文件的目录。）\n"
+        "worker 会对 --books-dir 下的输出目录调用 process_epub()，而它在写之前会先\n"
+        "rmtree 掉那个目录 —— 指向真实 books/ 一次就够毁掉用户的标注，那是错了不能\n"
+        "重新生成的数据。\n"
+        "正确的跑法是 `uv run python scripts/bench.py`，由父进程自己建目录再派发。"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -593,9 +664,7 @@ def collect(
 
 
 def _prepared_library(stack: List[str], *, size: int, huge: bool, chars: int) -> str:
-    tmp = tempfile.mkdtemp(prefix="reader3-bench-")
-    stack.append(tmp)
-    books = Path(tmp) / "books"
+    books = _new_scratch(stack) / "books"
     books.mkdir()
     extra = ["--books-dir", str(books), "--size", str(size), "--chars", str(chars)]
     if huge:
@@ -755,9 +824,8 @@ def bench_ingest(repeat: int, chars: int) -> Dict[str, Any]:
     for _ in range(repeat):
         stack: List[str] = []
         try:
-            tmp = tempfile.mkdtemp(prefix="reader3-bench-")
-            stack.append(tmp)
-            runs.append(run_worker("ingest", ["--books-dir", tmp, "--chars", str(chars)]))
+            tmp = _new_scratch(stack)
+            runs.append(run_worker("ingest", ["--books-dir", str(tmp), "--chars", str(chars)]))
         finally:
             _cleanup(stack)
     out = collect(runs, ["build_epub_ms", "process_epub_ms", "_wall_ms"], "ms")
@@ -992,6 +1060,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parser.parse_args(argv)
 
     if args.worker:
+        # 这一行**必须**在派发之前：`WORKERS[...]` 是全部 7 个 worker 唯一的共同
+        # 咽喉。逐个 worker 加检查会漏掉下一个新增的 worker。
+        args.books_dir = str(resolve_books_dir(args.books_dir))
         WORKERS[args.worker](args)
         return 0
 

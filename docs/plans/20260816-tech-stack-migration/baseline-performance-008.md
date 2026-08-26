@@ -30,7 +30,10 @@ uv run python scripts/bench.py --repeat 7 --sizes 1,5,10,20,40,80,160 \
 是本仓库的生产代码，它要 fastapi / httpx / ebooklib——一个不 import 被测代码的性能基准
 无法存在。裸 `python3 scripts/bench.py` 会在预检那步给出明确提示而不是一屏 ImportError。
 
-全部落盘都在 `tempfile.TemporaryDirectory()` 里，**脚本从不指向真实的 `books/`**。
+全部落盘都在 `mkdtemp` 开的一次性目录里，**脚本从不指向真实的 `books/`**——这一条由 `resolve_books_dir()` 在派发任何 worker 之前强制，不是靠注释自觉：
+隐藏参数 `--books-dir` 只接受本次运行自己造的目录（`mkdtemp` 前缀 ＋ 目录内的
+`.reader3-bench-scratch` 标记，两条同时成立），其余一律拒绝并退出。理由是
+`worker_ingest` 会走 `process_epub()`，而它在写之前先 `rmtree` 掉输出目录。
 
 ## 1. 测量环境
 
