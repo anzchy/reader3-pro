@@ -18,6 +18,76 @@
 
 ---
 
+### 现状实测（2026-08-26，基于 `master` 的 `3de878c`，本节是这几个数字的唯一定义处）
+
+本文的骨架写在 008 开工之前。008 合入之后，仓库里多了一套测试底座、多了一层请求守卫，
+也多了几处骨架没预料到的东西。下表是把骨架的每一条前提拿到今天的代码上重测的结果。
+
+**先看第一行**：它推翻的是 §1 的一条基础设施要求，不是一个数字。
+
+| 事实 | 原稿写的 | 实测（2026-08-26） | 差在哪 |
+|---|---|---|---|
+| **E2E 运行器** | §1 要求配 `webServer`，并在其中传 `--port` | 这个仓库用 `pytest-playwright` 0.9.0 ＋ `playwright` 1.62.0；`e2e` lane 是 `uv run pytest tests/e2e --browser chromium` | **`webServer` 是 `@playwright/test`（Node）的配置键，在这个栈里根本不存在。** 起服务只能是 pytest fixture（`live_server`）。§1 那一行要按 fixture 重写，不能照抄 |
+| 起服务的配方 | 无（当作待建） | **已有可搬的现成实现**：`scripts/smoke_installed_wheel.py` 做的正是「挑空闲端口 → `reader3-server --port` → `READER3_BOOKS_DIR` 指向 tmp → 轮询 `/api/health` 到 200（上限 60s）→ 收尾 drain 子进程输出」。008 建的 | `live_server` 是把它搬进 fixture，不是从零发明 |
+| 两套语料（English ＋ CJK） | §1 要求建 | **已有**：`tests/fixtures/epub_corpus.py` 的 `build_epub2` / `build_epub3`（英文）与 `build_cjk`（书名 `咖啡館の夜`，检索词 `咖啡`）。同文件另有 diacritics、缺 TOC、畸形 TOC、spine-toc 迷宫、超大章等十余个 builder | 语料从「要建」降级为「挑一个用」 |
+| 0.3 前置（`--port` ＋ `/api/health`） | 「已完成」 | 属实。`/api/health` 路由在 `server.py`；端口优先级 `--port` > `READER3_PORT` > 8123，写在 `main()` 的 docstring 里 | 无 |
+| 0.5 前置（testid 全量补齐） | 「已完成」 | 数量属实：模板共 136 处（`library.html` 63 / `reader.html` 67 / `settings.html` 6 / **`library_classic.html` 0**）；`scripts/lint_testid_naming.py` 全绿，221 个唯一名 0 违规 | `library_classic.html` 一个都没有。它由 `READER3_LIBRARY_UI=classic` 才走到，**E2E 不要碰它**，要碰先补 |
+| **testid 唯一性** | §1「只允许 `data-testid` 与 ARIA role/name」 | **同一模板内有重名**：`library.html` 的 `lib-modal` ×4、`lib-modal-close` ×4、`lib-modal-primary` ×3、`lib-modal-cancel` ×2；`reader.html` 的 `rd-sheet-close` ×2 | Playwright 的 `getByTestId()` 默认 strict，命中多个直接抛。**命名 lint 不查唯一性**——它管的是「谁在发 testid」的正则。在这五个名字有去重手段之前，§1 的选择器政策对弹层这一族**不可满足** |
+| K1 的七个宿主 id | 契约 | 七个在 `reader.html` 里各出现 1 次；其中 **5 个带 testid，2 个没有**：`anno-color-row`、`note-tooltip` | 这两个要么补 testid，要么 K1 的用例改用 ARIA 定位 |
+| K4 的六个事件名 | 契约 | 六个全在，全带 `reader3:` 前缀：`annotations:updated` ×5、`escape` ×3、`content:click` ×3、`chapter:change` ×3、`content:rendered` ×2、`ai:ask` ×2 | 无。（裸 grep `escape` 会得到 43，撞的是 `Escape` 键名和 `escapeHtml`；数事件名必须连前缀一起匹配） |
+| `applyThemeSettings`（R-6 的前提） | 「今天就存在」 | 属实：定义在 `epub-renderer.js`，`reader.html` 里调用 | 无 |
+| **请求守卫**（008 新增，骨架没有） | 无 | `RequestGuardMiddleware`：Host 白名单（默认含 `127.0.0.1` / `localhost` / `[::1]`）→ 令牌 → 非安全方法的 Origin/`Sec-Fetch-Site` 检查。`/api/health` 与 `/static/` 豁免令牌；`READER3_TOKEN` 不设即整条令牌闸关闭，默认不设 | **e2e 起服务时不要设 `READER3_TOKEN`**：前端 fetch 至今不带令牌（`server.py` 头部注释写明），设了等于让页面上每个写操作 401。同源浏览器流量不受 Origin 闸影响，所以写路径用例不需要额外铺垫 |
+| `tests/e2e/` | —— | 目录在，**一个文件都没有**；`--collect-only` 报 `no tests collected` | 无 |
+| `e2e` lane 的 `gateOn` | 「现在是空的」 | 仍是 `[]` | 无。头部那条必做动作照旧有效 |
+| `soak-log.md` | G2 的产物 | 不存在 | 无 |
+| `BOOKS_DIR` | —— | 仍是模块级常量，import 时读一次 | 每个 worker 要自己的书库副本，就必须配自己的**服务进程**：换环境变量重启，不能运行时改 |
+
+复核命令（数字对不上时先跑这一组，再改上面的表）：
+
+```bash
+# 运行器与浏览器
+uv run python -c "import importlib.metadata as m; print(m.version('playwright'), m.version('pytest-playwright'))"
+uv run pytest tests/e2e --collect-only -q
+
+# testid：总数、重名、命名 lint
+for f in src/reader3_app/web/templates/*.html; do
+  printf '%-24s %s\n' "$(basename "$f")" "$(grep -c 'data-testid=' "$f")"
+done
+for f in src/reader3_app/web/templates/*.html; do
+  grep -o 'data-testid="[^"]*"' "$f" | sort | uniq -c | awk -v n="$(basename "$f")" '$1>1 {print n, $0}'
+done
+uv run python scripts/lint_testid_naming.py
+
+# K4 六个事件名（连前缀一起匹配，别裸 grep escape）
+grep -rhoE "reader3:[a-z:]+" src/reader3_app/web/static src/reader3_app/web/templates | sort | uniq -c | sort -rn
+
+# 请求守卫与令牌默认值
+grep -n "READER3_TOKEN" src/reader3_app/web/server.py
+```
+
+#### harness spike 的结论（2026-08-26，本节是这两个数字的唯一定义处）
+
+上表列的是「前提对不对」，这一小节是「跑起来行不行」——spike 只回答这一个问题，
+不写用例清单、不建分组、不建台账。产物是 `tests/e2e/conftest.py` 的 `live_server`
+fixture 与 `tests/e2e/test_harness_smoke.py` 里的**一条** smoke（进 epub.js 的 iframe
+读第一章正文；挑 iframe 而不是「首页 200」，是因为将来所有写路径都要穿过它，进不去
+的话整份骨架都得重写）。
+
+| 问题 | 答案 |
+|---|---|
+| Playwright 在这个仓库能不能稳定起来 | **能**。连跑 5 次 5 绿，0 flaky。chromium 1234（`playwright` 1.62.0 自带的那版）本机已装，不用额外 `playwright install` |
+| 一次冷启动多久 | **服务端 0.31s**（5 次全部 0.31s，没有抖动）；**整条 lane 端到端 2.0–3.0s**，含造合成 epub、`process_epub`、起服务、拉浏览器、跑那条 smoke |
+
+两个副作用，都是骨架里点过名的：`e2e` lane 的 `gateOn` 已按头部那条必做动作改回
+`["push"]`；`scripts/smoke_installed_wheel.py` 里 60s 的启动超时被原样搬进 fixture——
+实测只用 0.31s，但那是本机热缓存，CI 冷机上留足余量比调紧它划算。
+
+> 这些数字属于 2026-08-26 的 `3de878c`，**不是契约**。会变的是数字，不会变的是三条结论：
+> ①「起服务」在这个栈里没有配置键，只有 fixture；② 选择器政策卡在 testid 重名上，不是卡在数量上；
+> ③ 前端不带令牌，所以 e2e 的服务必须裸跑。数字对不上时按上面的命令重测，别照着旧数字写用例。
+
+---
+
 ## 0. 这套 E2E 为什么不能按常规写
 
 标注的六个接触面里 **四个坏了不报错**（K1 缺元素 → `init()` 静默 return；K3 祖先链有包含块制造者 → 浮层可见但位置错；K4 事件名拼错 → 监听方永不触发；K6 上下文读不到 → 回退解析出错误章号）。**「跑完没报错」在这里等于没测。**
@@ -73,10 +143,10 @@ K1 的 baseline 条是有价值的：它会在**任何人改模板删掉那七�
 
 | 项 | 要求 |
 |---|---|
-| `webServer` | Playwright 起自己的实例，端口由 `--port` 指定（**不得用 8123**，会撞开发者本地与 CI 并发），就绪探针用 `GET /api/health` |
-| **图书目录隔离** | `READER3_BOOKS_DIR` 指向 tmp 目录，测试前从 fixture 拷入。**任何用例都不得读写开发者真实的 `books/`**——本套用例会创建和删除标注。⚠️ `server.py` 在**模块导入时**把它读成模块级常量，因此必须在 `webServer` 启动前置入环境变量，运行期改无效 |
-| 选择器 | **只允许 `data-testid` 与 ARIA role/name**。禁止 class、`nth-child`、层级结构选择器。CI lint 强制（0.5 的产出） |
-| iframe 语料 | 至少两本：一本英文短篇、一本 CJK。CJK 那本用来卡 quote/prefix/suffix 的多字节边界 |
+| ~~`webServer`~~ → `live_server` fixture | ⚠️ **本行的形式已被现状实测推翻**：`webServer` 是 `@playwright/test` 的配置键，本仓库用的是 `pytest-playwright`，没有这个键。**要求本身不变**——起自己的服务实例、端口由 `--port` 指定（**不得用 8123**，会撞开发者本地与 CI 并发）、就绪探针 `GET /api/health`——变的是承载它的东西：一个 pytest fixture，配方照搬 `scripts/smoke_installed_wheel.py` |
+| **图书目录隔离** | `READER3_BOOKS_DIR` 指向 tmp 目录，测试前从 fixture 拷入。**任何用例都不得读写开发者真实的 `books/`**——本套用例会创建和删除标注。⚠️ `server.py` 在**模块导入时**把它读成模块级常量，因此必须在**服务进程启动前**置入环境变量，运行期改无效 |
+| 选择器 | **只允许 `data-testid` 与 ARIA role/name**。禁止 class、`nth-child`、层级结构选择器。CI lint 强制（0.5 的产出）。⚠️ 现状实测：`lib-modal` 一族与 `rd-sheet-close` 在同一模板内重名，`getByTestId()` 的 strict 模式会直接抛——这条政策对弹层族在去重之前不可满足 |
+| iframe 语料 | 至少两本：一本英文短篇、一本 CJK。CJK 那本用来卡 quote/prefix/suffix 的多字节边界。**已有，不必新建**：`tests/fixtures/epub_corpus.py` 的 `build_epub2` / `build_epub3` 与 `build_cjk` |
 | 并发 | 每个 worker **一个独立服务进程 + 一份独立 books 目录副本**（因为上面那条：目录是进程级常量，同一进程内无法按用例切换），`notes.json` 不共享 |
 
 **iframe 内建选区的标准路径**（Selection 不能跨 browsing context，所以必须在 child frame 内做）：
