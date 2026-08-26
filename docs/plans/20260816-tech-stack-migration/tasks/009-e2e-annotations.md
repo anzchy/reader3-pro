@@ -224,3 +224,35 @@ child frame 内 document.createRange() → 写入 iframe 的 Selection
 **一个不成组的例外**：R-6 属 `baseline-1b`，但它的**栏宽参数**要到 4B.3 才有对象可测。这是往既有用例上加参数，不是新开一组，因此不进上表；它的门槛写在[前端计划](../../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md)的 4B.3 工作项退出门槛里。
 
 > **不要把未激活组的 skip 当成永久豁免。** 每个阶段的出口 checklist 里都要有一行「本阶段应激活的组已解开 skip 且绿灯」，否则 skip 会一路带到 Phase 5。
+
+## 原定从 008 转交的两条，已在 008 内结清（2026-08-26 收回）
+
+这两条一度判为「在 008 修是修错地方」并转交 009。当天晚些时候两条都在 008 拿到了
+**不依赖时序、也不依赖 012 fixture** 的做法，于是收回：`.cc-suite/audits/audit-008-tests-findings.md`
+里 tests/19 与 tests/23 的状态已从 `transferred → 009` 改为 `fixed (WI-14)`。
+
+**009 不再欠这两条。** 下面留的是「008 钉住了什么」与「009 仍可加什么」的边界，
+避免 009 重复做一遍，也避免以为已经全覆盖了。
+
+### 原 tests/19：SSE 增量性
+
+008 已钉住：`test_流式提问是边生成边推送而不是攒够一次性吐`（`tests/contract/test_scenarios.py`）。
+用握手代替掐表——假 provider 交出第 i 行的前提是第 i-1 个 chunk 已经发出去，所以「攒够
+一次性吐」的实现必然红，而判定里没有任何墙上时钟。它手搓 ASGI scope 直接驱动 app：
+starlette 的 `_TestClientTransport.handle_request` 以 `raw_kwargs = {"stream": io.BytesIO()}`
+起手，整段响应体落完才把 `httpx.Response` 交出来，所以 `client.stream()` + `iter_text()`
+看到的先后是 TestClient 的，不是应用的。变异证据：把 chunk 攒到 `done` 再冲，新用例红，
+原 `test_流式提问按meta_chunk_done的顺序推事件` 全绿。
+
+009 仍可加（可选，非欠账）：**首字延迟**是浏览器侧的用户可感属性，008 那条证明的是
+「服务端是增量发的」，不是「前端是增量渲染的」。要覆盖后者，就在 Playwright 里断言
+DOM 增量更新次数 > 1。
+
+### 原 tests/23：受损书目录的降级
+
+008 已钉住：`tests/contract/test_degraded_bookdir_and_images.py` 覆盖缺 `book.epub` 的
+书目录——library 页仍渲染，取 epub 得 404 而不是 500（MUTANT-M 精确 1 红）；顺带覆盖
+「点名一个目录当图片」得 404 而不是 500。
+
+009 仍可加（可选，非欠账）：`book.pkl` **损坏**（而非缺失）这一态没覆盖，它要等 012 的
+ADR-0007 三态读定下来；届时在 E2E 里补 reader 页的降级表现。
