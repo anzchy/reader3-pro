@@ -125,6 +125,39 @@ uv run reader3-server
 
 Visit [localhost:8123](http://localhost:8123/) to see your Library. To remove a book, delete its `books/*_data/` folder.
 
+### Server Options (new in 1.5.0)
+
+```bash
+# Pick the port. Precedence: --port > READER3_PORT > 8123
+uv run reader3-server --port 9000
+
+# Point the library somewhere other than ./books
+READER3_BOOKS_DIR=/path/to/library uv run reader3-server
+
+# Readiness probe -- never touches disk, answers 200 even on an empty library
+curl http://127.0.0.1:8123/api/health
+```
+
+**Reaching the server from another machine?** The server now validates the `Host`
+header and answers `400 Invalid host header` to anything it does not recognise.
+This shuts the door on DNS-rebinding attacks against your library, and it means a
+default install only answers to `127.0.0.1`, `localhost` and `[::1]`. If you reach
+it over a LAN address, a hostname or a reverse proxy, list those names yourself:
+
+```bash
+READER3_ALLOWED_HOSTS=192.168.1.20,reader.lan uv run reader3-server
+```
+
+Optionally, require a shared secret on every request:
+
+```bash
+READER3_TOKEN=$(openssl rand -hex 16) uv run reader3-server
+```
+
+The token suits CLI and reverse-proxy setups. The browser UI does not attach it to
+its own `fetch` calls yet, so with a token set the pages load but in-page actions
+fail -- leave it unset for normal desktop use.
+
 ### Library UI Mode (modern/classic)
 
 The Library UI supports rollback to the classic page:
