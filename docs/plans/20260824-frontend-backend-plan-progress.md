@@ -36,7 +36,7 @@
 | 顺位 | 分支 | 阶段 | 计划归属 | 状态 | 展开在哪 |
 |---|---|---|---|---|---|
 | **0** | `007-hygiene-and-contracts` | Phase 0 | 后端 | **✅** 2026-08-24 合入（PR #18） | [tasks/007](20260816-tech-stack-migration/tasks/007-hygiene-and-contracts.md) |
-| **1** | `008-test-safety-net` | Phase 1a | 后端 | **🔨** 2026-08-26 分支上完工，退出门槛十条全达成，未合入 | [tasks/008](20260816-tech-stack-migration/tasks/008-test-safety-net.md) |
+| **1** | `008-test-safety-net` | Phase 1a | 后端 | **✅** 2026-08-26 合入（PR #19） | [tasks/008](20260816-tech-stack-migration/tasks/008-test-safety-net.md) |
 | **1.5** | *(009 harness spike)* | — | — | **⬜** 见 §2 的 P-2 | 本文 |
 | **2** | `009-e2e-annotations` | Phase 1b | 后端 | **⬜** 任务已写，分支未开 | [tasks/009](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
 | **3** | `011-backend-refactor` | Phase 2a+2b | 后端 | **⬛** 计划未写（故意，见 §9） | — |
@@ -50,14 +50,13 @@
 
 ### 现在该做什么
 
-> **先把 `008-test-safety-net` 合入 `master`，再开 `009-e2e-annotations`。**
+> **做顺位 1.5 的 009 harness spike，然后开 `009-e2e-annotations`。**
 >
-> 008 在分支上已完工（2026-08-26）：§9 的十条退出门槛全部达成，网建好之后又跑了一轮
-> 审计并把 71 条 High 结清（69 修 / 2 经核实是误报）。**但它还没合入。** 顺位 1.5 的
-> 009 harness spike 和顺位 2 的 009 都直接靠这张网判断「有没有改坏」，在合入之前开它们，
-> 等于让下游分支挂在一个随时可能变基的分支上。
+> 008 已于 2026-08-26 合入 `master`（PR #19，合并 commit `8a9b3aa`），Phase 1a 关闭；
+> 前置全部满足，测试安全网已在主干上。
 >
-> 合入之后，按 §2 的 P-2：先做 009 harness spike，再开 009。
+> 按 §2 的 P-2：spike 先行——它落在 008 上、**不占顺位、不算 009 开工**，
+> 现在 008 已合入，落点相应改成 `master` 上的一次独立小提交。
 > 开 009 之前先补它那份任务骨架的现状实测（「领先一个分支即时补」的规矩，见 §9）。
 
 ---
@@ -167,6 +166,7 @@ gh run list --limit 5
 | 2026-08-24 | 009 的退出条件拆成 G1（用例完成）/ G2（基线稳定）两道门；soak 从 G2 起算 | [tasks/009 §8](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
 | 2026-08-26 | 008 分支上完工：十条退出门槛全达成 | [tasks/008 §9](20260816-tech-stack-migration/tasks/008-test-safety-net.md) |
 | 2026-08-26 | 网建好之后对它自己做审计，71 条 High 结清（69 修 / 2 误报）**在 008 分支内**修完，不再转交 009 | [tasks/008 §8.5](20260816-tech-stack-migration/tasks/008-test-safety-net.md) ／ `.claude/tdd-guardian/dispatch-order.md` |
+| 2026-08-26 | Phase 1a 关闭，008 合入 `master`（PR #19，合并 commit `8a9b3aa`） | [tasks/008 的「合入记录」](20260816-tech-stack-migration/tasks/008-test-safety-net.md) |
 
 > **来源**：2026-08-24 与 Codex（`gpt-5.6-terra`）的一次定向复核。Codex 选 C 并提出五条风险，
 > 其中三条经核对成立并已回写（见上表后两行）；两条不成立——它担心 010 的九条门槛「形式完成、

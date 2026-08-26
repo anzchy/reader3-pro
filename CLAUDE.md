@@ -251,7 +251,7 @@ Do not invent a new number without updating that table.
 | Milestone | Branch | Plan folder | Status |
 |---|---|---|---|
 | M0 — Phase 0 contracts + hygiene | `007-hygiene-and-contracts` | migration | ✅ Merged (PR #18) |
-| M1 — tests + CI + API freeze | `008-test-safety-net` | migration | 🔨 Done on branch, not merged |
+| M1 — tests + CI + API freeze | `008-test-safety-net` | migration | ✅ Merged (PR #19) |
 | M1b — Playwright E2E | `009-e2e-annotations` | migration | Tasks drafted |
 | MD — design degradation states | `010-design-degradation-states` | **frontend** | WI-1 – WI-8 |
 | M2 — backend refactor | `011-backend-refactor` | migration | Allocated |

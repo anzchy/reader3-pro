@@ -5,9 +5,29 @@
 - **退出条件**: 测试门禁生效（**本地 tdd-guardian**，非 required check——见 §7）；42 条路由契约全绿；API v1 冻结；性能基准记录在案。见 `plan-tech-stack-migration.md` §7
 - **下游**: **一切**。Phase 2 / 3 / 4 的每一次重构都靠这张网判断「有没有改坏」。没有它，后面每个阶段都是盲改
 - **契约**: 本分支产出的路由契约即 API v1 冻结基线
-- **状态**: **分支上已完工，未合入 `master`**（2026-08-26）。§9 十条退出门槛全部达成；网建好之后又跑了一轮审计，71 条 High 结清（69 修 / 2 误报），见 §8.5
+- **状态**: **✅ 已合入 `master`（2026-08-26，PR #19），Phase 1a 关闭。** 见下面的「合入记录」
 
 > **这个分支不产出用户可见的变化。** 它唯一的产出是「改坏了会有人告诉你」。评价标准不是写了多少测试，而是**改坏了能不能被抓住**——所以 §1 的覆盖率策略和 §5 的异常规则比用例数量重要。
+
+### ✅ 合入记录（本文是这条事实的唯一定义处）
+
+**008 已于 2026-08-26 合入 `master`，Phase 1a 关闭。** 别处提到「008 是否在主干上」一律链回这一节，不要重述数字。
+
+| 事实 | 值 | 复核命令 |
+|---|---|---|
+| PR | [#19](https://github.com/anzchy/reader3-pro/pull/19)，27 commits / 112 files / +21234 −853 | `gh pr view 19` |
+| 合并 commit | `8a9b3aa`（`Merge pull request #19 from anzchy/008-test-safety-net`） | `git log --oneline -1 master` |
+| 分支领先量 | **0** —— 分支上的东西一件不落全在主干 | `git rev-list --count master..008-test-safety-net` |
+| 合入前门禁 | 本地 tdd-guardian `push` 两条 lane 全绿：unit **654 passed**（15.4s）、packaging wheel smoke **1 passed**（27.0s）；覆盖率门禁 PASS（lines/statements 83.67% ≥ 70%、branches 67.62% ≥ 52%），七条 `criticalPaths` 全 PASS | `/tdd-guardian:gate push` |
+| CI 首次实跑 | `tests.yml` 的 run `32920941852`，`workflow_dispatch` on `master`（sha `8a9b3aa`），**全绿**——「静态检查 ＋ unit lane（含覆盖率门禁）」job success | `gh run view 32920941852` |
+
+> **PR 页面上没有绿灯，这是设计如此，不是坏了。** §7 定的规矩：`tests.yml` 与 `lint.yml` 都只在发版与 `workflow_dispatch` 时触发，**都不设 required check**。日常门禁在本地 tdd-guardian，上表「合入前门禁」那一行就是这次合入的实际凭据。
+>
+> **CI 那一行的道理与 007 完全同构，值得记一笔。** `workflow_dispatch` 只对**默认分支上存在的 workflow** 生效——`tests.yml` 是本分支新建的，合入之前 `master` 上没有它，所以 008 建的这套测试 CI 在合入之前**根本点不动**。run `32920941852` 是它第一次真的能跑，也是 unit lane 与覆盖率门禁第一次在干净环境里被验过。007 合入时 `lint.yml` 踩的是同一个坑，那一节里已经写过一遍。
+>
+> 分支 `008-test-safety-net` 合入后**保留未删**（001–007 同样都还在远端），删不删随后再定。
+
+---
 
 ### 现状实测（2026-08-24 开工当天复测，本节是这三个数字的唯一定义处）
 
