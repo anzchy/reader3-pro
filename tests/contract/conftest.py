@@ -13,9 +13,32 @@ Three things must be replaced, and each one has a reason it cannot be skipped:
    ``DEFAULT_SETTINGS_PATH`` does nothing. The functions themselves are replaced
    in the server's namespace instead. A ``PUT /api/settings`` that escaped this
    would rewrite the developer's ``config/ai_settings.json``.
-3. ``server._call_provider`` and ``server._http_get_json`` — the only two places
-   the process reaches the network. Both are stubbed unconditionally so that no
-   contract test can bill an API key or hang on a DNS timeout.
+3. ``server._call_provider`` and ``server._http_get_json`` — two of the three
+   places ``server.py`` reaches the network. Both are stubbed unconditionally so
+   that no contract test can bill an API key or hang on a DNS timeout.
+
+   The third one is *not* stubbed here: the Ollama branch of ``api_ai_question``
+   goes out through ``server._egress_post_stream`` rather than
+   ``_call_provider``, so a contract case that enabled the ``ollama`` provider
+   and asked for ``?stream=true`` would talk to the real network, and nothing in
+   this file would stop it. What keeps this lane offline is narrower than it
+   looks: ``_seed_settings`` enables ``anthropic``, and every provider path other
+   than Ollama streaming funnels through ``_call_provider``.
+
+   It *is* reachable per-test, and one test uses that:
+   ``test_流式提问是边生成边推送而不是攒够一次性吐`` patches
+   ``server._egress_post_stream`` itself. (This paragraph used to say no
+   ``monkeypatch.setattr(server, ...)`` could reach it, because the branch called
+   ``urllib.request.urlopen`` inline inside the nested ``worker_ollama``. It no
+   longer does.) Any *new* Ollama-streaming case must patch that name too —
+   enabling the provider without patching it is the one way to make this lane
+   dial out.
+
+   ``tests/unit/test_direct_urlopen_call_sites.py`` pins the exact set of direct
+   ``urlopen`` call sites so another one cannot appear unnoticed. Moving these
+   behind ``ai/providers/_http.post_json`` is deferred work that no work item
+   owns yet. Until it lands, read this fixture as "the AI routes return a
+   sentinel", not as "the process cannot reach the network".
 
 The provider stub returns ``FAKE_ANSWER``, a string that appears nowhere else in
 the codebase. Tests assert that *that exact string* comes back in the right
@@ -173,7 +196,20 @@ def _clear_caches() -> None:
 
 @pytest.fixture
 def world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[World]:
-    """The app, rehomed onto a throwaway project root with one book in it."""
+    """The app, rehomed onto a throwaway project root with one book in it.
+
+    The client is entered as a context manager, and that is not a stylistic
+    choice. ``TestClient`` runs the ASGI lifespan only on ``__enter__``; a bare
+    ``TestClient(app=...)`` serves requests perfectly well while never executing
+    ``server._startup_scan_books``. This lane used to be built that way, so the
+    startup hook could have been deleted outright with every contract test still
+    green. Entering the client also runs *shutdown*, so this is a behaviour
+    change for the whole lane, not a formality.
+
+    See ``test_startup_lifespan.py`` for the observation that tells the startup
+    scan apart from lazy ``book_uuid_for_folder`` resolution — this fixture
+    cannot, because it resolves ``BOOK_ID`` itself a line below.
+    """
     project_root = tmp_path / "project"
     books_dir = project_root / "books"
     books_dir.mkdir(parents=True)
@@ -208,20 +244,20 @@ def world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[World]:
     monkeypatch.setattr(server, "_http_get_json", _stub_http_get_json)
 
     _clear_caches()
-    client = TestClient(app=server.app)
-    book_uuid = server.book_uuid_resolver.book_uuid_for_folder(BOOK_ID)
-    try:
-        yield World(
-            client=client,
-            books_dir=books_dir,
-            project_root=project_root,
-            settings_path=settings_path,
-            book_uuid=book_uuid,
-        )
-    finally:
-        # Leaving a tmp_path book in the LRU would let the *next* test read a
-        # book.pkl from a directory that no longer exists.
-        _clear_caches()
+    with TestClient(app=server.app, base_url="http://127.0.0.1") as client:
+        book_uuid = server.book_uuid_resolver.book_uuid_for_folder(BOOK_ID)
+        try:
+            yield World(
+                client=client,
+                books_dir=books_dir,
+                project_root=project_root,
+                settings_path=settings_path,
+                book_uuid=book_uuid,
+            )
+        finally:
+            # Leaving a tmp_path book in the LRU would let the *next* test read a
+            # book.pkl from a directory that no longer exists.
+            _clear_caches()
 
 
 @pytest.fixture

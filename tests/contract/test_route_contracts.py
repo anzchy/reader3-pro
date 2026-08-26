@@ -33,6 +33,9 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from reader3_app.ai.providers.types import ProviderResponse
+from reader3_app.web import server
+
 from conftest import (
     BOOK_AUTHOR,
     BOOK_ID,
@@ -48,6 +51,10 @@ from conftest import (
 MISSING_CONVERSATION_ID = "33333333-3333-4333-8333-333333333333"
 SEEDED_CONVERSATION_ID = "22222222-2222-4222-8222-222222222222"
 SEEDED_MESSAGE_TEXT = "a seeded user turn"
+
+#: The name ``params`` gives the collection it seeds. Named rather than inlined
+#: because the L3 section below reads it back out of ``GET /api/collections``.
+SEEDED_COLLECTION_NAME = "Seeded Shelf"
 
 
 @dataclass(frozen=True)
@@ -82,7 +89,7 @@ def params(world: World) -> dict[str, str]:
     """
     client = world.client
 
-    collection = client.post("/api/collections", json={"name": "Seeded Shelf"})
+    collection = client.post("/api/collections", json={"name": SEEDED_COLLECTION_NAME})
     assert collection.status_code == 201, collection.text
 
     annotation = client.post(
@@ -150,17 +157,24 @@ def run_case(client: TestClient, case: ContractCase, params: dict[str, str]) -> 
     if media_type == "application/json":
         payload = response.json()
         if 200 <= case.expected_status < 300:
-            if isinstance(payload, dict):
-                assert case.expected_keys, (
-                    f"{case} 没写 expected_keys。2xx 的 JSON 对象必须冻结顶层键集，"
-                    f"否则这条用例只断言了「返回了 2xx」——那正是本分支禁止的 wiring-only。"
-                    f"实测键集：{sorted(payload)}"
-                )
-                assert set(payload) == set(case.expected_keys), (
-                    f"{case.method} {path}: 顶层键集变了。\n"
-                    f"  多了: {sorted(set(payload) - set(case.expected_keys))}\n"
-                    f"  少了: {sorted(set(case.expected_keys) - set(payload))}"
-                )
+            assert case.expected_keys, (
+                f"{case} 没写 expected_keys。2xx 的 JSON 响应必须冻结顶层键集，"
+                f"否则这条用例只断言了「返回了 2xx」——那正是本分支禁止的 wiring-only。"
+                f"实测负载：{payload!r}"
+            )
+            # 这句必须在键集比对**之前**，而且不能是 `if isinstance(...)` 的守卫。
+            # 旧写法把整段比对包在 `if isinstance(payload, dict)` 里，于是一个
+            # 改成 `return []` 的 handler 直接从 if 底下溜过去，六组 nominal-JSON
+            # 用例全都还是绿的——「契约被钉住了」的错觉，比没有测试更危险。
+            assert isinstance(payload, dict), (
+                f"{case.method} {path}: 声明了 expected_keys 就必须回一个 JSON 对象，"
+                f"实得 {type(payload).__name__}：{payload!r}"
+            )
+            assert set(payload) == set(case.expected_keys), (
+                f"{case.method} {path}: 顶层键集变了。\n"
+                f"  多了: {sorted(set(payload) - set(case.expected_keys))}\n"
+                f"  少了: {sorted(set(case.expected_keys) - set(payload))}"
+            )
         else:
             assert isinstance(payload, dict) and "detail" in payload, (
                 f"{case.method} {path}: 错误响应必须是 {{'detail': ...}}，实得 {payload!r}"
@@ -621,3 +635,260 @@ SETTINGS_CASES = [
 @pytest.mark.parametrize("case", SETTINGS_CASES, ids=str)
 def test_settings契约(client: TestClient, params: dict[str, str], case: ContractCase) -> None:
     run_case(client, case, params)
+
+
+# =========================================================================== L3
+# 内容断言（WI-13）。
+#
+# 上面六张表冻结的是**信封**：状态码、媒体类型、顶层键集。信封是必要的，但它对
+# 「形状对、内容空」完全无感——把 handler 改成 `return {"collections": []}`、
+# 恒返回 0 命中、恒 `success: false`，六张表照样全绿。那种测试给人「契约被钉住了」
+# 的错觉，比没有测试更危险。
+#
+# 下面这一节钉的是**内容**：seed 出来的东西必须真的能从响应里读回来。每条用例都
+# 写明了「如果这条不在，哪一种变异会溜过去」。
+#
+# 这一节不出网。连通性那条打的是 `server._call_provider`——`api_test_provider`
+# 通往网络的唯一一条路（WI-30 之后 `server.py` 里另外两个出网点是
+# `_egress_get_json` / `_egress_post_stream`，都不在这条路由的调用链上）。
+# 不要 patch `urllib.request.urlopen`：`src/` 里已经一次直接调用都没有了，
+# 打在那儿等于没打。
+
+
+def test_L3_collections列表里必须真的有刚建的那个集合(
+    client: TestClient, params: dict[str, str]
+) -> None:
+    """finding tests/11。
+
+    表上那条 `GET /api/collections -> 200` 只冻结了 `{"collections"}` 这个键集，
+    所以一个恒 `return {"collections": []}` 的 handler 是绿的——而列表路由最常见的
+    坏法恰恰就是「存住了但列不出来」。
+    """
+    body = client.get("/api/collections").json()
+    collections = body["collections"]
+
+    assert isinstance(collections, list) and collections, (
+        f"GET /api/collections 回了空列表，但 params 刚建过一个集合；实得 {body!r}"
+    )
+
+    by_id = {str(c.get("id")): c for c in collections}
+    seeded_id = params["collection_id"]
+    assert seeded_id in by_id, f"刚建的集合 {seeded_id} 不在列表里；实得 id={sorted(by_id)}"
+    assert by_id[seeded_id]["name"] == SEEDED_COLLECTION_NAME, (
+        f"集合 {seeded_id} 的 name 变了：期望 {SEEDED_COLLECTION_NAME!r}，"
+        f"实得 {by_id[seeded_id]['name']!r}"
+    )
+
+
+def test_L3_全库搜索必须真的命中UNIQUE_TERM(client: TestClient, params: dict[str, str]) -> None:
+    """finding tests/12。
+
+    `UNIQUE_TERM` 这个常量存在的全部意义就是「命中它 = 章节正文确实被检索到了」
+    （它只出现在 chapter 0，别处没有）。表上那条用例只断了十三个顶层键都在，
+    于是一个恒返回 0 命中的 handler 照样绿——那正好把这个常量的意义抹平。
+    """
+    body = client.get(f"/api/search/library?q={UNIQUE_TERM}").json()
+
+    assert body["total_matches"] >= 1, (
+        f"搜 {UNIQUE_TERM!r} 一条都没命中，但它就在 chapter 0 的正文里；"
+        f"total_matches={body['total_matches']} status_message={body['status_message']!r}"
+    )
+
+    results = body["results"]
+    assert results, f"total_matches={body['total_matches']} 但 results 是空的：信封对、内容空"
+
+    hits = [r for r in results if r.get("book_id") == BOOK_ID]
+    assert hits, (
+        f"命中里没有 seed 的那本书 {BOOK_ID}；实得 book_id="
+        f"{sorted({str(r.get('book_id')) for r in results})}"
+    )
+    assert any(UNIQUE_TERM.lower() in str(h.get("match_text", "")).lower() for h in hits), (
+        f"命中项的 match_text 里没有 {UNIQUE_TERM!r}；实得 "
+        f"{[h.get('match_text') for h in hits[:5]]!r}"
+    )
+
+    assert BOOK_ID in body["book_order"], f"book_order 里没有 {BOOK_ID}：{body['book_order']!r}"
+    assert body["grouped_by_book"].get(BOOK_ID), (
+        f"grouped_by_book[{BOOK_ID!r}] 是空的，但 results 里有它的命中"
+    )
+
+
+def test_L3_rag检索必须返回真实段落(client: TestClient, params: dict[str, str]) -> None:
+    """finding tests/13。
+
+    这条是真端到端，没有打桩：seed 的书**没有**建语义索引，`retrieve_passages`
+    因此走它自己的关键词回落，直接读 tmp_path 里那个 `book.pkl`。全程不加载
+    `paraphrase-multilingual-MiniLM-L12-v2`，也不碰 chroma。
+
+    表上那条只断了 `{"passages", "retrieval_time_ms"}` 两个键，所以一个恒
+    `return {"passages": [], "retrieval_time_ms": 0}` 的 handler 是绿的。
+    """
+    resp = client.post(
+        "/api/ai/rag/retrieve",
+        json={"book_uuid": params["book_uuid"], "query": UNIQUE_TERM},
+    )
+    assert resp.status_code == 200, resp.text
+    passages = resp.json()["passages"]
+
+    assert passages, f"检索 {UNIQUE_TERM!r} 回了 0 段，但它就在 chapter 0 的正文里"
+
+    matching = [p for p in passages if UNIQUE_TERM in str(p.get("text", ""))]
+    assert matching, (
+        f"没有一段正文含 {UNIQUE_TERM!r}——段落不是从 seed 那本书里来的；"
+        f"实得 {[str(p.get('text', ''))[:80] for p in passages]!r}"
+    )
+    hit = matching[0]
+    assert hit["chapter_order"] == 0, f"命中段落的 chapter_order 期望 0，实得 {hit['chapter_order']!r}"
+    assert hit["chapter_title"] == CHAPTER_0_TITLE, (
+        f"命中段落的 chapter_title 期望 {CHAPTER_0_TITLE!r}，实得 {hit['chapter_title']!r}"
+    )
+
+
+#: 五家 provider。`/api/settings/providers` 是设置页唯一的数据来源，列表空了
+#: 前端就一个都选不出来——而顶层键集 `{"providers"}` 对此毫无感觉。
+EXPECTED_PROVIDER_NAMES = ("anthropic", "openai", "gemini", "ollama", "openrouter")
+
+
+def test_L3_provider列表必须列全五家(client: TestClient, params: dict[str, str]) -> None:
+    """finding tests/14（前半）。"""
+    body = client.get("/api/settings/providers").json()
+    providers = body["providers"]
+
+    assert isinstance(providers, list) and providers, f"provider 列表是空的：{body!r}"
+
+    names = [str(p.get("name")) for p in providers]
+    missing = sorted(set(EXPECTED_PROVIDER_NAMES) - set(names))
+    assert not missing, f"provider 列表少了 {missing}；实得 {names}"
+
+
+def test_L3_连通性自测在打桩成功时必须报success为True(
+    client: TestClient, params: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """finding tests/14（后半）。
+
+    表上那条只断了 `{"success", "provider", "message", "details"}` 四个键，于是一个
+    恒 `success: false` 的 handler 是绿的——而这条路由的**全部**产出就是那个布尔值。
+
+    桩打在 `server._call_provider`：`api_test_provider` 通往网络的唯一一条路。
+    桩里那个 model 名字只出现在这个文件里，所以在 `details.model` 里见到它，
+    是「provider 的回包确实被原样传出来了」的证据，而不是「handler 编了个 True」。
+    """
+    probe_model = "connectivity-probe-model-v1"
+    calls: list[dict[str, Any]] = []
+
+    def _stub_call_provider(provider_name: str, **kwargs: Any) -> ProviderResponse:
+        calls.append({"provider": provider_name, **kwargs})
+        return ProviderResponse(text="OK", model=probe_model, finish_reason="stop", token_count=2)
+
+    monkeypatch.setattr(server, "_call_provider", _stub_call_provider)
+
+    resp = client.post("/api/settings/providers/anthropic/test", json={})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+
+    assert [c["provider"] for c in calls] == ["anthropic"], (
+        f"期望恰好打一次 anthropic，实得 {[c['provider'] for c in calls]}"
+    )
+    assert body["success"] is True, (
+        f"provider 回了正常响应，连通性自测却报 success={body['success']!r}；message={body['message']!r}"
+    )
+    assert body["provider"] == "anthropic"
+    assert body["details"]["model"] == probe_model, (
+        f"details.model 期望是桩返回的 {probe_model!r}，实得 {body['details'].get('model')!r}"
+    )
+
+
+# ------------------------------------------------------------ 提问长度上限（tests/16）
+
+#: `api_ai_question` 的守卫写的是 `len(question) > 1000`，`question` 是 `strip()`
+#: 之后的字符串。`len()` 数的是 **code point**，不是 byte。
+QUESTION_MAX_CHARS = 1000
+
+#: 恰好 1000 个 code point 的 ASCII 提问，且含 `UNIQUE_TERM`（可读性用，检索已打桩）。
+QUESTION_AT_LIMIT = UNIQUE_TERM + "a" * (QUESTION_MAX_CHARS - len(UNIQUE_TERM))
+QUESTION_OVER_LIMIT = QUESTION_AT_LIMIT + "a"
+
+#: 1000 个汉字 = 1000 code point = 3000 byte（UTF-8）。守卫如果改成数 byte
+#: （`len(question.encode())`），纯 ASCII 的两条用例**一条都不会红**，只有这条会。
+QUESTION_AT_LIMIT_CJK = "书" * QUESTION_MAX_CHARS
+QUESTION_OVER_LIMIT_CJK = "书" * (QUESTION_MAX_CHARS + 1)
+
+
+@pytest.fixture
+def stub_retrieval(monkeypatch: pytest.MonkeyPatch) -> None:
+    """让检索恒有结果，好让长度守卫成为响应里唯一的变量。
+
+    `retrieve_passages` 的关键词回落是拿**整条 query** 去 `text.find()` 的，所以任何
+    1000 字的提问都必然落空 → `RuntimeError` → 400。不打桩的话，「1000 字应当 200」
+    这条用例会因为一个和长度无关的理由变红，于是它再也证明不了守卫的边界在哪。
+    """
+
+    def _stub(book_folder: str, **kwargs: Any) -> tuple[list[dict[str, Any]], int]:
+        return ([{
+            "chapter_id": "0",
+            "chapter_order": 0,
+            "chapter_title": CHAPTER_0_TITLE,
+            "text": f"stubbed passage mentioning {UNIQUE_TERM}",
+            "similarity": 1.0,
+        }], 1)
+
+    monkeypatch.setattr(server, "retrieve_passages", _stub)
+
+
+@pytest.mark.parametrize(
+    "question,label",
+    [
+        (QUESTION_AT_LIMIT, "1000 个 ASCII 字符"),
+        (QUESTION_AT_LIMIT_CJK, "1000 个汉字（3000 byte）"),
+    ],
+    ids=["ascii-1000", "cjk-1000"],
+)
+def test_L3_提问恰好到上限必须放行(
+    client: TestClient,
+    params: dict[str, str],
+    stub_retrieval: None,
+    question: str,
+    label: str,
+) -> None:
+    """finding tests/16。上限是闭区间：`> 1000` 才拒。"""
+    assert len(question) == QUESTION_MAX_CHARS, "用例自检：长度必须正好卡在上限上"
+
+    resp = client.post(
+        f"/api/ai/question/{params['book_uuid']}",
+        json={"question": question, "provider": "anthropic"},
+    )
+    assert resp.status_code == 200, f"{label} 应当放行，实得 {resp.status_code}：{resp.text[:400]}"
+
+
+@pytest.mark.parametrize(
+    "question,label",
+    [
+        (QUESTION_OVER_LIMIT, "1001 个 ASCII 字符"),
+        (QUESTION_OVER_LIMIT_CJK, "1001 个汉字"),
+    ],
+    ids=["ascii-1001", "cjk-1001"],
+)
+def test_L3_提问超过上限必须拒且说明是长度问题(
+    client: TestClient,
+    params: dict[str, str],
+    stub_retrieval: None,
+    question: str,
+    label: str,
+) -> None:
+    """finding tests/16。
+
+    删掉整条 `if len(question) > 1000` 守卫，改这条之前的套件是全绿的——也就是说
+    「提问长度有上限」这件事从来没有被任何一条断言拿住过。400 之外还要断消息里
+    提到了那个上限：否则一个把超长提问按「空提问」拒掉的实现也能骗过状态码。
+    """
+    assert len(question) == QUESTION_MAX_CHARS + 1, "用例自检：长度必须正好越过上限一位"
+
+    resp = client.post(
+        f"/api/ai/question/{params['book_uuid']}",
+        json={"question": question, "provider": "anthropic"},
+    )
+    assert resp.status_code == 400, f"{label} 应当被拒，实得 {resp.status_code}：{resp.text[:400]}"
+
+    detail = str(resp.json()["detail"])
+    assert str(QUESTION_MAX_CHARS) in detail, f"错误消息没提到上限 {QUESTION_MAX_CHARS}：{detail!r}"
+    assert "long" in detail.lower(), f"错误消息没说明这是长度问题：{detail!r}"

@@ -13,6 +13,7 @@ for character.
 from __future__ import annotations
 
 import json
+import threading
 from typing import Any
 
 import pytest
@@ -227,6 +228,34 @@ def test_只有角色和id都合法的消息才会落盘(world: World) -> None:
     )
     thread = client.get(f"/api/ai/conversations/{world.book_uuid}/{CONV_B}").json()
     assert [m["content"] for m in thread["messages"]] == ["kept"]
+
+    # 上面那句是**读回来**断的，而读路径 `_parse_thread` → `_parse_message` 自己
+    # 也会过滤一遍。也就是说：一个把三条全写进磁盘、只靠读时过滤来遮丑的实现，
+    # 上面这句照样绿。所以再断一次磁盘上的**字节**。
+    #
+    # 为什么这不是吹毛求疵：落盘的是用户的对话文件，它会被备份、被同步、被人直接
+    # 打开看。「读的时候看不见」不等于「没写进去」——ADR-0001 把文件系统当数据库，
+    # 磁盘上的形状就是数据本身，不是缓存。
+    on_disk = _conversation_bytes(world, CONV_B)
+    assert "dropped by role" not in on_disk, "role 非法的消息被写进了磁盘，只是读的时候被藏起来了"
+    assert "dropped by empty id" not in on_disk, "id 为空的消息被写进了磁盘"
+    assert "kept" in on_disk, "前置条件：合法消息确实落盘了（否则这条测试是靠什么都没写而变绿）"
+
+
+def _conversation_bytes(world: World, conversation_id: str) -> str:
+    """把这次会话在磁盘上的原始文本取出来——不经过任何解析或过滤。
+
+    会话可能落在 per-book 或 project-root 两处（见 ai/conversations.py），
+    所以按 id 在整棵临时目录里找，找不到就让测试失败而不是静默返回空串——
+    空串会让上面每一条 `not in` 都平凡成立。
+    """
+    hits = [
+        p
+        for p in world.project_root.rglob("*.json")
+        if conversation_id in p.read_text(encoding="utf-8", errors="replace")
+    ]
+    assert hits, f"磁盘上找不到会话 {conversation_id} 的任何文件"
+    return "\n".join(p.read_text(encoding="utf-8", errors="replace") for p in hits)
 
 
 # --------------------------------------------------------------------- AI answering
@@ -512,6 +541,44 @@ def test_导入设置不会带进api_key也不会覆盖已有的(world: World) -
     assert on_disk["providers"]["openai"]["model_name"] == "imported-model"
 
 
+def test_导入设置也不会给一个原本没有key的provider种上key(world: World) -> None:
+    """上一条只守住「不覆盖」，这一条守住「不写入」——两者会被不同的改动打破。
+
+    只有「不覆盖」时，一个「缺字段就从 patch 里补」的合并实现（听起来完全合理，
+    也是 `base.setdefault(k, v)` 的天然形状）能全绿通过：已有 key 的 provider 保住了，
+    而一个干净的 provider 会被导入文件里的 key 直接种上。
+
+    为什么这条算 High：导入的 JSON 通常来自别人分享的配置或某次备份。让它把一把
+    陌生的 key 写进本机配置，等于把「导入设置」变成「替我配一个我没同意的出口」——
+    ADR-0006 把 provider 出口收成单一闸门，正是为了不出现这种事。
+    """
+    client = world.client
+    before = json.loads(world.settings_path.read_text(encoding="utf-8"))
+    assert not (before["providers"].get("gemini") or {}).get("api_key"), (
+        "前置条件：gemini 原本没有 key"
+    )
+
+    imported = client.post(
+        "/api/settings/import",
+        json={
+            "providers": {
+                "gemini": {"api_key": "sk-SMUGGLED", "model_name": "imported-gemini"}
+            }
+        },
+    )
+    assert imported.status_code == 200, imported.text
+
+    raw = world.settings_path.read_text(encoding="utf-8")
+    assert "sk-SMUGGLED" not in raw, (
+        "导入把一把 key 写进了本机配置文件——原本这个 provider 是干净的"
+    )
+    on_disk = json.loads(raw)
+    assert not (on_disk["providers"]["gemini"] or {}).get("api_key")
+    assert on_disk["providers"]["gemini"]["model_name"] == "imported-gemini", (
+        "非密字段仍然要正常导入，否则这条测试是靠「导入整个坏掉」而变绿的"
+    )
+
+
 def test_设置改动会落盘并被下一次读取看见(world: World) -> None:
     client = world.client
     assert client.get("/api/settings").json()["default_provider"] == "anthropic"
@@ -542,7 +609,17 @@ def test_建索引的返回体原样透传给前端(world: World, monkeypatch: p
 
     class _FakeIndex:
         def __init__(self, book_id: str, *, books_dir: str) -> None:
+            # 记下来并当场断言：这个 stub 唯一能证明的事，就是路由把**隔离过的**
+            # books_dir 传了下去。只接不看的话，一个改用 BookVectorIndex 默认路径
+            # （= 真实 books/）的实现照样全绿——而那正是「索引跑到真书库上」的形状。
+            # 011 要把这三处 BookVectorIndex(...) 搬进 routers/，搬家时最容易丢的
+            # 就是这个关键字实参。
+            assert books_dir == str(world.books_dir), (
+                f"路由把 books_dir={books_dir!r} 传给了 BookVectorIndex，"
+                f"期望隔离目录 {str(world.books_dir)!r}；用默认路径意味着索引会写进真实 books/"
+            )
             self.book_id = book_id
+            self.books_dir = books_dir
 
         def index_book(self, *, force_reindex: bool = False) -> dict[str, Any]:
             return {**sentinel, "forced": force_reindex}
@@ -561,8 +638,15 @@ def test_没建索引的书状态是not_indexed(world: World) -> None:
     assert body["chunk_count"] == 0
 
 
-def test_索引元数据被状态接口原样读出(world: World) -> None:
-    """状态接口读的是 `chroma_db/index_meta.json`，不需要 chromadb 本体。"""
+def test_索引元数据被状态接口原样读出(world: World, monkeypatch: pytest.MonkeyPatch) -> None:
+    """状态接口读的是 `chroma_db/index_meta.json`，不需要 chromadb 本体。
+
+    夹具用的是**当前格式**的 meta（带 `space`，`model_name` 与生效模型一致）。
+    WI-19 之后 `status()` 不再无条件原样透传：它先判这份 meta 描述的索引还能不能查
+    （见 `vector_search._stale_reason`），失效的会被降级。合格的索引照旧逐字透传——
+    这条用例守的是「接口由文件系统支撑」，失效那一支归下面那条用例。
+    """
+    monkeypatch.setenv("READER3_EMBED_MODEL", "written-by-the-test")
     meta_dir = world.book_dir / "chroma_db"
     meta_dir.mkdir()
     meta = {
@@ -570,8 +654,192 @@ def test_索引元数据被状态接口原样读出(world: World) -> None:
         "status": "indexed",
         "chunk_count": 7,
         "model_name": "written-by-the-test",
+        "space": "cosine",
         "indexed_at": "2026-01-01T00:00:00+00:00",
     }
     (meta_dir / "index_meta.json").write_text(json.dumps(meta), encoding="utf-8")
 
     assert world.client.get(f"/api/index/{BOOK_ID}/status").json() == meta
+
+
+def test_旧格式的索引元数据在HTTP边界上被降级为未索引(world: World, monkeypatch: pytest.MonkeyPatch) -> None:
+    """存量索引（meta 里没有 `space` 键）不许再让界面显示绿色的 "Indexed"。
+
+    `library.js` 拿这个响应渲染徽标和 "N chunks"，而同一本书上 `semantic_search()`
+    每一次都会抛 `not indexed`。降级路径必须在**它自己所在的这一层**留下断言：
+    单元测试证不了路由没把 `status()` 的降级再改写回去。
+    """
+    monkeypatch.setenv("READER3_EMBED_MODEL", "written-by-the-test")
+    meta_dir = world.book_dir / "chroma_db"
+    meta_dir.mkdir()
+    stale_meta = {
+        "book_id": BOOK_ID,
+        "status": "indexed",
+        "chunk_count": 7,
+        "model_name": "written-by-the-test",
+        "indexed_at": "2026-01-01T00:00:00+00:00",
+    }
+    (meta_dir / "index_meta.json").write_text(json.dumps(stale_meta), encoding="utf-8")
+
+    body = world.client.get(f"/api/index/{BOOK_ID}/status").json()
+
+    assert body["status"] == "not_indexed"
+    assert body["chunk_count"] == 0
+    assert body["stale"] is True
+    assert body["stale_reason"] == "space"
+    assert body["indexed_chunk_count"] == 7
+
+
+def _drive_sse(app: Any, path: str, payload: dict[str, Any], on_event: Any) -> list[tuple[str, Any]]:
+    """手搓 ASGI 驱动一次 POST，**每落一段 body 就回调**，不等流结束。
+
+    这里必须绕开 TestClient。starlette 的 `_TestClientTransport.handle_request`
+    以 `raw_kwargs = {"stream": io.BytesIO()}` 起手，把整个响应体收进内存、等
+    `response_complete` 之后才把 `httpx.Response` 交出来——所以 `client.stream(...)`
+    加 `iter_text()` 迭代的是一段**已经落完**的字节流。拿它测「陆续」，测到的是
+    TestClient 的实现，不是这个应用的：无论服务端是边推边发还是攒够一次性吐，
+    客户端那边看见的先后完全一样。
+    """
+    import asyncio
+
+    raw = json.dumps(payload).encode("utf-8")
+    events: list[tuple[str, Any]] = []
+    pending = {"buf": "", "sent": False}
+    finished = asyncio.Event()
+
+    async def receive() -> dict[str, Any]:
+        # 请求体只交一次。之后**必须挂住**：断连探测（`Request.is_disconnected`）
+        # 会反复 await 这个协程，每次都塞回一条 http.request 的话，它就永远探不到
+        # 头，SSE 那条生成器也就永远收不到收尾信号。挂到响应真的结束为止，再报
+        # 断连——starlette 自己的 TestClient 也是这个形状。
+        if not pending["sent"]:
+            pending["sent"] = True
+            return {"type": "http.request", "body": raw, "more_body": False}
+        await finished.wait()
+        return {"type": "http.disconnect"}
+
+    async def send(message: dict[str, Any]) -> None:
+        if message["type"] == "http.response.start":
+            events.append(("__status__", message["status"]))
+            return
+        if message["type"] != "http.response.body":
+            return
+        if not message.get("more_body", False):
+            finished.set()
+        pending["buf"] += message.get("body", b"").decode("utf-8")
+        while "\n\n" in pending["buf"]:
+            block, pending["buf"] = pending["buf"].split("\n\n", 1)
+            for name, data in _parse_sse(block + "\n\n"):
+                events.append((name, data))
+                on_event(name, data)
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0", "spec_version": "2.1"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": path.split("?")[0],
+        "raw_path": path.split("?")[0].encode(),
+        "query_string": (path.split("?", 1)[1] if "?" in path else "").encode(),
+        "root_path": "",
+        "headers": [
+            (b"host", b"127.0.0.1"),
+            (b"content-type", b"application/json"),
+            (b"content-length", str(len(raw)).encode()),
+        ],
+        "client": ("127.0.0.1", 12345),
+        "server": ("127.0.0.1", 8123),
+    }
+    asyncio.run(app(scope, receive, send))
+    return events
+
+
+def test_流式提问是边生成边推送而不是攒够一次性吐(world: World, monkeypatch: pytest.MonkeyPatch) -> None:
+    """上面那条把整段 body 抽干（`resp.read()`）之后才解析，所以它证明的是
+    「事件的**顺序**对」，不是「事件是**陆续**到的」——一个把三段 delta 全攒在
+    内存里、最后一次性冲出来的实现，在那条用例下逐字全绿。而「攒够再吐」正是
+    `?stream=true` 唯一要排除的实现。
+
+    这里用握手把「陆续」变成可判定的事实，而不是掐表：假 provider 交出第 i 行的
+    前提，是第 i-1 个 chunk **已经被送出去**。真流式下这个握手每次都成；攒批实现
+    下第 0 个 chunk 在流结束前根本不会离开服务端，握手超时 → 断言红。超时只是兜底
+    （否则是死锁而不是失败），不参与判定。
+
+    走 ollama 分支，因为 `_call_provider` 那条路只有单块 delta，压根表达不了「多段」。
+    conftest 顶部说这条分支 `monkeypatch.setattr(server, ...)` 够不着——那是
+    `urllib.request.urlopen` 内联时期的事，现在它走模块级的 `_egress_post_stream`。
+    """
+    from reader3_app.web import server
+
+    settings = json.loads(world.settings_path.read_text(encoding="utf-8"))
+    settings["providers"]["ollama"] = {
+        "enabled": True,
+        "model_name": "fixture-llama",
+        "base_url": "http://127.0.0.1:1",
+        "timeout_s": 5,
+    }
+    world.settings_path.write_text(json.dumps(settings), encoding="utf-8")
+
+    deltas = ["第一段", "第二段", "第三段"]
+    # gate[i]：第 i 个 chunk 已经出门。由消费侧置位，生产侧等待。
+    gate = [threading.Event() for _ in deltas]
+    handshake: list[bool] = []
+
+    class _FakeOllamaStream:
+        """逐行吐 NDJSON，但每行都要等上一行的 chunk 真的发出去了。"""
+
+        def __init__(self) -> None:
+            self._i = 0
+
+        def __enter__(self) -> "_FakeOllamaStream":
+            return self
+
+        def __exit__(self, *exc: object) -> bool:
+            return False
+
+        def readline(self) -> bytes:
+            i = self._i
+            if i >= len(deltas):
+                return b""
+            if i > 0:
+                handshake.append(gate[i - 1].wait(timeout=5.0))
+            self._i += 1
+            obj: dict[str, Any] = {"model": "fixture-llama", "message": {"content": deltas[i]}}
+            if i == len(deltas) - 1:
+                obj["done"] = True
+                obj["done_reason"] = "stop"
+            return (json.dumps(obj) + "\n").encode("utf-8")
+
+    def _fake_post_stream(url: str, **kwargs: Any) -> _FakeOllamaStream:
+        assert url.endswith("/api/chat"), f"ollama 流式该打 /api/chat，实际是 {url}"
+        return _FakeOllamaStream()
+
+    monkeypatch.setattr(server, "_egress_post_stream", _fake_post_stream)
+
+    got: list[str] = []
+
+    def _on_event(name: str, data: Any) -> None:
+        if name != "chunk":
+            return
+        idx = len(got)
+        got.append(str(data["delta"]))
+        if idx < len(gate):
+            gate[idx].set()
+
+    events = _drive_sse(
+        world.client.app,
+        f"/api/ai/question/{world.book_uuid}?stream=true",
+        {"question": UNIQUE_TERM, "provider": "ollama"},
+        _on_event,
+    )
+
+    assert events[0] == ("__status__", 200)
+    assert [n for n, _ in events[1:]] == ["meta", "chunk", "chunk", "chunk", "done"]
+    assert got == deltas, "provider 交出的每一段都要原样出现在流里，顺序不变"
+    # 两次握手（第 1、2 行各一次）都得成功。任何一个 False 都意味着：provider 还在
+    # 往下写的时候，前一个 chunk 一个字节都还没发出去——那就是攒批。
+    assert handshake == [True, True], (
+        f"握手记录 {handshake}：provider 交出下一行时，上一个 chunk 还没发出去，"
+        "说明 SSE 是攒够了一次性吐的，不是边生成边推的"
+    )

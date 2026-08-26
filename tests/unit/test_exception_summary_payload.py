@@ -25,6 +25,13 @@ def _ai_records(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
     return [r for r in caplog.records if r.name == "reader3.ai"]
 
 
+@pytest.fixture(autouse=True)
+def _work_in_tmp(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Nothing here writes files, but a relative path that appears later must not
+    be able to resolve into the repository -- least of all into ``books/``."""
+    monkeypatch.chdir(tmp_path)
+
+
 def test_prose_reply_falls_back_to_text_and_leaves_a_trace(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -82,10 +89,22 @@ def test_json_array_reply_falls_back_and_says_why(
     )
 
 
-def test_empty_reply_returns_empty_fields() -> None:
-    """L2: an empty reply is not an error and must not log or raise."""
-    assert server._parse_summary_payload("   ", summary_type="full") == {
-        "overview": "",
-        "highlights": [],
-        "background": "",
-    }
+def test_empty_reply_returns_empty_fields(caplog: pytest.LogCaptureFixture) -> None:
+    """L2: an empty reply is not an error and must not log or raise.
+
+    "must not log" is asserted, not just asserted-in-prose. Every other case in
+    this module reads ``caplog``, so leaving this one unchecked reads like a
+    deliberate exemption -- and it hides the change that matters here: an empty
+    reply is the *ordinary* outcome of a provider that returned nothing, so a
+    warning on this path fires on a loop and buries the real degradations
+    (``not JSON``, ``not an object``) that the rest of this module pins down.
+    """
+    caplog.set_level(logging.DEBUG, logger="reader3.ai")
+
+    out = server._parse_summary_payload("   ", summary_type="full")
+
+    assert out == {"overview": "", "highlights": [], "background": ""}
+    assert _ai_records(caplog) == [], (
+        "the empty-reply path is not a degradation and must leave the ai log alone: "
+        f"{[(r.levelname, r.getMessage()) for r in _ai_records(caplog)]}"
+    )

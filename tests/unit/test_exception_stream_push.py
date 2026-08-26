@@ -25,6 +25,12 @@ import pytest
 from reader3_app.web import server
 
 
+@pytest.fixture(autouse=True)
+def _work_in_tmp(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """This module is pure in-memory; the chdir keeps it that way if it stops being."""
+    monkeypatch.chdir(tmp_path)
+
+
 def test_event_reaches_the_queue() -> None:
     """L2: the ordinary path still delivers, and says it delivered."""
 
@@ -42,17 +48,32 @@ def test_event_reaches_the_queue() -> None:
 def test_dropped_chunk_is_reported_not_swallowed(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """L4: a full queue means the user's answer lost a piece -- that must be logged."""
+    """L4: a full queue means the user's answer lost a piece -- that must be logged.
+
+    Backpressure here has a direction, and the direction is the whole guarantee:
+    the event that does not fit is the *new* one. Draining the queue afterwards
+    is what states that. Reporting ``False`` while quietly evicting ``kept`` to
+    make room for ``lost`` would also "report the drop" -- and would silently
+    delete a piece of the answer the user had already been handed.
+    """
     caplog.set_level(logging.DEBUG, logger="reader3.ai")
 
-    async def scenario() -> bool:
+    async def scenario() -> tuple[bool, list[Dict[str, Any]]]:
         q: asyncio.Queue = asyncio.Queue(maxsize=1)
         server._push_event(q, {"type": "chunk", "delta": "kept"})
-        return server._push_event(q, {"type": "chunk", "delta": "lost"})
+        delivered = server._push_event(q, {"type": "chunk", "delta": "lost"})
+        drained: list[Dict[str, Any]] = []
+        while not q.empty():
+            drained.append(q.get_nowait())
+        return delivered, drained
 
-    delivered = asyncio.run(scenario())
+    delivered, drained = asyncio.run(scenario())
 
     assert delivered is False
+    assert drained == [{"type": "chunk", "delta": "kept"}], (
+        "the accepted part of the answer did not survive backpressure: "
+        f"{drained}"
+    )
     warnings = [
         r.getMessage()
         for r in caplog.records

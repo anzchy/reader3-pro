@@ -27,7 +27,24 @@ from uuid import UUID
 
 import pytest
 
+from reader3_app.ai import books as books_module
 from reader3_app.ai.books import BookUuidResolver, ensure_book_uuid
+
+
+#: Pre-seeded so the scan case has an identity it did not have to mint, and can
+#: therefore say which uuid it expects instead of only "some uuid".
+HEALTHY_UUID = "9f6a1e2c-0000-4000-8000-0000000000aa"
+
+#: Written over the healthy book *after* the scan. Any answer of this value is a
+#: re-read from disk; any answer of HEALTHY_UUID came out of the scan's cache.
+REWRITTEN_UUID = "9f6a1e2c-0000-4000-8000-0000000000bb"
+
+
+@pytest.fixture(autouse=True)
+def _work_in_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``books_dir`` is already under ``tmp_path``; this fences the relative
+    paths -- a bare ``books/`` default would otherwise resolve into the repo."""
+    monkeypatch.chdir(tmp_path)
 
 
 def _write_meta(books_dir: Path, folder: str, raw: str) -> Path:
@@ -36,6 +53,16 @@ def _write_meta(books_dir: Path, folder: str, raw: str) -> Path:
     p = d / "ai_meta.json"
     p.write_text(raw, encoding="utf-8")
     return p
+
+
+def _crash_midway(obj, fp, **kwargs):
+    """A ``json.dump`` that gets a plausible prefix out and then dies.
+
+    The prefix matters: a dump that raises before writing anything cannot tell a
+    truncating writer apart from an atomic one.
+    """
+    fp.write('{\n  "book_uuid": "9f6a1e2c-000')
+    raise RuntimeError("simulated: disk full")
 
 
 def test_missing_meta_gets_a_fresh_uuid_written_atomically(books_dir: Path) -> None:
@@ -47,6 +74,55 @@ def test_missing_meta_gets_a_fresh_uuid_written_atomically(books_dir: Path) -> N
     written = json.loads((books_dir / "dracula_data" / "ai_meta.json").read_text("utf-8"))
     assert written["book_uuid"] == got == str(UUID(got))
     assert not (books_dir / "dracula_data" / "ai_meta.json.tmp").exists()
+
+
+def test_a_crash_while_minting_leaves_no_ai_meta_at_all(
+    books_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """L4: atomicity stated as "what a crash leaves behind", not as "no .tmp".
+
+    "no leftover ai_meta.json.tmp" is a claim about tidiness, and a writer that
+    is not atomic at all satisfies it perfectly: a plain ``open(path, "w")`` plus
+    ``json.dump`` never creates a temporary file either. What separates the two
+    is a crash *during* the write. The truncating writer leaves a partial
+    ai_meta.json on disk -- and a partial ai_meta.json is precisely the
+    unreadable state every other case in this module refuses to mint over, so
+    the non-atomic writer manufactures the fault the module exists to survive.
+    """
+    d = books_dir / "dracula_data"
+    d.mkdir()
+    monkeypatch.setattr(books_module.json, "dump", _crash_midway)
+
+    with pytest.raises(RuntimeError, match="simulated"):
+        ensure_book_uuid(str(books_dir), "dracula_data")
+
+    assert sorted(os.listdir(d)) == [], (
+        "a crashed mint must leave the book folder exactly as it found it, but it left: "
+        f"{sorted(os.listdir(d))}"
+    )
+
+
+def test_a_crash_while_adding_a_uuid_leaves_the_old_bytes_intact(
+    books_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """L4: the other half of the same guarantee -- a file that already exists.
+
+    Adding a uuid to metadata that has none is a read-modify-write over a file
+    holding keys nobody else can reproduce. If the write is not atomic, a crash
+    here does not lose a uuid the book never had; it loses whatever else the file
+    was carrying, and replaces it with bytes that no longer parse.
+    """
+    p = _write_meta(books_dir, "dracula_data", json.dumps({"note": "keep me"}))
+    before = p.read_bytes()
+    monkeypatch.setattr(books_module.json, "dump", _crash_midway)
+
+    with pytest.raises(RuntimeError, match="simulated"):
+        ensure_book_uuid(str(books_dir), "dracula_data")
+
+    assert p.read_bytes() == before, "the existing metadata was truncated in place"
+    assert sorted(os.listdir(p.parent)) == ["ai_meta.json"], (
+        f"the failed write left a temporary file behind: {sorted(os.listdir(p.parent))}"
+    )
 
 
 def test_existing_uuid_is_returned_and_the_file_is_left_alone(books_dir: Path) -> None:
@@ -128,15 +204,26 @@ def test_scan_skips_a_broken_book_and_says_which(
     going -- and only with the folder named in a warning.
     """
     caplog.set_level(logging.DEBUG, logger="reader3.ai")
-    (books_dir / "healthy_data").mkdir()
+    _write_meta(books_dir, "healthy_data", json.dumps({"book_uuid": HEALTHY_UUID}))
     broken = _write_meta(books_dir, "broken_data", '{"book_uuid": "9f6a1e2c-000')
     before = broken.read_bytes()
 
     resolver = BookUuidResolver(str(books_dir))
     resolver.scan()
 
-    healthy_uuid = resolver.book_uuid_for_folder("healthy_data")
-    assert resolver.folder_for_book_uuid(healthy_uuid) == "healthy_data"
+    # `book_uuid_for_folder` resolves lazily on a miss, so asking it straight
+    # after `scan()` cannot tell "the scan resolved the healthy book" from "the
+    # scan skipped every book and the lazy read quietly covered for it" -- which
+    # is exactly the regression this case has to catch, and the one that turns
+    # startup resolution into a per-request disk read. Rewriting the file with a
+    # different uuid first separates the two: only a cache the scan itself filled
+    # can still answer HEALTHY_UUID.
+    _write_meta(books_dir, "healthy_data", json.dumps({"book_uuid": REWRITTEN_UUID}))
+
+    assert resolver.book_uuid_for_folder("healthy_data") == HEALTHY_UUID, (
+        "scan() did not resolve the healthy book; this answer was re-read from disk"
+    )
+    assert resolver.folder_for_book_uuid(HEALTHY_UUID) == "healthy_data"
     assert broken.read_bytes() == before
     warnings = [
         r.getMessage()

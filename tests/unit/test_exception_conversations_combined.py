@@ -52,6 +52,13 @@ def _project_dir(tmp_path: Path) -> Path:
     return tmp_path / "conversations" / BOOK_UUID
 
 
+@pytest.fixture(autouse=True)
+def _work_in_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Both stores are addressed by absolute path; the chdir fences the third
+    store -- a relative default that would land in the repository's own books/."""
+    monkeypatch.chdir(tmp_path)
+
+
 def test_both_stores_are_merged(books_dir: Path, tmp_path: Path) -> None:
     """L2: the feature itself -- one list, both origins, newest first."""
     _write_conversation(
@@ -77,14 +84,35 @@ def test_both_stores_are_merged(books_dir: Path, tmp_path: Path) -> None:
     assert [it["title"] for it in out] == ["from the project root", "from the book folder"]
 
 
-def test_the_newer_copy_of_a_shared_id_wins(books_dir: Path, tmp_path: Path) -> None:
-    """L2: dedupe keeps the later last_updated, whichever store it came from."""
+@pytest.mark.parametrize("newer_store", ["project", "per_book"])
+def test_the_newer_copy_of_a_shared_id_wins(
+    books_dir: Path, tmp_path: Path, newer_store: str
+) -> None:
+    """L2: dedupe keeps the later last_updated, whichever store it came from.
+
+    Both directions, because one direction cannot tell the rule apart from its
+    most likely corruption. Project-root entries are appended after the per-book
+    ones, so "keep the later ``last_updated``" and "whatever arrived last wins"
+    agree on every case where the project-root copy is the newer one. They
+    disagree only here, in the other direction -- and there the second rule
+    resurrects a stale copy over an edit the user just made through the per-book
+    store, which is the same silent history loss this module exists to stop.
+    """
     cid = "33333333-0000-4000-8000-000000000003"
+    stores = {"per_book": _per_book_dir(books_dir), "project": _project_dir(tmp_path)}
+    older_store = "per_book" if newer_store == "project" else "project"
+
     _write_conversation(
-        _per_book_dir(books_dir), cid, last_updated="2026-08-01T00:00:00Z", text="stale"
+        stores[older_store],
+        cid,
+        last_updated="2026-08-01T00:00:00Z",
+        text=f"stale in the {older_store} store",
     )
     _write_conversation(
-        _project_dir(tmp_path), cid, last_updated="2026-08-09T00:00:00Z", text="fresh"
+        stores[newer_store],
+        cid,
+        last_updated="2026-08-09T00:00:00Z",
+        text=f"fresh in the {newer_store} store",
     )
 
     out = list_conversations_combined(
@@ -94,7 +122,7 @@ def test_the_newer_copy_of_a_shared_id_wins(books_dir: Path, tmp_path: Path) -> 
         project_conversations_root=str(tmp_path / "conversations"),
     )
 
-    assert [it["title"] for it in out] == ["fresh"]
+    assert [it["title"] for it in out] == [f"fresh in the {newer_store} store"]
 
 
 def test_a_book_uuid_that_is_not_a_uuid_raises(books_dir: Path, tmp_path: Path) -> None:
