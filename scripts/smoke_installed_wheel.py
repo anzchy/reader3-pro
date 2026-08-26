@@ -55,6 +55,18 @@ def _free_port() -> int:
         return int(s.getsockname()[1])
 
 
+def _clean_env(**extra: str) -> dict[str, str]:
+    """父进程环境去掉 PYTHONPATH，再叠上调用方要的变量。
+
+    这个脚本的**全部意义**是「装出来的 wheel 能跑」。父进程里只要有 PYTHONPATH
+    指着 checkout 的 src/，子进程 import reader3_app 就会拿到源码树而不是 wheel，
+    于是一个根本没打进 wheel 的模块也能让 smoke 全绿——守卫在自证清白。
+    """
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    env.update(extra)
+    return env
+
+
 def _run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
     proc = subprocess.run(cmd, capture_output=True, text=True, **kw)
     if proc.returncode != 0:
@@ -84,7 +96,7 @@ def make_venv(venv: Path, wheel: Path) -> Path:
     _run(["uv", "venv", str(venv)])
     _run(
         ["uv", "pip", "install", str(wheel)],
-        env={**os.environ, "VIRTUAL_ENV": str(venv)},
+        env=_clean_env(VIRTUAL_ENV=str(venv)),
     )
     py = venv / "bin" / "python"
     return py if py.exists() else venv / "Scripts" / "python.exe"
@@ -101,7 +113,7 @@ def build_book(py: Path, books_dir: Path, workdir: Path) -> str:
     _run([str(py), "-c", script])
     _run(
         [str(py.parent / "reader3"), str(epub_path)],
-        env={**os.environ, "READER3_BOOKS_DIR": str(books_dir)},
+        env=_clean_env(READER3_BOOKS_DIR=str(books_dir)),
     )
     return "smoke_data"
 
@@ -145,7 +157,7 @@ def main() -> int:
         server = subprocess.Popen(
             [str(py.parent / "reader3-server"), "--port", str(port)],
             cwd=work,
-            env={**os.environ, "READER3_BOOKS_DIR": str(books)},
+            env=_clean_env(READER3_BOOKS_DIR=str(books)),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
