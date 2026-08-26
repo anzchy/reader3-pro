@@ -323,6 +323,43 @@ def test_huge_chapter_text_is_generated_at_the_requested_size_and_not_committed(
     assert max(p.stat().st_size for p in fixtures.glob("*.py")) < 100_000
 
 
+def test_build_huge_epub_actually_produces_a_readable_book_of_that_size(tmp_path: Path):
+    """上一条只验了字符串助手，`build_huge_epub` 自己一次都没被调用过。
+
+    它是 §6 那条「三百万字符」基准的**唯一**输入源。而 `scripts/bench.py:580` 是
+    它唯一的调用点，bench 不在任何 lane 里——所以在这条用例之前，把它改成产出
+    一章空文本、或者产出一个根本打不开的 zip，整个测试套件不会有一个字变红，
+    而基准会安静地开始测量一本空书，把「快了 40 倍」当成好消息报上来。
+
+    这里用一个**小**尺寸：要守的是「产出物是本能读的书，且尺寸随参数走」，
+    不是重跑一遍三百万字符的分配。
+    """
+    chars = 20_000
+    out = ec.build_huge_epub(tmp_path / "huge.epub", chars=chars, needle="NEEDLE-Z")
+
+    assert out.is_file() and zipfile.is_zipfile(out), "产出物不是个可打开的 epub"
+
+    book = epub.read_epub(str(out))
+    docs = [d for d in book.get_items_of_type(ebooklib.ITEM_DOCUMENT)]
+    bodies = "".join(d.get_content().decode("utf-8", "replace") for d in docs)
+
+    assert "NEEDLE-Z" in bodies, "needle 没进正文——搜索基准会提前命中空气"
+    # 尺寸随参数走：断一个区间而不是等值，因为正文外还包着 XHTML 骨架。
+    assert chars <= len(bodies) < chars * 2, (
+        f"正文长度 {len(bodies)} 与请求的 {chars} 不成比例——"
+        "基准测的就不再是它自称在测的那条路径了"
+    )
+
+    doubled = ec.build_huge_epub(tmp_path / "huge2.epub", chars=chars * 2, needle="NEEDLE-Z")
+    doubled_bodies = "".join(
+        d.get_content().decode("utf-8", "replace")
+        for d in epub.read_epub(str(doubled)).get_items_of_type(ebooklib.ITEM_DOCUMENT)
+    )
+    assert len(doubled_bodies) > len(bodies) * 1.5, (
+        "chars 翻倍没让正文明显变长——一个忽略 chars 的实现会让整条 scale 基准失去意义"
+    )
+
+
 @pytest.mark.parametrize(
     "make, expected",
     [

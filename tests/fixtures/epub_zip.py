@@ -10,12 +10,23 @@ level instead.
 Everything here writes bytes verbatim. No consistency check is performed on
 purpose: a builder that quietly repaired a malformed manifest would turn every
 "the reader survives bad input" case downstream into a test of well-formed input.
+
+That licence covers *structure*, not *encoding*. Every value interpolated into
+the XML below goes through ``escape``/``quoteattr``, because a title containing
+``&`` would otherwise produce an OPF no parser accepts -- and the corpus entry
+named for CJK titles or for duplicate anchors would quietly become one more
+"survives a malformed package" case, still green, testing something else.
+A fixture that must be malformed says so through ``raw_bytes``, ``extra_files``
+or ``omit_container``; those three are the escape hatches and stay verbatim,
+as does ``Doc.body``, which is markup by definition.
+See ``tests/unit/test_fixture_epub_zip_escaping.py``.
 """
 
 from __future__ import annotations
 
 import os
 import zipfile
+from xml.sax.saxutils import escape, quoteattr
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Mapping, Optional, Sequence, Tuple, Union
@@ -25,7 +36,7 @@ MIMETYPE = "application/epub+zip"
 CONTAINER_XML = """<?xml version="1.0" encoding="UTF-8"?>
 <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
   <rootfiles>
-    <rootfile full-path="{opf_path}" media-type="application/oebps-package+xml"/>
+    <rootfile full-path={opf_path} media-type="application/oebps-package+xml"/>
   </rootfiles>
 </container>
 """
@@ -93,8 +104,9 @@ def _xhtml(doc: Doc) -> str:
     return (
         '<?xml version="1.0" encoding="utf-8"?>\n'
         '<!DOCTYPE html>\n'
-        f'<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="{doc.lang}" lang="{doc.lang}">\n'
-        f"<head><title>{doc.title or doc.doc_id}</title>"
+        f'<html xmlns="http://www.w3.org/1999/xhtml" xml:lang={quoteattr(doc.lang)} '
+        f"lang={quoteattr(doc.lang)}>\n"
+        f"<head><title>{escape(doc.title or doc.doc_id)}</title>"
         '<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/></head>\n'
         f"<body>{doc.body}</body>\n"
         "</html>\n"
@@ -102,7 +114,7 @@ def _xhtml(doc: Doc) -> str:
 
 
 def _opf(spec: EpubSpec, *, with_ncx: bool, with_nav_doc: bool) -> str:
-    creators = "".join(f"    <dc:creator>{a}</dc:creator>\n" for a in spec.authors)
+    creators = "".join(f"    <dc:creator>{escape(a)}</dc:creator>\n" for a in spec.authors)
 
     manifest = []
     if with_ncx:
@@ -116,11 +128,13 @@ def _opf(spec: EpubSpec, *, with_ncx: bool, with_nav_doc: bool) -> str:
         )
     for d in spec.docs:
         manifest.append(
-            f'    <item id="{d.doc_id}" href="{d.name}" media-type="application/xhtml+xml"/>'
+            f"    <item id={quoteattr(d.doc_id)} href={quoteattr(d.name)} "
+            'media-type="application/xhtml+xml"/>'
         )
     for im in spec.images:
         manifest.append(
-            f'    <item id="{im.item_id}" href="{im.name}" media-type="{im.media_type}"/>'
+            f"    <item id={quoteattr(im.item_id)} href={quoteattr(im.name)} "
+            f"media-type={quoteattr(im.media_type)}/>"
         )
 
     spine_items = []
@@ -128,7 +142,7 @@ def _opf(spec: EpubSpec, *, with_ncx: bool, with_nav_doc: bool) -> str:
         if not d.in_spine:
             continue
         linear = "" if d.linear else ' linear="no"'
-        spine_items.append(f'    <itemref idref="{d.doc_id}"{linear}/>')
+        spine_items.append(f"    <itemref idref={quoteattr(d.doc_id)}{linear}/>")
 
     spine_attr = ' toc="ncx"' if with_ncx else ""
     modified = (
@@ -139,12 +153,12 @@ def _opf(spec: EpubSpec, *, with_ncx: bool, with_nav_doc: bool) -> str:
     return (
         '<?xml version="1.0" encoding="utf-8"?>\n'
         f'<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" '
-        f'version="{spec.version}">\n'
+        f"version={quoteattr(spec.version)}>\n"
         '  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" '
         'xmlns:opf="http://www.idpf.org/2007/opf">\n'
-        f'    <dc:identifier id="BookId">{spec.identifier}</dc:identifier>\n'
-        f"    <dc:title>{spec.title}</dc:title>\n"
-        f"    <dc:language>{spec.language}</dc:language>\n"
+        f'    <dc:identifier id="BookId">{escape(spec.identifier)}</dc:identifier>\n'
+        f"    <dc:title>{escape(spec.title)}</dc:title>\n"
+        f"    <dc:language>{escape(spec.language)}</dc:language>\n"
         f"{creators}{modified}"
         "  </metadata>\n"
         "  <manifest>\n" + "\n".join(manifest) + "\n  </manifest>\n"
@@ -160,19 +174,21 @@ def _ncx(spec: EpubSpec) -> str:
         out = []
         for np in nav:
             counter[0] += 1
-            src = f'<content src="{np.href}"/>' if np.href is not None else "<content/>"
+            src = (
+                f"<content src={quoteattr(np.href)}/>" if np.href is not None else "<content/>"
+            )
             inner = points(np.children, depth + 1) if np.children else ""
             out.append(
                 f'{"  " * (depth + 2)}<navPoint id="np{counter[0]}" playOrder="{counter[0]}">'
-                f"<navLabel><text>{np.title}</text></navLabel>{src}{inner}</navPoint>"
+                f"<navLabel><text>{escape(np.title)}</text></navLabel>{src}{inner}</navPoint>"
             )
         return "\n" + "\n".join(out) + "\n" if out else ""
 
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">\n'
-        f'  <head><meta name="dtb:uid" content="{spec.identifier}"/></head>\n'
-        f"  <docTitle><text>{spec.title}</text></docTitle>\n"
+        f'  <head><meta name="dtb:uid" content={quoteattr(spec.identifier)}/></head>\n'
+        f"  <docTitle><text>{escape(spec.title)}</text></docTitle>\n"
         f"  <navMap>{points(spec.nav, 0)}  </navMap>\n"
         "</ncx>\n"
     )
@@ -184,9 +200,11 @@ def _nav_doc(spec: EpubSpec) -> str:
         for np in nav:
             sub = f"<ol>{items(np.children)}</ol>" if np.children else ""
             if np.href is None:
-                out.append(f"<li><span>{np.title}</span>{sub}</li>")
+                out.append(f"<li><span>{escape(np.title)}</span>{sub}</li>")
             else:
-                out.append(f'<li><a href="{np.href}">{np.title}</a>{sub}</li>')
+                out.append(
+                    f"<li><a href={quoteattr(np.href)}>{escape(np.title)}</a>{sub}</li>"
+                )
         return "".join(out)
 
     return (
@@ -213,7 +231,7 @@ def write_raw_epub(path: Union[str, os.PathLike], spec: EpubSpec) -> Path:
     members: Dict[str, bytes] = {}
     if not spec.omit_container:
         members["META-INF/container.xml"] = CONTAINER_XML.format(
-            opf_path=spec.opf_path
+            opf_path=quoteattr(spec.opf_path)
         ).encode("utf-8")
     members[spec.opf_path] = _opf(spec, with_ncx=with_ncx, with_nav_doc=with_nav_doc).encode(
         "utf-8"
