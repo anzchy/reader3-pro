@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
+from ..safe_paths import safe_book_folder
+
 
 logger = logging.getLogger("reader3.ai.conversations")
 
@@ -20,10 +22,8 @@ def _utc_now_iso() -> str:
 
 
 def _safe_folder_name(folder_name: str) -> str:
-    safe = os.path.basename(folder_name)
-    if safe != folder_name:
-        raise ValueError("Invalid book folder name")
-    return safe
+    """同 ai/books.py：逐字重复的那一份现在只剩一处判据（ai/75）。"""
+    return safe_book_folder(folder_name)
 
 
 def _safe_conversation_id(conversation_id: str) -> str:
@@ -382,11 +382,31 @@ def save_conversation_multi(
 ) -> None:
     mode = str(storage_mode or "per_book").strip().lower()
     if mode not in ("per_book", "project_root", "both"):
+        # 退回 per_book 保留：那是写到默认位置，不是销毁数据,跟下面那条「一个字节都没写」
+        # 不是一回事。为一个配置项的拼写错误让每一轮 AI 问答 500，代价大于收益。
+        # 但静默不可接受——用户会以为对话进了 project root——所以留一条日志可查。
+        logger.warning(
+            "unrecognised conversation_disk_storage=%r; falling back to 'per_book' "
+            "for conversation %s (book_folder=%s)",
+            storage_mode,
+            thread.conversation_id,
+            thread.book_folder,
+        )
         mode = "per_book"
+    root = str(project_conversations_root or "").strip()
+    if mode in ("project_root", "both") and not root:
+        # 两个分支都不进、然后正常返回，就是这条 finding 的全部伤害：调用方（AI 问答的
+        # 每一轮）认为已落盘，整段对话却一个字节都没写，不报错也不打日志。这里必须抛,
+        # 「写了一半」同样不算成功，所以 both 缺 root 时 per-book 那半也不写。
+        raise ValueError(
+            f"conversation_disk_storage={mode!r} requires a project conversations root, "
+            f"but conversation_project_root_dir resolved to {project_conversations_root!r}. "
+            "Set conversation_project_root_dir, or set conversation_disk_storage to 'per_book'."
+        )
     if mode in ("per_book", "both"):
         save_conversation(books_dir, thread=thread)
-    if project_conversations_root and mode in ("project_root", "both"):
-        save_project_conversation(project_conversations_root, thread=thread)
+    if mode in ("project_root", "both"):
+        save_project_conversation(root, thread=thread)
 
 
 def delete_conversation_multi(

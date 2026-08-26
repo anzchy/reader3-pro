@@ -77,11 +77,16 @@ uv sync
 
 The AI panel uses the `default_provider` from `config/ai_settings.json` (editable via the web Settings page at `/settings` or by editing the file directly).
 
-1) Copy the example config:
+1) Copy the example config, and lock it down before a key goes in it:
 
 ```bash
 cp config/ai_settings.example.json config/ai_settings.json
+chmod 600 config/ai_settings.json   # 这份文件将保存明文 API key
 ```
+
+`cp` 继承的是 umask，通常是 `0644`——同机器上的其他用户读得到。经 `/settings`
+存过一次之后 `save_ai_settings` 会自己把它写成 `0600`（tmp + `os.replace`，新建和
+既有一视同仁），但手抄 key 直接编辑文件的人永远走不到那一步，所以这里补一次。
 
 2) Make sure the book is indexed for semantic retrieval (required for RAG summary/Q&A citations):
 
