@@ -7,12 +7,59 @@ from typing import Iterable, List, Optional, Sequence, Tuple
 from ..reader3 import Book
 
 
+# CJK-ish code point ranges, including the extension planes. A character in one of
+# these is worth far more tokens per character than Latin text is, and this is a
+# Chinese-first reader -- getting it wrong is not a rounding error, it is a factor
+# of 2-4 on every budgeting decision below.
+_CJK_RANGES: Tuple[Tuple[int, int], ...] = (
+    (0x2E80, 0x2EFF),  # CJK Radicals Supplement
+    (0x3000, 0x303F),  # CJK Symbols and Punctuation (，。「」……)
+    (0x3040, 0x30FF),  # Hiragana + Katakana
+    (0x3100, 0x312F),  # Bopomofo
+    (0x3130, 0x318F),  # Hangul Compatibility Jamo
+    (0x31C0, 0x31EF),  # CJK Strokes
+    (0x3200, 0x32FF),  # Enclosed CJK Letters and Months
+    (0x3400, 0x4DBF),  # Extension A
+    (0x4E00, 0x9FFF),  # Unified Ideographs
+    (0xAC00, 0xD7AF),  # Hangul Syllables
+    (0xF900, 0xFAFF),  # Compatibility Ideographs
+    (0xFE30, 0xFE4F),  # CJK Compatibility Forms
+    (0xFF00, 0xFF60),  # Fullwidth Forms
+    (0x20000, 0x2A6DF),  # Extension B
+    (0x2A700, 0x2EBEF),  # Extensions C-F
+    (0x2F800, 0x2FA1F),  # Compatibility Ideographs Supplement
+    (0x30000, 0x3134F),  # Extension G
+    (0x31350, 0x323AF),  # Extension H
+)
+
+# Chars per token, by class. Deliberately not a real tokenizer (constitution #2),
+# and a real tokenizer would not help anyway: every provider splits differently,
+# so the useful property here is "conservative and cheap", not "exact".
+_CJK_CHARS_PER_TOKEN = 1.5
+_OTHER_CHARS_PER_TOKEN = 4.0
+
+
+# Counting per character in Python costs ~0.9s on a million-character book, and this
+# runs twice per AI request (stats, then context assembly). The same count through a
+# compiled character class stays in C.
+_CJK_RE = re.compile(
+    "[" + "".join(f"\\U{lo:08x}-\\U{hi:08x}" for lo, hi in _CJK_RANGES) + "]"
+)
+
+
 def estimate_tokens(text: str) -> int:
-    # Lightweight heuristic (no tokenizer dependency):
-    # English-ish: ~4 chars/token; CJK tends to be closer to ~1-2 chars/token,
-    # but this approximation is good enough for routing.
+    """Class-segmented heuristic (no tokenizer dependency).
+
+    CJK runs at ~1.5 chars/token, everything else at ~4. The old flat ``len // 4``
+    under-counted a Chinese book by 2-4x, which is exactly the direction that turns
+    a routing decision into a provider-side ``prompt is too long``.
+    """
     t = str(text or "")
-    return max(1, len(t) // 4)
+    if not t:
+        return 1
+    cjk = len(_CJK_RE.findall(t))
+    other = len(t) - cjk
+    return max(1, int(cjk / _CJK_CHARS_PER_TOKEN + other / _OTHER_CHARS_PER_TOKEN))
 
 
 def _parse_token_count_from_model(model: str) -> Optional[int]:
@@ -46,9 +93,13 @@ def provider_context_window(provider_name: str, model_name: str) -> int:
             return 2_000_000
         return 1_000_000
     if provider == "anthropic":
-        # Claude model families can be large-context; use the "long-context" default.
-        # If the provider/model can't handle it, server-side fallback will route to RAG excerpts.
-        return 1_000_000
+        # Production Claude models are 200K. The 1M window is a gated beta on specific
+        # Sonnet builds, and reaching it requires the model name to say so (handled by
+        # _parse_token_count_from_model above, e.g. "...-1m").
+        # Default DOWN: there is no context-length fallback anywhere in this codebase.
+        # Over-shooting here does not degrade to RAG excerpts, it becomes a hard 400
+        # "prompt is too long" from the provider with nothing to catch it.
+        return 200_000
     if provider in ("openai", "openrouter"):
         # Many OpenAI-ish models are 128k-class; keep conservative.
         return 128_000
@@ -68,14 +119,16 @@ class RoutingDecision:
 
 
 def book_token_stats(book: Book) -> Tuple[int, int]:
-    book_text_parts: List[str] = []
+    # Sum per chapter rather than estimating one joined mega-string: segmented
+    # estimation only means anything if the segments are estimated separately.
+    book_tokens = 0
     max_chapter = 0
     for ch in getattr(book, "spine", []) or []:
         txt = str(getattr(ch, "text", "") or "")
         if txt:
-            book_text_parts.append(txt)
-            max_chapter = max(max_chapter, estimate_tokens(txt))
-    book_tokens = estimate_tokens("\n\n".join(book_text_parts)) if book_text_parts else 0
+            t = estimate_tokens(txt)
+            book_tokens += t
+            max_chapter = max(max_chapter, t)
     return book_tokens, max_chapter
 
 
