@@ -1,12 +1,12 @@
 import os
-import pickle
+import contextlib
+import hmac
 import logging
 import time
 import json
 import asyncio
 import threading
-import urllib.request
-import urllib.error
+from urllib.parse import parse_qs, urlsplit
 import html
 import uuid
 from pathlib import Path
@@ -18,10 +18,11 @@ from typing import Any, Optional
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
-from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse, Response
+from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse, Response, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from ..safe_pickle import load_book_file
 from ..ai.books import BookUuidResolver
 from ..ai.conversations import (
     ConversationMessage as DiskConversationMessage,
@@ -32,6 +33,7 @@ from ..ai.conversations import (
     save_conversation_multi as save_disk_conversation_multi,
 )
 from ..ai.config import (
+    AiSettingsError,
     default_settings_dict,
     get_provider_api_key,
     get_provider_settings,
@@ -39,6 +41,12 @@ from ..ai.config import (
     save_ai_settings,
 )
 from ..ai.config import get_provider_base_url
+# 出网只走这两个口（WI-30，finding `web/E1`）：scheme 白名单和「不跟随 30x」都装在那边，
+# 而这两处的 URL 是用户经 `PUT /api/settings` 可编辑的 base_url 拼出来的。
+# 流式那一口必须是 post_stream 而不是 post_json——post_json 读完整个 body 才返回，
+# 会把 ollama 的 NDJSON 流退化成阻塞调用（WI-21/WI-22 的两条性质就没了）。
+from ..ai.providers._http import get_json as _egress_get_json
+from ..ai.providers._http import post_stream as _egress_post_stream
 from ..ai.providers.anthropic import anthropic_messages
 from ..ai.providers.gemini import gemini_generate_content
 from ..ai.providers.ollama import ollama_chat_completions
@@ -68,6 +76,7 @@ from ..vector_search import BookVectorIndex
 from ..models.annotations import Annotation
 from ..notes_service import (
     NOTES_SCHEMA_VERSION,
+    NotesFileError,
     add_annotation as add_note_annotation,
     delete_annotation as delete_note_annotation,
     load_annotations as load_note_annotations,
@@ -95,6 +104,187 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 book_uuid_resolver = BookUuidResolver(BOOKS_DIR)
 ai_queue = AIRequestQueueManager(max_pending=10)
 
+#: 断连/超时之后，等一个流式 worker 停下来的**上界**。
+#:
+#: 有上界是刻意的：见 ``_stop_stream_worker`` 里那段取舍。等不到就放弃等，
+#: 记一条 ERROR，然后**照样**释放租约。
+AI_WORKER_STOP_TIMEOUT_S = 5.0
+
+# ---------------------------------------------------------------------------
+# 请求边界的三道闸（WI-27）
+#
+# 为什么绑 loopback 不够：同机上任何进程都够得着 127.0.0.1:8123，浏览器里任意一个
+# 标签页也算。更要命的是 **DNS rebinding**——攻击者的域名先解析到自己的 IP，页面
+# 加载完再把解析改到 127.0.0.1，那个页面于是能对本服务发「同源」请求，读走书库、
+# 标注、以及 provider API key。这三样都不可再生或不可撤销。
+#
+# 这是本批唯一一处涉及产品形态的取舍，所以写在这里而不是偷偷决定：Reader3 是自托管
+# 本地阅读器，强制登录会毁掉「打开就能读」。因此只做**最小且默认开启**的一组，不引入
+# 账号体系：
+#
+#   1. Host 校验（默认开启）——rebinding 的请求带的是攻击者的域名，这是掐死它的抓手。
+#   2. 改动型请求（POST/PUT/DELETE/PATCH）的 Origin / Sec-Fetch-Site 校验——跨站一律 403。
+#      **无 Origin 头的放行**是刻意的：curl 和原生客户端不发 Origin，而浏览器对跨站的
+#      改动型请求**一定**会带上它，所以放行不给 rebinding 留门，拒掉却会当场弄坏本地工具链。
+#   3. 可选的应用令牌——只有设了 READER3_TOKEN 才启用，默认不设，默认行为与今天完全一致。
+#
+# **刻意不做**：账号体系、会话 cookie、CSRF token、HTTPS 强制。前两样改产品形态，
+# 后两样属于部署层，都不在 008 范围。
+#
+# 已知局限（说出来，不假装没有）：令牌今天保护的是 API 与页面本身，浏览器 UI 里的
+# fetch 还没有把令牌带上，所以 READER3_TOKEN 目前适合 CLI / 反代场景。把令牌接进前端
+# 属于 013 的活。
+#
+# 三个码是三种失败，不共用：400 = Host 不认（与 Starlette TrustedHostMiddleware 同义
+# 同文案），401 = 令牌缺失或不对，403 = 跨站来源。
+
+#: 覆盖用 READER3_ALLOWED_HOSTS（逗号分隔）。
+#:
+#: **这里刻意不含 TestClient 的默认 host ``testserver``**。它进白名单能让测试道免改，
+#: 但那是拿一条只为测试存在的生产默认值换方便：单标签名可以经 DHCP 下发的搜索域或
+#: 被改过的 hosts 文件解析，而白名单的整个意义就是「别信请求自称的名字」。测试改用
+#: ``TestClient(..., base_url="http://127.0.0.1")``，于是它们走的是真实用户走的那条
+#: 白名单，而不是一条只有测试才走得通的旁路。
+DEFAULT_ALLOWED_HOSTS = ("127.0.0.1", "localhost", "[::1]")
+
+#: 令牌豁免。``/api/health`` 是就绪探针（009 的 Playwright webServer、Phase 5 的
+#: ``reader3 launch`` 都靠它判断服务起没起来），它不吐任何书库内容，豁免的代价是零，
+#: 不豁免的代价是设了令牌之后启动探测全挂。``/static/`` 是本仓自带的 JS/CSS，
+#: 同样不含用户数据，且页面拿不到令牌就加载不了它们。
+_TOKEN_EXEMPT_PATHS = ("/api/health",)
+_TOKEN_EXEMPT_PREFIXES = ("/static/",)
+
+#: 不改状态的方法不做 Origin 校验：CSRF 的伤害面是副作用，而读取由 Host 闸和令牌管。
+_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+def _allowed_hosts() -> tuple[str, ...]:
+    """每次请求现读 env，不在 import 时定死。
+
+    定死会有两个后果：测试没法用 monkeypatch 换掉它（``server`` 早被 import 了），
+    以及改一个 host 白名单要重启进程。
+    """
+    raw = os.environ.get("READER3_ALLOWED_HOSTS") or ""
+    hosts = tuple(h.strip() for h in raw.split(",") if h.strip())
+    return hosts or DEFAULT_ALLOWED_HOSTS
+
+
+def _app_token() -> str:
+    """空串等同于没设：``READER3_TOKEN=`` 是「我不要令牌」，不是「令牌是空串」。"""
+    return (os.environ.get("READER3_TOKEN") or "").strip()
+
+
+def _host_key(value: str) -> str:
+    """把 Host 头或白名单条目归一成可比的键：去端口、去 IPv6 方括号、转小写。
+
+    这一步是这里没有直接用 ``starlette.middleware.trustedhost.TrustedHostMiddleware``
+    的原因：它的匹配是 ``headers["host"].split(":")[0]``，对 ``[::1]:8123`` 会得到
+    ``"["``，而白名单里的 ``[::1]`` 也永远匹配不上任何东西——也就是说「用
+    TrustedHostMiddleware」和「默认白名单含 [::1]」这两条要求在字面上互斥。
+    状态码与响应体文案与它保持一致（400 / "Invalid host header"）。
+    """
+    host = (value or "").strip().lower()
+    if host.startswith("["):  # [::1] 或 [::1]:8123
+        end = host.find("]")
+        return host[1:end] if end != -1 else host.lstrip("[")
+    if host.count(":") > 1:  # 没加方括号的 IPv6 字面量
+        return host
+    return host.split(":", 1)[0]
+
+
+def _host_is_allowed(host_header: str) -> bool:
+    allowed = _allowed_hosts()
+    if "*" in allowed:  # 反代/局域网自托管的逃生舱，要显式设才有
+        return True
+    return _host_key(host_header) in {_host_key(p) for p in allowed}
+
+
+def _is_cross_site(origin: str, sec_fetch_site: str, host_header: str) -> bool:
+    """判定一个改动型请求是不是从别的站点发起的。
+
+    ``Sec-Fetch-Site`` 优先：现代浏览器一定发，且它是浏览器自己的判断，伪造不了。
+    ``same-site`` 也算跨站——同站不同源（别的端口、别的子域）对一个本地服务而言
+    仍然是别人。没有这个头时退回比 ``Origin`` 的 netloc 与 ``Host``：**含端口**，
+    因为同机另一个端口上的应用正是这里要挡的那类邻居。
+    """
+    site = (sec_fetch_site or "").strip().lower()
+    if site in ("cross-site", "same-site"):
+        return True
+    if site in ("same-origin", "none"):
+        return False
+
+    value = (origin or "").strip()
+    if not value:
+        return False  # curl / 原生客户端：刻意放行，见文件头
+    if value.lower() == "null":
+        return True  # sandbox iframe / file:// —— 来源不可判定，按跨站处理
+    return urlsplit(value).netloc.strip().lower() != (host_header or "").strip().lower()
+
+
+def _presented_token(scope: dict[str, Any], headers: dict[str, str]) -> str:
+    header_token = headers.get("x-reader3-token")
+    if header_token:
+        return header_token.strip()
+    # ``<img src>``、epub.js 的 iframe 加不上自定义头，只剩查询参数这条路。
+    query = parse_qs(scope.get("query_string", b"").decode("latin-1"))
+    values = query.get("token") or []
+    return values[0].strip() if values else ""
+
+
+def _token_exempt(path: str) -> bool:
+    return path in _TOKEN_EXEMPT_PATHS or path.startswith(_TOKEN_EXEMPT_PREFIXES)
+
+
+class RequestGuardMiddleware:
+    """纯 ASGI 中间件，不用 BaseHTTPMiddleware——本服务有 SSE 流式路由。
+
+    顺序是有讲究的：Host 闸必须跑在**任何碰书库的东西之前**，令牌其次（认证先于
+    授权），Origin 最后。作用域只限 ``http``：本服务没有 websocket 路由，往
+    websocket 的 scope 上回一个 HTTP Response 是错的。
+    """
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+
+        headers = {
+            key.decode("latin-1").lower(): value.decode("latin-1")
+            for key, value in scope.get("headers") or []
+        }
+        host_header = headers.get("host", "")
+
+        if not _host_is_allowed(host_header):
+            await PlainTextResponse("Invalid host header", status_code=400)(scope, receive, send)
+            return
+
+        token = _app_token()
+        if token and not _token_exempt(scope.get("path", "")):
+            # compare_digest 而不是 ==：令牌比较是逐字节的，别把长度和前缀漏给计时。
+            if not hmac.compare_digest(_presented_token(scope, headers), token):
+                await JSONResponse(
+                    {"detail": "Missing or invalid application token"}, status_code=401
+                )(scope, receive, send)
+                return
+
+        if scope.get("method", "GET").upper() not in _SAFE_METHODS:
+            if _is_cross_site(
+                headers.get("origin", ""), headers.get("sec-fetch-site", ""), host_header
+            ):
+                await JSONResponse({"detail": "Cross-site request rejected"}, status_code=403)(
+                    scope, receive, send
+                )
+                return
+
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(RequestGuardMiddleware)
+
+
 _stats_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 
 
@@ -121,6 +311,35 @@ def _validate_collection_id(collection_id: str) -> str:
     except Exception:  # noqa: BLE001 - 第 2 档：HTTP 边界，转译成 400 且 detail 说明原因；类型待收窄为 ValueError
         raise HTTPException(status_code=400, detail="Invalid collection_id")
 
+@app.exception_handler(AiSettingsError)
+async def _ai_settings_error_handler(request: Request, exc: AiSettingsError) -> JSONResponse:
+    """一处覆盖 load_ai_settings() 的全部 ~14 个调用点。
+
+    坏掉的 ai_settings.json 不再被静默换成默认值（那条路会抹掉用户的 API key），
+    所以任何读设置的端点现在都可能撞上 AiSettingsError。逐个 try 只会漏掉下一个
+    新加的调用点；这里统一转成 500，detail 带上文件路径和怎么修——用户完全有能力
+    自己修一个自己读得到的文件，前提是我们告诉他是哪个文件。
+    """
+    ai_logger.error("ai settings unreadable: %s", exc)
+    return JSONResponse(status_code=500, content={"detail": str(exc)})
+
+
+@app.exception_handler(NotesFileError)
+async def _notes_file_error_handler(request: Request, exc: NotesFileError) -> JSONResponse:
+    """一处覆盖 notes_service 的全部 6 个调用点（611 / 638 / 699 / 784 / 797 / 817）。
+
+    读不出来的 notes.json 不再被静默换成空列表——那条路上，用户随后加的任何一条
+    标注都会触发 save_annotations 整份重写，把这本书此前的标注永久抹掉，而且不报错。
+    所以任何读标注的端点现在都可能撞上 NotesFileError。
+
+    形状照抄上面的 _ai_settings_error_handler，理由也一样：逐个 try 只会漏掉下一个
+    新加的调用点。detail 带上文件路径——标注是用户自己产生、错了不能重新生成的数据，
+    他有能力自己修一个自己读得到的文件，前提是我们告诉他是哪个文件。
+    """
+    logger.error("notes file unreadable: %s", exc)
+    return JSONResponse(status_code=500, content={"detail": str(exc)})
+
+
 @app.on_event("startup")
 async def _startup_scan_books() -> None:
     # Ensure stable UUID mapping exists for all processed books.
@@ -137,27 +356,12 @@ def load_book_cached(folder_name: str) -> Optional[Book]:
         return None
 
     try:
-        with open(file_path, "rb") as f:
-            try:
-                book = _Reader3Unpickler(f).load()
-            except Exception:  # noqa: BLE001 - 第 3 档：旧 pickle 的模块路径解析失败时退回默认 loader，真坏的 pickle 由下面 147 处理
-                f.seek(0)
-                book = pickle.load(f)
-        return book
+        # No fallback loader: see safe_pickle. A book.pkl the allow-list refuses
+        # raises here, and the handler below degrades that one book to None.
+        return load_book_file(file_path)
     except Exception as e:  # noqa: BLE001 - 第 2 档：坏掉的 book.pkl 只让这一本书从书库消失，其余照常；已 print 留痕（该换成 logger，见 008 报告）
         print(f"Error loading book {folder_name}: {e}")
         return None
-
-
-class _Reader3Unpickler(pickle.Unpickler):
-    _REMAP = {"Book", "BookMetadata", "ChapterContent", "TOCEntry"}
-
-    def find_class(self, module: str, name: str):  # type: ignore[override]
-        if module == "__main__" and name in self._REMAP:
-            module = "reader3_app.reader3"
-        if module == "reader3" and name in self._REMAP:
-            module = "reader3_app.reader3"
-        return super().find_class(module, name)
 
 def _book_uuid_or_none(book_folder: str) -> Optional[str]:
     """解析 book_uuid，读不出来就降级成 None 并留痕，而不是让整页 500。
@@ -519,8 +723,23 @@ async def redirect_to_first_chapter(request: Request, book_id: str):
 
 @app.get("/read/{book_id}/{chapter_index}", response_class=HTMLResponse)
 async def read_chapter(request: Request, book_id: str, chapter_index: int):
-    """The main reader interface."""
-    book = load_book_cached(book_id)
+    """The main reader interface.
+
+    ``_validate_book_id`` must run **before** ``load_book_cached``, and that
+    ordering is the whole point: ``load_book_cached`` joins its argument onto
+    ``BOOKS_DIR`` and ``pickle.load``s the result, so an unvalidated ``book_id``
+    is arbitrary-file deserialisation. ``GET /read/../0`` used to return 200
+    with ``<BOOKS_DIR>/../book.pkl`` rendered. The ``os.path.basename`` further
+    down only ever sanitised the URLs written into the template — it ran after
+    the unpickle and protected nothing. Everything below therefore uses
+    ``safe_book_id``; the raw ``book_id`` must not appear again in this function.
+
+    Note that ``TestClient``/httpx normalises ``..`` away before the request is
+    built, so this is only reproducible by handing the raw ASGI scope to the
+    app the way uvicorn does — see ``tests/contract/test_read_chapter_traversal.py``.
+    """
+    safe_book_id = _validate_book_id(book_id)
+    book = load_book_cached(safe_book_id)
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
 
@@ -533,10 +752,10 @@ async def read_chapter(request: Request, book_id: str, chapter_index: int):
     prev_idx = chapter_index - 1 if chapter_index > 0 else None
     next_idx = chapter_index + 1 if chapter_index < len(book.spine) - 1 else None
 
-    book_uuid = _book_uuid_or_none(book_id)
+    book_uuid = _book_uuid_or_none(safe_book_id)
     cover_image = None
     try:
-        images_dir = os.path.join(BOOKS_DIR, book_id, "images")
+        images_dir = os.path.join(BOOKS_DIR, safe_book_id, "images")
         if os.path.isdir(images_dir):
             candidates = [f for f in os.listdir(images_dir) if os.path.isfile(os.path.join(images_dir, f))]
             preferred = [f for f in candidates if "cover" in f.lower() or "title" in f.lower()]
@@ -545,7 +764,6 @@ async def read_chapter(request: Request, book_id: str, chapter_index: int):
                 cover_image = sorted(pick_from, key=lambda x: (len(x), x.lower()))[0]
     except Exception:  # noqa: BLE001 - 第 3 档：同 187，封面挑选失败只影响一张缩略图
         cover_image = None
-    safe_book_id = os.path.basename(book_id)
     cover_url = f"/read/{safe_book_id}/images/{cover_image}" if cover_image else None
     epub_available = os.path.exists(os.path.join(BOOKS_DIR, safe_book_id, "book.epub"))
     return templates.TemplateResponse(request, "reader.html", {
@@ -848,7 +1066,8 @@ async def api_search_library(
         raise HTTPException(status_code=400, detail="Invalid sort_by")
 
     try:
-        result_set, book_order = search_library(
+        result_set, book_order = await run_in_threadpool(
+            search_library,
             query_obj,
             books_dir=BOOKS_DIR,
             max_results_per_book=max_results_per_book,
@@ -921,7 +1140,7 @@ async def api_search_book(
         raise HTTPException(status_code=400, detail=str(e))
 
     try:
-        result_set = search_book(safe_book_id, query_obj, books_dir=BOOKS_DIR)
+        result_set = await run_in_threadpool(search_book, safe_book_id, query_obj, books_dir=BOOKS_DIR)
     except RuntimeError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -990,7 +1209,7 @@ async def api_index_book(book_id: str, body: IndexRequest):
     safe_book_id = _validate_book_id(book_id)
     try:
         idx = BookVectorIndex(safe_book_id, books_dir=BOOKS_DIR)
-        status = idx.index_book(force_reindex=body.force_reindex)
+        status = await run_in_threadpool(idx.index_book, force_reindex=body.force_reindex)
         return status
     except RuntimeError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1003,7 +1222,7 @@ async def api_index_status(book_id: str):
     safe_book_id = _validate_book_id(book_id)
     try:
         idx = BookVectorIndex(safe_book_id, books_dir=BOOKS_DIR)
-        return idx.status()
+        return await run_in_threadpool(idx.status)
     except RuntimeError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:  # noqa: BLE001 - 第 2 档：HTTP 边界，转译成 500 且 detail 带上原因
@@ -1316,14 +1535,13 @@ def _settings_update_provider(
 
 
 def _http_get_json(url: str, *, timeout_s: int = 3) -> dict:
-    req = urllib.request.Request(url, method="GET")
-    req.add_header("Accept", "application/json")
-    with urllib.request.urlopen(req, timeout=timeout_s) as resp:
-        body = resp.read().decode("utf-8", errors="replace")
-        parsed = json.loads(body or "{}")
-        if isinstance(parsed, dict):
-            return parsed
-        return {"data": parsed}
+    """ollama 探活/列模型用的 GET。**闸在 `ai/providers/_http` 那一处，不在这里。**
+
+    留着这层薄封装只是为了不动两个调用点的写法；它自己不许再出现 `urlopen`。
+    `url` 是 `_ollama_root_base_url(base_url) + "/api/version"` 拼出来的，而
+    `base_url` 用户经 `PUT /api/settings` 就能改成 `file:///…`（finding `web/E1`）。
+    """
+    return _egress_get_json(url, timeout_s=timeout_s)
 
 
 def _ollama_root_base_url(base_url: str) -> str:
@@ -1366,6 +1584,68 @@ def _push_event(queue: "asyncio.Queue[dict]", evt: dict) -> bool:
     return True
 
 
+async def _stop_stream_worker(
+    *,
+    label: str,
+    stop_event: Optional[threading.Event] = None,
+    thread: Optional[threading.Thread] = None,
+    task: "Optional[asyncio.Task]" = None,
+    timeout_s: Optional[float] = None,
+) -> bool:
+    """取消一个流式 worker 并**等它真的停下**，最多等 ``AI_WORKER_STOP_TIMEOUT_S``。
+
+    为什么要等：调用方紧接着就会释放队列租约，而释放租约的含义是「这本书可以开始
+    下一个请求了」。不等就放，下一个「本该串行」的请求会和上一个还活着的 worker
+    并发打同一个 provider——串行语义于是只是个说法。
+
+    **等不到怎么办：仍然释放租约，只留一条 ERROR。** 这个取舍是刻意的，两害相权：
+
+    * 租约永久泄漏 = 这本书的 AI 问答**功能性死亡**，之后每一个请求都排在一个永不
+      结束的请求后面，且只有重启才能恢复；
+    * 一个跑飞的 worker = 多一次 provider 调用的开销和一个线程。ollama 线程是
+      ``daemon=True``，进程退出时会被回收；非流式 task 已经 cancel 过，它下一个
+      await 点就会退出。
+
+    后者可观测（这条 ERROR 就是），前者不可观测且不可恢复。所以宁可漏 worker，
+    不可漏租约。
+
+    返回 worker 是否在上界内停住——调用方不看返回值，返回值是给测试和以后的调用方的。
+    """
+    bound = AI_WORKER_STOP_TIMEOUT_S if timeout_s is None else timeout_s
+
+    if stop_event is not None:
+        stop_event.set()
+
+    if task is not None:
+        if not task.done():
+            task.cancel()
+        await asyncio.wait({task}, timeout=max(0.0, bound))
+        if not task.done():
+            ai_logger.error(
+                "%s worker did not stop within %.1fs after cancellation; "
+                "releasing the AI queue lease anyway (a leaked lease would block this book permanently)",
+                label,
+                bound,
+            )
+            return False
+        return True
+
+    if thread is not None:
+        if thread.is_alive():
+            await run_in_threadpool(thread.join, max(0.0, bound))
+        if thread.is_alive():
+            ai_logger.error(
+                "%s worker thread did not stop within %.1fs after the stop event was set; "
+                "releasing the AI queue lease anyway (a leaked lease would block this book permanently)",
+                label,
+                bound,
+            )
+            return False
+        return True
+
+    return True
+
+
 @app.get("/api/health")
 async def api_health():
     """就绪探针。009 的 Playwright `webServer` 与 Phase 5 的 `reader3 launch` 都用它。
@@ -1398,9 +1678,13 @@ async def api_put_settings(body: UpdateSettingsRequest):
             raise HTTPException(status_code=400, detail="Invalid default_provider")
         updated["default_provider"] = provider or updated.get("default_provider") or "anthropic"
     if body.preferences is not None:
-        prefs_default = (default_settings_dict().get("preferences") or {}).copy()
+        # 现存 → 补丁，同 /api/settings/import。**不要**从 default_settings_dict()
+        # 重新起头：settings 已经过 _merge_defaults，默认值就在里面，再引一次默认
+        # 只会把用户存过的其它偏好按出厂值写回磁盘——前端发一个 {"theme": "dark"}
+        # 就够把落盘模式、会话上限一起重置掉。
+        existing_prefs = settings.get("preferences") if isinstance(settings.get("preferences"), dict) else {}
         prefs_patch = body.preferences if isinstance(body.preferences, dict) else {}
-        merged = dict(prefs_default)
+        merged = dict(existing_prefs)
         merged.update({k: v for k, v in prefs_patch.items() if v is not None})
         updated["preferences"] = merged
 
@@ -1583,9 +1867,28 @@ async def api_test_provider(provider_name: str, body: TestProviderRequest):
 
     settings = load_ai_settings()
     provider_cfg = get_provider_settings(name, settings=settings)
-    api_key = body.api_key if body.api_key is not None else get_provider_api_key(name, settings=settings)
-    base_url = str(body.base_url or "").strip() if body.base_url is not None else (get_provider_base_url(name, settings=settings) or provider_cfg.base_url or "")
+    stored_base_url = get_provider_base_url(name, settings=settings) or provider_cfg.base_url or ""
+    requested_base_url = str(body.base_url or "").strip() if body.base_url is not None else None
+    base_url = stored_base_url if requested_base_url is None else requested_base_url
     model = str(body.model_name or "").strip() if body.model_name is not None else provider_cfg.model_name
+
+    # 换了 endpoint 就必须自带 key（finding web/C2）。
+    #
+    # 这条路由没有鉴权（web/C1），所以「请求只给 base_url、key 从盘上取」等于：
+    # 本机任意进程、或者一个做 DNS rebinding 的网页，只要 POST 一次就能让服务器
+    # 把用户存着的真 key 发到它指定的地址去。回落必须在**发请求之前**断掉——
+    # 挪到发完之后再报 400，状态码看着一样，key 已经出去了。
+    if requested_base_url is not None and requested_base_url.rstrip("/") != stored_base_url.rstrip("/") and not body.api_key:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "This request supplies a different base_url than the one in settings, so it must "
+                "also supply its own api_key. The stored API key is never sent to an endpoint "
+                "chosen by the request."
+            ),
+        )
+
+    api_key = body.api_key if body.api_key is not None else get_provider_api_key(name, settings=settings)
 
     if _provider_requires_api_key(name) and not api_key:
         raise HTTPException(status_code=401, detail="API key not configured")
@@ -1927,7 +2230,8 @@ async def api_ai_rag_retrieve(body: AIRagRequest):
     except Exception:  # noqa: BLE001 - 第 2 档：HTTP 边界，解析不出 book_uuid 即「这本书不存在」→404；类型待收窄为 (KeyError, ValueError)
         raise HTTPException(status_code=404, detail="Book not found")
     try:
-        passages, retrieval_time_ms = retrieve_passages(
+        passages, retrieval_time_ms = await run_in_threadpool(
+            retrieve_passages,
             book_folder,
             books_dir=BOOKS_DIR,
             query=body.query,
@@ -1956,12 +2260,12 @@ async def api_ai_summary(
     queue_key = f"{book_uuid}:{provider_name}"
 
     async def _do() -> dict:
-        book = load_book_cached(book_folder)
+        book = await run_in_threadpool(load_book_cached, book_folder)
         if not book:
             raise HTTPException(status_code=404, detail="Book not found")
 
         ctx_window = provider_context_window(provider_name, model)
-        book_tokens, max_chapter_tokens = book_token_stats(book)
+        book_tokens, max_chapter_tokens = await run_in_threadpool(book_token_stats, book)
         decision = choose_routing(
             provider_ctx_window=ctx_window,
             book_tokens=book_tokens,
@@ -1978,7 +2282,8 @@ async def api_ai_summary(
         )
 
         try:
-            passages, retrieval_time_ms = retrieve_passages(
+            passages, retrieval_time_ms = await run_in_threadpool(
+                retrieve_passages,
                 book_folder,
                 books_dir=BOOKS_DIR,
                 query="Summarize the entire book: main ideas, structure, themes, and key takeaways.",
@@ -1989,10 +2294,12 @@ async def api_ai_summary(
             raise HTTPException(status_code=400, detail=str(e))
         routing_meta: dict[str, Any] = {"mode": decision.mode, "provider_context_window": int(ctx_window)}
         if decision.mode == "full_book":
-            context = build_full_book_context(book, budget_tokens=decision.budget_tokens)
+            context = await run_in_threadpool(build_full_book_context, book, budget_tokens=decision.budget_tokens)
         elif decision.mode == "multi_chapter":
             orders = unique_chapter_orders_from_passages(passages, limit=8)
-            context, used_orders = build_multi_chapter_context(book, chapter_orders=orders, budget_tokens=decision.budget_tokens)
+            context, used_orders = await run_in_threadpool(
+                build_multi_chapter_context, book, chapter_orders=orders, budget_tokens=decision.budget_tokens
+            )
             routing_meta["chapters"] = used_orders
         else:
             context = "\n\n".join([f"[{p['chapter_order'] + 1}] {p['chapter_title']}\n{p['text']}" for p in passages])
@@ -2086,235 +2393,284 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
     queue_key = f"{book_uuid}:{provider_name}"
 
     if stream:
-        lease = await ai_queue.acquire(
-            queue_key,
-            request=request,
-            timeout_s=float(timeout_s),
-            request_label="question",
-        )
-
-        book = load_book_cached(book_folder)
-        if not book:
-            await ai_queue.release(lease)
-            raise HTTPException(status_code=404, detail="Book not found")
-
-        try:
-            passages, retrieval_time_ms = retrieve_passages(
-                book_folder,
-                books_dir=BOOKS_DIR,
-                query=question,
-                k=body.rag_k,
-                min_similarity=0.35,
+        # 租约的**唯一**释放点在这个栈上（下面 push_async_callback 注册的
+        # ``_release_lease``）。以前这里是三处散落的显式 release，各自兜一种具体
+        # 异常——而 acquire 到 return 之间的那一大段还会抛别的：任何一种没被点名的
+        # 异常都带着租约逃走，那条队列于是永久 active（C4）。
+        #
+        # 为什么必须是栈而不是一个 try/finally：租约的生命周期跨越「函数返回」这
+        # 条界——正常路径上它要活到 SSE 流结束为止。``pop_all()`` 把待办的释放动作
+        # **移交**给生成器；移交发生在最后一步，在那之前的任何异常都由这里的
+        # ``async with`` 收尾，移交之后这里关的是一个空栈。
+        #
+        # 后压进去的回调先跑（LIFO），所以生成器里压的「停 worker」一定跑在
+        # 「放租约」之前——顺序即语义：租约放掉就等于允许下一个请求开始。
+        lease_stack = contextlib.AsyncExitStack()
+        async with lease_stack:
+            lease = await ai_queue.acquire(
+                queue_key,
+                request=request,
+                timeout_s=float(timeout_s),
+                request_label="question",
             )
-        except RuntimeError as e:
-            await ai_queue.release(lease)
-            raise HTTPException(status_code=400, detail=str(e))
 
-        ctx_window = provider_context_window(provider_name, model)
-        book_tokens, max_chapter_tokens = book_token_stats(book)
-        decision = choose_routing(
-            provider_ctx_window=ctx_window,
-            book_tokens=book_tokens,
-            max_chapter_tokens=max_chapter_tokens,
-        )
-        ai_logger.debug(
-            "question routing book_uuid=%s provider=%s model=%s mode=%s book_tokens=%s ctx_window=%s stream=1",
-            str(book_uuid),
-            provider_name,
-            model,
-            decision.mode,
-            int(book_tokens),
-            int(ctx_window),
-        )
-        if decision.mode == "full_book":
-            context = build_full_book_context(book, budget_tokens=decision.budget_tokens)
-        elif decision.mode == "multi_chapter":
-            orders = unique_chapter_orders_from_passages(passages, limit=8)
-            context, _used = build_multi_chapter_context(book, chapter_orders=orders, budget_tokens=decision.budget_tokens)
-        else:
-            context = "\n\n".join([f"[{p['chapter_order'] + 1}] {p['chapter_title']}\n{p['text']}" for p in passages])
-        history = (body.conversation_history or [])[-50:]
-        chat_history = []
-        for m in history:
-            role = (m.role or "").strip().lower()
-            if role not in ("user", "assistant"):
-                continue
-            content = (m.content or "").strip()
-            if not content:
-                continue
-            chat_history.append({"role": role, "content": content})
-
-        system = (
-            "你是 Reader3 的 AI 阅读助手。"
-            "只基于提供的书籍内容回答与书相关的问题；如果内容不足以回答，请明确说明需要更多上下文。"
-            "回答要清晰、简洁。"
-        )
-        user = f"书籍内容（用于回答）：\n{context}\n\n问题：{question}\n"
-
-        message_id = str(__import__("uuid").uuid4())
-        started = time.perf_counter()
-        answer_parts: list[str] = []
-        conversation_id = _conversation_id_from_history(history)
-
-        async def event_gen():
-            q: asyncio.Queue[dict] = asyncio.Queue()
-            loop = asyncio.get_running_loop()
-
-            def push(evt: dict) -> None:
-                _push_event(q, evt)
-
-            def worker_ollama() -> None:
-                url = _ollama_root_base_url(base_url or "http://localhost:11434") + "/api/chat"
-                chat_messages = []
-                if system:
-                    chat_messages.append({"role": "system", "content": system})
-                chat_messages.extend([*chat_history, {"role": "user", "content": user}])
-                payload = {
-                    "model": model,
-                    "messages": chat_messages,
-                    "stream": True,
-                    "options": {"num_predict": max(64, min(int(body.max_tokens), 4096))},
-                }
-                data = json.dumps(payload).encode("utf-8")
-                req = urllib.request.Request(url, data=data, method="POST")
-                req.add_header("Content-Type", "application/json")
-                req.add_header("Accept", "application/json")
-
-                model_out = model
-                finish_reason = "stop"
-                try:
-                    with urllib.request.urlopen(req, timeout=int(timeout_s)) as resp:
-                        while True:
-                            line = resp.readline()
-                            if not line:
-                                break
-                            raw = line.strip()
-                            if not raw:
-                                continue
-                            try:
-                                obj = json.loads(raw.decode("utf-8", errors="replace") or "{}")
-                            except Exception:  # noqa: BLE001 - 第 3 档：ollama 流里解析不了的一行直接跳过，下一行还会来；终止条件是 done 事件，不是这一行
-                                continue
-                            if not isinstance(obj, dict):
-                                continue
-                            if obj.get("model"):
-                                model_out = str(obj.get("model") or model_out)
-                            msg = obj.get("message")
-                            if isinstance(msg, dict):
-                                delta = msg.get("content")
-                                if delta:
-                                    loop.call_soon_threadsafe(push, {"type": "chunk", "delta": str(delta)})
-                            if obj.get("done") is True:
-                                finish_reason = str(obj.get("done_reason") or finish_reason)
-                                break
-                    loop.call_soon_threadsafe(push, {"type": "done", "model": model_out, "finish_reason": finish_reason})
-                except Exception as e:  # noqa: BLE001 - 第 2 档：worker 线程的最外层，失败经 error 事件送到客户端，痕迹在 SSE 流里
-                    loop.call_soon_threadsafe(push, {"type": "error", "message": str(e)})
-
-            async def worker_non_stream() -> None:
-                try:
-                    resp = await run_in_threadpool(
-                        _call_provider,
-                        provider_name,
-                        api_key=api_key,
-                        base_url=base_url,
-                        model=model,
-                        system=system,
-                        messages=[*chat_history, {"role": "user", "content": user}],
-                        max_tokens=body.max_tokens,
-                        timeout_s=timeout_s,
-                    )
-                except Exception as e:  # noqa: BLE001 - 第 2 档：worker 协程的最外层，失败经 error 事件送到客户端，痕迹在 SSE 流里
-                    await q.put({"type": "error", "message": str(e)})
-                    return
-                await q.put({"type": "chunk", "delta": resp.text})
-                await q.put({"type": "done", "model": resp.model, "finish_reason": resp.finish_reason})
-
-            try:
-                yield _sse_event(
-                    "meta",
-                    {
-                        "message_id": message_id,
-                        "retrieval_sources": passages,
-                        "metadata": {"retrieval_time_ms": retrieval_time_ms, "provider": provider_name},
-                    },
-                )
-
-                if provider_name == "ollama":
-                    threading.Thread(target=worker_ollama, daemon=True).start()
-                else:
-                    asyncio.create_task(worker_non_stream())
-
-                while True:
-                    if request is not None and await request.is_disconnected():
-                        yield _sse_event("error", {"message": "Client disconnected"})
-                        return
-                    if time.monotonic() >= lease.deadline:
-                        yield _sse_event("error", {"message": "AI request timed out"})
-                        return
-                    try:
-                        evt = await asyncio.wait_for(q.get(), timeout=0.5)
-                    except asyncio.TimeoutError:
-                        continue
-
-                    et = str(evt.get("type") or "")
-                    if et == "chunk":
-                        delta = str(evt.get("delta") or "")
-                        answer_parts.append(delta)
-                        yield _sse_event("chunk", {"delta": delta})
-                        continue
-                    if et == "done":
-                        generation_time_ms = int((time.perf_counter() - started) * 1000)
-                        if conversation_id:
-                            ts = __import__("datetime").datetime.utcnow().isoformat() + "Z"
-                            answer_text = "".join(answer_parts)
-                            await run_in_threadpool(
-                                _save_conversation_snapshot,
-                                book_uuid=str(book_uuid),
-                                book_folder=book_folder,
-                                conversation_id=conversation_id,
-                                provider=provider_name,
-                                model=str(evt.get("model") or model),
-                                history=history,
-                                assistant_message=DiskConversationMessage(
-                                    id=message_id,
-                                    role="assistant",
-                                    content=answer_text,
-                                    timestamp=ts,
-                                    metadata={
-                                        "retrieval_sources": passages,
-                                        "provider": provider_name,
-                                    },
-                                ),
-                            )
-                        yield _sse_event(
-                            "done",
-                            {
-                                "model": str(evt.get("model") or model),
-                                "finish_reason": str(evt.get("finish_reason") or "stop"),
-                                "metadata": {
-                                    "retrieval_time_ms": retrieval_time_ms,
-                                    "generation_time_ms": generation_time_ms,
-                                    "provider": provider_name,
-                                },
-                            },
-                        )
-                        return
-                    if et == "error":
-                        yield _sse_event("error", {"message": str(evt.get("message") or "AI request failed")})
-                        return
-            finally:
+            async def _release_lease() -> None:
                 await ai_queue.release(lease)
 
-        return StreamingResponse(event_gen(), media_type="text/event-stream")
+            lease_stack.push_async_callback(_release_lease)
+
+            book = await run_in_threadpool(load_book_cached, book_folder)
+            if not book:
+                raise HTTPException(status_code=404, detail="Book not found")
+
+            try:
+                passages, retrieval_time_ms = await run_in_threadpool(
+                    retrieve_passages,
+                    book_folder,
+                    books_dir=BOOKS_DIR,
+                    query=question,
+                    k=body.rag_k,
+                    min_similarity=0.35,
+                )
+            except RuntimeError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+
+            ctx_window = provider_context_window(provider_name, model)
+            book_tokens, max_chapter_tokens = await run_in_threadpool(book_token_stats, book)
+            decision = choose_routing(
+                provider_ctx_window=ctx_window,
+                book_tokens=book_tokens,
+                max_chapter_tokens=max_chapter_tokens,
+            )
+            ai_logger.debug(
+                "question routing book_uuid=%s provider=%s model=%s mode=%s book_tokens=%s ctx_window=%s stream=1",
+                str(book_uuid),
+                provider_name,
+                model,
+                decision.mode,
+                int(book_tokens),
+                int(ctx_window),
+            )
+            if decision.mode == "full_book":
+                context = await run_in_threadpool(build_full_book_context, book, budget_tokens=decision.budget_tokens)
+            elif decision.mode == "multi_chapter":
+                orders = unique_chapter_orders_from_passages(passages, limit=8)
+                context, _used = await run_in_threadpool(
+                    build_multi_chapter_context, book, chapter_orders=orders, budget_tokens=decision.budget_tokens
+                )
+            else:
+                context = "\n\n".join([f"[{p['chapter_order'] + 1}] {p['chapter_title']}\n{p['text']}" for p in passages])
+            history = (body.conversation_history or [])[-50:]
+            chat_history = []
+            for m in history:
+                role = (m.role or "").strip().lower()
+                if role not in ("user", "assistant"):
+                    continue
+                content = (m.content or "").strip()
+                if not content:
+                    continue
+                chat_history.append({"role": role, "content": content})
+
+            system = (
+                "你是 Reader3 的 AI 阅读助手。"
+                "只基于提供的书籍内容回答与书相关的问题；如果内容不足以回答，请明确说明需要更多上下文。"
+                "回答要清晰、简洁。"
+            )
+            user = f"书籍内容（用于回答）：\n{context}\n\n问题：{question}\n"
+
+            message_id = str(__import__("uuid").uuid4())
+            started = time.perf_counter()
+            answer_parts: list[str] = []
+            conversation_id = _conversation_id_from_history(history)
+
+            async def event_gen(lease_stack: contextlib.AsyncExitStack):
+                q: asyncio.Queue[dict] = asyncio.Queue()
+                loop = asyncio.get_running_loop()
+                stop_event = threading.Event()
+
+                def push(evt: dict) -> None:
+                    _push_event(q, evt)
+
+                def worker_ollama() -> None:
+                    url = _ollama_root_base_url(base_url or "http://localhost:11434") + "/api/chat"
+                    chat_messages = []
+                    if system:
+                        chat_messages.append({"role": "system", "content": system})
+                    chat_messages.extend([*chat_history, {"role": "user", "content": user}])
+                    payload = {
+                        "model": model,
+                        "messages": chat_messages,
+                        "stream": True,
+                        "options": {"num_predict": max(64, min(int(body.max_tokens), 4096))},
+                    }
+                    model_out = model
+                    finish_reason = "stop"
+                    try:
+                        # post_stream 交出的是**还没读**的 response：下面这个循环仍然逐行读，
+                        # 每行之前检查 stop_event。换成 post_json 就等于先把整段回答读完
+                        # 再开始推 chunk，断连之后也停不下来。
+                        with _egress_post_stream(url, payload=payload, timeout_s=int(timeout_s)) as resp:
+                            while True:
+                                # 客户端走了或者超时了：别再往一个没人读的队列里推，
+                                # 也别继续跟 provider 说话。检查放在读之前，所以
+                                # 「停」最迟在下一行数据到达时生效。
+                                if stop_event.is_set():
+                                    return
+                                line = resp.readline()
+                                if not line:
+                                    break
+                                raw = line.strip()
+                                if not raw:
+                                    continue
+                                try:
+                                    obj = json.loads(raw.decode("utf-8", errors="replace") or "{}")
+                                except Exception:  # noqa: BLE001 - 第 3 档：ollama 流里解析不了的一行直接跳过，下一行还会来；终止条件是 done 事件，不是这一行
+                                    continue
+                                if not isinstance(obj, dict):
+                                    continue
+                                if obj.get("model"):
+                                    model_out = str(obj.get("model") or model_out)
+                                msg = obj.get("message")
+                                if isinstance(msg, dict):
+                                    delta = msg.get("content")
+                                    if delta:
+                                        loop.call_soon_threadsafe(push, {"type": "chunk", "delta": str(delta)})
+                                if obj.get("done") is True:
+                                    finish_reason = str(obj.get("done_reason") or finish_reason)
+                                    break
+                        loop.call_soon_threadsafe(push, {"type": "done", "model": model_out, "finish_reason": finish_reason})
+                    except Exception as e:  # noqa: BLE001 - 第 2 档：worker 线程的最外层，失败经 error 事件送到客户端，痕迹在 SSE 流里
+                        if stop_event.is_set():
+                            # 已经被叫停了：这个异常多半就是叫停造成的（连接被拆、
+                            # 循环已关）。往一个没人读的队列里推 error 只会在
+                            # worker 线程里再抛一次，那次没人接得住。
+                            return
+                        loop.call_soon_threadsafe(push, {"type": "error", "message": str(e)})
+
+                async def worker_non_stream() -> None:
+                    try:
+                        resp = await run_in_threadpool(
+                            _call_provider,
+                            provider_name,
+                            api_key=api_key,
+                            base_url=base_url,
+                            model=model,
+                            system=system,
+                            messages=[*chat_history, {"role": "user", "content": user}],
+                            max_tokens=body.max_tokens,
+                            timeout_s=timeout_s,
+                        )
+                    except Exception as e:  # noqa: BLE001 - 第 2 档：worker 协程的最外层，失败经 error 事件送到客户端，痕迹在 SSE 流里
+                        await q.put({"type": "error", "message": str(e)})
+                        return
+                    await q.put({"type": "chunk", "delta": resp.text})
+                    await q.put({"type": "done", "model": resp.model, "finish_reason": resp.finish_reason})
+
+                # 租约从 handler 那边**移交**到这里；出这个 with 块就是放租约，
+                # 无论是正常 return、客户端断连、超时，还是生成器被 aclose()。
+                async with lease_stack:
+                    yield _sse_event(
+                        "meta",
+                        {
+                            "message_id": message_id,
+                            "retrieval_sources": passages,
+                            "metadata": {"retrieval_time_ms": retrieval_time_ms, "provider": provider_name},
+                        },
+                    )
+
+                    # 停 worker 的回调**后**压栈，所以它**先**跑（LIFO）：租约必须
+                    # 在 worker 真的停下之后才放，否则下一个「本该串行」的请求会
+                    # 和上一个还活着的 worker 并发打同一个 provider（C5）。
+                    if provider_name == "ollama":
+                        thread = threading.Thread(target=worker_ollama, daemon=True)
+                        thread.start()
+                        lease_stack.push_async_callback(
+                            _stop_stream_worker,
+                            label="ollama question stream",
+                            stop_event=stop_event,
+                            thread=thread,
+                        )
+                    else:
+                        task = asyncio.create_task(worker_non_stream())
+                        lease_stack.push_async_callback(
+                            _stop_stream_worker,
+                            label="question stream",
+                            stop_event=stop_event,
+                            task=task,
+                        )
+
+                    while True:
+                        if request is not None and await request.is_disconnected():
+                            yield _sse_event("error", {"message": "Client disconnected"})
+                            return
+                        if time.monotonic() >= lease.deadline:
+                            yield _sse_event("error", {"message": "AI request timed out"})
+                            return
+                        try:
+                            evt = await asyncio.wait_for(q.get(), timeout=0.5)
+                        except asyncio.TimeoutError:
+                            continue
+
+                        et = str(evt.get("type") or "")
+                        if et == "chunk":
+                            delta = str(evt.get("delta") or "")
+                            answer_parts.append(delta)
+                            yield _sse_event("chunk", {"delta": delta})
+                            continue
+                        if et == "done":
+                            generation_time_ms = int((time.perf_counter() - started) * 1000)
+                            if conversation_id:
+                                ts = __import__("datetime").datetime.utcnow().isoformat() + "Z"
+                                answer_text = "".join(answer_parts)
+                                await run_in_threadpool(
+                                    _save_conversation_snapshot,
+                                    book_uuid=str(book_uuid),
+                                    book_folder=book_folder,
+                                    conversation_id=conversation_id,
+                                    provider=provider_name,
+                                    model=str(evt.get("model") or model),
+                                    history=history,
+                                    assistant_message=DiskConversationMessage(
+                                        id=message_id,
+                                        role="assistant",
+                                        content=answer_text,
+                                        timestamp=ts,
+                                        metadata={
+                                            "retrieval_sources": passages,
+                                            "provider": provider_name,
+                                        },
+                                    ),
+                                )
+                            yield _sse_event(
+                                "done",
+                                {
+                                    "model": str(evt.get("model") or model),
+                                    "finish_reason": str(evt.get("finish_reason") or "stop"),
+                                    "metadata": {
+                                        "retrieval_time_ms": retrieval_time_ms,
+                                        "generation_time_ms": generation_time_ms,
+                                        "provider": provider_name,
+                                    },
+                                },
+                            )
+                            return
+                        if et == "error":
+                            yield _sse_event("error", {"message": str(evt.get("message") or "AI request failed")})
+                            return
+
+            # pop_all() 之后本层的 lease_stack 是空的，上面那个 async with 关它是
+            # 个 no-op —— 租约的收尾责任已经在生成器手上。这一步必须是本分支的
+            # 最后一步：在它之前抛的任何异常都还由这里负责释放。
+            return StreamingResponse(event_gen(lease_stack.pop_all()), media_type="text/event-stream")
 
     async def _do() -> dict:
-        book = load_book_cached(book_folder)
+        book = await run_in_threadpool(load_book_cached, book_folder)
         if not book:
             raise HTTPException(status_code=404, detail="Book not found")
 
         try:
-            passages, retrieval_time_ms = retrieve_passages(
+            passages, retrieval_time_ms = await run_in_threadpool(
+                retrieve_passages,
                 book_folder,
                 books_dir=BOOKS_DIR,
                 query=question,
@@ -2324,7 +2680,7 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
         except RuntimeError as e:
             raise HTTPException(status_code=400, detail=str(e))
         ctx_window = provider_context_window(provider_name, model)
-        book_tokens, max_chapter_tokens = book_token_stats(book)
+        book_tokens, max_chapter_tokens = await run_in_threadpool(book_token_stats, book)
         decision = choose_routing(
             provider_ctx_window=ctx_window,
             book_tokens=book_tokens,
@@ -2342,10 +2698,12 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
 
         routing_meta: dict[str, Any] = {"mode": decision.mode, "provider_context_window": int(ctx_window)}
         if decision.mode == "full_book":
-            context = build_full_book_context(book, budget_tokens=decision.budget_tokens)
+            context = await run_in_threadpool(build_full_book_context, book, budget_tokens=decision.budget_tokens)
         elif decision.mode == "multi_chapter":
             orders = unique_chapter_orders_from_passages(passages, limit=8)
-            context, used_orders = build_multi_chapter_context(book, chapter_orders=orders, budget_tokens=decision.budget_tokens)
+            context, used_orders = await run_in_threadpool(
+                build_multi_chapter_context, book, chapter_orders=orders, budget_tokens=decision.budget_tokens
+            )
             routing_meta["chapters"] = used_orders
         else:
             context = "\n\n".join([f"[{p['chapter_order'] + 1}] {p['chapter_title']}\n{p['text']}" for p in passages])
@@ -2466,7 +2824,12 @@ async def serve_image(book_id: str, image_name: str):
 
     img_path = os.path.join(BOOKS_DIR, safe_book_id, "images", safe_image_name)
 
-    if not os.path.exists(img_path):
+    # isfile 而不是 exists：`image_name=".."` 是**唯一能穿过路由到达这里**的可疑输入
+    # （路由参数是 [^/]+，任何含 `/` 的 payload 在匹配阶段就 404 了，所以上面两行
+    # basename 其实碰不到东西）。而 basename("..") 仍是 ".."，于是 img_path 指向
+    # images/ 的父目录——它存在，exists() 放行，FileResponse 拿到一个目录，
+    # 在 send 阶段炸成 500。一次「文件不存在」被报成「服务器坏了」。
+    if not os.path.isfile(img_path):
         raise HTTPException(status_code=404, detail="Image not found")
 
     return FileResponse(img_path)
