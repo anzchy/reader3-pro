@@ -159,12 +159,8 @@ function ThemeToggle(props) {
   );
 }
 
-/* `name` 是**同页多弹层**的判别位，不是 testid 的一部分。原型任一时刻只挂一个 Modal，
-   所以 lib-modal 这一个名字就够；但现有 Jinja 模板里四个 <dialog> 是同时存在于 DOM 的
-   （library.html 的 add-books / index-errors / create-collection / add-to-collection），
-   testid 一样就选不出唯一元素。做法与设计规格 §4 规则 5 无界那一行同构：
-   testid 保持字面量，判别位另开一个 data-* 属性。E2E 写作
-   [data-testid="lib-modal-primary"][data-modal="create-collection"]。 */
+/* 弹层是有界集合：每个各有唯一 testid，从 MODAL_TESTIDS 查表取。
+   判别位 data-modal 已删除——理由见 docs/adr/0014-bounded-testid-enumeration.md。 */
 function Modal(props) {
   const { title, children, onClose, primaryLabel, onPrimary, tone, cancelLabel, size, page, name } = props;
   const t = SHARED_TESTIDS[page];

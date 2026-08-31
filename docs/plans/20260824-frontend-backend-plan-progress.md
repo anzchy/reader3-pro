@@ -26,6 +26,7 @@
 | 阶段进入／退出门槛 | [`plan-tech-stack-migration.md` §7](20260816-tech-stack-migration/plan-tech-stack-migration.md) |
 | 依赖图（谁等谁） | 同上 §9.1 |
 | soak 次数、跨度、台账字段、清零规则 | 同上 §7 的 soak 小节 |
+| **当前对外发布版本** | `pyproject.toml` 的 `version` ＋ 同名 git tag（两者必须一致）；发版本身只在下面 §4 记一笔，**不进状态板**——发版与分支顺位是两条互不从属的轴 |
 
 ---
 
@@ -37,9 +38,9 @@
 |---|---|---|---|---|---|
 | **0** | `007-hygiene-and-contracts` | Phase 0 | 后端 | **✅** 2026-08-24 合入（PR #18） | [tasks/007](20260816-tech-stack-migration/tasks/007-hygiene-and-contracts.md) |
 | **1** | `008-test-safety-net` | Phase 1a | 后端 | **✅** 2026-08-26 合入（PR #19） | [tasks/008](20260816-tech-stack-migration/tasks/008-test-safety-net.md) |
-| **1.5** | *(009 harness spike)* | — | — | **⬜** 见 §2 的 P-2 | 本文 |
+| **1.5** | *(009 harness spike)* | — | — | **✅** 2026-08-26 完成（`36a6ac2` 落在 `master`，lint 收尾 `7ed87e1`） | 本文 §2 的 P-2 |
 | **2** | `009-e2e-annotations` | Phase 1b | 后端 | **⬜** 任务已写，分支未开 | [tasks/009](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
-| **3** | `011-backend-refactor` | Phase 2a+2b | 后端 | **⬛** 计划未写（故意，见 §9） | — |
+| **3** | `011-backend-refactor` | Phase 2a+2b | 后端 | **⬛** 计划未写（故意，见[迁移计划 §9](20260816-tech-stack-migration/plan-tech-stack-migration.md)） | — |
 | **⟂** | `010-design-degradation-states` | Track D | **前端** | **⬜** WI-1 – WI-8 已定义 | [前端计划 §4](20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) |
 | **4** | `012-storage-format` | Phase 3 | 后端 | **⬛** 计划未写 | — |
 | **5** | `013-ts-frontend-shell` | Phase 4A | **前端** | **⬜** WI-9 – WI-13 已定义 | 前端计划 §4 |
@@ -50,14 +51,26 @@
 
 ### 现在该做什么
 
-> **做顺位 1.5 的 009 harness spike，然后开 `009-e2e-annotations`。**
+> **开 `009-e2e-annotations`。**
 >
-> 008 已于 2026-08-26 合入 `master`（PR #19，合并 commit `8a9b3aa`），Phase 1a 关闭；
-> 前置全部满足，测试安全网已在主干上。
+> 前置全部满足：008 已于 2026-08-26 合入 `master`（PR #19，合并 commit `8a9b3aa`），
+> Phase 1a 关闭，测试安全网已在主干上；顺位 1.5 的 harness spike 同日完成（`36a6ac2`）；
+> 009 那份骨架的现状实测也已补齐，「领先一个分支即时补」的规矩
+> （见[迁移计划 §9](20260816-tech-stack-migration/plan-tech-stack-migration.md)）已满足。
 >
-> 按 §2 的 P-2：spike 先行——它落在 008 上、**不占顺位、不算 009 开工**，
-> 现在 008 已合入，落点相应改成 `master` 上的一次独立小提交。
-> 开 009 之前先补它那份任务骨架的现状实测（「领先一个分支即时补」的规矩，见 §9）。
+> **但 009 开工的头几件事不是写用例。** spike 实测出两类硬阻塞，它们卡在 §0.5 分组与
+> §4 断言的前面：
+>
+> 1. **testid 重名**——Playwright strict 模式下 `getByTestId()` 命中多于一个就抛，
+>    而 §1 规定只许用 `data-testid` 与 ARIA 定位。重名的那一族在改名之前**根本够不着**。
+> 2. **K1 的七个宿主里有两个没有 testid**——§4 要求 K1–K6 各一条能失败的断言，这两个够不着。
+>
+> 具体是哪些元素、各重复几次，见
+> [tasks/009 的「现状实测」](20260816-tech-stack-migration/tasks/009-e2e-annotations.md)——
+> 那里是这些数字的唯一定义处，本文不重述。
+>
+> 两条都不在现有 lint 的射程内：命名 lint 只验 testid 的**形状**，不验**唯一性**。
+> 把唯一性检查补进 `scripts/lint_testid_naming.py`，是自然的第三件事。
 
 ---
 
@@ -108,11 +121,29 @@
 **这是 A 和 C 都缺的东西，两边的最强反对意见都指向它**：009 是全程序最大的一块，
 而它变绿需要多久是**全程序最大的未知**。把这个未知留到第二顺位才暴露，是不必要的风险。
 
-> **spike 的范围**：只建 Playwright ＋ `webServer` 探针（打 `/api/health`，0.3 已交付）
-> ＋ **一条** smoke。**不写用例清单，不建分组，不建台账。**
+> **spike 的范围**：只建 Playwright ＋ ~~`webServer` 探针~~ **拉真服务的 fixture**
+> （打 `/api/health`，0.3 已交付）＋ **一条** smoke。
+> **不写用例清单，不建分组，不建台账。**
 > **它要回答的唯一问题**：Playwright 在这个仓库能不能稳定起来、单次冷启动多久。
 >
-> **落点**：`008` 分支上，或紧随其后的一次独立小提交。**不占顺位，不算 009 开工。**
+> **落点**：~~`008` 分支上，或紧随其后的一次独立小提交~~ → 008 于 2026-08-26 合入之后，
+> 落点相应改成 **`master` 上的一次独立小提交**。**不占顺位，不算 009 开工。**
+
+> ⚠️ **`webServer` 这个写法在 2026-08-26 被实测推翻。** 它是 `@playwright/test`（Node）的
+> 配置键，本仓库用的是 `pytest-playwright`，**没有这个东西**。实际形式是一个拉子进程的
+> pytest fixture（`tests/e2e/conftest.py` 的 `live_server`）——之所以必须是子进程而不是
+> `TestClient`，是因为 `BOOKS_DIR` 在 `server.py` 里是 import 期读的模块级常量。
+> **裁定本身（「插一个 spike」）不受影响，被推翻的只是它的形式**；原词划掉留在上面，
+> 是为了让下次读到的人知道这里踩过一次。
+
+> **✅ 已完成（2026-08-26，落在 `master` 的 `36a6ac2`，lint 收尾 `7ed87e1`）。**
+> 回答是「能起，而且很快」。冷启动与端到端 lane 的耗时见
+> [tasks/009 的「harness spike 的结论」](20260816-tech-stack-migration/tasks/009-e2e-annotations.md)——
+> 那里是这两个数字的唯一定义处，本文不重述。
+>
+> **spike 的额外产出**：它顺带证伪了 009 骨架 §1 的一条基础设施前提，并撞出两类硬阻塞
+> （见上面的「现在该做什么」）。**这正是插 spike 的理由在事后被兑现**——把「009 变绿要多久」
+> 这个最大未知留到第二顺位才暴露，暴露出来的会是同样两条，只是那时已经开工了。
 
 ### soak 与 011 同期跑：已知代价（P-3）
 
@@ -134,14 +165,18 @@
 
 ```bash
 # 某个分支开了没有
-git branch -a | grep 008-test-safety-net
+git branch -a | grep 009-e2e-annotations
 
 # 某个分支合入 master 了没有（输出 0 = 已全部在主干上）
-git rev-list --count master..007-hygiene-and-contracts
+git rev-list --count master..008-test-safety-net
 
-# 某个后端分支的逐项进度（数 [x] 与 [ ]）
+# 后端分支的逐项进度——**记账形式因分支而异，别套错配方**：
+#   007 / 008 用 checkbox（008 有 10 条）
 grep -c '^\- \[x\]' docs/plans/20260816-tech-stack-migration/tasks/008-test-safety-net.md
 grep -c '^\- \[ \]' docs/plans/20260816-tech-stack-migration/tasks/008-test-safety-net.md
+#   009 用表格（R-n 读路径 / W-n 写路径 / X-n 其他，共 18 条），checkbox 数恒为 0——
+#   对 009 跑上面两条会得到 0 / 0，那是「配方不适用」，不是「没进度」。
+grep -cE '^\| [A-Z]+-[0-9]+ ' docs/plans/20260816-tech-stack-migration/tasks/009-e2e-annotations.md
 
 # 前端工作项清单
 grep -n '^### WI-' docs/plans/20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md
@@ -167,6 +202,10 @@ gh run list --limit 5
 | 2026-08-26 | 008 分支上完工：十条退出门槛全达成 | [tasks/008 §9](20260816-tech-stack-migration/tasks/008-test-safety-net.md) |
 | 2026-08-26 | 网建好之后对它自己做审计，71 条 High 结清（69 修 / 2 误报）**在 008 分支内**修完，不再转交 009 | [tasks/008 §8.5](20260816-tech-stack-migration/tasks/008-test-safety-net.md) ／ `.claude/tdd-guardian/dispatch-order.md` |
 | 2026-08-26 | Phase 1a 关闭，008 合入 `master`（PR #19，合并 commit `8a9b3aa`） | [tasks/008 的「合入记录」](20260816-tech-stack-migration/tasks/008-test-safety-net.md) |
+| 2026-08-26 | **顺位 1.5 的 harness spike 完成**（`36a6ac2`，lint 收尾 `7ed87e1`）：Playwright 在本仓库能稳定起来，冷启动与 lane 耗时均在可接受范围 | [tasks/009 的「harness spike 的结论」](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
+| 2026-08-26 | spike 证伪 009 骨架 §1 的 `webServer` 前提，改为拉子进程的 `live_server` fixture；**本文 §2 的 P-2 同步更正** | 本文 §2（P-2）／[tasks/009 的「现状实测」](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
+| 2026-08-26 | spike 撞出 009 的两类硬阻塞（testid 重名 · K1 两个宿主无 testid），**列为 009 开工的头两件事，排在写用例之前** | 同上「现状实测」／本文 §1「现在该做什么」 |
+| 2026-08-26 | 发布 **v1.5.0**（tag `v1.5.0`，`881b7f9`）——007＋008 两阶段成果的第一次对外发版 | [Release v1.5.0](https://github.com/anzchy/reader3-pro/releases/tag/v1.5.0)／`pyproject.toml` |
 
 > **来源**：2026-08-24 与 Codex（`gpt-5.6-terra`）的一次定向复核。Codex 选 C 并提出五条风险，
 > 其中三条经核对成立并已回写（见上表后两行）；两条不成立——它担心 010 的九条门槛「形式完成、

@@ -711,6 +711,11 @@ Plan 的 Phase 1b 会写 Playwright E2E，它是 Phase 4A 的进入条件（**�
    无界那一行不违反规则 2：`data-*` 属性选择器既不是 class、不是 `nth-child`、也不是层级结构选择器，
    重设计改不动它。把 id 拼进 testid 才是违规——那样每本书都会造出一个 grep 不到的新 testid。
 
+   **两行是互斥的，先判分类再挑做法**（2026-08-31 补）：判据是「这一族成员能否在编译期枚举完」。
+   弹层、面板、tab、状态、颜色都能，走有界那一行——每个成员各有唯一字面量，**不许**共用一个字面量
+   再加判别位。只有取值来自用户数据的才走无界那一行，且判别位属性限于一张闭合清单。判据与清单的
+   唯一定义处是 [ADR-0014](../../adr/0014-bounded-testid-enumeration.md)。
+
    逐条落地见 [`contracts/testid-rename-map.md` §5](../20260816-tech-stack-migration/contracts/testid-rename-map.md)。
 
 命名约定：

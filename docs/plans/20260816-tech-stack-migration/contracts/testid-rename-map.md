@@ -339,18 +339,11 @@ E2E 定位写作 `[data-testid="lib-book-card"][data-book-id="…"]`——
 
 ### 8.2 判别位：`data-modal` / `data-sheet` / `data-file-href`
 
-原型任一时刻只挂一个 Modal、一个 Sheet；现有模板把四个 `<dialog>` 和四个抽屉**常驻 DOM**。
-于是 `lib-modal-primary`、`rd-sheet-close` 这类名字在旧模板里会命中多个元素，Playwright 的
-strict 模式会直接报错。做法与 §5.2 无界 id 那一行同构——testid 保持字面量，判别位另开
-一个 `data-*`：
-
-| 判别位 | 用在哪 | 取值 | E2E 写法 |
-|---|---|---|---|
-| `data-modal` | `Modal` / `ConfirmModal` 的外框、关闭、取消、主按钮、confirm 正文 | `create-collection`、`add-books`、`note-editor`… | `[data-testid="lib-modal-primary"][data-modal="create-collection"]` |
-| `data-sheet` | `Sheet` 的 resizer 与关闭按钮 | `rd-toc-panel`、`rd-search-panel`… 即 Sheet 自己的 testid | `[data-testid="rd-sheet-close"][data-sheet="rd-ai-panel"]` |
-
-两个判别位在**原型与模板两侧都加**，E2E 的选择器在迁移前后一字不变。它们不违反设计规格
-§4 规则 2：`data-*` 属性选择器既不是 class、不是 `nth-child`、也不是层级结构选择器。
+> **`data-modal` / `data-sheet` 已删除（2026-08-31）。** 本节原先把弹层与面板判定为「与无界 id 同构」，
+> 用共享字面量 ＋ 判别位处理；那个判定是错的——它们是编译期可枚举的有界集合，属于设计规格 §4 规则 5
+> 的**有界**那一行，每个成员应各有唯一字面量。唯一定义处现为
+> [ADR-0014](../../../adr/0014-bounded-testid-enumeration.md)，它同时把复合形态收紧为一张闭合的
+> 无界属性清单。本节只保留下面 `data-file-href` 这一条仍然有效的判别位登记。
 
 一处**名字对齐**：原型原来写 `data-anno-id`，生产的 `annotations.js` 一直用
 `data-annotation-id`。改原型（1 处）而不是改生产代码。
