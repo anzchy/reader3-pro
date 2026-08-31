@@ -1129,13 +1129,13 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 
 **K3 硬约束（覆盖层挂载点）**：只允许两种挂载——`<body>` 直接子元素（生产现状，零改动即合规），或 `<dialog>` ＋ `showModal()` 进 top layer。挂在 `.reader-shell` 里不是禁止，但**每次都要证明**。`.page-flow` 已经带着 `will-change: transform`，就是那个反面教材。
 
-**涉及 testid**：`rd-toolbar`、`rd-toolbar-toc`、`rd-toolbar-notes`、`rd-toolbar-search`、`rd-toolbar-ai`、`rd-toolbar-settings`、`rd-header-back`、`rd-panel-toc`、`rd-panel-notes`、`rd-panel-search`、`rd-panel-ai`、`rd-anno-toolbar`、`rd-anno-copy`、`rd-anno-note`、`rd-anno-ask`、`rd-anno-delete`、`rd-anno-color-yellow` / `-green` / `-pink` / `-blue`、`rd-note-editor`、`rd-note-tooltip`、`rd-degrade-s1`、`rd-page-prev`、`rd-page-next`。
+**涉及 testid**：`rd-toolbar`、`rd-toolbar-toc`、`rd-toolbar-notes`、`rd-toolbar-search`、`rd-toolbar-ai`、`rd-toolbar-settings`、`rd-header-back`、`rd-toc-panel`、`rd-notes-panel`、`rd-search-panel`、`rd-ai-panel`、`rd-anno-toolbar`、`rd-anno-copy`、`rd-anno-note`、`rd-anno-ask`、`rd-anno-delete`、`rd-anno-color-yellow` / `-green` / `-pink` / `-blue`、`rd-note-editor`、`rd-note-tooltip`、`rd-degrade-s1`、`rd-page-prev`、`rd-page-next`。
 
 **涉及降级状态**：DEG-S1（重做形态）。
 
 **验收标准**：
 
-1. TOC 或 Notes 面板打开状态下点 `rd-toolbar-search`：搜索面板在超时前打开，且原面板关闭（`rd-panel-toc` 不可见）。
+1. TOC 或 Notes 面板打开状态下点 `rd-toolbar-search`：搜索面板在超时前打开，且原面板关闭（`rd-toc-panel` 不可见）。
 2. 任意时刻可见的面板数 ≤1（对四个面板 testid 逐一取可见性求和）。
 3. 面板打开后 `document.activeElement` 在该面板子树内；按 Esc 后面板关闭且 `document.activeElement` 回到触发它的工具栏按钮。
 4. 面板打开后连按 N＋1 次 Tab，`document.activeElement` 始终在该面板子树内；`N` 取该面板内可聚焦元素个数（见 §5.0 占位符表），不写死常数。
@@ -1517,7 +1517,7 @@ E2E 侧：**不要写 Node Playwright Test 的 `webServer` 语法**，用 pytest
 
 | 用例 ID | 归属 WI | 断言目标 | 预期结果 |
 |---|---|---|---|
-| FP-01 | WI-16 | `rd-panel-toc` / `-notes` / `-search` / `-ai` | 任意时刻四者可见数 ≤1（逐个取可见性求和） |
+| FP-01 | WI-16 | `rd-toc-panel` / `rd-notes-panel` / `rd-search-panel` / `rd-ai-panel` | 任意时刻四者可见数 ≤1（逐个取可见性求和） |
 | FP-02 | WI-16 | `rd-toolbar-search`（TOC 已打开） | 搜索面板在超时前打开、TOC 关闭。**这是 D6 的回归用例**，现状会超时 |
 | FP-03 | WI-16 | `rd-toolbar-notes`（AI 已打开） | 同上，四个面板两两组合各跑一次（12 条参数化） |
 | FP-04 | WI-16 | 分层 Escape | 标注工具栏 ＋ 笔记编辑器同时打开时按 Esc：先关编辑器，工具栏仍在；再按 Esc 关工具栏；再按 Esc 关面板 |
