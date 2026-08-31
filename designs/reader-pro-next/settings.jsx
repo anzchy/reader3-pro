@@ -161,7 +161,7 @@ function SettingsScreen(props) {
       </div>
 
       {confirm && (
-        <ConfirmModal page="set" name={confirm}
+        <ConfirmModal modal={confirm}
           title={destructive[confirm].title}
           body={destructive[confirm].body}
           confirmLabel={destructive[confirm].label}

@@ -91,6 +91,19 @@ const RD_PREF_THEME_TESTID = {
   night: "rd-pref-theme-night",
 };
 
+/* 四个面板也是有界集合：宿主名就是调用点传进来的 testId（这四个名字已经落在生产模板与
+   改名表里，一字不改），子元素按 -close / -resizer 派生。原先挂在两个子节点上的那个判别位
+   属性已删除，理由见 docs/adr/0014-bounded-testid-enumeration.md。
+   这里**故意没有 root 字段**：root 的值会和同一份文件里调用点的 testId prop 字面量逐字
+   重名，同文件唯一性检查会因此把 reader.jsx 判红。只有 rd-ai-panel 可拖宽，所以只有它
+   有 resizer——给另外三个补一个 resizer 名字，是在为不存在的 DOM 节点发名。 */
+const RD_SHEET_TESTIDS = {
+  "rd-toc-panel": { close: "rd-toc-panel-close" },
+  "rd-notes-panel": { close: "rd-notes-panel-close" },
+  "rd-search-panel": { close: "rd-search-panel-close" },
+  "rd-ai-panel": { close: "rd-ai-panel-close", resizer: "rd-ai-panel-resizer" },
+};
+
 /* ================================================================== */
 /* Horizontal pagination                                               */
 /* ================================================================== */
@@ -160,6 +173,7 @@ function usePagination(viewportRef, flowRef, resetKey, deps) {
 
 function Sheet(props) {
   const { title, side, width, onClose, children, testId, onResize } = props;
+  const t = RD_SHEET_TESTIDS[testId];
   const ref = useRef(null);
   useFocusTrap(ref, true, onClose);
 
@@ -196,8 +210,7 @@ function Sheet(props) {
           aria-orientation="vertical"
           aria-label={"Resize " + title + " panel"}
           tabIndex="0"
-          data-testid="rd-sheet-resizer"
-          data-sheet={testId}
+          data-testid={t.resizer}
           onMouseDown={startResize}
           onKeyDown={(event) => {
             if (event.key === "ArrowLeft") onResize(Math.max(320, (width || 546) + (side === "right" ? 24 : -24)));
@@ -208,7 +221,7 @@ function Sheet(props) {
       <header className="sheet-header">
         <h2 className="sheet-title">{title}</h2>
         <div className="sheet-header-actions">{props.actions}</div>
-        <button className="btn btn-icon" type="button" aria-label={"Close " + title} data-testid="rd-sheet-close" data-sheet={testId} onClick={onClose}>×</button>
+        <button className="btn btn-icon" type="button" aria-label={"Close " + title} data-testid={t.close} onClick={onClose}>×</button>
       </header>
       <div className="sheet-body">{children}</div>
     </aside>
@@ -539,7 +552,7 @@ function AiPanel(props) {
       </div>
 
       {confirmClear && (
-        <ConfirmModal page="rd" name="clear-conversation"
+        <ConfirmModal modal="clear-conversation"
           title="Clear this conversation?"
           body="All messages in the current conversation will be removed. This cannot be undone."
           confirmLabel="Clear conversation"
@@ -693,7 +706,7 @@ function NoteEditor(props) {
   const { quote, initial, onSave, onClose } = props;
   const [text, setText] = useState(initial || "");
   return (
-    <Modal page="rd" name="note-editor" title="Add note" primaryLabel="Save note" onClose={onClose} onPrimary={() => onSave(text)}>
+    <Modal modal="note-editor" title="Add note" primaryLabel="Save note" onClose={onClose} onPrimary={() => onSave(text)}>
       <blockquote className="note-quote" data-testid="rd-note-editor-quote">{quote}</blockquote>
       <label className="field-label">Your note
         <textarea
@@ -1095,7 +1108,7 @@ function ReaderScreen(props) {
       )}
 
       {confirmDelete && (
-        <ConfirmModal page="rd" name="delete-note"
+        <ConfirmModal modal="delete-note"
           title="Delete this note?"
           body={"“" + confirmDelete.quote.slice(0, 90) + "…” and any attached text will be removed."}
           confirmLabel="Delete note"
@@ -1109,7 +1122,7 @@ function ReaderScreen(props) {
       )}
 
       {review && (
-        <Modal page="rd" name="notes-review" title={"Review · " + annotations.length + " notes"} size="wide" onClose={() => setReview(false)}>
+        <Modal modal="notes-review" title={"Review · " + annotations.length + " notes"} size="wide" onClose={() => setReview(false)}>
           <div className="review-list" data-testid="rd-notes-review-list">
             {annotations.map((note) => (
               <article className="review-item" key={note.id}>

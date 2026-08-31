@@ -72,9 +72,6 @@ const SHARED_TESTIDS = {
     mobileMenu: "lib-topbar-mobile-menu", mobileInsights: "lib-topbar-mobile-insights",
     navLibrary: "lib-topbar-nav-library", navSettings: "lib-topbar-nav-settings",
     addBooks: "lib-topbar-add-books", backToLibrary: "lib-topbar-back-to-library",
-    modal: "lib-modal", modalClose: "lib-modal-close",
-    modalCancel: "lib-modal-cancel", modalPrimary: "lib-modal-primary",
-    confirmBody: "lib-confirm-body",
   },
   rd: {
     liveRegion: "rd-live-region",
@@ -82,9 +79,6 @@ const SHARED_TESTIDS = {
     mobileMenu: "rd-topbar-mobile-menu", mobileInsights: "rd-topbar-mobile-insights",
     navLibrary: "rd-topbar-nav-library", navSettings: "rd-topbar-nav-settings",
     addBooks: "rd-topbar-add-books", backToLibrary: "rd-topbar-back-to-library",
-    modal: "rd-modal", modalClose: "rd-modal-close",
-    modalCancel: "rd-modal-cancel", modalPrimary: "rd-modal-primary",
-    confirmBody: "rd-confirm-body",
   },
   set: {
     liveRegion: "set-live-region",
@@ -92,10 +86,35 @@ const SHARED_TESTIDS = {
     mobileMenu: "set-topbar-mobile-menu", mobileInsights: "set-topbar-mobile-insights",
     navLibrary: "set-topbar-nav-library", navSettings: "set-topbar-nav-settings",
     addBooks: "set-topbar-add-books", backToLibrary: "set-topbar-back-to-library",
-    modal: "set-modal", modalClose: "set-modal-close",
-    modalCancel: "set-modal-cancel", modalPrimary: "set-modal-primary",
-    confirmBody: "set-confirm-body",
   },
+};
+
+/* ------------------------------------------------------------------ */
+/* 弹层的 testid：有界枚举表（ADR-0014）                                 */
+/* ------------------------------------------------------------------ */
+/* 14 个弹层是编译期可枚举的有界集合，所以每个成员各有唯一的 data-testid
+   字面量，而不是共用一个名字再挂判别位——裁决见
+   docs/adr/0014-bounded-testid-enumeration.md。键是 Modal / ConfirmModal 的
+   `modal` prop（settings.jsx 传的是运行期变量，所以只能查表，不能写成字面量
+   prop）；值按 -close / -cancel / -primary / -body 派生。唯一的保留名例外是
+   note-editor，宿主沿用契约已定的 rd-note-editor。 */
+const MODAL_TESTIDS = {
+  "add-books": { root: "lib-modal-add-books", close: "lib-modal-add-books-close", cancel: "lib-modal-add-books-cancel", primary: "lib-modal-add-books-primary", body: "lib-modal-add-books-body" },
+  "index-errors": { root: "lib-modal-index-errors", close: "lib-modal-index-errors-close", cancel: "lib-modal-index-errors-cancel", primary: "lib-modal-index-errors-primary", body: "lib-modal-index-errors-body" },
+  "create-collection": { root: "lib-modal-create-collection", close: "lib-modal-create-collection-close", cancel: "lib-modal-create-collection-cancel", primary: "lib-modal-create-collection-primary", body: "lib-modal-create-collection-body" },
+  "rename-collection": { root: "lib-modal-rename-collection", close: "lib-modal-rename-collection-close", cancel: "lib-modal-rename-collection-cancel", primary: "lib-modal-rename-collection-primary", body: "lib-modal-rename-collection-body" },
+  "delete-collection": { root: "lib-modal-delete-collection", close: "lib-modal-delete-collection-close", cancel: "lib-modal-delete-collection-cancel", primary: "lib-modal-delete-collection-primary", body: "lib-modal-delete-collection-body" },
+  "clean-collection": { root: "lib-modal-clean-collection", close: "lib-modal-clean-collection-close", cancel: "lib-modal-clean-collection-cancel", primary: "lib-modal-clean-collection-primary", body: "lib-modal-clean-collection-body" },
+  "add-to-collection": { root: "lib-modal-add-to-collection", close: "lib-modal-add-to-collection-close", cancel: "lib-modal-add-to-collection-cancel", primary: "lib-modal-add-to-collection-primary", body: "lib-modal-add-to-collection-body" },
+
+  "note-editor": { root: "rd-note-editor", close: "rd-note-editor-close", cancel: "rd-note-editor-cancel", primary: "rd-note-editor-primary", body: "rd-note-editor-body" },
+  "clear-conversation": { root: "rd-modal-clear-conversation", close: "rd-modal-clear-conversation-close", cancel: "rd-modal-clear-conversation-cancel", primary: "rd-modal-clear-conversation-primary", body: "rd-modal-clear-conversation-body" },
+  "delete-note": { root: "rd-modal-delete-note", close: "rd-modal-delete-note-close", cancel: "rd-modal-delete-note-cancel", primary: "rd-modal-delete-note-primary", body: "rd-modal-delete-note-body" },
+  "notes-review": { root: "rd-modal-notes-review", close: "rd-modal-notes-review-close", cancel: "rd-modal-notes-review-cancel", primary: "rd-modal-notes-review-primary", body: "rd-modal-notes-review-body" },
+
+  "reindex": { root: "set-modal-reindex", close: "set-modal-reindex-close", cancel: "set-modal-reindex-cancel", primary: "set-modal-reindex-primary", body: "set-modal-reindex-body" },
+  "conversations": { root: "set-modal-conversations", close: "set-modal-conversations-close", cancel: "set-modal-conversations-cancel", primary: "set-modal-conversations-primary", body: "set-modal-conversations-body" },
+  "cache": { root: "set-modal-cache", close: "set-modal-cache-close", cancel: "set-modal-cache-cancel", primary: "set-modal-cache-primary", body: "set-modal-cache-body" },
 };
 
 /* Screen-reader announcements (spec §3.1 "Live region"). */
@@ -162,8 +181,8 @@ function ThemeToggle(props) {
 /* 弹层是有界集合：每个各有唯一 testid，从 MODAL_TESTIDS 查表取。
    判别位 data-modal 已删除——理由见 docs/adr/0014-bounded-testid-enumeration.md。 */
 function Modal(props) {
-  const { title, children, onClose, primaryLabel, onPrimary, tone, cancelLabel, size, page, name } = props;
-  const t = SHARED_TESTIDS[page];
+  const { title, children, onClose, primaryLabel, onPrimary, tone, cancelLabel, size, modal } = props;
+  const t = MODAL_TESTIDS[modal];
   const ref = useRef(null);
   useFocusTrap(ref, true, onClose);
 
@@ -178,18 +197,17 @@ function Modal(props) {
         aria-label={title}
         tabIndex="-1"
         ref={ref}
-        data-testid={t.modal}
-        data-modal={name}
+        data-testid={t.root}
       >
         <header className="modal-header">
           <h2 className="modal-title">{title}</h2>
-          <button className="btn btn-icon" type="button" aria-label="Close dialog" style={{marginLeft: "auto"}} data-testid={t.modalClose} data-modal={name} onClick={onClose}>×</button>
+          <button className="btn btn-icon" type="button" aria-label="Close dialog" style={{marginLeft: "auto"}} data-testid={t.close} onClick={onClose}>×</button>
         </header>
         <div className="modal-body">{children}</div>
         {primaryLabel && (
           <footer className="modal-footer">
-            <button className="btn" type="button" data-testid={t.modalCancel} data-modal={name} onClick={onClose}>{cancelLabel || "Cancel"}</button>
-            <button className={"btn " + (tone === "danger" ? "btn-danger" : "btn-primary")} type="button" data-testid={t.modalPrimary} data-modal={name} onClick={onPrimary}>{primaryLabel}</button>
+            <button className="btn" type="button" data-testid={t.cancel} onClick={onClose}>{cancelLabel || "Cancel"}</button>
+            <button className={"btn " + (tone === "danger" ? "btn-danger" : "btn-primary")} type="button" data-testid={t.primary} onClick={onPrimary}>{primaryLabel}</button>
           </footer>
         )}
       </section>
@@ -199,11 +217,11 @@ function Modal(props) {
 
 /* Destructive actions must confirm (spec §4.3 Data, §4.1 item 7). */
 function ConfirmModal(props) {
-  const { title, body, confirmLabel, onCancel, onConfirm, page, name } = props;
-  const t = SHARED_TESTIDS[page];
+  const { title, body, confirmLabel, onCancel, onConfirm, modal } = props;
+  const t = MODAL_TESTIDS[modal];
   return (
-    <Modal page={page} name={name} title={title} primaryLabel={confirmLabel} tone="danger" onClose={onCancel} onPrimary={onConfirm}>
-      <p className="empty-copy" style={{fontSize: "13px"}} data-testid={t.confirmBody} data-modal={name}>{body}</p>
+    <Modal modal={modal} title={title} primaryLabel={confirmLabel} tone="danger" onClose={onCancel} onPrimary={onConfirm}>
+      <p className="empty-copy" style={{fontSize: "13px"}} data-testid={t.body}>{body}</p>
     </Modal>
   );
 }
