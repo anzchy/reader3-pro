@@ -1009,7 +1009,9 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 
 **前置 WI**：WI-9、WI-11。
 
-**做什么**：**零行为变更**的结构拆分，唯一的例外是 K6（见 WI-15）。
+**做什么**：**零行为变更**的结构拆分，例外**恰好两条**：K6（见 WI-15）与改色语义（见下）。
+
+**例外二——改色保 id（2026-09-01 裁定）**：今天没有「改色」这个操作。色板点击只调 `setSelectedColor` 换掉「下一次要用的颜色」；随后重按 marker 走 `toggleMarkerAnnotation`，旧标注**保留**、另加一条新色的，两条并存；重按 wavy / underline 走 `toggleAnnotation`，**先删后建**，`id` 变了。三条路径没有一条是用户以为的「把这条标注改成绿色」。本 WI 把它做成一个真操作：**颜色变、`id` 不变、不产生第二条**。落点在 `commands.ts`（`toggleMarkerAnnotation` / `toggleAnnotation` 是同一个写入链的两个入口）与 `overlays.ts`（`setSelectedColor` 需要知道当前是否已选中某条标注）。用例侧的两条断言（现状 `W-5a` / 变更后 `W-5b`）定义在 [009 任务书](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md) §3，本文不复述。
 
 | 模块 | 迁入符号 | 约行数 | 承载契约 |
 |---|---|---:|---|
@@ -1043,10 +1045,13 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 
 1. `static/js/annotations.js` 不再存在，八个模块文件全部存在。
 2. 四条 `dependency-cruiser` 规则全部启用且通过；人为加一条反向 import 后该命令非零退出（规则确实生效）。
-3. `baseline-1b` 全部用例零改动通过。
+3. `baseline-1b` 全部用例零改动通过，**唯一例外是 W-5a**（见第 6 条）。这条例外必须是**具名的、事先写下的**——「拆分时顺手发现某条 baseline 不对了就改掉它」正是零行为变更门槛要防的事，只有事先点名的那一条不算。
 4. iframe 边界三重断言 A/B/C 全部通过（定义见 `spec-frontend-design.md` §6.0）。
 5. 八个模块的导出符号并集等于原 `annotations.js` 的对外符号集合，无遗漏无新增（K6 的兜底删除除外）。
-6. `anchoring.ts` 的五个函数全部有单测，**按两类分别要求**（此前写「五个都做无 DOM 纯函数单测」，实测不成立——五个里只有两个是纯的）：
+6. `acceptance-4b1` 组的 **W-5b** 解开 skip 并绿：改色后 `notes.json` 里该条标注的 `id` 与改色前相同，且该段文字上的标注条数仍为 1。**并且先证明 W-5a 转红**——它特征化的正是本 WI 换掉的旧行为，它若还绿着，说明改色根本没做，W-5b 的绿另有来源。顺序是：跑一次拿到 W-5a 的红，再把它从 `baseline-1b` 删除（不是 skip——被替换掉的特征化没有第二次用途）。
+
+   ⚠️ **K-1a / K-6a 不走这条路，别照抄**：它们断言的是 4B.1 之后依然成立的东西（七个宿主元素齐备、`chapter_index` 等于 URL 里那个数），4B.1 落地后仍是绿的，一条都不用动。W-5a 是本计划里**唯一**一条会被自己的行为变更打红的 baseline 用例。
+7. `anchoring.ts` 的五个函数全部有单测，**按两类分别要求**（此前写「五个都做无 DOM 纯函数单测」，实测不成立——五个里只有两个是纯的）：
 
    | 类别 | 函数 | 签名证据 | 测试要求 |
    |---|---|---|---|
@@ -1054,7 +1059,7 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
    | DOM 适配器 | `buildTextIndex` `offsetFromNode` `rangeFromCfi` | `:54` `buildTextIndex(container)`、`:79` `offsetFromNode(nodes, targetNode, nodeOffset)`、`:242` `rangeFromCfi(cfi, contents, doc)`——收发 DOM 节点 / Range / epub.js contents | 在 DOM 环境下测，允许依赖 DOM，**不许**依赖网络 |
 
    拆模块时应尽量把适配器里的纯逻辑挤进第一类，但**不得**为了凑「无 DOM」而给三个适配器套一层假接口——那是把契约做成了测试的形状。
-7. **`commands.ts` 不许触碰 DOM，用 lint 断言而非文档断言。** 此前这里写「PR 描述里列出所有触碰 DOM 的位置（文档级验收）」——那不是验收，是自陈；写了照样能合，也没人会在第二次改动时重读。改成 ESLint `overrides` 里对该文件单开一条：
+8. **`commands.ts` 不许触碰 DOM，用 lint 断言而非文档断言。** 此前这里写「PR 描述里列出所有触碰 DOM 的位置（文档级验收）」——那不是验收，是自陈；写了照样能合，也没人会在第二次改动时重读。改成 ESLint `overrides` 里对该文件单开一条：
 
    ```jsonc
    // .eslintrc.* — overrides 数组中
@@ -1090,7 +1095,7 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 - **K3**：`offsetRect()` 随 `overlays.ts` 一起移动，并加注释说明它返回的是**视口坐标**。
 - **K4**：六个事件名改成常量。
 - **K5**：`window.Reader3Epub` 写成显式接口，9 个成员里 **7 个纳入**（`rendition`、`getContents()`、`getContentRoot()`、`getFrameElement()`、`onContentsReady(cb)`、`applyThemeSettings()`、`displaySectionIndex(i)`），2 个标 `@deprecated`（`getContentDocument()`、`book`），在 WI-16 结束时删除。⚠️ **`search.js` 也是 K5 的消费方**，消费 `getContentRoot` 与 `onContentsReady`，不是只有 `annotations.js`。
-- **K6**：删掉 `location.pathname` 兜底并改为抛错。这是 WI-14 **唯一有意的行为变更**。
+- **K6**：删掉 `location.pathname` 兜底并改为抛错。这是 WI-14 两条有意的行为变更之一（另一条是改色保 id，定义在 WI-14）。
 
 六个契约里四个现在是**静默失败**的。
 

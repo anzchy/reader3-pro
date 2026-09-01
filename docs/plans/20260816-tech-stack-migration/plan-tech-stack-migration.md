@@ -391,7 +391,7 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 | Phase 2b | 2a | 跨库搜索性能相对基准可量化改善；`_normalize_with_map` 差分测试通过 |
 | Phase 3 | 2b + Track D **且 soak 门槛达标**（三路汇合，见 §9.1） | 新书完全不依赖 pickle；存量可一键迁移；**`--migrate` 原地读写，不复用摄取路径**；**DEG-S1–DEG-S4 在当时的 UI 里可见**——即 **`acceptance-p3` 组解开 skip 并绿灯**（朴素横幅形态）；真实 iframe 标注迁移 E2E 通过 |
 | Phase 4A | **1b 的 G1**（用例完成门；不必等 G2/soak） | wheel 内容测试通过；settings 与 library 切换后 `baseline-1b` **零改动**全绿；**4A.4 另需 `acceptance-4a4` 组解开 skip 并绿灯**（DEG-S1–DEG-S4 改版形态）；Classic 已删除 |
-| Phase 4B | Phase 3 **且** 4A.4 | 拆分后 `baseline-1b` 全绿；**4B.1 另需 `acceptance-4b1` 组解开 skip 并绿灯**（K1 响亮失败、K6 抛错——这两条行为本阶段才产生）；各模块 ≤400 行；依赖方向机器可验（`dependency-cruiser` 四条规则，见[前端计划](../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) 的 WI-14）；**iframe 内部改动不超出设计规格 §6.0 允许的范围**（判据以 §6.0「判定标准（canonical）」为准的**三重断言 A/B/C**，本表不复述）；**三个浮层过 `containingBlockAncestor() === null`，且工具条位置用矩形几何断言**（4B.2 硬门槛，K3）；**K1–K6 各有一条能失败的断言**；进度值全站一致 |
+| Phase 4B | Phase 3 **且** 4A.4 | 拆分后 `baseline-1b` 全绿，**唯一具名例外 W-5a**（它特征化的旧改色行为正是 4B.1 要换掉的，删除流程见[前端计划](../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) WI-14 验收第 6 条）；**4B.1 另需 `acceptance-4b1` 组解开 skip 并绿灯**（组内容定义在 [009 §0.5](tasks/009-e2e-annotations.md)，本表不复述——这些行为本阶段才产生）；各模块 ≤400 行；依赖方向机器可验（`dependency-cruiser` 四条规则，见[前端计划](../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) 的 WI-14）；**iframe 内部改动不超出设计规格 §6.0 允许的范围**（判据以 §6.0「判定标准（canonical）」为准的**三重断言 A/B/C**，本表不复述）；**三个浮层过 `containingBlockAncestor() === null`，且工具条位置用矩形几何断言**（4B.2 硬门槛，K3）；**K1–K6 各有一条能失败的断言**；进度值全站一致 |
 | Phase 5 | 4B | 单命令进入阅读；PWA 版本切换不撕裂 |
 
 ### soak 门槛（Phase 3 专用）
@@ -437,7 +437,11 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 
 **三类清零触发器，全部二值可判，不需要任何人判断「这次改动算不算大」：**
 
-1. **`suite_hash` 变了** —— 清零。哈希覆盖 `baseline-1b` 组的用例文件、Playwright 配置、以及该组用到的 fixtures。**改一条断言、修一条 flaky、动一次 webServer 探针，都从零重数。**
+1. **`suite_hash` 变了** —— 清零。哈希覆盖 `baseline-1b` 组的用例文件、Playwright 配置、以及该组用到的 fixtures——**`tests/fixtures/epub_corpus.py` 在覆盖范围内**（2026-09-01 裁定）。**改一条断言、修一条 flaky、动一次 webServer 探针，都从零重数。**
+
+   > **`epub_corpus.py` 为什么纳入，代价是什么。** 它是 `build_epub2` / `build_epub3` / `build_cjk` 三个构造器的所在地，`baseline-1b` 的每一条用例都读它造出来的书。改一个字符，全组用例的被测输入就变了——把它排除在外，等于允许「不动用例、只动语料」地重塑十次运行的含义，而门槛正是为了防这个。
+   >
+   > **代价是实的，不藏**：这个文件同时被 `tests/unit` 用着，因此**一次纯单测目的的构造器改动也会清零 soak 计数**。这是「宁可多清零，不可假计数」的一侧误差，接受。代价必须写进 `soak-log.md` 的表头，和取哈希的命令写在一起——否则第十次运行前一天有人为了一条单测加个 `build_epub2(lang=...)` 参数，计数归零时没人知道为什么。
 2. **`browser` 或 `os` 变了** —— 清零。浏览器升级换的是被测运行时。
 3. **任意一次 `red`** —— 清零（原有规则，不变）。
 
@@ -456,11 +460,16 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 
 ```bash
 # baseline-1b 组用例 + harness 配置 + fixtures 的内容哈希，前 12 位
-{ git ls-files -s tests/e2e/baseline-1b playwright.config.* tests/e2e/fixtures   | git hash-object --stdin; } | cut -c1-12
+{ git ls-files -s \
+    tests/e2e/baseline-1b playwright.config.* tests/e2e/fixtures \
+    tests/fixtures/epub_corpus.py \
+  | git hash-object --stdin; } | cut -c1-12
 ```
 
 > 路径以 009 落地时的实际目录为准；**若目录名不同，改的是这条命令，不是规则**。命令本身连同它算出的
-> 第一个哈希值一起写进 `soak-log.md` 的表头，这样台账自带复核方式。
+> 第一个哈希值一起写进 `soak-log.md` 的表头，这样台账自带复核方式。表头还要抄上上面那条代价——
+> **`epub_corpus.py` 被单测改动也会清零**——它是这条命令唯一一个「不属于 e2e 目录、却在覆盖范围内」
+> 的路径，不写下来就会被当成误加进去的。
 
 > 来源：2026-08-16 eng-review 的 Outside Voice。Codex 主张把 Phase 3 整体挪到 4B 之后，理由之一是「Phase 1 的测试尚无 CI 历史，保护力未经检验」。排序未采纳（见 §4），但这半句成立，转为本门槛。
 

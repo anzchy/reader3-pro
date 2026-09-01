@@ -119,23 +119,26 @@ fixture 与 `tests/e2e/test_harness_smoke.py` 里的**一条** smoke（进 epub.
 | 组 | 内容 | 激活阶段 | 计入 1b 退出门槛 | 计入 Phase 3 soak |
 |---|---|---|:--:|:--:|
 | **`baseline-1b`** | §2 读路径 R-1…R-6、§3 写路径 W-1…W-10、§4 的 K-2 / K-3 / K-4 / K-5、§6 X-1 / X-2 | Phase 1b | ✅ | ✅ |
-| **`acceptance-4b1`** | §4 的 K-1（响亮失败）与 K-6 的抛错断言 | 4B.1 | ❌ | ❌ |
+| **`acceptance-4b1`** | §4 的 K-1（响亮失败）与 K-6 的抛错断言，＋ §3 的 **W-5b**（改色保 id） | 4B.1 | ❌ | ❌ |
 | **`acceptance-p3`** | §5 的 DEG-S1–DEG-S4，**朴素横幅形态** | Phase 3 出口 | ❌ | ❌ |
 | **`acceptance-4a4`** | §5 的 DEG-S1–DEG-S4，**设计规格形态**（只改 testid 映射，断言语义不变） | 4A.4 | ❌ | ❌ |
 | **`acceptance-2a`** | DEG-S5 写冲突（本文 §7 已列为不在 1b） | Phase 2a | ❌ | ❌ |
 
 **落地方式**：用 pytest marker（`@pytest.mark.baseline_1b` 等），CI 按组选择。未激活的组以 `skip` 而非删除的形式存在，理由是它们必须在写的时候就被 review——**一条到期才第一次被人读的断言，等于没写。**
 
-### `baseline-1b` 对 K1 / K6 的现状特征化
+### `baseline-1b` 对 K1 / K6 / W-5 的现状特征化
 
-这两条契约在 1b 阶段仍要有护栏，只是断言的是**今天的行为**，不是 4B.1 之后的行为：
+这三处在 1b 阶段仍要有护栏，只是断言的是**今天的行为**，不是 4B.1 之后的行为：
 
-| 契约 | `baseline-1b` 断言（现状特征化） | `acceptance-4b1` 断言（行为变更后） |
+| 项 | `baseline-1b` 断言（现状特征化） | `acceptance-4b1` 断言（行为变更后） |
 |---|---|---|
 | **K1** | 七个宿主元素在模板中齐备，标注 UI 正常 init（**前置条件成立**的正向证据） | 移除 `annotation-toolbar` 后重载 → 明确 `console.error` 且降级标记置位 |
 | **K6** | 在 `/read/{bookId}/{chapterIndex}` 创建标注，`notes.json` 的 `chapter_index` 等于 URL 里那个数 | 删掉 `location.pathname` 回退后，`window.Reader3Ctx` 缺失时**抛错**而非静默猜测 |
+| **W-5** | 见 §3 的 W-5a——色板点击只换「下一次用的颜色」，重按 marker 得到**两条并存**的标注，重按 wavy / underline 则 id 变了 | 见 §3 的 W-5b——「改色」成为一个真操作：颜色变、`id` 不变 |
 
 K1 的 baseline 条是有价值的：它会在**任何人改模板删掉那七个 id 之一时**变红，而这正是 4B.2 外壳重写最可能干的事——不必等到 4B.1 才有护栏。
+
+**W-5 为什么也落在这里（2026-09-01 裁定）**：本文原先把 W-5 写成「刷新后颜色为 green，且**标注 id 不变**」——那不是今天的行为，是期望的行为。按这个写法，1b 的门槛里会混进一条只有等 4B.1 改完生产代码才可能绿的用例，和 R13 修掉的那个依赖环是同一个形状。裁定采用与 K1 / K6 相同的处理：**W-5a 特征化今天的三岔行为并计入 1b 门槛，W-5b 承载期望行为并挂 `acceptance-4b1`**；期望行为本身的落地在[前端计划](../../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md)的 WI-14 定义，本文不复述。
 
 ---
 
@@ -193,12 +196,15 @@ child frame 内 document.createRange() → 写入 iframe 的 Selection
 | W-2 | 创建 **wavy** | 同上，且样式类型正确 |
 | W-3 | 创建 **underline** | 同上 |
 | W-4 | 创建 **note**（含笔记正文） | 刷新后 tooltip / Notes 面板能读回笔记文本 |
-| W-5 | **改色**（yellow → green） | 刷新后颜色为 green，且**标注 id 不变**（改色不是删了重建） |
+| W-5a | **色板换色后重按同一动作**（yellow → green），`baseline-1b` | 特征化今天的三岔行为：①点色板只调 `setSelectedColor`，已有标注**不动**；②随后重按 marker 走 `toggleMarkerAnnotation`，旧黄条**保留**、另加一条绿的，两条 id 各自独立；③重按 wavy / underline 走 `toggleAnnotation`，**先删后建**，id 变了。三支各断一次，刷新后仍成立 |
+| W-5b | **改色**（yellow → green），`acceptance-4b1`、**以 skip 形态写** | 刷新后颜色为 green，且**标注 id 不变**（改色不是删了重建）。⚠️ 该行为 4B.1 才实现，不计入 1b 门槛 |
 | W-6 | **删除** | 刷新后该段文字上无 `<mark>`；`notes.json` 里对应条目消失；**其他标注不受影响** |
 | W-7 | **笔记编辑保存**（打开已有笔记 → 改文本 → 保存） | 刷新后读回新文本；这条走 `note-editor` → `commands.saveNote` 的完整链 |
 | W-8 | 重叠标注 | 在已有标注上再划一段重叠区域，两条都能刷新后恢复 |
 | W-9 | CJK 书上重复一遍 W-1 与 W-7 | quote/prefix/suffix 的多字节边界 |
 | W-10 | 同章重复文本消歧 | 章内出现两处相同文字，标注第二处，刷新后落在**第二处**（prefix/suffix 生效） |
+
+**W-5 拆成 a / b 的理由**见 §0.5 的现状特征化小节；期望行为的落地定义在[前端计划](../../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md)的 WI-14。
 
 **W-6 的反向断言不可省**：删除是唯一会破坏用户数据的操作，"删对了一条"和"顺手删掉了别的"在 UI 上看不出来。
 
@@ -210,7 +216,7 @@ child frame 内 document.createRange() → 写入 iframe 的 Selection
 |---|---|---|---|
 | **K1** | K-1a | `baseline-1b` | 七个宿主元素齐备且标注 UI 正常 init（前置条件的正向证据） |
 | **K1** | K-1b | `acceptance-4b1` | 用 `page.evaluate` 移除 `annotation-toolbar` 后重载标注 UI → 断言控制台出现明确 `console.error` 且降级标记置位。**不能只断言"工具条不见了"**——契约的价值在于把静默变响亮。⚠️ 该行为 4B.1 才实现，不计入 1b 门槛 |
-| **K2** | K-2 | `baseline-1b` | 工具条每个 `data-action` 逐个点一遍，断言**结果**（标注真的产生/删除/改色），不是断言按钮存在 |
+| **K2** | K-2 | `baseline-1b` | 工具条每个 `data-action` 逐个点一遍，断言**结果**（标注真的产生/删除/改色），不是断言按钮存在。「改色」今天是什么语义见 §3 的 W-5a，这里不复述 |
 | **K3** | K-3 | `baseline-1b` | ①三个浮层各跑 `containingBlockAncestor(el) === null`；②工具条矩形与选区矩形相对位置在容差内。判据与参考实现见契约文件 |
 | **K4** | R-4 | `baseline-1b` | 见读路径 R-4（翻章后新章高亮正确、旧章不残留） |
 | **K5** | R-5 + W-1 | `baseline-1b` | `search.js` 与 `annotations.js` 两个消费方各至少一条 |
@@ -277,7 +283,7 @@ child frame 内 document.createRange() → 写入 iframe 的 Selection
 
 - **零 flaky**：`baseline-1b` 连续 3 次全量运行无偶发失败才算达标。理由见 soak 门槛——一条会偶发失败的 E2E 当不了 Phase 3 数据迁移的验收基准，而 flaky 会让计数反复清零
 - 单次全量运行时长记录在案（后续 soak 期间要跑十次以上，时长本身就是可行性约束）
-- **`soak-log.md` 已建，八列字段齐全**（字段定义在迁移计划 §7 的「台账字段（canonical）」，本文不重述），表头写明 `suite_hash` 的取法命令与当前值
+- **`soak-log.md` 已建，八列字段齐全**（字段定义在迁移计划 §7 的「台账字段（canonical）」，本文不重述），表头写明 `suite_hash` 的取法命令与当前值，**以及 §7 记在取法命令旁的那条代价**——`tests/fixtures/epub_corpus.py` 在覆盖范围内，因此一次纯单测目的的构造器改动也会清零 soak 计数
 - **`suite_hash` 进入冻结状态**——从这一刻起再改 `baseline-1b` 的用例或 harness，soak 计数从零重来。所以 G2 的真实含义是「**你愿意为这套用例的当前形态背书**」，不是「它今天碰巧绿了」
 
 **G2 达成之日 = soak 计数第 1 行的日期。** Phase 3 从这里开始数 ≥10 次 / ≥5 个工作日。
