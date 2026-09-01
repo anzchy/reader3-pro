@@ -128,13 +128,21 @@ DIALOG_EXPECTED: Dict[str, set] = {
     },
 }
 
-# T1/T6 共用的抽取下限（§0.5 允许下限的十处之一：这两份文件持有的 testid 远多于本批
-# 触及的 21 个，且随无关的 UI 工作增长；真正的断言是对抽取集合的全称命题，计数只需
-# 证明非空）。今天的真值：library.html 63 处 / 54 唯一，reader.html 67 处 / 66 唯一。
-TEMPLATE_FLOORS = {
-    "library.html": 40,
-    "reader.html": 60,
-}
+# T1/T6 共用的抽取下限。这条下限的**唯一**职责是反空转：证明 ATTR_LITERAL_RE 真的抽到了
+# 东西，否则 T1 的 `dupes == {}` 与 T6 的 `offenders == []` 都是空真。
+#
+# 取值规约（存量计数一律用远离真值的反空转下限；只有对自己维护的内容——比如本文件上方
+# 那几张名字表的大小——才用精确值）：这里数的是「模板里今天恰好有多少处 data-testid」，
+# 是**顺带清点的存量**，不是本文件维护的内容，所以这个数不该贴着真值取。取 10：
+#   - 正则真坏了必然失败：抽取失败给出 0 或个位数，10 一定拦得住；
+#   - 正常增删改不会碰到：两份模板都远在其上，且 T2 单是强制存在的名字就有 13 / 8 个，
+#     要跌破 10 得把模板的 testid 删得几乎不剩——那时候该红的本来就该红。
+# 两份模板统一取同一个数：它们的失败模式与守的性质完全一样，分开取只会多出两个要维护的数。
+#
+# 刻意**不**在此记录「今天真值 N」。上一版注释就记了（写 library 63 / reader 67），
+# 而实测已经漂成 63 / 69——这种注释无人维护，写下来只会误导。要看实到值就看断言消息，
+# 下面的 assert 会把 len(lits) 报出来。
+TEMPLATE_LITERAL_FLOOR = 10
 
 TEMPLATE_PATHS = {
     "library.html": LIBRARY_HTML,
@@ -155,9 +163,8 @@ def _literals(name: str) -> List[str]:
     """
     text = _read(name)
     lits = ATTR_LITERAL_RE.findall(text)
-    floor = TEMPLATE_FLOORS[name]
-    assert len(lits) > floor, (
-        f"{name} 只抽到 {len(lits)} 个 data-testid 字面量（下限 > {floor}）——"
+    assert len(lits) > TEMPLATE_LITERAL_FLOOR, (
+        f"{name} 只抽到 {len(lits)} 个 data-testid 字面量（下限 > {TEMPLATE_LITERAL_FLOOR}）——"
         f"抽取失败时下游断言会空转通过，这条下限就是拦它的"
     )
     return lits
@@ -409,8 +416,9 @@ def test_t9_new_testid_sits_on_the_named_node(the_id: str, testid: str) -> None:
 
 WEB_ROOT = REPO_ROOT / "src" / "reader3_app" / "web"
 WEB_EXTS = {".html", ".js", ".css"}
-# 下限（§0.5 十处之一）：(a) 这棵树随无关的前端工作增长；(b) 断言是 9 个名字 × 全部
-# 文件的全称命题，计数只需证明非空；(c) 今天真值 26 个文件，远在 15 之上。
+# 反空转下限：(a) 这棵树随无关的前端工作增删文件；(b) 断言是 9 个名字 × 全部文件的全称
+# 命题，计数只需证明遍历没空转。按上文 T11 处写下的规约取值——存量计数用远离真值的下限，
+# 不在注释里记「今天真值 N」；实到值由断言消息报出。
 WEB_FILE_FLOOR = 15
 
 
@@ -528,15 +536,34 @@ def _t11_strip_comments(text: str, suffix: str) -> str:
             continue
         i += 1
     return "".join(out)
-# 下限（§0.5 十处之一）：(a) 四棵树都独立于本批增长；(b) 断言是 4 个字面量 × 全部文件
-# 的全称命题；(c) 今天真值 34 个文件。
+# 反空转守卫。这里守的东西有两层，历史上只有第二层，而第二层还取错了值：
 #
-# ⚠️ 与矩阵的偏差，明写在此：矩阵 T11 写的下限是 `> 40`，并称「> 40 far below today's
-# count」。对真仓核过：按 revision 2 收窄后的范围今天只有 34 个文件，所以 40 这个数是
-# revision 1（范围还是整个 `tests/**`）留下的陈旧常量。照抄 40 会让 T11 恒红在反空转
-# 守卫上——一个改模板与改原型都治不好的红，与本用例真正的主张（0 命中）无关。这里取 30，
-# 满足 §0.5 的 (c)「贴近今天的真值，删掉语料的大半仍会失败」。主张本身一字未动。
-T11_FILE_FLOOR = 30
+# 【第一层，关系断言】T11_ROOTS 有四棵树。只看**全局**文件数有个盲区：任意一棵树整个
+# 遍历失败（目录改名、被移走、后缀集合与该树的文件不再相交），只要另外三棵还凑够全局
+# 下限，断言照样通过，而那棵树上的真消费者从此隐形。所以先逐棵断言「这棵树至少贡献了
+# 1 个文件」，哪棵空了就在消息里点名哪棵。这才是这条守卫真正要立的性质。
+#
+# 【第二层，全局下限】只用来拦「扩展名过滤 / 遍历整体坏掉，一个文件都没捞到」。取 8：
+# 第一层已经保证四棵树各出 ≥1，全局再要求 8 是给「某棵树塌得只剩一两个文件」留的余量，
+# 而它远低于真值，正常的增删文件永远碰不到。
+#
+# 【历史：为什么这两个数一路取错，以及不要再这么取】
+# 矩阵 T11 原本写 `> 40`，并称「> 40 far below today's count」。落地时对真仓核过：按
+# revision 2 收窄后的范围（`tests/**` 收窄成 `tests/e2e/**`）当时只有 34 个文件，40 是
+# revision 1 留下的陈旧常量，照抄会让 T11 恒红在反空转守卫上——一个改模板、改原型都治
+# 不好的红，与本用例真正的主张（0 命中）毫无关系。于是当时改成了 30。
+#
+# 30 同样是错的，只是当时没人注意到：它照着「贴近今天的真值」取，余量只有 4。这与 40 是
+# 同一个毛病的两面——把「仓库里今天恰好有几个文件」这种**顺带清点的存量**写进了断言。
+# 40 让它立刻恒红，30 让它在四棵树里任何一处增删四个文件后才红；红的原因都与这条用例
+# 守的不变式无关。事实上范围内的文件数此后已经涨到别的数了，而上面那句「今天真值 34」的
+# 注释没人跟着改——把真值写进注释这件事本身就维持不住。
+#
+# 规约（对本文件全体下限一体适用）：**存量计数一律用远离真值的反空转下限；只有对自己
+# 维护的内容（比如上方几张名字表的大小）才用精确值。** 不要在注释里记「今天真值 N」——
+# 要看实到值就看断言消息，下面两条 assert 都会把实到的数报出来。
+T11_ROOT_FILE_FLOOR = 1
+T11_FILE_FLOOR = 8
 
 
 def _t11_files() -> List[Path]:
@@ -544,13 +571,21 @@ def _t11_files() -> List[Path]:
     for root in T11_ROOTS:
         base = REPO_ROOT / root
         assert base.is_dir(), f"T11 的范围目录不存在：{base}"
+        per_root: List[Path] = []
         for p in sorted(base.rglob("*")):
             if not p.is_file() or p.suffix not in T11_EXTS:
                 continue
             rel = p.relative_to(REPO_ROOT).as_posix()
             if "static/vendor/" in rel:
                 continue
-            files.append(p)
+            per_root.append(p)
+        assert len(per_root) >= T11_ROOT_FILE_FLOOR, (
+            f"T11 的范围树 {root!r} 只走到 {len(per_root)} 个文件"
+            f"（每棵树下限 >= {T11_ROOT_FILE_FLOOR}）——"
+            f"这一棵整个没走到时，另外三棵仍能凑够全局下限，"
+            f"这棵树上的 data-modal / data-sheet 消费者会就此隐形"
+        )
+        files.extend(per_root)
     assert len(files) > T11_FILE_FLOOR, (
         f"只走到 {len(files)} 个文件（下限 > {T11_FILE_FLOOR}）——"
         f"遍历失败时 0 命中是空转出来的"

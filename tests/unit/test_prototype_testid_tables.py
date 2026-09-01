@@ -16,9 +16,38 @@
 点。测试自己抄一份，就会出现「测试看得见、lint 看不见」的表——那 70 个新字面量一个都
 不会被检查。**P15 就是把两套 parser 钉在一起的那一条**。
 
-**反空转（矩阵 §0.5）**：凡是「正则捞一把再断言」的用例，都先断言捞到的**条数**。默认是
-精确值；只有 P1、P3、P8、P10、Q5、Q6 六处用下界，各自在原地写明理由（这六处都在矩阵
-§0.5 的白名单里）。
+**反空转与计数断言——对矩阵 §0.5 的一次有意偏离**：§0.5 要求凡「正则捞一把再断言」的用
+例都先钉住**精确**条数，只给 P1／P3／P8／P10／Q5／Q6 六处开了下界白名单。本文件**不再照
+此默认**。理由是那些精确计数在同时干**两件事**：
+
+  1. **反空转**——证明正则真的捞到了东西，否则后面的 `assert offenders == []` 是空真。
+     这件事是**永久**的。
+  2. **越界闸门**——「WI-4 改不动这个数」。这件事的作用域是**本批次**，WI-4 落地即到期。
+
+把两件事写成同一条 `==`，等于为一个已过期的收益永久付代价：任何与该断言无关的前端改动
+都会让它变红，而红因与它守的不变式无关。这已经实际发生过两次。
+
+**新的分界线**：
+
+  * 数的是**本文件亲手维护的内容**——`MODAL_TESTIDS` 14×5=70、`SHARED_TESTIDS` 3×10=30、
+    components.jsx 三张兄弟表的 9——**保留 `==`**。这种数只在有人**故意**编辑那张表时才
+    变，那正是应该被看见的时刻。
+  * 数的是**顺带清点的存量**——仓库文件里今天恰好有几处字面量、几个表块、几个标签——
+    **这个数不进断言**。按优先级选治法：**关系断言 ＞ 删除 ＞ 下界**。
+      - **关系断言**（P11／P15）：把主张直接写出来。P15 断「生产 `TESTID_TABLE_RE` 看到的
+        表名集合 == 一个独立的、更宽松的声明扫描看到的集合」，P11 断「ConfirmModal 内部
+        自己渲染的那个 `<Modal>` 确实落在被检查的标签集合里且带 `modal=`」。两条都比原来
+        的 `==5` / `==7` / `==13` **严格更强**：新加一张表／一个弹层调用点时两边同步，不
+        误报；而生产正则漏一张表、内部透传漏一个 prop 时照样红。
+      - **删除**（P12 原来的 `len(total) == 146`）：在各分量已各自单断之后是恒真的，独立信
+        息量为零。
+      - **下界**（P12 的 `C_attr`、P15 的 `ctotal` / `rtotal`，以及原有的 P1／P3／P8／P10／
+        Q5／Q6）：只承担反空转，取一个**远离今天真值**的数——删掉语料大半仍然通过，正则
+        真坏了必然失败。下界还必须**非空转**：P15 里同一函数已经单断了 `modal_values == 70`
+        与 `sheet_values == 5`，所以 `ctotal` / `rtotal` 的下界是**减掉这两个分量之后**才取
+        的，否则那条下界会被前一条等式蕴含，成为一条恒真的新空转。**真值不写进注释**：那种
+        注释无人维护、已经漂过（`T11_FILE_FLOOR` 的注释记 34、实测 35），要看真值就让断言
+        消息把它报出来。
 
 **Mock 边界**：除 Q9 只 monkeypatch `SCAN_GLOBS` 外，全部为 none——真实仓库文件，只读。
 """
@@ -230,6 +259,31 @@ def _destructured_names(body: str, func: str) -> set:
     )
     assert m is not None, f"{func}：找不到 `const {{ … }} = props;` 解构行"
     return {n.strip() for n in m.group(1).split(",") if n.strip()}
+
+
+# P15 的独立对照扫描：只认**声明头**，不关心终止符长什么样。它比生产的 TESTID_TABLE_RE
+# 宽松得多，因此「生产正则能看到的表」必须是它的子集；两边不等就说明生产正则漏了表。
+# 故意不复用生产常量——复用就成了同义反复，两套 parser 也就钉不到一起了。
+TABLE_DECL_RE = re.compile(r"const\s+(\w*TESTID\w*)\s*=\s*\{")
+
+
+def _declared_table_names(text: str) -> set:
+    return set(TABLE_DECL_RE.findall(text))
+
+
+def _assert_production_regex_sees_every_table(text: str, label: str) -> List[Tuple[str, "re.Match[str]"]]:
+    """P15 的关系断言：生产正则找到的表名集合 == 独立声明扫描找到的表名集合。"""
+    blocks = _table_blocks(text)
+    seen = {name for name, _ in blocks}
+    declared = _declared_table_names(text)
+    assert seen == declared, (
+        f"{label}：生产的 TESTID_TABLE_RE 与独立声明扫描看到的表不一致。\n"
+        f"  生产正则漏掉（lint 在这些表里看到 0 个值，值一个都不会被校验）：{sorted(declared - seen)}\n"
+        f"  只有生产正则看得到（通常意味着块边界串了）：{sorted(seen - declared)}\n"
+        f"  两边都看得到：{sorted(seen & declared)}"
+    )
+    assert declared, f"{label}：一张 testid 表都没扫到，两个正则同时空转了"
+    return blocks
 
 
 def _table_blocks(text: str) -> List[Tuple[str, "re.Match[str]"]]:
@@ -544,22 +598,45 @@ def test_p10_page_prop_gone_from_modals_and_kept_where_it_is_still_a_prop():
     assert "<ThemeToggle page={page}" in components, "TopBar 不再把 page 传给 ThemeToggle"
 
 
-def test_p11_all_13_modal_tags_carry_a_modal_prop():
-    """P11：13 个 Modal/ConfirmModal 调用点全部带 modal=。
+def test_p11_every_modal_tag_carries_a_modal_prop_including_the_internal_one():
+    """P11：每个 Modal/ConfirmModal 标签都带 modal=，**内部那个透传标签也在集合里**。
 
-    13 而不是 12：ConfirmModal 内部自己渲染的那个 `<Modal>`（components.jsx:205）也得
-    改成 `modal={modal}`。漏了它，四个 ConfirmModal 在运行期全坏，而所有「只看调用点」
+    真正要守的是：ConfirmModal 内部自己渲染的那个 `<Modal>`（components.jsx:205 一带）也
+    得写成 `modal={modal}`。漏了它，四个 ConfirmModal 在运行期全坏，而所有「只看调用点」
     的用例照样绿。
+
+    原来这条写成 `len(tags) == 13`。13 并**不点名**那个内部标签——另外 13 个调用点也能凑
+    够 13，而它守的东西就此漏掉；同时任何新增／删除一个弹层调用点都会让它红在无关的地方。
+    改成按**位置**取出 ConfirmModal 函数体里的那个 `<Modal>`，断它带 modal= 且确实落进了
+    被全称检查的集合，再加一条远离真值的下界防扫描空转。这样它守的东西第一次真的被守住。
     """
     tags: List[Tuple[str, str]] = []
     for path in _jsx_files():
         for tag in _jsx_tags(path.read_text(encoding="utf-8"), ("Modal", "ConfirmModal")):
             tags.append((_rel(path), tag))
-    assert len(tags) == 13, (
-        f"Modal/ConfirmModal 标签期望恰好 13 个（app 7 ＋ reader 4 ＋ settings 1 ＋ "
-        f"components 1 个内部透传），实到 {len(tags)} 个：\n"
+    assert len(tags) >= 6, (
+        f"Modal/ConfirmModal 标签期望至少 6 个，实到 {len(tags)} 个——扫描空转了：\n"
         + "\n".join(f"  {r}  {t[:80]}" for r, t in tags)
     )
+
+    # 按位置点名那个内部透传标签，而不是靠总数把它「顺带」数进去。
+    confirm_body = _slice_body(
+        _read("components.jsx"), "function ConfirmModal(props)", NEXT_TOP_BRACE_RE, "ConfirmModal"
+    )
+    inner = _jsx_tags(confirm_body, ("Modal",))
+    assert len(inner) == 1, (
+        f"ConfirmModal 的函数体里期望恰好 1 个 `<Modal …>` 开标签，实到 {len(inner)} 个：{inner}"
+    )
+    assert MODAL_ANY_PROP_RE.search(inner[0]), (
+        "ConfirmModal 内部自己渲染的那个 `<Modal>` 没有 modal= prop——四个 ConfirmModal 在"
+        f"运行期会全部渲染 data-testid={{undefined}}，而只看调用点的用例照样绿：\n    {inner[0][:160]}"
+    )
+    assert inner[0] in [t for _r, t in tags], (
+        "ConfirmModal 内部那个 `<Modal>` 没有落进被检查的标签集合——_jsx_tags 的扫描漏了它，"
+        "下面的全称断言对它就是空真：\n"
+        f"    {inner[0][:160]}"
+    )
+
     missing = [(r, t) for r, t in tags if not MODAL_ANY_PROP_RE.search(t)]
     assert missing == [], (
         "这些 Modal/ConfirmModal 没有 modal= prop：\n"
@@ -606,9 +683,13 @@ def test_p12_every_testid_literal_in_components_is_distinct():
     assert len(B) == 30, f"SHARED_TESTIDS 期望 3×10=30 个值，实到 {len(B)}"
     assert len(D) == 9, f"三张兄弟表期望 4＋2＋3=9 个值，实到 {len(D)}"
     assert len(C_prop) == 0, f"components.jsx 不该有 testId=\"…\" prop 字面量：{C_prop}"
-    assert len(C_attr) == 37, (
-        f"表外的 data-testid=\"…\" 字面量是钉死的盘点值 37，实到 {len(C_attr)}。WI-4 改不动这个数"
-        f"（它只删 data-modal 并改写**表达式**形态的 data-testid）；数变了就是越界了。"
+    # 下界而非精确值（见模块 docstring 的「新的分界线」）：这个数守的是「表外字面量集合
+    # 非空」——空了的话下面的 `set(A) & set(C) == set()` 与末尾的唯一性断言就都空转了。
+    # 越界闸门那一半随 WI-4 落地到期，不再钉住。
+    assert len(C_attr) >= 10, (
+        f"表外的 data-testid=\"…\" 字面量期望至少 10 处，实到 {len(C_attr)} 处——"
+        f"少到这个地步说明 ATTR_LITERAL_RE 或表块扣减出了问题，"
+        f"`set(A) & set(C) == set()` 与末尾的唯一性断言会一起空转。"
         f"\n  当前清单：{sorted(Counter(C_attr).items())}"
     )
 
@@ -617,7 +698,9 @@ def test_p12_every_testid_literal_in_components_is_distinct():
     assert set(B) & set(D) == set(), f"SHARED_TESTIDS ∩ 兄弟表 = {sorted(set(B) & set(D))}"
 
     total = A + B + D + C
-    assert len(total) == 146, f"多重集总数应为 70+30+9+37=146，实到 {len(total)}"
+    # 这里**没有**对 len(total) 的断言，不是漏了：`total = A + B + D + C`，而 |A|、|B|、|D|、
+    # |C_attr|、|C_prop| 上面各自已经断过，任何对 len(total) 的等式都是它们的和，恒真、
+    # 零独立信息量，只会在无关改动动了 C_attr 时多红一次。见模块 docstring。
     dupes = sorted((v, c) for v, c in Counter(total).items() if c > 1)
     assert len(set(total)) == len(total), (
         f"components.jsx 同文件内出现重名 testid（WI-1 的唯一性检查会红）：{dupes}"
@@ -706,36 +789,49 @@ def test_p15_new_tables_are_visible_to_the_production_table_regex():
     出的终止形态（`};` 前没换行、结尾带行内注释、`} as const;`），测试的 helper 照样找
     得到，而**命名 lint 在这张表里看到 0 个值**——70 个新字面量一个都不会被校验，U8 会
     因为瞎了而绿。这是唯一把两套 parser 钉在一起的一条。
+
+    主张断成**关系**而不是块数（原来钉的是 components 5 ／ reader 7）：块数是顺带清点的存
+    量，加一张无关的兄弟表就会红，而红因与本条守的东西无关。改成「生产正则看到的表名集合
+    == 独立声明扫描（`TABLE_DECL_RE`，只认声明头、不关心终止符）看到的集合」之后，新表两
+    边同时可见故免疫，生产正则漏表则必红——比 `==5` / `==7` 严格更强。见模块 docstring。
     """
     components = _read("components.jsx")
-    cblocks = _table_blocks(components)
-    assert len(cblocks) == 5, (
-        f"components.jsx 期望 5 个表块（SHARED_TESTIDS ＋ MODAL_TESTIDS ＋ 3 张 LIB_*_TESTID），"
-        f"实到 {len(cblocks)} 个：{[n for n, _ in cblocks]}"
-    )
+    cblocks = _assert_production_regex_sees_every_table(components, "components.jsx")
     probe = [m for _n, m in cblocks if '"lib-modal-add-books"' in m.group(1)]
     assert len(probe) == 1, (
         f"含 \"lib-modal-add-books\" 的表块期望恰好 1 个，实到 {len(probe)} 个"
     )
     modal_values = LINT.TABLE_VALUE_RE.findall(probe[0].group(1))
     assert len(modal_values) == 70, f"MODAL_TESTIDS 块里生产正则应取到 70 个值，实到 {len(modal_values)}"
+    # 下界而非精确值（原来钉的是 109）：本函数里只有上面那条 70 单独断过（30 与 9 归 P12
+    # 管），所以这条不能像 P12 的 len(total) 那样直接删——它还在承担「生产的 TABLE_VALUE_RE
+    # 在 MODAL_TESTIDS **之外**的表里也取到了值」。但 109 是顺带清点的存量，加一张兄弟表
+    # 就红。**减掉那 70 再取下界**：直接对 ctotal 取任何 ≤70 的下界都会被上一条 `== 70`
+    # 蕴含，成为恒真的空转，而这正是本次要清掉的东西。
     ctotal = sum(len(LINT.TABLE_VALUE_RE.findall(m.group(1))) for _n, m in cblocks)
-    assert ctotal == 109, f"components.jsx 五个表块合计应为 70＋30＋9=109 个值，实到 {ctotal}"
+    assert ctotal - len(modal_values) >= 10, (
+        f"components.jsx 里 MODAL_TESTIDS 之外的表块合计期望至少 10 个值，实到 "
+        f"{ctotal - len(modal_values)} 个（全部表块合计 {ctotal}）——"
+        f"说明生产的 TABLE_VALUE_RE 在这些表里基本空转了"
+    )
 
     reader = _read("reader.jsx")
-    rblocks = _table_blocks(reader)
-    assert len(rblocks) == 7, (
-        f"reader.jsx 期望 7 个表块（RD_SHEET_TESTIDS ＋ 6 张兄弟表），实到 {len(rblocks)} 个："
-        f"{[n for n, _ in rblocks]}"
-    )
+    rblocks = _assert_production_regex_sees_every_table(reader, "reader.jsx")
     rprobe = [m for _n, m in rblocks if '"rd-ai-panel-resizer"' in m.group(1)]
     assert len(rprobe) == 1, (
         f"含 \"rd-ai-panel-resizer\" 的表块期望恰好 1 个，实到 {len(rprobe)} 个"
     )
     sheet_values = LINT.TABLE_VALUE_RE.findall(rprobe[0].group(1))
     assert len(sheet_values) == 5, f"RD_SHEET_TESTIDS 块里生产正则应取到 5 个值，实到 {len(sheet_values)}"
+    # 下界而非精确值（原来钉的是 28）：28 里的 5 已由紧邻的 sheet_values 单断，剩下的 23 是
+    # 六张兄弟表的存量盘点，加一个枚举项就红。同 ctotal，**减掉那 5 再取下界**，否则下界会
+    # 被上一条 `== 5` 蕴含而恒真。
     rtotal = sum(len(LINT.TABLE_VALUE_RE.findall(m.group(1))) for _n, m in rblocks)
-    assert rtotal == 28, f"reader.jsx 七个表块合计应为 23＋5=28 个值，实到 {rtotal}"
+    assert rtotal - len(sheet_values) >= 10, (
+        f"reader.jsx 里 RD_SHEET_TESTIDS 之外的表块合计期望至少 10 个值，实到 "
+        f"{rtotal - len(sheet_values)} 个（全部表块合计 {rtotal}）——"
+        f"说明生产的 TABLE_VALUE_RE 在这些兄弟表里基本空转了"
+    )
 
 
 def test_p16_adr_rationale_comment_above_modal_survives():
@@ -867,7 +963,9 @@ def test_q6_sheet_values_are_disjoint_from_all_other_literals_in_reader():
     """Q6：RD_SHEET_TESTIDS 的值与 reader.jsx 里其余全部字面量不相交（Q3 的一般形态）。
 
     B 用**导入的** TESTID_TABLE_RE 重建，不再手抄兄弟表名单——手抄的名单会烂（上一版就抄
-    出了一个并不存在的 `RD_ANNO_TYPE`）。P15 把块数钉在 7，所以第七张兄弟表不会被悄悄漏掉。
+    出了一个并不存在的 `RD_ANNO_TYPE`）。P15 断的是「生产 `TESTID_TABLE_RE` 看到的表名集合
+    == 独立声明扫描看到的集合」，所以任何一张兄弟表都不会因为生产正则认不出它的终止形态而
+    被悄悄漏掉——这里的 B 也就不会缺一块。
 
     B **不减去 A**：减掉就把 `set(A) & set(B) == ∅` 变成恒真，那正是 §0.5 要禁的空转。
     不减，这条断言才真的能在有人「为了和 MODAL_TESTIDS 对称」加上 `root: "rd-ai-panel"`
