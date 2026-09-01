@@ -305,7 +305,8 @@ def test_p1_data_modal_is_gone_from_every_prototype_jsx():
     """P1：`data-modal` 从 `designs/reader-pro-next/*.jsx` 里全部消失。
 
     下界理由（§0.5）：(a) 原型目录会独立于本批次增减文件；(b) 断言是对所有文件的全称
-    命题；(c) 4 是今天的真实文件数，下界掉不到 0 个文件。
+    命题；(c) 下界**远离**真值：它只证明 `_jsx_files()` 没空转、且确实在遍历而不是钉死
+    一条路径。原型把两个页面合并掉是合法改动，不该在这里红——实到值由断言消息报出。
 
     数的是**属性**形态 `data-modal=`，不是裸字符串 `data-modal`：矩阵给的今日基数是 5
     （components.jsx:182,186,191,192,206），而裸字符串在同一份文件里还有第 6 处——:163
@@ -314,7 +315,7 @@ def test_p1_data_modal_is_gone_from_every_prototype_jsx():
     「把判别位加回来」的那种改动，这才是它存在的理由。
     """
     files = _jsx_files()
-    assert len(files) >= 4, f"原型 jsx 文件期望至少 4 个，实到 {len(files)} 个：{files}"
+    assert len(files) >= 2, f"原型 jsx 文件期望至少 2 个，实到 {len(files)} 个：{files}"
 
     offenders: List[Tuple[str, int, str]] = []
     for path in files:
@@ -341,19 +342,28 @@ def test_p2_literal_modal_props_are_all_table_keys():
     literals: List[str] = []
     for name in ("app.jsx", "reader.jsx", "settings.jsx"):
         literals += MODAL_PROP_RE.findall(_read(name))
-    assert len(literals) == 11, (
-        f"字面量 modal= 调用点期望恰好 11 处（app.jsx 7 ＋ reader.jsx 4），实到 "
-        f"{len(literals)} 处 → {literals}"
-    )
+    assert literals, "一处字面量 modal= 都没扫到，MODAL_PROP_RE 空转了"
 
+    # 这里**不再钉 `== 11`**：调用点有几处是仓库存量，010 / 013 往原型加一个弹层入口
+    # 就会变，而「多了一个入口」跟这条守的东西无关。真正的主张是**表与调用点严丝合缝**，
+    # 写成集合等式后它两个方向都拦得住，且不随存量漂移：
+    #   * 表里多了一个没人调用的 key（死条目）→ 左边少一项，红；
+    #   * 调用点用了表里没有的 key（渲染出 undefined）→ 右边少一项，红；
+    #   * 新增一个「表里有 key ＋ 有字面量调用点」的弹层 → 两边同时长一项，**不红**。
+    # 三个例外是 settings.jsx:164 的 `modal={confirm}`：confirm ∈ {reindex, conversations,
+    # cache} 是运行期变量，天然没有字面量调用点，所以从左边扣掉——它们仍必须在表里，
+    # 否则右边这个差集里会多出东西。
+    RUNTIME_ONLY = {"reindex", "conversations", "cache"}
     table = modal_table()
-    assert set(literals) <= set(table), (
-        f"调用点用了表里没有的 key：{sorted(set(literals) - set(table))}"
-    )
-    assert {"reindex", "conversations", "cache"} <= set(table), (
+    assert RUNTIME_ONLY <= set(table), (
         "settings.jsx:164 传的是运行期变量 `modal={confirm}`，这三个 key 没有字面量调用点，"
         "只能经由 destructive 到达；表里必须为它们留位置。缺的："
-        f"{sorted({'reindex', 'conversations', 'cache'} - set(table))}"
+        f"{sorted(RUNTIME_ONLY - set(table))}"
+    )
+    assert set(literals) == set(table) - RUNTIME_ONLY, (
+        "字面量调用点与 MODAL_TESTIDS 对不上。\n"
+        f"  表里有 key 却无人调用（死条目）：{sorted(set(table) - RUNTIME_ONLY - set(literals))}\n"
+        f"  调用点用了表里没有的 key（会渲染 undefined）：{sorted(set(literals) - set(table))}"
     )
 
 
@@ -361,7 +371,8 @@ def test_p3_no_testid_prop_other_than_bare_testId():
     """P3：反绕过——原型里唯一的 `*[Tt]est[Ii]d` prop 只能是裸的 `testId`。
 
     下界理由（§0.5）：(a) 文件数与 testId= 的处数都随无关改动变；(b) 断言是对匹配到的
-    名字集合的全称等式；(c) reader.jsx 的四个 Sheet 调用点保证今天至少 4 处。
+    名字集合的全称等式；(c) 两个下界都**远离**真值，只用来证明遍历与正则没空转——
+    合并掉一个原型页面、或减少一个 Sheet 调用点都是合法改动。
 
     这条存在的理由：`closeTestId="rd-x-close"` 对命名 lint 是**不可见**的
     （`PROP_LITERAL_RE` 要求逐字的 `testId`），会放进一个没有任何 lint 校验过的名字。
@@ -371,7 +382,7 @@ def test_p3_no_testid_prop_other_than_bare_testId():
     )
 
     files = _jsx_files()
-    assert len(files) >= 4, f"原型 jsx 文件期望至少 4 个，实到 {len(files)} 个"
+    assert len(files) >= 2, f"原型 jsx 文件期望至少 2 个，实到 {len(files)} 个"
 
     hits: List[Tuple[str, int, str]] = []
     for path in files:
@@ -553,24 +564,30 @@ def test_p9_settings_keeps_the_runtime_variable_form():
 def test_p10_page_prop_gone_from_modals_and_kept_where_it_is_still_a_prop():
     """P10：Modal/ConfirmModal 不再有 `page=`／`name=`；Brand 一类仍然有。
 
-    下界理由（§0.5）：(a) Brand/ThemeToggle/LiveRegion 的调用点随无关改动增减；(b) 断言
-    是对抽出来的标签的全称命题；(c) 17 贴着今天的真实值（18）。
+    这里**不再钉 total 的计数**：标签有几个是仓库存量，而 17 贴着真值（差 1），少掉
+    两个 LiveRegion 这种合法改动就会误红——它守的东西跟「有几个标签」根本无关。
+    计数原本代劳的是反空转，而反空转的**真正**对象是下面两个全称命题各自的取值域：
+    `modal_tags` 空了，bad_modal 恒为 []；`page_tags` 空了，bad_page 恒为 []。
+    直接对这两个列表断言非空，比对它们的和设一个下限精确得多，也不随存量漂移。
 
     正向那半是防「一把 sed 把所有 page= 都撸掉」的连带损伤。
     """
     modal_tags: List[Tuple[str, str]] = []
     page_tags: List[Tuple[str, str]] = []
-    total = 0
     for path in _jsx_files():
         text = path.read_text(encoding="utf-8")
         for tag in _jsx_tags(text):
-            total += 1
             head = tag[1 : tag.find(" ") if " " in tag else len(tag)]
             if head in ("Modal", "ConfirmModal"):
                 modal_tags.append((_rel(path), tag))
             else:
                 page_tags.append((_rel(path), tag))
-    assert total >= 17, f"Modal/ConfirmModal/LiveRegion/Brand/ThemeToggle 标签期望至少 17 个，实到 {total} 个"
+    assert modal_tags, (
+        "一个 Modal/ConfirmModal 标签都没抽出来——_jsx_tags 空转时下面的 bad_modal 恒为 []"
+    )
+    assert page_tags, (
+        "一个 LiveRegion/Brand/ThemeToggle 标签都没抽出来——下面的 bad_page 恒为 []"
+    )
 
     bad_modal = [
         (r, t)
@@ -681,7 +698,15 @@ def test_p12_every_testid_literal_in_components_is_distinct():
 
     assert len(A) == 70, f"MODAL_TESTIDS 期望 14×5=70 个值，实到 {len(A)}"
     assert len(B) == 30, f"SHARED_TESTIDS 期望 3×10=30 个值，实到 {len(B)}"
-    assert len(D) == 9, f"三张兄弟表期望 4＋2＋3=9 个值，实到 {len(D)}"
+    # A 与 B 上面钉的是 `==`：14×5 与 3×10 都是**本批次亲手维护的表结构**，少一格就是
+    # 漏了一个弹层的某个部位，那条红是要的。D 不同——它由 TESTID_TABLE_RE 自动兜底
+    # （见上面的注释），设计上就是「明天多一张兄弟表会自己落进来」；钉 `== 9` 等于把这份
+    # 自动性作废，加一张表反而先红。这里只留反空转：D 空了，下面
+    # `set(B) & set(D) == set()` 与末尾的唯一性断言都会静默通过。
+    assert len(D) >= 4, (
+        f"兄弟表只扫出 {len(D)} 个值——少到这个地步说明 TESTID_TABLE_RE 的表块发现失效了，"
+        f"`set(B) & set(D) == set()` 会空转。当前值：{D}"
+    )
     assert len(C_prop) == 0, f"components.jsx 不该有 testId=\"…\" prop 字面量：{C_prop}"
     # 下界而非精确值（见模块 docstring 的「新的分界线」）：这个数守的是「表外字面量集合
     # 非空」——空了的话下面的 `set(A) & set(C) == set()` 与末尾的唯一性断言就都空转了。
@@ -762,10 +787,16 @@ def test_p14_modal_components_actually_read_modal_testids():
     assert "name" not in confirm_props, f"ConfirmModal 仍在解构 name：{sorted(confirm_props)}"
 
     modal_exprs = LINT.ATTR_EXPR_RE.findall(modal_body)
-    assert len(modal_exprs) == 4, (
-        f"Modal 体内的 data-testid={{…}} 期望恰好 4 处，实到 {len(modal_exprs)} → {modal_exprs}"
-    )
     modal_fields = {e.strip().rsplit(".", 1)[-1] for e in modal_exprs}
+    # 「四个字段」这件事由下面的集合等式定义，它才是定义点。在这里再钉一次 `== 4`，
+    # 等于把同一张表的大小抄到两行里：改字段的人得同时改两处，而其中一处跟他要改的
+    # 东西看不出关系。这里留下的是集合等式**推不出**的那一半——每个字段恰好被读一次。
+    # 读两次 .root 而漏掉 .cancel 会被下面的等式抓到；四个字段齐全但 .root 读了两次
+    # （渲染出两个同名节点，U8 的唯一性在原型侧看不见）只有这一条抓得到。
+    assert len(modal_exprs) == len(modal_fields), (
+        f"Modal 体内有字段被读了不止一次：{len(modal_exprs)} 个表达式只对应 "
+        f"{len(modal_fields)} 个字段 → {modal_exprs}"
+    )
     assert modal_fields == {"root", "close", "cancel", "primary"}, (
         f"Modal 取的字段应为 root/close/cancel/primary，实为 {sorted(modal_fields)}"
     )
@@ -1026,10 +1057,17 @@ def test_q8_sheet_internals_look_the_two_names_up():
 
     literals = LINT.ATTR_LITERAL_RE.findall(body)
     assert len(literals) == 0, f"Sheet 体内的字面量 data-testid 应为 0 处，实到 {literals}"
-    exprs = LINT.ATTR_EXPR_RE.findall(body)
-    assert len(exprs) == 3, (
-        f"Sheet 体内的 data-testid={{…}} 表达式应为 3 处（:190 的透传 ＋ 两个由字面量改成的查表），"
-        f"实到 {len(exprs)} → {exprs}"
+    # 原来这里钉的是 `== 3`，把两件互不相干的事捆在一个数里：一处是**调用方传进来的**
+    # testId 透传，两处是**本批次由字面量改成的**查表。捆着的后果是 Sheet 将来多一个
+    # 带 testid 的部位（合法）会红，而「透传没了、却多冒出一处查表」（不合法）反而不红
+    # ——两边正好抵消。拆开之后各自说各自的话。
+    exprs = [e.strip() for e in LINT.ATTR_EXPR_RE.findall(body)]
+    assert "testId" in exprs, (
+        f"Sheet 根节点不再透传调用方给的 testId——四个 Sheet 的根 testid 会一起消失。实到 {exprs}"
+    )
+    lookups = {e.rsplit(".", 1)[-1] for e in exprs if "." in e}
+    assert lookups == {"close", "resizer"}, (
+        f"Sheet 应当从表里取 close 与 resizer 两个字段，实为 {sorted(lookups)} → {exprs}"
     )
 
 

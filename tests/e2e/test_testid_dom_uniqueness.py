@@ -76,10 +76,24 @@ READER_TARGETS: Tuple[str, ...] = _TEMPLATE_TESTIDS.READER_TARGETS
 
 
 def test_imported_target_lists_are_not_empty() -> None:
-    """反空转：上面两个 import 若哪天返回空元组，下游的逐名断言会静默变成 0 条。"""
-    assert len(LIBRARY_TARGETS) == 13, LIBRARY_TARGETS
-    assert len(READER_TARGETS) == 8, READER_TARGETS
-    assert len(ALLOWED_DISCRIMINATORS) == 8, sorted(ALLOWED_DISCRIMINATORS)
+    """反空转：上面三个 import 若哪天返回空集合，下游的逐名断言会静默变成 0 条。
+
+    `@pytest.mark.parametrize` 拿到空列表**不报错**（默认 `empty_parameter_set_mark`
+    是 skip，只留一条 skipped），本文件里没有别的东西会因此变红——这就是本条存在的理由。
+
+    钉的是下界，不是精确值：三个数各自的**精确值**都由别处守着，那才是它们的定义点。
+    在这里再抄一份绝对值，等于把「那张表有多大」复制到两个文件里——改表的人（010 /
+    013 往 library.html 加弹层时一定会改）得跑到一个跟他无关的文件里改一个数字。
+      * `LIBRARY_TARGETS` / `READER_TARGETS` 的「只增不减」由
+        `tests/unit/test_template_testid_uniqueness.py::test_t2_mandated_name_lists_only_grow`
+        在定义点守着。
+      * `ALLOWED_DISCRIMINATORS` 的**集合内容**由
+        `tests/unit/test_lint_e2e_selectors_closed_list.py::test_s10_closed_list_is_exactly_the_eight_items`
+        守着，且那八个名字是逐字抄自 ADR-0014 正文、不是从常量拷的。
+    """
+    assert len(LIBRARY_TARGETS) >= 5, LIBRARY_TARGETS
+    assert len(READER_TARGETS) >= 3, READER_TARGETS
+    assert len(ALLOWED_DISCRIMINATORS) >= 3, sorted(ALLOWED_DISCRIMINATORS)
 
 
 # --------------------------------------------------------------------------------

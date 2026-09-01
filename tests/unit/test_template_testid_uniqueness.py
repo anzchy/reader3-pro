@@ -190,6 +190,24 @@ def test_t1_every_testid_literal_occurs_once_per_template(template: str) -> None
 # --------------------------------------------------------------------------------
 
 
+def test_t2_mandated_name_lists_only_grow() -> None:
+    """棘轮：ADR-0014 钉下的名字只许增，不许悄悄减。
+
+    两张表只被当作 `parametrize` 的取值源用，所以**从表里删掉一个名字不会红**——
+    T2 只是少跑一条，模板里那个 testid 从此无人看管。加名字是合法的（010 / 013
+    会往 library.html 加弹层），所以这里是下界而不是等式；下界贴着今天的真值是
+    **有意的**：它守的是「不许减」这件事本身，不是顺带清点仓库存量。
+    要少一个名字，得先写一份 supersede ADR-0014 的 ADR，再来改这个数。
+
+    无重复那条同样有实质：表里同一个名字写两遍，T2 会把同一条断言跑两次，
+    看着是 21 条实际只覆盖 20 个名字。
+    """
+    assert len(set(LIBRARY_TARGETS)) == len(LIBRARY_TARGETS), sorted(LIBRARY_TARGETS)
+    assert len(set(READER_TARGETS)) == len(READER_TARGETS), sorted(READER_TARGETS)
+    assert len(LIBRARY_TARGETS) >= 13, LIBRARY_TARGETS
+    assert len(READER_TARGETS) >= 8, READER_TARGETS
+
+
 @pytest.mark.parametrize(
     ("template", "name"),
     [("library.html", n) for n in LIBRARY_TARGETS]
@@ -353,15 +371,26 @@ DIALOG_ID_RE = re.compile(r'\bid\s*=\s*"([^"]*)"')
 def _dialog_blocks() -> Dict[str, str]:
     text = _read("library.html")
     blocks = DIALOG_RE.findall(text)
-    assert len(blocks) == 4, (
-        f"library.html 里切出了 {len(blocks)} 个 <dialog> 块，应为 4 个"
+    # 这里**不再钉 `== 4`**：`library.html` 里有几个 `<dialog>` 是仓库存量，010 与 013
+    # 就是会往模板里加弹层的分支，而"多了一个 dialog"跟这个 helper 守的东西无关。
+    # 弹层名单的身份由 T8 的 `set(by_id) == set(DIALOG_EXPECTED)` 守——那张表是本文件
+    # 亲手维护的内容，加弹层时**本来就该**去登记它，那条红是要的。这里只留反空转。
+    assert blocks, (
+        "library.html 里一个 <dialog> 块都没切出来——DIALOG_RE 空转时，"
+        "T8 逐弹层那条会退化成 KeyError 而不是一条说得清的断言"
     )
     by_id: Dict[str, str] = {}
     for block in blocks:
         m = DIALOG_ID_RE.search(block)
         assert m is not None, f"有 <dialog> 块没有 id=：{block[:120]!r}"
         by_id[m.group(1)] = block
-    assert len(by_id) == 4, f"四个 <dialog> 的 id 不互异：{sorted(by_id)}"
+    # 真正的主张是"id 互异"，不是"恰好四个"。写成 `== len(blocks)` 之后，加第五个
+    # 弹层不会误红，而两个弹层撞 id（by_id 少一项、后者覆盖前者）照样红——
+    # 那种覆盖会让 T8 对被吞掉的那个弹层整个失明。
+    assert len(by_id) == len(blocks), (
+        f"{len(blocks)} 个 <dialog> 只得到 {len(by_id)} 个互异 id，"
+        f"有弹层撞了 id 并被覆盖：{sorted(by_id)}"
+    )
     return by_id
 
 
@@ -419,7 +448,11 @@ WEB_EXTS = {".html", ".js", ".css"}
 # 反空转下限：(a) 这棵树随无关的前端工作增删文件；(b) 断言是 9 个名字 × 全部文件的全称
 # 命题，计数只需证明遍历没空转。按上文 T11 处写下的规约取值——存量计数用远离真值的下限，
 # 不在注释里记「今天真值 N」；实到值由断言消息报出。
-WEB_FILE_FLOOR = 15
+#
+# 取 5 而不是更贴近真值的数：013 / 014 把前端外壳换成 TS 之后，`static/**` 下的 .js
+# 会被成批合并掉，那是**计划之内的合法改动**，不该在一条只想证明「rglob 没返回空」的
+# 断言上先红一次。下限贴着真值就是把反空转悄悄变成越界闸门，两者的到期时间完全不同。
+WEB_FILE_FLOOR = 5
 
 
 def _web_files() -> List[Path]:
