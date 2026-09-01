@@ -52,9 +52,23 @@ def _server_env(books_dir: Path) -> dict[str, str]:
     `READER3_TOKEN` 会 401 掉所有写操作，`READER3_LIBRARY_UI=classic` 会换掉整个
     模板（那份模板一个 testid 都没有）。让测试的结果取决于跑它的人的 shell，是
     flaky 的第一来源。
+
+    **但剥离不是对每个变量都等于收紧。** `READER3_AI_SETTINGS` 被剥掉之后，
+    `ai/config.py` 的 `DEFAULT_SETTINGS_PATH` 会回落到 `config/ai_settings.json`
+    ——那是**相对路径**，在服务子进程的 cwd（Popen 不传 cwd，继承 pytest 的 cwd，
+    也就是仓库根）下解析，正好落在开发者放着明文 API key 的那个文件上。同一条
+    剥离规则，对 TOKEN 是关掉一个开关，对 AI_SETTINGS 是打开一个默认。
+
+    所以这一个必须**显式注回**沙箱内的绝对路径。指向的文件不必存在：
+    `load_ai_settings()` 读不到文件时返回 `default_settings_dict()`（无 key），
+    这正是 e2e 想要的确定态——不带 key 的 provider 会以「未配置」干净地拒绝，
+    而不是拿谁的额度去打真实 provider。
+
+    不变式钉在 `tests/unit/test_e2e_server_env_isolation.py`。
     """
     env = {k: v for k, v in os.environ.items() if not k.startswith("READER3_")}
     env["READER3_BOOKS_DIR"] = str(books_dir)
+    env["READER3_AI_SETTINGS"] = str((books_dir.parent / "ai_settings.json").resolve())
     return env
 
 
