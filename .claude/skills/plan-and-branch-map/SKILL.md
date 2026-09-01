@@ -72,7 +72,7 @@ Do not invent a new number without updating that table.
 |---|---|---|---|
 | M0 — Phase 0 contracts + hygiene | `007-hygiene-and-contracts` | migration | ✅ Merged (PR #18) |
 | M1 — tests + CI + API freeze | `008-test-safety-net` | migration | ✅ Merged (PR #19) |
-| M1b — Playwright E2E | `009-e2e-annotations` | migration | Tasks drafted |
+| M1b — Playwright E2E | `009-e2e-annotations` | migration | 🚧 In progress (blockers cleared; `baseline-1b` cases not written) |
 | MD — design degradation states | `010-design-degradation-states` | **frontend** | WI-1 – WI-8 |
 | M2 — backend refactor | `011-backend-refactor` | migration | Allocated |
 | M3 — storage migration | `012-storage-format` | migration | Allocated |
@@ -83,8 +83,10 @@ Do not invent a new number without updating that table.
 "✅ Merged" means the branch is on `master` and its phase is closed; the merge facts (PR, merge
 commit, CI run) are defined in that branch's task file, not here. "🔨 Done on branch, not merged"
 means every exit gate in that branch's task file is met and the work is committed, but nothing is
-on `master` yet — downstream branches must still base off it, not off `master`. "Allocated" means
-the number is reserved but no branch exists yet. "Tasks drafted" means
+on `master` yet — downstream branches must still base off it, not off `master`. "🚧 In progress"
+means the branch exists and carries commits, but its exit gates are not all met — this state was
+missing until 2026-09-01, which is how 009 kept reading as "Tasks drafted" with six commits on it.
+"Allocated" means the number is reserved but no branch exists yet. "Tasks drafted" means
 `docs/plans/20260816-tech-stack-migration/tasks/{branch}.md` exists. "WI-n – WI-m" means the
 work items live in `docs/plans/20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md` §4;
 frontend branches have no task files.

@@ -39,7 +39,7 @@
 | **0** | `007-hygiene-and-contracts` | Phase 0 | 后端 | **✅** 2026-08-24 合入（PR #18） | [tasks/007](20260816-tech-stack-migration/tasks/007-hygiene-and-contracts.md) |
 | **1** | `008-test-safety-net` | Phase 1a | 后端 | **✅** 2026-08-26 合入（PR #19） | [tasks/008](20260816-tech-stack-migration/tasks/008-test-safety-net.md) |
 | **1.5** | *(009 harness spike)* | — | — | **✅** 2026-08-26 完成（`36a6ac2` 落在 `master`，lint 收尾 `7ed87e1`） | 本文 §2 的 P-2 |
-| **2** | `009-e2e-annotations` | Phase 1b | 后端 | **⬜** 任务已写，分支未开 | [tasks/009](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
+| **2** | `009-e2e-annotations` | Phase 1b | 后端 | **🚧** 2026-08-31 起分支上有 6 个 commit：两个硬阻塞已清，`baseline-1b` 的 22 条用例一条未写 | [tasks/009](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
 | **3** | `011-backend-refactor` | Phase 2a+2b | 后端 | **⬛** 计划未写（故意，见[迁移计划 §9](20260816-tech-stack-migration/plan-tech-stack-migration.md)） | — |
 | **⟂** | `010-design-degradation-states` | Track D | **前端** | **⬜** WI-1 – WI-8 已定义 | [前端计划 §4](20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) |
 | **4** | `012-storage-format` | Phase 3 | 后端 | **⬛** 计划未写 | — |
@@ -51,26 +51,26 @@
 
 ### 现在该做什么
 
-> **开 `009-e2e-annotations`。**
+> **在 `009-e2e-annotations` 上写 §3 写路径用例 W-1…W-10。**
 >
-> 前置全部满足：008 已于 2026-08-26 合入 `master`（PR #19，合并 commit `8a9b3aa`），
-> Phase 1a 关闭，测试安全网已在主干上；顺位 1.5 的 harness spike 同日完成（`36a6ac2`）；
-> 009 那份骨架的现状实测也已补齐，「领先一个分支即时补」的规矩
-> （见[迁移计划 §9](20260816-tech-stack-migration/plan-tech-stack-migration.md)）已满足。
+> 009 已于 2026-08-31 开工。开工时先做的不是用例，而是 spike 实测出的两类硬阻塞——
+> **testid 重名**（Playwright strict 模式下 `getByTestId()` 命中多于一个就抛，而 §1 只许用
+> `data-testid` 与 ARIA 定位，重名的那一族在改名之前根本够不着）与 **K1 的七个宿主里有两个
+> 没有 testid**。两条现已由 [ADR-0014](../adr/0014-bounded-testid-enumeration.md)
+> 清除（`c127b17`、`627f5b0`），配套的第三件事——把唯一性检查补进
+> `scripts/lint_testid_naming.py`——也已落地，并在 `225966c` 里进一步搬到真浏览器
+> （`tests/e2e/test_testid_dom_uniqueness.py`）：静态扫描证明不了渲染后 DOM 的唯一性，
+> 而后者才是 strict 模式真正在乎的东西。它当场抓到了三条静态 lint 都看不见的
+> `lib-book-status-*` 缺陷。
 >
-> **但 009 开工的头几件事不是写用例。** spike 实测出两类硬阻塞，它们卡在 §0.5 分组与
-> §4 断言的前面：
+> **卡点清完了，正题还没开始。** `baseline-1b` 的 22 条（§2 的 R-1…R-6、§3 的 W-1…W-10、
+> §4 的 K-2/K-3/K-4/K-5、§6 的 X-1/X-2）一条未写；以 skip 形态交付的其余 11 条同样未写，
+> 而 §0.5 明写「写完是 1b 的门槛，跑绿不是」。`pyproject.toml` 里也还只有 `slow` 一个 marker，
+> `baseline_1b` 那一族尚不存在；`soak-log.md` 未建。
 >
-> 1. **testid 重名**——Playwright strict 模式下 `getByTestId()` 命中多于一个就抛，
->    而 §1 规定只许用 `data-testid` 与 ARIA 定位。重名的那一族在改名之前**根本够不着**。
-> 2. **K1 的七个宿主里有两个没有 testid**——§4 要求 K1–K6 各一条能失败的断言，这两个够不着。
->
-> 具体是哪些元素、各重复几次，见
-> [tasks/009 的「现状实测」](20260816-tech-stack-migration/tasks/009-e2e-annotations.md)——
-> 那里是这些数字的唯一定义处，本文不重述。
->
-> 两条都不在现有 lint 的射程内：命名 lint 只验 testid 的**形状**，不验**唯一性**。
-> 把唯一性检查补进 `scripts/lint_testid_naming.py`，是自然的第三件事。
+> 先写 §3 而不是按编号从 §2 起步，理由是它验证的是那条**所有写路径共用**的标准路径
+> （iframe 内建选区 → 派发 mouseup → 点外层工具条 → 断言往返，见 tasks/009 §1）。
+> 这条路跑不通的话，剩下 21 条的写法都要重估——把它推到后面，等于把最大的未知留到最后。
 
 ---
 
