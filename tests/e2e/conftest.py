@@ -33,6 +33,11 @@ import pytest
 STARTUP_TIMEOUT_S = 60
 
 BOOK_ID = "smoke_data"
+# 第二本书不是凑数：library.html 的 `{% for book in books %}` 会让 `lib-book-card` /
+# `lib-book-row` 这两个 testid 字面量各渲出 N 个节点，靠 `data-book-id` 区分。书库只有
+# 一本时，N 恒等于 1，「同名多节点必须带判别位」那条不变式的**分支永远走不到**——用例
+# 会绿，但它证明的东西比它看起来的少得多。两本书才让那条路径真的被走过一遍。
+BOOK_ID_2 = "second_data"
 
 
 def _free_port() -> int:
@@ -55,20 +60,25 @@ def _server_env(books_dir: Path) -> dict[str, str]:
 
 @pytest.fixture(scope="session")
 def e2e_books_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """一本合成的 EPUB 2 书，落在 tmp 下的书库里。
+    """两本合成的书，落在 tmp 下的书库里。
 
     绝不指向真实 `books/`：`process_epub()` 会对输出目录动 staging 与 rmtree。
+
+    两本而不是一本，理由见上面 `BOOK_ID_2` 的注释。第二本取 EPUB 3 语料（标题
+    `Three Point Oh`，与第一本的 `Nineteen Twenty Two` 不同），这样书卡的可见文本
+    也是区分得开的；smoke 只读 `BOOK_ID`，行为不受影响。
     """
-    from epub_corpus import build_epub2  # tests/fixtures 已在 sys.path 上
+    from epub_corpus import build_epub2, build_epub3  # tests/fixtures 已在 sys.path 上
 
     from reader3_app.reader3 import process_epub
 
     root = tmp_path_factory.mktemp("e2e")
     books = root / "books"
     books.mkdir()
-    epub_path = root / "smoke.epub"
-    build_epub2(epub_path)
-    process_epub(str(epub_path), str(books / BOOK_ID))
+    for name, build in ((BOOK_ID, build_epub2), (BOOK_ID_2, build_epub3)):
+        epub_path = root / f"{name}.epub"
+        build(epub_path)
+        process_epub(str(epub_path), str(books / name))
     return books
 
 

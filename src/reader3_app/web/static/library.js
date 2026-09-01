@@ -2,13 +2,33 @@
   "use strict";
 
   // 有界枚举 → 静态映射表，值是字面量（设计规格 §4 规则 5）。
-  // 与 designs/reader-pro-next/components.jsx 的 LIB_BOOK_STATUS_TESTID 一一对应；
-  // loading / unknown 两态原型里没有对应元素，故不给 testid（见 testid-rename-map.md §8.2）。
-  const LIB_BOOK_STATUS_TESTID = {
-    not_indexed: "lib-book-status-not-indexed",
-    indexing: "lib-book-status-indexing",
-    indexed: "lib-book-status-indexed",
-    error: "lib-book-status-error",
+  // loading / unknown 两态没有对应元素，故不给 testid（见 testid-rename-map.md §8.2）。
+  //
+  // **与原型在这里分叉，且是有意的**（ADR-0014 的「有界归 testid、无界归判别位」拆到底）：
+  // 原型 components.jsx:364 的 `LIB_BOOK_STATUS_TESTID` 只有 4 个名字，因为 app.jsx:166
+  // 是 `view === "grid" ? <BookCard…> : <BookTable…>` —— 同一时刻页面上只存在一种视图。
+  // 生产模板不是这样：library.html:1191 的 `.book-card` 与 :1224 的 `.book-row` **同时在
+  // DOM 里**，靠 CSS 显隐切换（下面 setStatusForBook 也确实同时取两个 target）。于是同一
+  // 本书会贡献两个状态 pill，共用一个字面量就必然撞 Playwright 的 strict 模式。
+  //
+  // 按 ADR-0014 自己的规则分解两个维度：view ∈ {grid, list} 是编译期可枚举的**有界**集合
+  // → 各占一个 testid 字面量（4 个名字变 8 个）；book id 是**无界**的 → 落在 pill 自己
+  // 身上的 `data-book-id` 判别位（在祖先 `.book-card` / `.book-row` 上不算数，
+  // `getByTestId()` 看的是节点自己）。两处缺一不可：只拆 view 则两本书的 grid pill 相撞，
+  // 只加 data-book-id 则同一本书的 grid/row pill 共享同一个 (testid, book-id) 对。
+  // 运行期由 tests/e2e/test_testid_dom_uniqueness.py 在真浏览器里守住。
+  const LIB_BOOK_GRID_STATUS_TESTID = {
+    not_indexed: "lib-book-grid-status-not-indexed",
+    indexing: "lib-book-grid-status-indexing",
+    indexed: "lib-book-grid-status-indexed",
+    error: "lib-book-grid-status-error",
+  };
+
+  const LIB_BOOK_ROW_STATUS_TESTID = {
+    not_indexed: "lib-book-row-status-not-indexed",
+    indexing: "lib-book-row-status-indexing",
+    indexed: "lib-book-row-status-indexed",
+    error: "lib-book-row-status-error",
   };
 
   const BULK_INDEX_STORAGE_KEY = "reader3.library.bulkIndexingActive";
@@ -216,7 +236,12 @@
 
   function syncSelectionForBookId(bookId) {
     const selected = state.selectedBookIds.has(bookId);
-    for (const el of qsa(`[data-book-id="${CSS.escape(bookId)}"]`)) {
+    // 必须限定在卡片与列表行上，不能写裸的 `[data-book-id="…"]`：状态 pill 现在也带
+    // 这个判别位（见文件顶部的 LIB_BOOK_*_STATUS_TESTID 注释），裸选择器会连 pill 一起
+    // 选中，给它挂上 is-selected 并去找一个不存在的 .select-checkbox。今天没有可见后果，
+    // 只是因为两条 is-selected 的 CSS 规则恰好限定了作用域——那是巧合，不是保证。
+    const escaped = CSS.escape(bookId);
+    for (const el of qsa(`.book-card[data-book-id="${escaped}"], .book-row[data-book-id="${escaped}"]`)) {
       const checkbox = qs(".select-checkbox", el);
       if (checkbox) checkbox.checked = selected;
       el.classList.toggle("is-selected", selected);
@@ -269,12 +294,13 @@
   function setStatusForBook(bookId, status) {
     state.statuses.set(bookId, status);
     const normalized = String(status?.status || "unknown");
+    // 每个 target 配一张自己的 testid 表：grid 与 list 同时在 DOM 里，共用字面量必撞。
     const targets = [
-      qs(`.book-card[data-book-id="${CSS.escape(bookId)}"]`),
-      qs(`.book-row[data-book-id="${CSS.escape(bookId)}"]`),
-    ].filter(Boolean);
+      [qs(`.book-card[data-book-id="${CSS.escape(bookId)}"]`), LIB_BOOK_GRID_STATUS_TESTID],
+      [qs(`.book-row[data-book-id="${CSS.escape(bookId)}"]`), LIB_BOOK_ROW_STATUS_TESTID],
+    ].filter(([el]) => Boolean(el));
 
-    for (const target of targets) {
+    for (const [target, statusTestids] of targets) {
       const pill = qs(".status-pill", target);
       if (pill) {
         pill.classList.remove(
@@ -285,8 +311,15 @@
           "is-unknown",
           "is-error",
         );
-        if (LIB_BOOK_STATUS_TESTID[normalized]) pill.setAttribute("data-testid", LIB_BOOK_STATUS_TESTID[normalized]);
-        else pill.removeAttribute("data-testid");
+        // data-book-id 与 testid 同生共死：书 id 是无界的判别位，只有在有 testid 可
+        // 被定位时才有意义，留一个孤儿判别位在没有 testid 的 pill 上只会误导读者。
+        if (statusTestids[normalized]) {
+          pill.setAttribute("data-testid", statusTestids[normalized]);
+          pill.setAttribute("data-book-id", bookId);
+        } else {
+          pill.removeAttribute("data-testid");
+          pill.removeAttribute("data-book-id");
+        }
         if (normalized === "indexed") {
           pill.classList.add("is-indexed");
           pill.textContent = "Indexed";
@@ -334,6 +367,7 @@
       if (!pill) continue;
       pill.classList.remove("is-indexed", "is-not-indexed", "is-indexing", "is-unknown", "is-error");
       pill.removeAttribute("data-testid");
+      pill.removeAttribute("data-book-id");  // 判别位跟着 testid 一起走，理由见上面 setStatusForBook
       pill.classList.add("is-loading");
       pill.textContent = "Loading…";
     }

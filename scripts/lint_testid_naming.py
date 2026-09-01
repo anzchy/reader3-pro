@@ -24,6 +24,10 @@
    这正是要的效果；本注释存在的意义是防止后来者看到 lint 报它们就往白名单里加。
    全部 24 个的新名见 contracts/testid-rename-map.md。
 
+扫描范围有两档（M4）：`SCAN_GLOBS`（原型 ＋ 模板）走形状 ＋ 唯一性；
+`SHAPE_ONLY_SCAN_GLOBS`（`src/reader3_app/web/static/**/*.js`）**只走形状**，理由写在
+那个常量上方。JS 侧此前完全在扫描范围之外，等于没有任何东西在管它发出去的名字长什么样。
+
 除形状之外还管**同文件内的字面量唯一性**（裁决见 docs/adr/0014-bounded-testid-enumeration.md）：
 有界集合的每个成员各有自己唯一的 testid，同一个文件里同一个字面量出现两次即违规。
 这只是唯一性的静态近似——真正要保证的是渲染后 DOM 里的唯一性，静态扫描证明不了：
@@ -45,6 +49,21 @@ SCAN_GLOBS = (
     "src/reader3_app/web/templates/*.html",
 )
 
+# M4：前端 JS 也在发 testid（`library.js` 的状态 pill、`settings.js` 的 provider 卡片、
+# `search.js` / `notes-panel.js` 的动态列表），在此之前**没有任何东西在管这些名字的形状**。
+# 它们进扫描范围，但**只参与 CANONICAL 形状检查，不参与同文件唯一性检查**：
+#   * JS 里同一个 testid 字面量「在 `const` 表里定义一次、在别处 `setAttribute` 再引用
+#     一次」是完全正常的写法，把唯一性套上去只会制造假阳性，逼人去登记豁免——豁免多了
+#     这条检查本身就废了（ADR-0014 的 Revisit When 第二条：超过 3 条即为信号）。
+#   * 而唯一性的**真正**保证已经由 `tests/e2e/test_testid_dom_uniqueness.py` 在真浏览器
+#     里承担了：它扫的是渲染后的 DOM，而 DOM 唯一性才是 Playwright strict 模式真正在乎
+#     的东西。静态近似在 JS 上尤其不准（一个字面量渲成 N 个节点、互斥分支各写一次），
+#     运行期断言才是它该待的地方。
+SHAPE_ONLY_SCAN_GLOBS = ("src/reader3_app/web/static/**/*.js",)
+
+# vendor 是第三方 JS（epub.js 等），不是我们发的 testid，扫它只会扫出别人的代码。
+SHAPE_ONLY_EXCLUDE = ("src/reader3_app/web/static/vendor/",)
+
 # canonical 正则。这里就是唯一真相源（裁决见 docs/adr/0013-testid-invariant.md）——
 # 文档一律链接到这个常量，不要在任何 Markdown 表格里另抄一份（表格里的 | 会被转义成 \|）。
 CANONICAL = re.compile(r"^(?:lib|rd|set)-[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -52,7 +71,10 @@ CANONICAL = re.compile(r"^(?:lib|rd|set)-[a-z0-9]+(?:-[a-z0-9]+)*$")
 ATTR_LITERAL_RE = re.compile(r'data-testid\s*=\s*"([^"]*)"')
 PROP_LITERAL_RE = re.compile(r'\btestId\s*=\s*"([^"]*)"')
 ATTR_EXPR_RE = re.compile(r"data-testid\s*=\s*\{([^}]*)\}")
-TESTID_TABLE_RE = re.compile(r"const\s+\w*TESTID\w*\s*=\s*\{(.*?)\n\};", re.DOTALL)
+# 收尾的 `};` 允许有缩进：原型的表都在模块顶层（`};` 顶格），但 `library.js` /
+# `library-chat.js` 的表包在 IIFE 里，收尾写的是 `  };`。要求顶格等于对这些表**视而不见**
+# ——而看不见的表照样让 lint 退出 0，是最坏的一种「通过」。
+TESTID_TABLE_RE = re.compile(r"const\s+\w*TESTID\w*\s*=\s*\{(.*?)\n[ \t]*\};", re.DOTALL)
 TABLE_VALUE_RE = re.compile(r':\s*"([^"]*)"')
 
 ADR_0014 = "docs/adr/0014-bounded-testid-enumeration.md"
@@ -82,36 +104,48 @@ def main() -> int:
     # 唯一性统计的键是 (文件, 字面量)——跨文件同名不算重名，这是 ADR-0014 明写的盲区。
     occurrences: dict[tuple[str, str], list[int]] = defaultdict(list)
 
+    # (路径, 是否参与唯一性检查)。两条 glob 家族的差别只在这个布尔上，扫描与形状检查
+    # 的代码是同一份——分成两个循环写就是两份会各自漂移的 parser。
+    targets: list[tuple[Path, bool]] = []
     for pattern in SCAN_GLOBS:
         for path in sorted(ROOT.glob(pattern)):
-            files += 1
-            text = path.read_text(encoding="utf-8")
-            rel = path.relative_to(ROOT).as_posix()
+            targets.append((path, True))
+    for pattern in SHAPE_ONLY_SCAN_GLOBS:
+        for path in sorted(ROOT.glob(pattern)):
+            if any(x in path.as_posix() for x in SHAPE_ONLY_EXCLUDE):
+                continue
+            targets.append((path, False))
 
-            found: list[tuple[int, str, str]] = []
-            for m in ATTR_LITERAL_RE.finditer(text):
-                found.append((m.start(1), m.group(1), "data-testid"))
-            for m in PROP_LITERAL_RE.finditer(text):
-                found.append((m.start(1), m.group(1), "testId prop"))
-            for table in TESTID_TABLE_RE.finditer(text):
-                for m in TABLE_VALUE_RE.finditer(table.group(1)):
-                    found.append((table.start(1) + m.start(1), m.group(1), "静态映射表"))
+    for path, check_uniqueness in targets:
+        files += 1
+        text = path.read_text(encoding="utf-8")
+        rel = path.relative_to(ROOT).as_posix()
 
-            for pos, value, kind in found:
-                line = line_of(text, pos)
-                names.add(value)
+        found: list[tuple[int, str, str]] = []
+        for m in ATTR_LITERAL_RE.finditer(text):
+            found.append((m.start(1), m.group(1), "data-testid"))
+        for m in PROP_LITERAL_RE.finditer(text):
+            found.append((m.start(1), m.group(1), "testId prop"))
+        for table in TESTID_TABLE_RE.finditer(text):
+            for m in TABLE_VALUE_RE.finditer(table.group(1)):
+                found.append((table.start(1) + m.start(1), m.group(1), "静态映射表"))
+
+        for pos, value, kind in found:
+            line = line_of(text, pos)
+            names.add(value)
+            if check_uniqueness:
                 # 四种形态汇进同一个计数器：分形态各自查重会漏掉跨形态的重名。
                 occurrences[(rel, value)].append(line)
-                if not CANONICAL.match(value):
-                    lines, kinds = bad_names.setdefault((rel, value), ([], []))
-                    lines.append(line)
-                    if kind not in kinds:
-                        kinds.append(kind)
+            if not CANONICAL.match(value):
+                lines, kinds = bad_names.setdefault((rel, value), ([], []))
+                lines.append(line)
+                if kind not in kinds:
+                    kinds.append(kind)
 
-            for m in ATTR_EXPR_RE.finditer(text):
-                expr = m.group(1)
-                if "+" in expr or "`" in expr:
-                    bad_exprs.append((rel, line_of(text, m.start(1)), expr.strip()))
+        for m in ATTR_EXPR_RE.finditer(text):
+            expr = m.group(1)
+            if "+" in expr or "`" in expr:
+                bad_exprs.append((rel, line_of(text, m.start(1)), expr.strip()))
 
     # 豁免只压住唯一性发现，压不住形状检查——那是登记者从未打算授予的提权。
     duplicates = {key: sorted(lines) for key, lines in occurrences.items() if len(lines) > 1}

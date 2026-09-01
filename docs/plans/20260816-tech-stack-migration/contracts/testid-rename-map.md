@@ -402,6 +402,12 @@ E2E 定位写作 `[data-testid="lib-book-card"][data-book-id="…"]`——
 `lib-book-status-*` 少了 loading / unknown 两态（原型没有对应元素），故 `library.js` 在这两态下
 `removeAttribute("data-testid")`，而不是造名字。
 
+⚠️ 2026-09-01：生产侧的这组名字已不叫 `lib-book-status-*`，而是按 view 拆成
+`lib-book-{grid,row}-status-*` 八个（`library.js:7-33`）。原型不需要跟着拆——`app.jsx:166`
+是三元式，同一时刻只有一种视图在树上；生产模板两种视图同时在 DOM 里。分叉的完整理由写在
+`library.js` 表上方的注释里，裁决依据是 ADR-0014 的「有界归 testid、无界归判别位」。
+上一段说的 loading / unknown 缺项对新的八个名字同样成立。
+
 `rd-notes-jump` / `rd-notes-delete` 也在缺失名单里：旧笔记条目整块可点，没有拆出跳转与删除两个
 按钮。这条与上表同类。
 
