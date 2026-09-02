@@ -26,17 +26,33 @@
   | git hash-object --stdin; } | cut -c1-12
 ```
 
-当前 `suite_hash` 值：`06114374b405`（2026-09-03 实测输出，非誊抄）。
+当前 `suite_hash` 值：`6672e32e6687`（2026-09-03 实测输出，非誊抄）。
 
 **这个值处于 pre-freeze，不是冻结值。** G2 尚未开始，baseline_1b 的 22 条用例也还没写完
-（现在 `baseline_1b` 收集到 12 条：WI-3 的 harness 自测 9 条 ＋ WI-4 的创建路径 3 条；`tests/e2e` 全量 19 条，差额是白名单里的 smoke 与 testid 唯一性），后面每落一条用例它都会变。写在这里是免得后来者
-拿今天这个值当冻结值。
+（现在 `baseline_1b` 收集到 14 条：WI-3 的 harness 自测 9 条 ＋ WI-4 的创建路径 3 条 ＋ WI-5 的
+笔记创建/编辑 2 条；`tests/e2e` 全量 21 条，差额是白名单里的 smoke 与 testid 唯一性），后面每落
+一条用例它都会变。写在这里是免得后来者拿今天这个值当冻结值。
+
+**取值前必须先 `git add`。** 上面这条命令读的是**索引**，不是工作区：新用例文件在 `git add`
+之前对 `git ls-files -s` 根本不存在，改过的 `helpers.py` 也仍报旧内容。WI-4、Wave 0、WI-5 三次
+都在这里先拿到过一个「没变」的旧值（本次为 `06114374b405` → `6672e32e6687`）。
 
 值的变更史（每次改都要写清作废原因，不要只覆盖数字）：
 
+- `6672e32e6687` ← Wave 1（WI-5）：新增 `baseline_1b/test_write_note_editor.py`（W-4 / W-7 两条，12 → 14 条），同时改 `helpers.py`——`assert_roundtrip` 加 `expected_count`（默认 1，三个既有调用点行为不变）、新增 `wait_for_note_text` 与 `_pick_target`。**两个被 hash 覆盖的文件同时改**，既有条数变了、既有文件内容也变了，两个理由各自都足以让旧值作废。（同批还改了 `scripts/lint_e2e_selectors.py`，但它**不在** hash 命令的文件清单内，不构成本次作废的原因——它的影响是扫描面 14 → 20 处，记在下面一段。）
 - `06114374b405` ← Wave 0 的 helper 上收：四个私有 helper 从两个 baseline 模块提进 `helpers.py`，**三个被 hash 覆盖的文件同时改**。用例条数没变（前后都是 19 条、断言集合逐条比对无增删改），变的只是它们住在哪个文件里——`suite_hash` 覆盖的是文件内容而不是用例条数，所以纯搬家一样让它作废。
 - `f56131cfe4ef` ← WI-4 的 `test_write_create_annotations.py` 进索引（3 条用例）。
 - `70ee84519f02` ← WI-1–WI-3 一批提交（commit `0e411f8`）。
+
+### 与 `suite_hash` 无关但会影响「同一套用例」判断的一次改动
+
+2026-09-03（WI-5）修了 `scripts/lint_e2e_selectors.py` 的一个盲区：正则要求引号紧跟在 `(` 后，
+于是**所有 f-string 形态的 locator 实参一处都没被扫到**；而 ADR-0014 的复合选择器要插一个
+运行期 id，天然全是 f-string。实测旧正则会对一个同时含 `.some-class` 与 `[data-modal="…"]`
+的探针文件报「0 处违规」。补上前缀后扫描面 **14 → 20 处**，全仓仍 0 违规。
+
+记在这里的理由：这个脚本不在 `suite_hash` 的覆盖面内，所以它变了 hash 不变——但「这套用例
+被什么强度的门禁把过关」确实变了。G2 冻结后若有人回头比对，光看 hash 会以为门禁没动过。
 
 `70ee84519f02` 取代 `235802f4647d` 的原因**正是下面那条索引态的坑本身**：算它的时候
 `tests/e2e/baseline_1b/` 与 `tests/e2e/helpers.py` 还未进索引，`git ls-files -s` 对它们

@@ -46,16 +46,22 @@ SCAN_GLOBS = (
 )
 
 # 取这些调用的第一个字符串实参。覆盖 Playwright 的 Python 与 JS 两套 API 名。
+# `(?:[fFrRbBuU]{1,2})?` 是 2026-09-03（009 WI-5）补的：此前引号前不许有前缀，于是
+# `.locator(f'[data-testid=…][data-note-id="{x}"]')` 这一整类**一处都没被扫到**。
+# 带判别位的复合选择器（ADR-0014）天然要插值，也就天然全是 f-string——漏掉这个前缀
+# 等于把这条 lint 最该管的那一类整体放行。补上后扫描面从 14 处升到 20 处。
 LOCATOR_CALL_RE = re.compile(
     r"""\.(?:locator|frame_locator|frameLocator
         |query_selector_all|query_selector|querySelectorAll|querySelector
         |wait_for_selector|waitForSelector|is_visible|isVisible|click|fill|type|hover
         |press|check|uncheck|select_option|selectOption|text_content|textContent
         |get_attribute|getAttribute|inner_text|innerText|count)\s*\(\s*
-        (?P<q>['"])(?P<sel>.*?)(?P=q)""",
+        (?:[fFrRbBuU]{1,2})?(?P<q>['"])(?P<sel>.*?)(?P=q)""",
     re.VERBOSE,
 )
-DOLLAR_CALL_RE = re.compile(r"\.\$\$?\s*\(\s*(?P<q>['\"])(?P<sel>.*?)(?P=q)")
+DOLLAR_CALL_RE = re.compile(
+    r"\.\$\$?\s*\(\s*(?:[fFrRbBuU]{1,2})?(?P<q>['\"])(?P<sel>.*?)(?P=q)"
+)
 NTH_RE = re.compile(r"\.nth\s*\(")
 
 # 允许的整串形态：一个或多个 [data-*="…"]，且其中至少有一个是 data-testid。

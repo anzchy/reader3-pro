@@ -1,6 +1,6 @@
 """E2E 共享 helpers —— 全套 W / R / K 用例只从这里取选区、读写 `notes.json`、换算几何。
 
-八个函数，一个都不许在用例里各写一遍：
+九个函数，一个都不许在用例里各写一遍：
 
     select_in_frame(frame, quote, occurrence=0)   §1 的程序化选区标准路径
     read_notes(books_dir, book_id)                读回 notes.json 的 list[dict]
@@ -8,6 +8,7 @@
     viewport_rect_of_selection(page, frame)       iframe 内 rect → 视口坐标
     open_reader(page, base_url, book_id, i, txt)  打开阅读器并等到 iframe 里有正文
     wait_for_notes(books_dir, book_id, count)     等落库稳定到 count 条
+    wait_for_note_text(books_dir, book_id, id, s) 等某条的 note_text 变成 s（PUT 路径用）
     assert_roundtrip(page, books_dir, book_id, …) §0 的「刷新 → 高亮回到同一段文字」收尾
     clear_selection_and_drain(page, frame)        清选区并等去抖窗口排空
 
@@ -22,6 +23,11 @@
 另外两条用例静默改变了它们等待的对象**。上收是把这个失败态在扇出之前消掉，不是为了省行数。
 （`test_write_create_annotations.py` 里那段「刻意不抽到 helpers.py」的旧注记随之作废：
 它权衡的是「省 6 行 vs 清零 soak 计数」，而 soak 计数要到 G2 才开始数，此刻清零无代价。）
+
+**Wave 1（WI-5）在这里改了两处**，两处都是「更新路径」逼出来的，创建路径一个字没动：
+`assert_roundtrip` 多了 `expected_count`（默认 1，三个既有调用点行为不变），新增
+`wait_for_note_text`（PUT 改的是内容不是条数，等条数等不到任何东西）。理由分别写在
+两个函数自己的 docstring 里。
 
 **这个文件不属于任何一个组 marker，但它在 `suite_hash` 的覆盖面内**
 （`docs/plans/20260816-tech-stack-migration/tasks/soak-log.md` 的哈希命令点名了它）：
@@ -265,8 +271,29 @@ def select_in_frame(frame: "FrameLocator", quote: str, occurrence: int = 0) -> N
 
     **留给 W 系列的一条已知事实**：本函数返回之后，那个 ~250ms 的循环会重新开始，
     每一拍都会重设 ``currentRange``（由 CFI 解析回来的等价 range）并把
-    ``editingNoteId`` 清成 null。笔记编辑类用例（W-4 / W-7）若观察到编辑态被莫名
-    重置，根因在这里，不在用例。
+    ``editingNoteId`` 清成 null（``handleSelectionRange`` 的倒数第三行）。
+
+    ⚠️ **但编辑态实际上打不着——2026-09-02 WI-5 实测，覆盖上面这条推断的后半句。**
+    任务书 §0.6 把 WI-5 单独排一波，就是要回答「编辑态用例需不需要一个新的
+    drain/settle helper」。答案是**不需要**，而理由不是「点得够快」：
+
+    * **W-7（点已有 ``<mark>`` 进编辑态）**：``onAnnotationClick`` 先
+      ``removeAllRanges(); addRange(selectNodeContents(mark))``，随后
+      ``openNoteEditorWithExisting`` 末尾的 ``this.noteTextarea.focus()`` 把焦点移到
+      **外层文档**的 textarea 上，iframe 内的选区**当场塌成折叠态**。实测采样：
+      t=60ms 时 ``selection.toString() == "Alpha prose"``，t=81ms 起恒为 ``""``。
+      epub.js 的 ``selected`` 只在非折叠 range 上 emit，于是那一拍到点时什么都不发——
+      整段 2s 采样里 rendition ``selected`` 事件 **0 次**、``lastSelectionAt`` 恒为
+      **0**、``editingNoteId`` 恒为目标 id。**循环根本没起来，不是我们跑赢了它。**
+    * **W-4（程序化选区 → Add Note）**：焦点从头到尾没进过 iframe，所以 textarea 的
+      focus 不清选区，循环照跑（实测 ``lastSelectionAt`` 在 t=261 / 521ms 各刷新一拍）。
+      但这一支的 ``editingNoteId`` 本来就该是 null（``openNoteEditor`` 首行就置 null），
+      而 ``currentRange`` 在整段采样里恒为 ``"Alpha prose"``——与 WI-4 在
+      ``test_write_create_annotations.py`` 里量到的结论一致。
+
+    合起来：**两条编辑/笔记路径都不需要额外的排空动作**。Wave 2 之后再有用例碰
+    ``editingNoteId``，先照这条结论走；真要变，变的会是 ``openNoteEditorWithExisting``
+    末尾那个 ``focus()``，而不是这里的时序。
     """
     body = frame.locator("body")  # lint-e2e-selectors: allow —— iframe 内是用户那本书自己的 XHTML，不是我们的模板
     body.evaluate(
@@ -355,6 +382,51 @@ def wait_for_notes(books_dir: PathLike, book_id: str, count: int) -> List[Dict[s
     )
 
 
+def wait_for_note_text(
+    books_dir: PathLike, book_id: str, note_id: str, expected_text: str
+) -> Dict[str, Any]:
+    """等 ``note_id`` 那一条的 ``note_text`` 变成 ``expected_text``，返回该条。
+
+    **为什么 `wait_for_notes` 在更新路径上等不到东西。** 它等的是**条数**，而
+    PUT `/api/notes/{book}/{chapter}/{id}` 是原地改一条：条数从头到尾不变，所以
+    `wait_for_notes(..., 2)` 会在第一次轮询就带着**旧内容**返回。那正是 §0 第四条纪律
+    点名的「把中间态当成终态」——只不过这一次中间态和终态的**长度相同**，连概率性都
+    谈不上，是必然读到旧值。判据必须落在被改的那个量上。
+
+    等的仍然是一个确定的终态，不是重试：读不到就抛，并把**超时那一刻**盘上的样子贴出来。
+
+    **超时诊断读的是当下，不是最后一次看见。** 早先的写法把每次轮询看到的那条存进
+    `seen`，超时再打印 `seen`——于是「更新被实现成删了重建」这种缺陷会报成
+    「note_text 没有变成 X，当前是 <旧记录>」，而那条旧记录**此刻根本已经不在盘上了**。
+    2026-09-03 的定向破坏（WI-5 的 D1）就是这么被误导了一轮：失败消息把人指向「PUT 没生效」，
+    真相是「PUT 生效了，但换了个 id」。超时后重读一次，分两种情况报。
+
+    W-9（CJK 上重复一遍 W-7）与今后任何走 PUT 的用例都压这条路径，所以它在 helpers 里，
+    不在某个用例模块里。
+    """
+    deadline = time.monotonic() + NOTES_WAIT_S
+    while time.monotonic() < deadline:
+        for record in read_notes(books_dir, book_id):
+            if record.get("id") == note_id:
+                if record.get("note_text") == expected_text:
+                    return record
+                break
+        time.sleep(0.05)
+
+    final = read_notes(books_dir, book_id)
+    current = next((r for r in final if r.get("id") == note_id), None)
+    if current is None:
+        raise AssertionError(
+            f"{NOTES_WAIT_S}s 后 id={note_id!r} 这一条**已经不在 notes.json 里了**——"
+            "更新路径把「改一条」实现成了「删掉再建一条新的」。"
+            f"现存的 id：{[r.get('id') for r in final]}"
+        )
+    raise AssertionError(
+        f"{NOTES_WAIT_S}s 内 {note_id} 的 note_text 没有变成 {expected_text!r}，"
+        f"当前是 {current!r}"
+    )
+
+
 def seed_notes(books_dir: PathLike, book_id: str, annotations: Sequence[Any]) -> None:
     """预置一批标注，落成**生产代码认得的** `notes.json`。
 
@@ -395,6 +467,30 @@ def seed_notes(books_dir: PathLike, book_id: str, annotations: Sequence[Any]) ->
 # ---------------------------------------------------------------------------
 
 
+def _pick_target(
+    records: List[Dict[str, Any]], quote: str, expected_type: str
+) -> Dict[str, Any]:
+    """从落库列表里挑出「本次动作针对的那一条」。
+
+    **单条时原样返回 `records[0]`，一个字段都不看。** 这是刻意的：W-1 / W-2 / W-3 依赖
+    `assert_roundtrip` 里那两条逐字段诊断（「落库的 type 是 X 不是 Y」「落库的 quote 是
+    X 不是 Y」）。若这里先按 type 过滤，一个「按了 wavy 却写成 underline」的缺陷会变成
+    「找不到匹配的条目」——同样红，但把人指向错的地方。
+
+    多条时才按 (quote, type) 挑，且要求**恰好一个**匹配：挑不出唯一的一条，说明用例给的
+    坐标本身就不能定位到目标，此刻抛比后面断在错的条目上强。
+    """
+    if len(records) == 1:
+        return records[0]
+    matches = [r for r in records if r.get("quote") == quote and r.get("type") == expected_type]
+    if len(matches) != 1:
+        raise AssertionError(
+            f"在 {len(records)} 条落库记录里，quote={quote!r} 且 type={expected_type!r} 的"
+            f"有 {len(matches)} 条（要求恰好 1 条）。完整列表：{records}"
+        )
+    return matches[0]
+
+
 def assert_roundtrip(
     page: "Page",
     books_dir: PathLike,
@@ -402,17 +498,26 @@ def assert_roundtrip(
     quote: str,
     anchor: str,
     expected_type: str,
+    expected_count: int = 1,
 ) -> Dict[str, Any]:
-    """§0 的往返断言，全部创建路径用例共用的收尾：**刷新** → 高亮回到同一段文字上。
+    """§0 的往返断言，全部写路径用例共用的收尾：**刷新** → 高亮回到同一段文字上。
 
     顺序是刻意的：先读盘（此时页面还没刷新，读到的是服务端真的写下去的东西），再刷新，
     再断 DOM。反过来先刷新再读盘的话，「盘上没有但 JS 还记得」这个失败态会被刷新动作
     自己抹掉，而那正是本纪律要抓的东西。
+
+    ``expected_count`` 是**本章应当存在的标注总数**，默认 1 —— 也就是创建路径用例的
+    今日行为，W-1 / W-2 / W-3 三个调用点一个字都不用改。W-7（编辑已有笔记，同章还有一条
+    旁观标注）传 2。**它不是「至少几条」**：终态断的仍是等号，只是等号右边由调用方给出。
+
+    ⚠️ ``expected_count > 1`` 时本函数只保证「目标那条往返成功、总数没变」。**同章其他
+    条目有没有被顺手改掉，这里不管**——那是调用方要断的守恒律（见 W-7 的整字典等值）。
+    把旁观条的判据塞进这里会让它对每个调用点都变成一句恒真。
     """
     from playwright.sync_api import expect
 
-    records = wait_for_notes(books_dir, book_id, 1)
-    record = records[0]
+    records = wait_for_notes(books_dir, book_id, expected_count)
+    record = _pick_target(records, quote, expected_type)
     assert record["type"] == expected_type, (
         f"落库的 type 是 {record['type']!r}，不是按下的那个按钮对应的 {expected_type!r}："
         f"`handleAction` 的 action 名与模板 `data-action` 取值失配？完整条目：{record}"
@@ -427,7 +532,17 @@ def assert_roundtrip(
     frame = page.frame_locator('[data-testid="rd-viewport"] iframe')  # lint-e2e-selectors: allow —— iframe 元素由 epub.js 运行时创建，插不进 testid
     expect(frame.locator("body")).to_contain_text(anchor)  # lint-e2e-selectors: allow —— iframe 内是用户那本书自己的 XHTML，不是我们的模板
 
-    span = frame.get_by_test_id("rd-anno-span")
+    if expected_count == 1:
+        # 不带判别位是刻意的：strict 模式下「章内冒出第二个 `<mark>`」会当场报
+        # strict violation，而那正是「一次动作写了不止一条」在 DOM 侧的表现之一。
+        span = frame.get_by_test_id("rd-anno-span")
+    else:
+        # 本章预期就有多个 `<mark>`，strict 单例判据在这里是错的判据，不是更严的判据。
+        # 判别位 `data-annotation-id` 在 ADR-0014 的闭合清单内（见 lint_e2e_selectors）。
+        target_id = record["id"]
+        span = frame.locator(
+            f'[data-testid="rd-anno-span"][data-annotation-id="{target_id}"]'
+        )
     # `to_have_text` 会自动等待——刷新后的高亮要等 `loadAndRender()` 跑完才挂上。
     # 用它而不是先 `to_be_visible()` 再取值：后者会在「`<mark>` 已挂但文本错」时先绿一次，
     # 把失败推迟到下一行，报出来的诊断信息也更差。
@@ -447,12 +562,13 @@ def assert_roundtrip(
     # 于是「一次点击写两条」这条缺陷在原写法下是**概率性漏检**，而不确定性正是 G2 禁的东西。
     # 刷新已经完成，第二次写早就落盘了，此刻读到的就是终态。
     settled = read_notes(books_dir, book_id)
-    assert len(settled) == 1, (
-        f"终态不是恰好 1 条，而是 {len(settled)} 条——一次创建动作写了不止一条："
-        f"{settled}"
+    assert len(settled) == expected_count, (
+        f"终态不是恰好 {expected_count} 条，而是 {len(settled)} 条——"
+        f"一次动作写了不止一条，或顺手删掉了别的：{settled}"
     )
-    assert settled[0]["id"] == record["id"], (
-        f"终态那条的 id 与落库时读到的不是同一条：{settled[0]['id']} != {record['id']}"
+    settled_target = _pick_target(settled, quote, expected_type)
+    assert settled_target["id"] == record["id"], (
+        f"终态那条的 id 与落库时读到的不是同一条：{settled_target['id']} != {record['id']}"
     )
     return record
 
