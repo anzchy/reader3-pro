@@ -196,6 +196,85 @@ K1 的 baseline 条是有价值的：它会在**任何人改模板删掉那七�
 
 ---
 
+## 0.6 剩余 WI 的波次编排（2026-09-02 立）
+
+> 本节只管**执行编排**——哪些 WI 可以同时开工、哪些必须独占。它不改任何一条用例的内容，
+> 也不改 §0.5 的分组与激活。WI 的定义在 `.claude/tdd-guardian/tests-20260901-224500.md`
+> （矩阵，最高权威）与 `.claude/tdd-guardian/plan-20260901-122813.md`（生成计划，最低权威，
+> 已知在 WI-6 一处过期）；本节只引用编号，不复述内容。
+>
+> **WI-1…WI-4 已完成**（基础设施、台账、harness、W-1/W-2/W-3 创建路径），下表是剩下的 13 条。
+
+### 为什么并行是可行的
+
+一个前提在 WI-1 就已经铺好，值得写下来，否则下一个人会以为它是巧合：
+
+**`EXPECTED_BASELINE_ITEMS = 61` 是目标值，不是运行计数。**「实际收集到的条数 == 61」这条断言被
+推迟到 WI-17。如果每个 WI 都要把常量往上加一次，`scripts/lint_e2e_groups.py` 就成了 13 条 WI 的
+串行写入点，并行当场作废。**这个推迟是并行的前提，不要在中途"顺手"把它提前。**
+
+反过来，仍然存在三处真正的串行写入点，波次编排就是围绕它们排的：
+
+| 共享写入点 | 谁会碰 | 处理 |
+|---|---|---|
+| `tests/e2e/helpers.py` | 每一条写路径 WI | **Wave 0 一次性上收**，之后每波至多授权一个 WI 改它 |
+| `tests/e2e/conftest.py` | WI-16（桩 provider 的 server env） | WI-16 独占一波 |
+| `.claude/tdd-guardian/state.json` / `receipts.json` | 每一次 `record` / `verify` / 跑 lane | **写用例并行，跑门禁串行**——见下方纪律 3 |
+
+### 波次表
+
+| 波 | WI | 并行度 | 为什么这么排 |
+|---|---|:--:|---|
+| **Wave 0** | helper 上收（无 WI 编号） | 1 | 见下 |
+| **Wave 1** | WI-5 | 1（探针） | 见下 |
+| **Wave 2** | WI-6、WI-7、WI-8 | 3 | 写路径收尾。三条各建自己的模块，互不相干；WI-8 要的 CJK 语料（`build_cjk` / `cjk_data`）在 WI-3 已经进 conftest，所以它不碰共享文件 |
+| **Wave 3** | WI-9、WI-11、WI-12 | 3 | 契约（K-2/K-6a、K-1a）＋ 读路径基础（R-1…R-3）。都只读标注，不改写路径 |
+| **Wave 4** | WI-13、WI-14、WI-15 | 3 | R-4/R-5、R-6、X-2。同上 |
+| **Wave 5** | WI-10 | 1（独占） | 见下 |
+| **Wave 6** | WI-16 | 1（独占） | 唯一要改 `tests/e2e/conftest.py` 的一条（桩 provider 的 server env）。conftest 是 session 级 fixture 的定义处，改它会影响同时在跑的每一条用例 |
+| **Wave 7** | WI-17 | 1（独占） | 11 条 skip 形态用例 ＋ 分组存量守卫 ＋「实际 == 61」。它的断言的分母是前六波的全部产出，任何一条没落地它就红。**必须最后，且必须在 Wave 6 的门禁绿之后** |
+
+**Wave 0 为什么必须先于一切**：`_open_reader` 与 `_wait_for_notes` **今天已经在两个模块里各有一份**
+（`baseline_1b/test_harness_helpers.py` 与 `baseline_1b/test_write_create_annotations.py` 各自都定义了这两个私有函数）。两份的时候还只是
+重复；三个 agent 同时开工就会变成三份各自漂移的版本，而合并时**只会留下一份，另外两条用例静默改变
+了它们等待的对象**。所以 Wave 0 把这四个私有 helper（另两个是 `_assert_roundtrip`、
+`_clear_selection_and_drain`）上收进 `tests/e2e/helpers.py`，串行落地，再开扇出。
+
+**Wave 1 为什么只放 WI-5**：它是第一条走**编辑态**（`editingNoteId`）的用例，而 WI-4 已实测出那条
+路上有一个自持的选区循环——`handleRenditionSelection` 自己做 `removeAllRanges(); addRange(range)`，
+重新触发 `selectionchange`，在 `select_in_frame` 返回后约 250ms 把 `editingNoteId` 清空。创建路径
+免疫（点击落在 ~30ms），**编辑态不免疫**。如果 WI-5 需要为此新增一个共享的 drain/settle helper，
+那么后面每一条碰编辑态的用例都需要它。让 WI-5 单独跑一波，就是让这个"需不需要"在扇出之前有答案。
+
+**Wave 5 为什么独占**：WI-10 是几何断言（浮层坐标系）。CPU 争用会让坐标测量产生**假红**，而这一条
+的交付物恰恰是「零 flaky」。**用一条会被并发污染的用例去证明零 flaky，是自相矛盾的。**
+
+### 执行纪律
+
+1. **并行上限 3。** 本机 10 核；一个 Playwright chromium 实例连带服务进程约占 2 核，再多会让本来
+   就贴着超时阈值的等待逻辑（`SELECTION_TIMEOUT_MS = 8000`、`NOTES_WAIT_S = 8.0`）开始假红。
+2. **共享文件授权制。** `tests/e2e/helpers.py`、`tests/e2e/conftest.py`、`scripts/lint_e2e_groups.py`
+   在一波之内**至多一个 WI 被授权改**，其余 WI 只读。派活时要在 prompt 里写明这条，不能指望 agent
+   自己推断。
+3. **写用例并行，跑门禁串行。** `.claude/tdd-guardian/state.json` 与 `receipts.json` 是全局可变
+   状态，多个 agent 同时 `record` / `verify` 会互相覆盖，且覆盖是静默的。红收据要一条一条录；每波
+   结束后由主 agent **串行跑一次** `e2e` lane，而不是每个 agent 各跑各的。
+4. **每波收口三件事**：(a) 更新 `soak-log.md` 的 `suite_hash` 变更史（新模块进索引就会变，pre-freeze
+   期间这不清零任何计数，因为还没开始数）；(b) 跑一次选择器 lint 与分组 lint；(c) 人工核对本波内
+   跨 WI 的交叉引用（见下）。
+5. **WI-5 与 WI-6 的旁观者是同一个构造。** 矩阵已定：两者的 bystander 都是 `quote="One"`，**两份
+   docstring 必须互相点名**。它们分处 Wave 1 与 Wave 2，所以 WI-6 能看见 WI-5 的文件，而 WI-5 看不见
+   WI-6 的——WI-5 那一侧的交叉引用只能按矩阵里的路径写，并在 Wave 2 收口时核对回来。
+
+### 时间形状
+
+七波，其中四波是单条。乐观情况下的关键路径是
+`Wave 0 → WI-5 → max(WI-6,7,8) → max(WI-9,11,12) → max(WI-13,14,15) → WI-10 → WI-16 → WI-17`，
+即 **8 个串行段**，而不是 13 条 WI 逐条排队。并行省下的是中间三波的 6 条，**换来的代价是每波收口的
+串行门禁**——这笔交易只有在每波真的能一次绿的前提下才划算，所以纪律 2 与 3 不是可选项。
+
+---
+
 ## 1. 基础设施
 
 | 项 | 要求 |

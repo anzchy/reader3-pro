@@ -18,12 +18,11 @@
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, List
 
 import pytest
-from playwright.sync_api import FrameLocator, Page, expect
+from playwright.sync_api import Page, expect
 
 from conftest import (  # type: ignore[import-not-found]
     BOOK_ID,
@@ -33,9 +32,11 @@ from conftest import (  # type: ignore[import-not-found]
     REPEAT_BOOK_NEEDLE,
 )
 from helpers import (  # type: ignore[import-not-found]
+    open_reader,
     read_notes,
     select_in_frame,
     viewport_rect_of_selection,
+    wait_for_notes,
 )
 
 pytestmark = pytest.mark.baseline_1b
@@ -44,34 +45,11 @@ pytestmark = pytest.mark.baseline_1b
 # 一条选区的四个边与「参考实现」的四个边最多差这么多。1px 不是容差品味，是矩阵写死的
 # 判据：iframe 纵向偏移在本布局下 ≥40px（`.pagination-container { padding-top: 40px }`），
 # 1px 的阈值对它足够灵敏。
+#
+# 只有本文件用它，所以它留在这里：它是几何同解那一条的判据，不是共享路径的一部分。
+# （`open_reader` / `wait_for_notes` / `NOTES_WAIT_S` 已在 Wave 0 上收进 `helpers.py`，
+# 见任务书 §0.6。）
 RECT_EPS_PX = 1.0
-
-# 等落库。写路径是 fetch，点完按钮到文件出现之间隔着一次网络往返 + 一次原子写。
-NOTES_WAIT_S = 8.0
-
-
-def _open_reader(page: Page, base_url: str, book_id: str, chapter_index: int, expect_text: str) -> FrameLocator:
-    """打开阅读器并等到 iframe 里真的有正文。
-
-    先等外层壳，再等 iframe：壳都没有的话，下面的等待会白等满超时，报出来的是
-    「找不到 frame」而不是「页面根本没渲染」——smoke 里已经付过一次这个学费。
-    """
-    page.goto(f"{base_url}/read/{book_id}/{chapter_index}")
-    expect(page.get_by_test_id("rd-shell")).to_be_visible()
-    frame = page.frame_locator('[data-testid="rd-viewport"] iframe')  # lint-e2e-selectors: allow —— iframe 元素由 epub.js 运行时创建，插不进 testid
-    expect(frame.locator("body")).to_contain_text(expect_text)  # lint-e2e-selectors: allow —— iframe 内是用户那本书自己的 XHTML，不是我们的模板
-    return frame
-
-
-def _wait_for_notes(books_dir: Path, book_id: str, count: int) -> List[Dict[str, Any]]:
-    deadline = time.monotonic() + NOTES_WAIT_S
-    seen: List[Dict[str, Any]] = []
-    while time.monotonic() < deadline:
-        seen = read_notes(books_dir, book_id)
-        if len(seen) == count:
-            return seen
-        time.sleep(0.05)
-    raise AssertionError(f"{NOTES_WAIT_S}s 内 notes.json 没有稳定到 {count} 条，实际 {len(seen)} 条：{seen}")
 
 
 # 域的边界写在这里，不写在断言里。五个值，四种取词形态 + 一种跨节点形态。
@@ -155,7 +133,7 @@ def test_select_in_frame_builds_the_requested_selection(
     自检：把 helper 换成「只 dispatch mouseup 不建 Range」，前两层双红；换成
     「只在单个文本节点内建 Range」，第五个参数红而前四个绿——这正是加那个参数的理由。
     """
-    frame = _open_reader(page, live_server, book_id, chapter, anchor_text)
+    frame = open_reader(page, live_server, book_id, chapter, anchor_text)
 
     select_in_frame(frame, quote, occurrence=occurrence)
 
@@ -217,11 +195,11 @@ def test_notes_isolation_gives_every_round_the_same_initial_state(
 
         assert read_notes(e2e_books_dir, BOOK_ID) == [], f"第 {round_no} 轮起点不是空的"
 
-        frame = _open_reader(page, live_server, BOOK_ID, 0, "Alpha prose.")
+        frame = open_reader(page, live_server, BOOK_ID, 0, "Alpha prose.")
         select_in_frame(frame, "Alpha prose")
         page.get_by_test_id("rd-anno-type-marker").click()
 
-        records = _wait_for_notes(e2e_books_dir, BOOK_ID, 1)
+        records = wait_for_notes(e2e_books_dir, BOOK_ID, 1)
         assert records[0]["quote"] == "Alpha prose"
         ids.append(records[0]["id"])
 
@@ -282,7 +260,7 @@ def test_viewport_rect_of_selection_agrees_with_an_independent_reference(
     自检：把 helper 里的 iframe 偏移去掉，`top` / `bottom` 两个边立刻差出一个
     `frame_rect.top`。
     """
-    frame = _open_reader(page, live_server, BOOK_ID, 0, "Alpha prose.")
+    frame = open_reader(page, live_server, BOOK_ID, 0, "Alpha prose.")
     select_in_frame(frame, "Alpha prose")
 
     frame_el = page.locator('[data-testid="rd-viewport"] iframe')  # lint-e2e-selectors: allow —— iframe 元素由 epub.js 运行时创建，插不进 testid

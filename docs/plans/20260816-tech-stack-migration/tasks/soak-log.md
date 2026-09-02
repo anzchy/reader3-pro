@@ -26,14 +26,15 @@
   | git hash-object --stdin; } | cut -c1-12
 ```
 
-当前 `suite_hash` 值：`f56131cfe4ef`（2026-09-02 实测输出，非誊抄）。
+当前 `suite_hash` 值：`06114374b405`（2026-09-03 实测输出，非誊抄）。
 
 **这个值处于 pre-freeze，不是冻结值。** G2 尚未开始，baseline_1b 的 22 条用例也还没写完
-（现在只有 WI-3 的 harness 自测 9 条），后面每落一条用例它都会变。写在这里是免得后来者
+（现在 `baseline_1b` 收集到 12 条：WI-3 的 harness 自测 9 条 ＋ WI-4 的创建路径 3 条；`tests/e2e` 全量 19 条，差额是白名单里的 smoke 与 testid 唯一性），后面每落一条用例它都会变。写在这里是免得后来者
 拿今天这个值当冻结值。
 
 值的变更史（每次改都要写清作废原因，不要只覆盖数字）：
 
+- `06114374b405` ← Wave 0 的 helper 上收：四个私有 helper 从两个 baseline 模块提进 `helpers.py`，**三个被 hash 覆盖的文件同时改**。用例条数没变（前后都是 19 条、断言集合逐条比对无增删改），变的只是它们住在哪个文件里——`suite_hash` 覆盖的是文件内容而不是用例条数，所以纯搬家一样让它作废。
 - `f56131cfe4ef` ← WI-4 的 `test_write_create_annotations.py` 进索引（3 条用例）。
 - `70ee84519f02` ← WI-1–WI-3 一批提交（commit `0e411f8`）。
 

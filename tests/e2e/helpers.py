@@ -1,15 +1,27 @@
 """E2E 共享 helpers —— 全套 W / R / K 用例只从这里取选区、读写 `notes.json`、换算几何。
 
-四个函数，一个都不许在用例里各写一遍：
+八个函数，一个都不许在用例里各写一遍：
 
     select_in_frame(frame, quote, occurrence=0)   §1 的程序化选区标准路径
     read_notes(books_dir, book_id)                读回 notes.json 的 list[dict]
     seed_notes(books_dir, book_id, annotations)   预置标注（R-3 / R-6 / DEG-S1 用）
     viewport_rect_of_selection(page, frame)       iframe 内 rect → 视口坐标
+    open_reader(page, base_url, book_id, i, txt)  打开阅读器并等到 iframe 里有正文
+    wait_for_notes(books_dir, book_id, count)     等落库稳定到 count 条
+    assert_roundtrip(page, books_dir, book_id, …) §0 的「刷新 → 高亮回到同一段文字」收尾
+    clear_selection_and_drain(page, frame)        清选区并等去抖窗口排空
 
 **为什么集中在一处。** 这些断言的耦合面是**生产代码的实现细节**——工具条的 class 名、
 `mouseup` 监听挂在哪个 document 上、`notes.json` 的顶层形状。散到 38 个用例里，
 改一次生产代码就要改 38 处；集中在这里，改一处。
+
+**后四个是 2026-09-02 的 Wave 0 上收进来的**（任务书 §0.6）。它们原先是 `baseline_1b/`
+下两个模块里的私有函数，其中 `open_reader` 与 `wait_for_notes` **已经各有两份**。
+剩下的九条写路径 WI 会分三波并行开工，而这四个函数是每一条都要压的那条共享路径：
+重复两份时只是重复，三个 agent 同时改就会变成三份各自漂移的版本，合并时**只留下一份，
+另外两条用例静默改变了它们等待的对象**。上收是把这个失败态在扇出之前消掉，不是为了省行数。
+（`test_write_create_annotations.py` 里那段「刻意不抽到 helpers.py」的旧注记随之作废：
+它权衡的是「省 6 行 vs 清零 soak 计数」，而 soak 计数要到 G2 才开始数，此刻清零无代价。）
 
 **这个文件不属于任何一个组 marker，但它在 `suite_hash` 的覆盖面内**
 （`docs/plans/20260816-tech-stack-migration/tasks/soak-log.md` 的哈希命令点名了它）：
@@ -24,6 +36,7 @@ body 之内（包括外层文档里的工具条）一律回到 testid。
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Sequence, Union
 
@@ -50,6 +63,49 @@ SELECTION_DEBOUNCE_SLACK_MS = 40
 #: 各段等待的硬上限。超过就抛，带诊断，不静默继续——一个「等不到就往下走」的 helper
 #: 会把「工具条没开」变成后面某条断言的莫名其妙的红。
 SELECTION_TIMEOUT_MS = 8000
+
+#: 等落库的硬上限。写路径是 fetch，点完按钮到文件出现之间隔着一次网络往返 + 一次原子写。
+#: `wait_for_notes` 的默认上限，两个模块里原本各有一份同值的 `NOTES_WAIT_S`。
+NOTES_WAIT_S = 8.0
+
+
+# ---------------------------------------------------------------------------
+# `smoke_data` 语料的坐标（`tests/fixtures/epub_corpus.py` 的 `build_epub2`）
+# ---------------------------------------------------------------------------
+#
+# 第 0 章 `<h1>One</h1><p>Alpha prose.</p>`，第 1 章 `<h1>Two</h1><p>Beta prose.</p>`。
+# 两条 quote 都**不含句点**：句点留在选区之外，是为了让「选区边界选对了没有」在断言里
+# 可分辨——若拖选或程序化选区多吃一个字符，`quote` 会变成 `Alpha prose.`，往返断言当场红。
+# ANCHOR 那两个则相反，**含**句点，因为它们的用途是 `to_contain_text` 的到位探针。
+#
+# 放在这里而不是各模块自己写一份：这是**共享 fixture 书的事实**，Wave 2 之后有三条 WI
+# 会同时需要它。三份字面量各自演化的表现，是其中两条用例静默地测了另一段文字。
+CH0_QUOTE = "Alpha prose"
+CH0_ANCHOR = "Alpha prose."
+CH1_QUOTE = "Beta prose"
+CH1_ANCHOR = "Beta prose."
+
+
+# ---------------------------------------------------------------------------
+# 页面
+# ---------------------------------------------------------------------------
+
+
+def open_reader(
+    page: "Page", base_url: str, book_id: str, chapter_index: int, expect_text: str
+) -> "FrameLocator":
+    """打开阅读器并等到 iframe 里真的有正文。
+
+    先等外层壳，再等 iframe：壳都没有的话，下面的等待会白等满超时，报出来的是
+    「找不到 frame」而不是「页面根本没渲染」——smoke 里已经付过一次这个学费。
+    """
+    from playwright.sync_api import expect
+
+    page.goto(f"{base_url}/read/{book_id}/{chapter_index}")
+    expect(page.get_by_test_id("rd-shell")).to_be_visible()
+    frame = page.frame_locator('[data-testid="rd-viewport"] iframe')  # lint-e2e-selectors: allow —— iframe 元素由 epub.js 运行时创建，插不进 testid
+    expect(frame.locator("body")).to_contain_text(expect_text)  # lint-e2e-selectors: allow —— iframe 内是用户那本书自己的 XHTML，不是我们的模板
+    return frame
 
 
 # ---------------------------------------------------------------------------
@@ -225,6 +281,30 @@ def select_in_frame(frame: "FrameLocator", quote: str, occurrence: int = 0) -> N
     )
 
 
+def clear_selection_and_drain(page: "Page", frame: "FrameLocator") -> None:
+    """清掉 iframe 内的选区，并等 `onSelection` 的去抖窗口排空。
+
+    W-1（真实拖选）用来在「量完几何」与「开始拖」之间把场地清干净。`select_in_frame`
+    返回之后，`handleRenditionSelection` 的自持循环会以 ~250ms 一拍持续刷新
+    `lastSelectionAt`（时序实测记在上面 `select_in_frame` 的 docstring 里）；此时直接
+    拖选，我们的 `mouseup` 有约 120/250 的概率落进 `annotations.js:695` 的守卫里被丢掉。
+    清空选区让 epub.js 那一侧当场停手（它的 `selected` 只在非折叠 range 上触发），窗口
+    才会真的开始变老。
+
+    **这不是 sleep，也不是重试**：等的是一个可观测的条件（`lastSelectionAt` 的年龄），
+    等不到就抛。任务书 §1 点名过「遇到间歇性失败先怀疑这条循环，不要加 sleep 或重试掩盖」
+    ——排空窗口正是那条注记里给出的正解。
+    """
+    frame.locator("body").evaluate(  # lint-e2e-selectors: allow —— iframe 内是用户那本书自己的 XHTML，不是我们的模板
+        "() => { const s = document.getSelection(); if (s) s.removeAllRanges(); }"
+    )
+    page.wait_for_function(
+        "(minAge) => Date.now() - (window.Reader3AnnotationUI?.lastSelectionAt || 0) >= minAge",
+        arg=SELECTION_DEBOUNCE_MS + SELECTION_DEBOUNCE_SLACK_MS,
+        timeout=SELECTION_TIMEOUT_MS,
+    )
+
+
 # ---------------------------------------------------------------------------
 # notes.json
 # ---------------------------------------------------------------------------
@@ -250,6 +330,29 @@ def read_notes(books_dir: PathLike, book_id: str) -> List[Dict[str, Any]]:
         return []
     payload = json.loads(path.read_text(encoding="utf-8"))
     return list(payload["annotations"])
+
+
+def wait_for_notes(books_dir: PathLike, book_id: str, count: int) -> List[Dict[str, Any]]:
+    """等 `notes.json` 稳定到 `count` 条，超时即红并把实际内容打出来。
+
+    这不是「重试掩盖 flaky」：落库是异步的（fetch → 服务端原子写），不等就是在断言一个
+    还没发生的事件。等的是**一个确定的终态**，不是「多试几次也许就成了」——终态不对时它
+    照样红，且把实际条目原样贴出来。
+
+    ⚠️ 它一观察到 `len == count` 就返回，所以读到的可能是**中间态**：若一次动作写了两次，
+    50ms 的轮询有一定概率正好落在两次写之间的窗口里。要断「恰好 N 条」必须在一个确定的
+    终态上再断一次（`assert_roundtrip` 就是在刷新之后补的那一次）。
+    """
+    deadline = time.monotonic() + NOTES_WAIT_S
+    seen: List[Dict[str, Any]] = []
+    while time.monotonic() < deadline:
+        seen = read_notes(books_dir, book_id)
+        if len(seen) == count:
+            return seen
+        time.sleep(0.05)
+    raise AssertionError(
+        f"{NOTES_WAIT_S}s 内 notes.json 没有稳定到 {count} 条，实际 {len(seen)} 条：{seen}"
+    )
 
 
 def seed_notes(books_dir: PathLike, book_id: str, annotations: Sequence[Any]) -> None:
@@ -285,6 +388,73 @@ def seed_notes(books_dir: PathLike, book_id: str, annotations: Sequence[Any]) ->
 
     _notes_path(books_dir, book_id).parent.mkdir(parents=True, exist_ok=True)
     save_annotations(str(books_dir), book_id, records)
+
+
+# ---------------------------------------------------------------------------
+# 往返
+# ---------------------------------------------------------------------------
+
+
+def assert_roundtrip(
+    page: "Page",
+    books_dir: PathLike,
+    book_id: str,
+    quote: str,
+    anchor: str,
+    expected_type: str,
+) -> Dict[str, Any]:
+    """§0 的往返断言，全部创建路径用例共用的收尾：**刷新** → 高亮回到同一段文字上。
+
+    顺序是刻意的：先读盘（此时页面还没刷新，读到的是服务端真的写下去的东西），再刷新，
+    再断 DOM。反过来先刷新再读盘的话，「盘上没有但 JS 还记得」这个失败态会被刷新动作
+    自己抹掉，而那正是本纪律要抓的东西。
+    """
+    from playwright.sync_api import expect
+
+    records = wait_for_notes(books_dir, book_id, 1)
+    record = records[0]
+    assert record["type"] == expected_type, (
+        f"落库的 type 是 {record['type']!r}，不是按下的那个按钮对应的 {expected_type!r}："
+        f"`handleAction` 的 action 名与模板 `data-action` 取值失配？完整条目：{record}"
+    )
+    assert record["quote"] == quote, (
+        f"落库的 quote 是 {record['quote']!r}，不是选中的 {quote!r}。"
+        f"（生产端取 `buildTextIndex(...).text.slice(s, e)`，多吃/少吃一个字符都会在这里显形）"
+    )
+
+    page.reload()
+    expect(page.get_by_test_id("rd-shell")).to_be_visible()
+    frame = page.frame_locator('[data-testid="rd-viewport"] iframe')  # lint-e2e-selectors: allow —— iframe 元素由 epub.js 运行时创建，插不进 testid
+    expect(frame.locator("body")).to_contain_text(anchor)  # lint-e2e-selectors: allow —— iframe 内是用户那本书自己的 XHTML，不是我们的模板
+
+    span = frame.get_by_test_id("rd-anno-span")
+    # `to_have_text` 会自动等待——刷新后的高亮要等 `loadAndRender()` 跑完才挂上。
+    # 用它而不是先 `to_be_visible()` 再取值：后者会在「`<mark>` 已挂但文本错」时先绿一次，
+    # 把失败推迟到下一行，报出来的诊断信息也更差。
+    expect(span).to_have_text(quote)
+    assert span.text_content() == quote, (
+        f"刷新后 `<mark>` 覆盖的文本是 {span.text_content()!r}，不是创建时选中的 {quote!r}"
+    )
+
+    # 「恰好 1 条」要在**终态**再断一次，上面 `wait_for_notes` 那次不算数。
+    #
+    # 2026-09-02 实测：给 `createAnnotation` 加一次重复 POST（两次写相隔 7ms）后跑三条，
+    # 结果是 **2 红 1 绿**——wavy 那条绿了。两个原因叠在一起：
+    #   1. `wait_for_notes` 一观察到 `len == 1` 就返回，50ms 的轮询有一定概率正好落在
+    #      两次写之间的窗口里，把中间态当成终态；
+    #   2. DOM 侧兜不住：两条**完全重合**的标注在 `render()` 的分段里合并成一个 `<mark>`，
+    #      所以 strict 模式不会因为「两个 rd-anno-span」而报错。
+    # 于是「一次点击写两条」这条缺陷在原写法下是**概率性漏检**，而不确定性正是 G2 禁的东西。
+    # 刷新已经完成，第二次写早就落盘了，此刻读到的就是终态。
+    settled = read_notes(books_dir, book_id)
+    assert len(settled) == 1, (
+        f"终态不是恰好 1 条，而是 {len(settled)} 条——一次创建动作写了不止一条："
+        f"{settled}"
+    )
+    assert settled[0]["id"] == record["id"], (
+        f"终态那条的 id 与落库时读到的不是同一条：{settled[0]['id']} != {record['id']}"
+    )
+    return record
 
 
 # ---------------------------------------------------------------------------

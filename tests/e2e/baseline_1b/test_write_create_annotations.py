@@ -24,18 +24,20 @@
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
-from typing import Any, Dict, List
 
 import pytest
-from playwright.sync_api import FrameLocator, Page, expect
+from playwright.sync_api import Page, expect
 
 from conftest import BOOK_ID  # type: ignore[import-not-found]
 from helpers import (  # type: ignore[import-not-found]
-    SELECTION_DEBOUNCE_MS,
-    SELECTION_DEBOUNCE_SLACK_MS,
-    SELECTION_TIMEOUT_MS,
+    CH0_ANCHOR,
+    CH0_QUOTE,
+    CH1_ANCHOR,
+    CH1_QUOTE,
+    assert_roundtrip,
+    clear_selection_and_drain,
+    open_reader,
     read_notes,
     select_in_frame,
     viewport_rect_of_selection,
@@ -43,136 +45,9 @@ from helpers import (  # type: ignore[import-not-found]
 
 pytestmark = pytest.mark.baseline_1b
 
-
-# 等落库。点完按钮到文件出现之间隔着一次网络往返 + 一次原子写。
-NOTES_WAIT_S = 8.0
-
-# 第 0 章 `<h1>One</h1><p>Alpha prose.</p>`，第 1 章 `<h1>Two</h1><p>Beta prose.</p>`
-# （`tests/fixtures/epub_corpus.py` 的 `build_epub2`）。两条 quote 都**不含句点**：
-# 句点留在选区之外，是为了让「选区边界选对了没有」在断言里可分辨——若拖选或程序化选区
-# 多吃一个字符，`quote` 会变成 `Alpha prose.`，往返断言当场红。
-CH0_QUOTE = "Alpha prose"
-CH0_ANCHOR = "Alpha prose."
-CH1_QUOTE = "Beta prose"
-CH1_ANCHOR = "Beta prose."
-
-
-def _open_reader(
-    page: Page, base_url: str, book_id: str, chapter_index: int, expect_text: str
-) -> FrameLocator:
-    """打开阅读器并等到 iframe 里真的有正文。
-
-    与 `test_harness_helpers.py` 里的同名函数是同一段逻辑。**刻意不抽到 `helpers.py`**：
-    那个文件是 WI-3 记录在案的规格文件，且它自己的 docstring 写明它只放四个选区/落库/几何
-    helper。为了省 6 行而去改一份已冻结的共享文件，代价是整套 baseline 的 `suite_hash`
-    失效、soak 计数清零——那比这点重复贵得多。
-    """
-    page.goto(f"{base_url}/read/{book_id}/{chapter_index}")
-    expect(page.get_by_test_id("rd-shell")).to_be_visible()
-    frame = page.frame_locator('[data-testid="rd-viewport"] iframe')  # lint-e2e-selectors: allow —— iframe 元素由 epub.js 运行时创建，插不进 testid
-    expect(frame.locator("body")).to_contain_text(expect_text)  # lint-e2e-selectors: allow —— iframe 内是用户那本书自己的 XHTML，不是我们的模板
-    return frame
-
-
-def _wait_for_notes(books_dir: Path, book_id: str, count: int) -> List[Dict[str, Any]]:
-    """等 `notes.json` 稳定到 `count` 条，超时即红并把实际内容打出来。
-
-    这不是「重试掩盖 flaky」：落库是异步的（fetch → 服务端原子写），不等就是在断言一个
-    还没发生的事件。等的是**一个确定的终态**，不是「多试几次也许就成了」——终态不对时它
-    照样红，且把实际条目原样贴出来。
-    """
-    deadline = time.monotonic() + NOTES_WAIT_S
-    seen: List[Dict[str, Any]] = []
-    while time.monotonic() < deadline:
-        seen = read_notes(books_dir, book_id)
-        if len(seen) == count:
-            return seen
-        time.sleep(0.05)
-    raise AssertionError(
-        f"{NOTES_WAIT_S}s 内 notes.json 没有稳定到 {count} 条，实际 {len(seen)} 条：{seen}"
-    )
-
-
-def _assert_roundtrip(
-    page: Page,
-    books_dir: Path,
-    quote: str,
-    anchor: str,
-    expected_type: str,
-) -> Dict[str, Any]:
-    """§0 的往返断言，三条用例共用的收尾：**刷新** → 高亮回到同一段文字上。
-
-    顺序是刻意的：先读盘（此时页面还没刷新，读到的是服务端真的写下去的东西），再刷新，
-    再断 DOM。反过来先刷新再读盘的话，「盘上没有但 JS 还记得」这个失败态会被刷新动作
-    自己抹掉，而那正是本纪律要抓的东西。
-    """
-    records = _wait_for_notes(books_dir, BOOK_ID, 1)
-    record = records[0]
-    assert record["type"] == expected_type, (
-        f"落库的 type 是 {record['type']!r}，不是按下的那个按钮对应的 {expected_type!r}："
-        f"`handleAction` 的 action 名与模板 `data-action` 取值失配？完整条目：{record}"
-    )
-    assert record["quote"] == quote, (
-        f"落库的 quote 是 {record['quote']!r}，不是选中的 {quote!r}。"
-        f"（生产端取 `buildTextIndex(...).text.slice(s, e)`，多吃/少吃一个字符都会在这里显形）"
-    )
-
-    page.reload()
-    expect(page.get_by_test_id("rd-shell")).to_be_visible()
-    frame = page.frame_locator('[data-testid="rd-viewport"] iframe')  # lint-e2e-selectors: allow —— iframe 元素由 epub.js 运行时创建，插不进 testid
-    expect(frame.locator("body")).to_contain_text(anchor)  # lint-e2e-selectors: allow —— iframe 内是用户那本书自己的 XHTML，不是我们的模板
-
-    span = frame.get_by_test_id("rd-anno-span")
-    # `to_have_text` 会自动等待——刷新后的高亮要等 `loadAndRender()` 跑完才挂上。
-    # 用它而不是先 `to_be_visible()` 再取值：后者会在「`<mark>` 已挂但文本错」时先绿一次，
-    # 把失败推迟到下一行，报出来的诊断信息也更差。
-    expect(span).to_have_text(quote)
-    assert span.text_content() == quote, (
-        f"刷新后 `<mark>` 覆盖的文本是 {span.text_content()!r}，不是创建时选中的 {quote!r}"
-    )
-
-    # 「恰好 1 条」要在**终态**再断一次，上面 `_wait_for_notes` 那次不算数。
-    #
-    # 2026-09-02 实测：给 `createAnnotation` 加一次重复 POST（两次写相隔 7ms）后跑三条，
-    # 结果是 **2 红 1 绿**——wavy 那条绿了。两个原因叠在一起：
-    #   1. `_wait_for_notes` 一观察到 `len == 1` 就返回，50ms 的轮询有一定概率正好落在
-    #      两次写之间的窗口里，把中间态当成终态；
-    #   2. DOM 侧兜不住：两条**完全重合**的标注在 `render()` 的分段里合并成一个 `<mark>`，
-    #      所以 strict 模式不会因为「两个 rd-anno-span」而报错。
-    # 于是「一次点击写两条」这条缺陷在原写法下是**概率性漏检**，而不确定性正是 G2 禁的东西。
-    # 刷新已经完成，第二次写早就落盘了，此刻读到的就是终态。
-    settled = read_notes(books_dir, BOOK_ID)
-    assert len(settled) == 1, (
-        f"终态不是恰好 1 条，而是 {len(settled)} 条——一次创建动作写了不止一条："
-        f"{settled}"
-    )
-    assert settled[0]["id"] == record["id"], (
-        f"终态那条的 id 与落库时读到的不是同一条：{settled[0]['id']} != {record['id']}"
-    )
-    return record
-
-
-def _clear_selection_and_drain(page: Page, frame: FrameLocator) -> None:
-    """清掉 iframe 内的选区，并等 `onSelection` 的去抖窗口排空。
-
-    W-1 专用。`select_in_frame` 返回之后，`handleRenditionSelection` 的自持循环会以
-    ~250ms 一拍持续刷新 `lastSelectionAt`（`helpers.select_in_frame` 的 docstring 记了实测
-    时序）；此时直接拖选，我们的 `mouseup` 有约 120/250 的概率落进 :695 的守卫里被丢掉。
-    清空选区让 epub.js 那一侧当场停手（它的 `selected` 只在非折叠 range 上触发），窗口才会
-    真的开始变老。
-
-    **这不是 sleep，也不是重试**：等的是一个可观测的条件（`lastSelectionAt` 的年龄），
-    等不到就抛。任务书 §1 点名过「遇到间歇性失败先怀疑这条循环，不要加 sleep 或重试掩盖」
-    ——排空窗口正是那条注记里给出的正解。
-    """
-    frame.locator("body").evaluate(  # lint-e2e-selectors: allow —— iframe 内是用户那本书自己的 XHTML，不是我们的模板
-        "() => { const s = document.getSelection(); if (s) s.removeAllRanges(); }"
-    )
-    page.wait_for_function(
-        "(minAge) => Date.now() - (window.Reader3AnnotationUI?.lastSelectionAt || 0) >= minAge",
-        arg=SELECTION_DEBOUNCE_MS + SELECTION_DEBOUNCE_SLACK_MS,
-        timeout=SELECTION_TIMEOUT_MS,
-    )
+# `open_reader` / `wait_for_notes` / `assert_roundtrip` / `clear_selection_and_drain`
+# 以及 `CH*_QUOTE` / `CH*_ANCHOR` 都在 `tests/e2e/helpers.py`（Wave 0 上收，任务书 §0.6）。
+# 本模块此前那段「刻意不抽到 helpers.py」的注记已随之作废——理由见 helpers.py 的模块 docstring。
 
 
 def test_w1_real_mouse_drag_creates_marker_and_survives_reload(
@@ -201,11 +76,11 @@ def test_w1_real_mouse_drag_creates_marker_and_survives_reload(
     """
     assert read_notes(e2e_books_dir, BOOK_ID) == [], "隔离 fixture 没生效：起点不是空的"
 
-    frame = _open_reader(page, live_server, BOOK_ID, 0, CH0_ANCHOR)
+    frame = open_reader(page, live_server, BOOK_ID, 0, CH0_ANCHOR)
 
     select_in_frame(frame, CH0_QUOTE)
     rect = viewport_rect_of_selection(page, frame)
-    _clear_selection_and_drain(page, frame)
+    clear_selection_and_drain(page, frame)
 
     # 起点 left+1 / 终点 right-1：矩形的两个竖边正落在 "A" 的左沿与 "e" 的右沿上，
     # 往内缩 1px 仍在同一个字形内，而浏览器的插入点吸附取的是**离得最近的字符边界**
@@ -221,7 +96,7 @@ def test_w1_real_mouse_drag_creates_marker_and_survives_reload(
     expect(page.get_by_test_id("rd-anno-toolbar")).to_be_visible()
     page.get_by_test_id("rd-anno-type-marker").click()
 
-    _assert_roundtrip(page, e2e_books_dir, CH0_QUOTE, CH0_ANCHOR, expected_type="marker")
+    assert_roundtrip(page, e2e_books_dir, BOOK_ID, CH0_QUOTE, CH0_ANCHOR, expected_type="marker")
 
 
 @pytest.mark.parametrize(
@@ -274,9 +149,11 @@ def test_w2_w3_programmatic_selection_creates_typed_annotation(
     """
     assert read_notes(e2e_books_dir, BOOK_ID) == [], "隔离 fixture 没生效：起点不是空的"
 
-    frame = _open_reader(page, live_server, BOOK_ID, 1, CH1_ANCHOR)
+    frame = open_reader(page, live_server, BOOK_ID, 1, CH1_ANCHOR)
 
     select_in_frame(frame, CH1_QUOTE)
     page.get_by_test_id(action_testid).click()
 
-    _assert_roundtrip(page, e2e_books_dir, CH1_QUOTE, CH1_ANCHOR, expected_type=expected_type)
+    assert_roundtrip(
+        page, e2e_books_dir, BOOK_ID, CH1_QUOTE, CH1_ANCHOR, expected_type=expected_type
+    )
