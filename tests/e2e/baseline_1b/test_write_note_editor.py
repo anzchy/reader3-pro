@@ -86,6 +86,7 @@ from conftest import BOOK_ID  # type: ignore[import-not-found]
 from helpers import (  # type: ignore[import-not-found]
     CH0_ANCHOR,
     CH0_QUOTE,
+    assert_bystanders_unchanged,
     assert_roundtrip,
     open_reader,
     read_notes,
@@ -263,7 +264,6 @@ def test_w7_editing_a_note_changes_its_body_and_nothing_else(
     )
     before = _by_id(read_notes(e2e_books_dir, BOOK_ID))
     assert set(before) == {W7_TARGET_ID, W7_BYSTANDER_ID}, f"预置没落对：{before}"
-    before_bystander = before[W7_BYSTANDER_ID]
     before_target = before[W7_TARGET_ID]
 
     frame = open_reader(page, live_server, BOOK_ID, 0, CH0_ANCHOR)
@@ -323,14 +323,12 @@ def test_w7_editing_a_note_changes_its_body_and_nothing_else(
         "那个坏实现唯一藏不住的地方"
     )
 
-    # (3) 旁观条：整字典逐字段相等
-    after_bystander = after[W7_BYSTANDER_ID]
-    assert after_bystander == before_bystander, (
-        "编辑目标笔记时动到了同章的另一条标注。\n"
-        f"  预置：{before_bystander}\n"
-        f"  现在：{after_bystander}\n"
-        "（PUT → update_annotation 是 load 整章 → 改一条 → save_annotations 整章回写；"
-        "回写路径漏带条目时 HTTP 照样 200）"
+    # (3) 旁观条：整字典逐字段相等。走共用 helper 而不是就地写一行 `assert a == b`——
+    #     漏写这条判据**不会红**，所以它必须机器可查，而机器只认得一个共用的名字
+    #     （`tests/unit/test_e2e_bystander_discipline.py`：凡传 expected_count > 1 的模块
+    #     必须调用它至少一次）。就地 assert 是 grep 不到的。
+    assert_bystanders_unchanged(
+        list(before.values()), list(after.values()), changed_ids={W7_TARGET_ID}
     )
 
     # (4) 旁观条的高亮还在 iframe 里，且覆盖的仍是它自己那段文字

@@ -1,6 +1,6 @@
 """E2E 共享 helpers —— 全套 W / R / K 用例只从这里取选区、读写 `notes.json`、换算几何。
 
-九个函数，一个都不许在用例里各写一遍：
+十个函数，一个都不许在用例里各写一遍：
 
     select_in_frame(frame, quote, occurrence=0)   §1 的程序化选区标准路径
     read_notes(books_dir, book_id)                读回 notes.json 的 list[dict]
@@ -10,6 +10,7 @@
     wait_for_notes(books_dir, book_id, count)     等落库稳定到 count 条
     wait_for_note_text(books_dir, book_id, id, s) 等某条的 note_text 变成 s（PUT 路径用）
     assert_roundtrip(page, books_dir, book_id, …) §0 的「刷新 → 高亮回到同一段文字」收尾
+    assert_bystanders_unchanged(before, after, ids) 没碰过的条目逐字段原样（§0 第六条纪律）
     clear_selection_and_drain(page, frame)        清选区并等去抖窗口排空
 
 **为什么集中在一处。** 这些断言的耦合面是**生产代码的实现细节**——工具条的 class 名、
@@ -44,7 +45,16 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Sequence, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Collection,
+    Dict,
+    List,
+    Mapping,
+    Sequence,
+    Union,
+)
 
 if TYPE_CHECKING:  # pragma: no cover - 仅类型
     from playwright.sync_api import FrameLocator, Page
@@ -571,6 +581,60 @@ def assert_roundtrip(
         f"终态那条的 id 与落库时读到的不是同一条：{settled_target['id']} != {record['id']}"
     )
     return record
+
+
+def assert_bystanders_unchanged(
+    before: Sequence[Dict[str, Any]],
+    after: Sequence[Dict[str, Any]],
+    changed_ids: Collection[str],
+) -> None:
+    """断「这次动作没碰过的条目」**逐字段原样还在**。`changed_ids` 是本次动作允许动的那些 id。
+
+    **为什么它不在 `assert_roundtrip` 里。** 那个函数是所有写路径用例共用的收尾，而
+    「同章还有哪些条目、其中哪些该变」是每条用例各自的事——塞进共用收尾就得对每个调用点
+    都成立，那它只能退化成一句恒真。分开之后，本函数的每次调用都由调用方给出「哪些该变」，
+    这个参数正是它不空转的原因。
+
+    **为什么值得单独一个函数，而不是各用例写一行 `assert a == b`。** 漏写它**不会红**：
+    用例照样全绿，只是少测了一整类缺陷（服务端整章回写漏条、客户端候选集放宽误删）。
+    静默失效的规则必须机器可查——`tests/unit/test_e2e_bystander_discipline.py` 就是查它的，
+    规则是「凡传 `expected_count > 1` 的模块必须调用本函数至少一次」。有了共用的名字，
+    这条检查才写得出来；各写各的 `assert` 是 grep 不到的。
+
+    **整字典等值，不挑字段。** 挑字段（比对 id / quote / color …）会漏掉**下一个被加进
+    schema 的字段**：`Annotation` 今天 13 个字段，012 还要动它。整字典等值不需要随 schema
+    演化而维护——这是它相对「更严」之外的第二个理由。
+
+    **没有旁观条时直接抛。** 一次「零条旁观」的调用是静默空转，而空转正是本函数要防的
+    那件事本身；此时抛出来比绿着强。
+    """
+    changed = {str(i) for i in changed_ids}
+    before_by_id = {str(r["id"]): r for r in before}
+    after_by_id = {str(r["id"]): r for r in after}
+
+    bystanders = sorted(set(before_by_id) - changed)
+    if not bystanders:
+        raise AssertionError(
+            f"没有旁观条可断：before 里的 id 是 {sorted(before_by_id)}，"
+            f"而 changed_ids 是 {sorted(changed)}——两者相减为空。"
+            "这次调用什么都没断到（预置漏了旁观条？changed_ids 写宽了？）"
+        )
+
+    for bid in bystanders:
+        if bid not in after_by_id:
+            raise AssertionError(
+                f"旁观条 id={bid!r} 在动作之后**没了**。它不在 changed_ids "
+                f"({sorted(changed)}) 里，本不该被这次动作碰到。\n"
+                f"  现存的 id：{sorted(after_by_id)}\n"
+                "（写路径多是「load 整章 → 改一条 → 整章回写」，回写漏带条目时 HTTP 照样 200）"
+            )
+        if after_by_id[bid] != before_by_id[bid]:
+            raise AssertionError(
+                f"旁观条 id={bid!r} 被动过了。它不在 changed_ids "
+                f"({sorted(changed)}) 里，本该逐字段原样。\n"
+                f"  动作前：{before_by_id[bid]}\n"
+                f"  动作后：{after_by_id[bid]}"
+            )
 
 
 # ---------------------------------------------------------------------------
