@@ -8,10 +8,10 @@
 
 > **引用规则**：用**符号名**与 **testid** 定位，不写代码行号。
 
-> **008 留给本分支的一个必做动作**：`.claude/tdd-guardian/config.json` 里 `e2e` lane 的
-> `gateOn` 现在是**空的**——008 打开本地门禁时，空的 e2e 目录会让每一次 push 永远
-> `never passed`，逼所有人常年挂 `TDD_GUARD_BYPASS`。**加第一条 e2e 用例和 `live_server`
-> fixture 的那个 commit，必须在同一个 commit 里把 `gateOn` 改回 `["push"]`。**
+> **008 留给本分支的一个必做动作 —— ✅ 2026-08-31 已结清（`36a6ac2`）**：
+> `.claude/tdd-guardian/config.json` 里 `e2e` lane 的 `gateOn` 曾是**空的**——008 打开本地
+> 门禁时，空的 e2e 目录会让每一次 push 永远 `never passed`，逼所有人常年挂
+> `TDD_GUARD_BYPASS`。harness spike 那个 commit 已把它改回 `["push"]`。
 > 恢复条件的唯一定义处是那条 lane 自己的 `description`，本文不复述。
 
 > **跨计划**：[前端计划](../../20260817-frontend-ui-refactor/README.md)的测试矩阵**引用本文的用例 ID**（`R-1`…`R-6` / `W-1`…`W-10` / `K-1`…`K-6` / `X-1` / `X-2`）与 §0.5 的激活分组，**不重写这些用例**。前端矩阵新增的是本文范围之外的东西：按钮态、面板互斥与焦点、键盘与 a11y、数据态、响应式、主题解析。两边出现冲突时，标注 E2E 的用例定义以本文为准。
@@ -37,8 +37,8 @@
 | K4 的六个事件名 | 契约 | 六个全在，全带 `reader3:` 前缀：`annotations:updated` ×5、`escape` ×3、`content:click` ×3、`chapter:change` ×3、`content:rendered` ×2、`ai:ask` ×2 | 无。（裸 grep `escape` 会得到 43，撞的是 `Escape` 键名和 `escapeHtml`；数事件名必须连前缀一起匹配） |
 | `applyThemeSettings`（R-6 的前提） | 「今天就存在」 | 属实：定义在 `epub-renderer.js`，`reader.html` 里调用 | 无 |
 | **请求守卫**（008 新增，骨架没有） | 无 | `RequestGuardMiddleware`：Host 白名单（默认含 `127.0.0.1` / `localhost` / `[::1]`）→ 令牌 → 非安全方法的 Origin/`Sec-Fetch-Site` 检查。`/api/health` 与 `/static/` 豁免令牌；`READER3_TOKEN` 不设即整条令牌闸关闭，默认不设 | **e2e 起服务时不要设 `READER3_TOKEN`**：前端 fetch 至今不带令牌（`server.py` 头部注释写明），设了等于让页面上每个写操作 401。同源浏览器流量不受 Origin 闸影响，所以写路径用例不需要额外铺垫 |
-| `tests/e2e/` | —— | 目录在，**一个文件都没有**；`--collect-only` 报 `no tests collected` | 无 |
-| `e2e` lane 的 `gateOn` | 「现在是空的」 | 仍是 `[]` | 无。头部那条必做动作照旧有效 |
+| `tests/e2e/` | —— | ~~目录在，一个文件都没有~~ → **2026-09-02 复测**：根目录已有 `conftest.py` ＋ **两个**测试模块，`--collect-only` 收 **7 items**（`test_harness_smoke.py` 1 条、`test_testid_dom_uniqueness.py` **6 条**，后者 5 条起浏览器） | **两个模块都没有组 marker**。分组约定必须承认「第三类：显式白名单」，且任何 `-m "not baseline_1b"` 形态的守卫都会真的执行它们——见 §0.5 |
+| `e2e` lane 的 `gateOn` | 「现在是空的」 | ~~仍是 `[]`~~ → **已是 `["push"]`**（`36a6ac2`） | 无。头部那条必做动作已结清 |
 | `soak-log.md` | G2 的产物 | 不存在 | 无 |
 | `BOOKS_DIR` | —— | 仍是模块级常量，import 时读一次 | 每个 worker 要自己的书库副本，就必须配自己的**服务进程**：换环境变量重启，不能运行时改 |
 
@@ -119,12 +119,34 @@ fixture 与 `tests/e2e/test_harness_smoke.py` 里的**一条** smoke（进 epub.
 | 组 | 内容 | 激活阶段 | 计入 1b 退出门槛 | 计入 Phase 3 soak |
 |---|---|---|:--:|:--:|
 | **`baseline-1b`** | §2 读路径 R-1…R-6、§3 写路径 W-1…W-10、§4 的 K-2 / K-3 / K-4 / K-5、§6 X-1 / X-2 | Phase 1b | ✅ | ✅ |
-| **`acceptance-4b1`** | §4 的 K-1（响亮失败）与 K-6 的抛错断言，＋ §3 的 **W-5b**（改色保 id） | 4B.1 | ❌ | ❌ |
+| **`acceptance-4b1`** | §4 的 K-1（响亮失败）与 K-6 的抛错断言，＋ §3 的 **W-5b**（改色保 id）。**共 5 条**，见下方「条数」小节 | 4B.1 | ❌ | ❌ |
 | **`acceptance-p3`** | §5 的 DEG-S1–DEG-S4，**朴素横幅形态** | Phase 3 出口 | ❌ | ❌ |
 | **`acceptance-4a4`** | §5 的 DEG-S1–DEG-S4，**设计规格形态**（只改 testid 映射，断言语义不变） | 4A.4 | ❌ | ❌ |
 | **`acceptance-2a`** | DEG-S5 写冲突（本文 §7 已列为不在 1b） | Phase 2a | ❌ | ❌ |
 
 **落地方式**：用 pytest marker（`@pytest.mark.baseline_1b` 等），CI 按组选择。未激活的组以 `skip` 而非删除的形式存在，理由是它们必须在写的时候就被 review——**一条到期才第一次被人读的断言，等于没写。**
+
+**第三类：显式白名单（2026-09-02 补）。** 上表隐含过一个前提——「`tests/e2e/` 根目录下除 `conftest.py` 外只有 `test_harness_smoke.py`」。这个前提**在 009 开工前就不成立**了：`tests/e2e/test_testid_dom_uniqueness.py`（ADR-0014 的运行期唯一性护栏）同样住在根目录，同样没有组 marker。所以分组不是二分而是**三分**，每个 collected item 恰好落进其一：
+
+1. 携带五个组 marker 之一（marker 与所在目录一一对应）；
+2. 其模块名在 `UNGROUPED_E2E_MODULES` 白名单里；
+3. 以上皆非 ⇒ **违规**。
+
+白名单是唯一的豁免口径，且**每一项都必须在某次收集里真的贡献 item**——悬空条目等于给下一个模块预开的门。这条划分律由 `scripts/lint_e2e_groups.py` 执行，不靠人眼。
+
+**五个组目录里放什么（2026-09-02 实测订正）。** 生成计划的 WI-1 验收原文是「每个目录有 `__init__.py` **或**明确的 `conftest.py` 归属」。两条路**都不通**，落地用的是第三条 `.gitkeep`：
+
+- `__init__.py` —— 会把 pytest prepend 模式的 `sys.path` 插入点从 `tests/e2e/` 上移到 `tests/`，`test_harness_smoke.py` 与 `test_testid_dom_uniqueness.py` 的 `from conftest import BOOK_ID`（裸模块名）当场 ImportError。这一条矩阵已记为用例。
+- `conftest.py` —— **实测同样炸**：子目录 conftest 以同一个顶层模块名 `conftest` 被导入，会在 `sys.modules` 里顶掉 `tests/e2e/conftest.py`，报 `ImportError: cannot import name 'BOOK_ID' from 'conftest' (tests/e2e/baseline_1b/conftest.py)`。
+
+所以这两个选项不是「不等价」而是「都不可用」。后果要记在这里：**哪个组将来真需要自己的 fixture，得先把那两处裸 import 改成显式包路径**，否则动一下就红。测得的细节写在 `scripts/lint_e2e_groups.py` 的「目录布局」一节。
+
+**条数（口径，不写死数字）。** `EXPECTED_E2E_ITEMS = EXPECTED_BASELINE_ITEMS + EXPECTED_ACCEPTANCE_ITEMS + 白名单模块在本次收集里的 item 数`。今天的实测值是 `61 + 14 + 7 = 82`。三个分量里：
+
+- `EXPECTED_ACCEPTANCE_ITEMS` = **14**（原记 11）。差额来自 `acceptance-4b1` 由 2 变 5：W-5 拆 a/b 的裁决（2026-09-01）把 W-5b 放进该组 ⇒ 3；而 `toggleMarkerAnnotation` 与 `toggleAnnotation` 是**两份独立实现**，W-5b 必须在 `{marker, wavy, underline}` 上参数化 ⇒ **5**。
+- **这三个数字只允许在 `scripts/lint_e2e_groups.py` 定义/派生一次**，验收条、守卫脚本、台账产物一律 import。写死字面量的代价已经付过一次：把 `test_testid_dom_uniqueness.py` 漏算成 76，会让 WI-1 的条数断言**在写第一行 009 代码之前就红**。
+
+**4B.1 的连带成本（本来就存在，只是没被记过）**：那个 commit 要处理的不是「解开 1 条 skip + 改判 W-5a-②」，而是「解开 **3** 条 skip + 改判 W-5a-② 与 W-5a-③ 的两个参数」。反过来，**W-5a-⓪（同色重按 = 差集删除）在 4B.1 之后应当保持绿**——若顺手把候选集从「选区命中」放宽成「整章同 type 同 color」，它会红，**那是正确的红**，修法是改回实现。
 
 ### `baseline-1b` 对 K1 / K6 / W-5 的现状特征化
 
@@ -163,6 +185,27 @@ child frame 内 document.createRange() → 写入 iframe 的 Selection
 
 真实鼠标拖选只保留 **1 条 smoke**，其余走上面这条程序化路径——拖选在 CI 上是头号 flaky 源，而 flaky 会把 soak 门槛的计数清零。
 
+这条路径上有两处**实测**得来的坑，实现在 `tests/e2e/helpers.py` 的 `select_in_frame`，写在这里是因为
+每条写路径用例都压在它上面：
+
+* **「断言往返」比的是 Range 语义，不是 `Selection.toString()`。** 生产端落库的 `quote` 来自
+  `buildTextIndex(...).text.slice(s, e)`（`annotations.js:990`），而 `buildTextIndex` 是纯
+  `text += node.nodeValue` 的 Text 节点拼接（:54-76）；复制/AI 那条路径取
+  `currentRange.toString()`（:1038）。**两条生产路径都不经过 `Selection.toString()`。**
+  后者走渲染文本序列化，**跨块级边界会插换行**：实测 `quote="neAlpha"`（横跨 `<h1>` 与 `<p>`）
+  从 Selection 读回来是 `'ne\nAlpha'`。所以逐字判据落在 `range.toString()` 上，Selection 侧只用来
+  证明「选区确实装进去了」。（矩阵 §WI-3 的第一定律原本把判据写成 `getSelection().toString() == quote`，
+  与它自己的跨块参数值互斥，2026-09-02 已裁定改为本条。）
+* **`onSelection` 的 120ms 去抖挡的是 mouseup，不是 selectionchange。** `lastSelectionAt` 在
+  `handleRenditionSelection`（:722，epub.js 的 `selected` 回调）里赋值，不在 `onSelection` 里；
+  于是紧跟在 epub.js 自己的 `selected` 之后到达的 mouseup 会被 :695 的守卫直接丢掉。
+  更麻烦的是 `handleRenditionSelection` 自己会 `removeAllRanges(); addRange(range)`，**再次触发
+  `selectionchange`**，形成约 250ms 周期的自持循环。可用的做法是：先 `removeAllRanges()` 停掉循环 →
+  等到 `Date.now() - lastSelectionAt >= 120` → 在**同一个同步回合**里 `addRange` ＋ 派发 mouseup。
+  ⚠️ 循环会在 `select_in_frame` 返回后约 250ms **重新起来**，届时 `currentRange` 被重置、
+  `editingNoteId` 被置空——W-4 / W-7 这类「建好选区后还要再操作一步」的用例必须把后续动作压在这个窗口内，
+  或在动作前重新建选区。
+
 ---
 
 ## 2. 读路径用例
@@ -179,6 +222,12 @@ child frame 内 document.createRange() → 写入 iframe 的 Selection
 > **R-6 为什么必须存在**：设计规格 §6.0 从一开始就写着「Phase 1b 的 E2E 必须覆盖『改栏宽后既有标注仍能正确高亮』」，但本文此前**没有对应用例**——一条只写在设计文档里、没有落到用例表的门槛等于没有。
 >
 > **参数会随功能增长**：主题、字号、行距三项**今天就存在**（`reader.html` 的 Font Settings + `applyThemeSettings()`），所以 R-6 属 `baseline-1b`。D5 的**正文栏宽**要到 4B.3 才有，届时它作为 R-6 的**第四个参数**加入，而不是新开一组；**4B.3 的退出门槛需包含「R-6 的栏宽参数已启用并绿灯」**。
+
+> **R-2 / R-4 可用的导航机制（2026-09-02 实测，覆盖此前的记法）**：
+>
+> - `rd-chapter-prev` / `rd-chapter-next` 虽然是 `<a href>`，但 `epub-renderer.js` 给它们绑了 `click` ＋ `preventDefault()` → `displaySectionIndex`，**今天是站内导航**，不是整页跳转。R-2 可以用。
+> - **R-4 仍然不用它们**，理由变了：`href` 是兜底，事件链一旦坏掉浏览器会整页加载，用例**假绿**。R-4 走 TOC 行（`findAndGo`）或键盘 `ArrowDown`（`handleNavKey`）。
+> - **`rd-page-prev` / `rd-page-next` 完全不可用**，任何机制清单里都不许出现：`.nav-zone-left/right` 的 CSS 是 `display: none`（注释写明 keyboard-only），且只有 legacy `js/pagination.js` 绑定它们，而 `reader.html` **不加载那个文件**。Playwright 点 `display:none` 元素会在 actionability 上超时。
 
 
 
@@ -207,6 +256,8 @@ child frame 内 document.createRange() → 写入 iframe 的 Selection
 **W-5 拆成 a / b 的理由**见 §0.5 的现状特征化小节；期望行为的落地定义在[前端计划](../../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md)的 WI-14。
 
 **W-6 的反向断言不可省**：删除是唯一会破坏用户数据的操作，"删对了一条"和"顺手删掉了别的"在 UI 上看不出来。
+
+**W-6 断言的是文件形状，注意 `notes.json` 是一个「对象」**：`notes_service.save_annotations` 写的是 `{"schema_version": …, "book_id": …, "annotations": [...]}`。任何「删完后仍是合法 JSON **数组**」的措辞按字面实现都会**稳定假红**——断的是顶层对象结构 ＋ `annotations` 列表的内容。
 
 ---
 
@@ -282,6 +333,10 @@ child frame 内 document.createRange() → 写入 iframe 的 Selection
 ### G2 —— 基线稳定门
 
 - **零 flaky**：`baseline-1b` 连续 3 次全量运行无偶发失败才算达标。理由见 soak 门槛——一条会偶发失败的 E2E 当不了 Phase 3 数据迁移的验收基准，而 flaky 会让计数反复清零
+- **「绿」的判据（2026-09-02 补，缺这条则整道门可被零成本绕过）**：一次运行记为绿，**当且仅当** `passed == EXPECTED_BASELINE_ITEMS` 且 `skipped == deselected == failed == errors == 0`。
+  - 为什么必须写死分母：「无偶发失败」只约束**失败数**，「全量运行」只约束**调用形态**，两者都不约束**实际执行了几条**。一个挂了 `@pytest.mark.skip` 的模块照样算「全量运行、0 failed」——于是给一条不稳的 baseline 用例挂 skip，就成了让 G2 变绿的**零成本、且在台账上无痕**的手段（`result` 列只有 pass/fail）。
+  - `soak-log.md` 的 `result` 列**由 `scripts/soak_run.py` 按上述条件判定，人工不得改写**（这是对表头的说明，不增列；八列字段的定义仍在迁移计划 §7）。
+- **commit 级护栏（与上一条是两个触发频率）**：soak runner 只在 G2 跑三次，而「往 `conftest.py` 的 fixture 里加一句 `except Exception: pytest.skip(...)`」这类改动**每次 push 都在生效**。因此追加一条常设约束：**`baseline_1b` 的收集可达链（`tests/e2e/conftest.py`、`tests/e2e/helpers.py`、`tests/e2e/baseline_1b/**`）内不得出现任何 skip 构造，函数体与异常处理器里的一并计入。** 这条今天在代码里成立；写进本节是为了让它被破坏时是一次**有意的违约**，而不是一次顺手的防御性提交。
 - 单次全量运行时长记录在案（后续 soak 期间要跑十次以上，时长本身就是可行性约束）
 - **`soak-log.md` 已建，八列字段齐全**（字段定义在迁移计划 §7 的「台账字段（canonical）」，本文不重述），表头写明 `suite_hash` 的取法命令与当前值，**以及 §7 记在取法命令旁的那条代价**——`tests/fixtures/epub_corpus.py` 在覆盖范围内，因此一次纯单测目的的构造器改动也会清零 soak 计数
 - **`suite_hash` 进入冻结状态**——从这一刻起再改 `baseline-1b` 的用例或 harness，soak 计数从零重来。所以 G2 的真实含义是「**你愿意为这套用例的当前形态背书**」，不是「它今天碰巧绿了」

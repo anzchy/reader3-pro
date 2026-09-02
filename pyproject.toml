@@ -100,8 +100,24 @@ testpaths = ["tests"]
 #
 # A bare `pytest` runs everything including the slow ones -- that is intended for
 # a human running the full suite. Use `-m "not slow"` to skip them.
+#
+# `--strict-markers` is the one deliberate exception to the "no addopts" rule above.
+# It does not widen testpaths and does not pull a slow lane into the tight loop --
+# it only turns an unknown marker into an error. Without it, `-m baseline_1b_typo`
+# selects zero tests and exits 0, which is exactly how a soak run comes to count the
+# empty set (policy-core completion bar #1: "lane discovered zero tests is a failure").
+addopts = "--strict-markers"
+# The five group markers below partition tests/e2e (one marker per subdirectory);
+# the phase table, the group contents and the soak rules are defined ONCE in
+# docs/plans/20260816-tech-stack-migration/tasks/009-e2e-annotations.md section 0.5.
+# Item counts live in scripts/lint_e2e_groups.py. Point at those; do not copy them here.
 markers = [
     "slow: takes more than a second; excluded from the tight loop",
+    "baseline_1b: activates in Phase 1b; counts toward the 1b exit bar",
+    "acceptance_4b1: activates at 4B.1; does NOT count toward the 1b exit bar",
+    "acceptance_p3: activates at the Phase 3 exit; does NOT count toward the 1b exit bar",
+    "acceptance_4a4: activates at 4A.4; does NOT count toward the 1b exit bar",
+    "acceptance_2a: activates in Phase 2a; does NOT count toward the 1b exit bar",
 ]
 
 [tool.coverage.run]
