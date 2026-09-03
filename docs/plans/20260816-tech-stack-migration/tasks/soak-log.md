@@ -26,12 +26,12 @@
   | git hash-object --stdin; } | cut -c1-12
 ```
 
-当前 `suite_hash` 值：`5e3da7c797f6`（2026-09-03 实测输出，非誊抄）。
+当前 `suite_hash` 值：`355afedd106b`（2026-09-03 实测输出，非誊抄）。
 
-**这个值处于 pre-freeze，不是冻结值。** G2 尚未开始，baseline_1b 的 22 条用例也还没写完
-（现在 `baseline_1b` 收集到 14 条：WI-3 的 harness 自测 9 条 ＋ WI-4 的创建路径 3 条 ＋ WI-5 的
-笔记创建/编辑 2 条；`tests/e2e` 全量 21 条，差额是白名单里的 smoke 与 testid 唯一性），后面每落
-一条用例它都会变。写在这里是免得后来者拿今天这个值当冻结值。
+**这个值处于 pre-freeze，不是冻结值。** G2 尚未开始，baseline_1b 的 61 条用例也还没写完
+（现在 `baseline_1b` 收集到 28 条：WI-3 的 harness 自测 9 条 ＋ WI-4 的创建路径 3 条 ＋ WI-5 的
+笔记创建/编辑 2 条 ＋ Wave 2 的 14 条；`tests/e2e` 全量 35 条，差额是白名单里的 smoke 与 testid
+唯一性），后面每落一条用例它都会变。写在这里是免得后来者拿今天这个值当冻结值。
 
 **取值前必须先 `git add`。** 上面这条命令读的是**索引**，不是工作区：新用例文件在 `git add`
 之前对 `git ls-files -s` 根本不存在，改过的 `helpers.py` 也仍报旧内容。WI-4、Wave 0、WI-5 三次
@@ -39,6 +39,10 @@
 
 值的变更史（每次改都要写清作废原因，不要只覆盖数字）：
 
+- `355afedd106b` ← Wave 2（WI-6/7/8）三个新模块 ＋ `tests/e2e/conftest.py` 的服务日志改道。**两个理由各自都足以让旧值作废，这里一并记。**
+  - **用例增量**：`baseline_1b/test_write_recolor_and_delete.py`（W-5a-⓪①②③ ＋ W-6，5 个 def → 8 条参数化）、`test_write_overlap_and_disambiguation.py`（W-8a/8b、W-10a/10b 共 4 条）、`test_write_cjk_boundary.py`（W-9a/9b 共 2 条）。baseline_1b **14 → 28 条**，`tests/e2e` 全量 **21 → 35 条**。生产代码一行没动（`git diff --stat` 为空）。
+  - **harness 修复**：`live_server` 原先 `stdout=subprocess.PIPE` 却从不在运行期 drain。管道容量 macOS 上是 65536 字节，实测一轮全量服务端要写 **74194 字节**——越过之后 uvicorn 卡死在 `write()` 上，此后每一条要 `page.goto` 的用例都 30 秒超时。**这是一条从建账起就在的潜伏缺陷，用例数是引爆它的量而不是它的因**：21 条时写不满 64 KiB 所以从没发作，Wave 2 涨到 35 条就跨过去了。现象极具误导性——前 27 条全绿，之后红绿交错（不碰网络的用例照常过），像随机 flaky 而不像服务端卡死。改法是把 `stdout` 落到 `tmp_path_factory` 下的日志文件：文件没有容量上限，也就不需要另起线程去 drain。修前 `6 failed, 29 passed in 187.12s`，修后 `35 passed in 19.01s`。
+  - 让它作废的理由与 Wave 0 那次同类但更强：不只是「用例住在哪里」变了，**「这套用例在什么条件下能跑完」**也变了——改之前，超过约 27 条的任何一轮全量都跑不到底，冻结在那个 harness 上的 soak 计数根本不可能积累起来。
 - `5e3da7c797f6` ← `tests/e2e/conftest.py` 新增 `context` fixture，把浏览器的出网掐到只剩被测服务。**用例条数没变**（仍是 baseline_1b 14 条 / `tests/e2e` 21 条），断言一条没动，变的是用例在什么网络条件下跑——这恰恰是让它作废的理由：改之前，这套用例的绿依赖于跑它的人能连上 `fonts.googleapis.com`，改之后不依赖了，两次「21 passed」不是同一套条件下的同一件事。全量耗时 32s → **14.07s**，差额就是原先真的去取了那两个字体域。
 - `777174826be2` ← §0 第六条纪律落地：`helpers.py` 新增 `assert_bystanders_unchanged`（旁观条守恒从「各用例就地写一行 assert」抽成共用函数），W-7 改为调用它。**用例条数没变**（仍是 14 条），断言语义也没变（整字典等值原样），变的是它住在哪里——抽出来是为了让 `tests/unit/test_e2e_bystander_discipline.py` 有一个 grep 得到的名字可查。同 Wave 0，纯搬家一样让哈希作废。
 - `6672e32e6687` ← Wave 1（WI-5）：新增 `baseline_1b/test_write_note_editor.py`（W-4 / W-7 两条，12 → 14 条），同时改 `helpers.py`——`assert_roundtrip` 加 `expected_count`（默认 1，三个既有调用点行为不变）、新增 `wait_for_note_text` 与 `_pick_target`。**两个被 hash 覆盖的文件同时改**，既有条数变了、既有文件内容也变了，两个理由各自都足以让旧值作废。（同批还改了 `scripts/lint_e2e_selectors.py`，但它**不在** hash 命令的文件清单内，不构成本次作废的原因——它的影响是扫描面 14 → 20 处，记在下面一段。）
