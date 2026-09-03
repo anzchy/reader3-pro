@@ -39,7 +39,7 @@
 | **0** | `007-hygiene-and-contracts` | Phase 0 | 后端 | **✅** 2026-08-24 合入（PR #18） | [tasks/007](20260816-tech-stack-migration/tasks/007-hygiene-and-contracts.md) |
 | **1** | `008-test-safety-net` | Phase 1a | 后端 | **✅** 2026-08-26 合入（PR #19） | [tasks/008](20260816-tech-stack-migration/tasks/008-test-safety-net.md) |
 | **1.5** | *(009 harness spike)* | — | — | **✅** 2026-08-26 完成（`36a6ac2` 落在 `master`，lint 收尾 `7ed87e1`） | 本文 §2 的 P-2 |
-| **2** | `009-e2e-annotations` | Phase 1b | 后端 | **🚧** 2026-08-31 起分支上有 6 个 commit：两个硬阻塞已清，`baseline-1b` 的 22 条用例一条未写 | [tasks/009](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
+| **2** | `009-e2e-annotations` | Phase 1b | 后端 | **🚧** 2026-09-03：分支上 22 个 commit，Wave 0–2 完成。写路径 W-1…W-10 全部落地，`baseline_1b` **28 / 61 条**（`tests/e2e` 全量 35 条，19s 全绿）。下一步 Wave 3 | [tasks/009](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
 | **3** | `011-backend-refactor` | Phase 2a+2b | 后端 | **⬛** 计划未写（故意，见[迁移计划 §9](20260816-tech-stack-migration/plan-tech-stack-migration.md)） | — |
 | **⟂** | `010-design-degradation-states` | Track D | **前端** | **⬜** WI-1 – WI-8 已定义 | [前端计划 §4](20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) |
 | **4** | `012-storage-format` | Phase 3 | 后端 | **⬛** 计划未写 | — |
@@ -51,26 +51,30 @@
 
 ### 现在该做什么
 
-> **在 `009-e2e-annotations` 上写 §3 写路径用例 W-1…W-10。**
+> **在 `009-e2e-annotations` 上开 Wave 3：WI-9、WI-11、WI-12，并行度 3。**
 >
-> 009 已于 2026-08-31 开工。开工时先做的不是用例，而是 spike 实测出的两类硬阻塞——
-> **testid 重名**（Playwright strict 模式下 `getByTestId()` 命中多于一个就抛，而 §1 只许用
-> `data-testid` 与 ARIA 定位，重名的那一族在改名之前根本够不着）与 **K1 的七个宿主里有两个
-> 没有 testid**。两条现已由 [ADR-0014](../adr/0014-bounded-testid-enumeration.md)
-> 清除（`c127b17`、`627f5b0`），配套的第三件事——把唯一性检查补进
-> `scripts/lint_testid_naming.py`——也已落地，并在 `225966c` 里进一步搬到真浏览器
-> （`tests/e2e/test_testid_dom_uniqueness.py`）：静态扫描证明不了渲染后 DOM 的唯一性，
-> 而后者才是 strict 模式真正在乎的东西。它当场抓到了三条静态 lint 都看不见的
-> `lib-book-status-*` 缺陷。
+> 波次编排的唯一定义处是 [tasks/009 §0.6](20260816-tech-stack-migration/tasks/009-e2e-annotations.md)，
+> 本文不复述编排理由，只记进度与下一步。
 >
-> **卡点清完了，正题还没开始。** `baseline-1b` 的 22 条（§2 的 R-1…R-6、§3 的 W-1…W-10、
-> §4 的 K-2/K-3/K-4/K-5、§6 的 X-1/X-2）一条未写；以 skip 形态交付的其余 11 条同样未写，
-> 而 §0.5 明写「写完是 1b 的门槛，跑绿不是」。`pyproject.toml` 里也还只有 `slow` 一个 marker，
-> `baseline_1b` 那一族尚不存在；`soak-log.md` 未建。
+> **两个数不要混。** `baseline_1b` 有 **22 个用例编号**（§2 的 R-1…R-6、§3 的 W-1…W-10、
+> §4 的 K-2/K-3/K-4/K-5、§6 的 X-1/X-2）和 **61 个参数化条目**（`EXPECTED_BASELINE_ITEMS`，
+> 定义在 `scripts/lint_e2e_groups.py`）。进度按条目计：**28 / 61**。
+> 「实测 == 61」这条断言被**故意**推迟到 WI-17——每个 WI 都去加一次常量，那个脚本就成了
+> 13 条 WI 的串行写入点，并行当场作废。不要顺手把它提前。
 >
-> 先写 §3 而不是按编号从 §2 起步，理由是它验证的是那条**所有写路径共用**的标准路径
-> （iframe 内建选区 → 派发 mouseup → 点外层工具条 → 断言往返，见 tasks/009 §1）。
-> 这条路跑不通的话，剩下 21 条的写法都要重估——把它推到后面，等于把最大的未知留到最后。
+> **已完成**（Wave 0–2）：基础设施与台账（五个 marker 家族、`soak-log.md`）、harness 自测、
+> 以及**全部写路径** W-1…W-10。`suite_hash` 现为 `355afedd106b`，处于 **pre-freeze**——
+> **G2 的 soak 计数尚未开始，首行落账之前台账不构成对 G2 的任何宣称。**
+>
+> **Wave 3 的三条**都只读标注、不改写路径，因而互不相干：WI-9（K-2 七个 `data-action`
+> 逐个点、K-6a URL 章号形状）、WI-11（K-1a 七个宿主元素的正向证据）、WI-12（R-1/R-2/R-3
+> 读路径基础）。**本波没有共享写入点**，§0.6 纪律 2 的授权制自动满足；纪律 3 仍然生效——
+> 写用例可以并行，**跑门禁必须串行**（`state.json` 与 `receipts.json` 是全局可变状态）。
+>
+> **Wave 2 撞出两个生产缺陷，都只记录未修**（1b 是安全网，不是行为变更窗口）：`cfi` 恒为
+> `null`（锚定实际 100% 走文本路径），以及**改色 wavy/underline 会静默丢数据**。两条都在
+> tasks/009 的欠账表里（#6、#9），兑付方是 4B.1 / 前端 WI-14。**#9 会挡住 W-5b 解 skip**，
+> 排 4B.1 时要把它算进去。
 
 ---
 
