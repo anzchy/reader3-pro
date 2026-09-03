@@ -26,12 +26,12 @@
   | git hash-object --stdin; } | cut -c1-12
 ```
 
-当前 `suite_hash` 值：`d44d99459b25`（2026-09-03 实测输出，非誊抄）。
+当前 `suite_hash` 值：`b509a1235914`（2026-09-04 实测输出，非誊抄）。
 
 **这个值处于 pre-freeze，不是冻结值。** G2 尚未开始，baseline_1b 的 61 条用例也还没写完
-（现在 `baseline_1b` 收集到 46 条：WI-3 的 harness 自测 9 条 ＋ WI-4 的创建路径 3 条 ＋ WI-5 的
-笔记创建/编辑 2 条 ＋ Wave 2 的 14 条 ＋ Wave 3 的 18 条；`tests/e2e` 全量 53 条，差额是白名单
-里的 smoke 与 testid 唯一性），后面每落一条用例它都会变。写在这里是免得后来者拿今天这个值
+（现在 `baseline_1b` 收集到 55 条：WI-3 的 harness 自测 9 条 ＋ WI-4 的创建路径 3 条 ＋ WI-5 的
+笔记创建/编辑 2 条 ＋ Wave 2 的 14 条 ＋ Wave 3 的 18 条 ＋ Wave 4 的 9 条；`tests/e2e` 全量 65 条，
+差额是 `acceptance_4b1` 的 3 条 skip 与白名单里的 smoke、testid 唯一性），后面每落一条用例它都会变。写在这里是免得后来者拿今天这个值
 当冻结值。
 
 **「61」是目标，不是当前计数。** `scripts/lint_e2e_groups.py` 的 `EXPECTED_BASELINE_ITEMS`
@@ -43,6 +43,12 @@
 都在这里先拿到过一个「没变」的旧值（本次为 `06114374b405` → `6672e32e6687`）。
 
 值的变更史（每次改都要写清作废原因，不要只覆盖数字）：
+
+- `b509a1235914` ← Wave 4（WI-13/14/15）四个新模块。**纯用例增量，harness、语料、helper 与生产代码全部一行未动**——`conftest.py` / `helpers.py` / `tests/fixtures/*` / `src/` 这次都没进来（共享文件授权制见 §0.6，本波无人被授权）。
+  - `baseline_1b/test_read_chapter_change_and_search.py`（R-4 换章重绘 ＋ R-5 iframe 内搜索高亮 latin/cjk 各一，**3 条**）、`test_read_presentation_anchoring.py`（R-6a 主题四态 / 字号 ± / 间距 ± 三条参数化，**3 条**）、`test_library_nav_and_collections.py`（X-2a 书架⇄阅读器往返、X-2b 侧栏范围切换、X-2c 集合范围书单，**3 条**）；`acceptance_4b1/test_r6b_cfi_reanchoring.py`（R-6b 三条，模块级 skip，**3 条**）。baseline_1b **46 → 55 条**，`tests/e2e` 全量 **53 → 65 条**（62 passed + 3 skipped），全量耗时约 42s → **约 50.4s**。
+  - **三路并行的一条纪律，是本波最该带走的东西**：三个 agent 共用一个 worktree，WI-14 在跑定向破坏时把 `epub-renderer.js` 就地改了，被并跑的 WI-13 当场撞见。WI-13 的处置是对的——不碰它，自己**全程用 `page.route` 改写响应体**做破坏，一次都没写 `src/`。共享 worktree 的并行波次里这应当是硬性写法（已记为欠账 #25）。
+  - **本波实测订正了欠账 #15 的说法**：字号 / 间距四个 ± 按钮的可访问名是**按钮文本 `−`（U+2212）与 `+`**，不是中文 `title`——accname 里 contents（2F）先于 title（2I）。`name="减小字号"` 匹配 0 个、`name="−"` 匹配 1 个。因为四个按钮两两重名，**限定到 `rd-pref-size` / `rd-pref-leading` 是正确性要求**，不限定就触发 strict mode 违规。
+  - **另有三处生产行为被实测钉住并记账**：主题四态是死表面（欠账 #21，与 #11 同型）；字号 / 间距传到 iframe 里晚一拍，第一次点击对正文毫无效果（欠账 #22，用户可见）；多选模式的类名 `select-mode` 与样式表的 `.selection-mode` 对不上，复选框不悬停就看不见（欠账 #23）。
 
 - `d44d99459b25` ← Wave 3.5 的 helper 上收 ＋ 一处 flaky 修复。**用例条数一条没变**（`baseline_1b` 仍 46、`tests/e2e` 仍 53），所以这次作废的不是「测了什么」，而是「怎么等」。
   - **helper 上收**（兑付欠账 #13）：`reader_frame` / `pathname_is` / `scan_marks` / `mark_id_union` 从三个 `baseline_1b` 模块提进 `helpers.py`，`open_reader` 改为委托 `reader_frame`。纯搬移——`git diff -U0 -- tests/ | grep assert` 全程只有一行变化，且是 `_scan_marks` → `scan_marks` 的改名。`scan_marks` 的返回值是两种旧形态的**超集**（`text`＋`marks` 的文本节点视角，与 `texts`＋`ids`＋`html` 的 `<mark>` 元素视角），两者都返回而不是互相推导，因为一个 `<mark>` 里有多个文本节点时它们会分叉。

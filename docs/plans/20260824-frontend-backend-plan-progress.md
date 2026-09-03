@@ -39,7 +39,7 @@
 | **0** | `007-hygiene-and-contracts` | Phase 0 | 后端 | **✅** 2026-08-24 合入（PR #18） | [tasks/007](20260816-tech-stack-migration/tasks/007-hygiene-and-contracts.md) |
 | **1** | `008-test-safety-net` | Phase 1a | 后端 | **✅** 2026-08-26 合入（PR #19） | [tasks/008](20260816-tech-stack-migration/tasks/008-test-safety-net.md) |
 | **1.5** | *(009 harness spike)* | — | — | **✅** 2026-08-26 完成（`36a6ac2` 落在 `master`，lint 收尾 `7ed87e1`） | 本文 §2 的 P-2 |
-| **2** | `009-e2e-annotations` | Phase 1b | 后端 | **🚧** 2026-09-03：Wave 0–3.5 完成。写路径 W-1…W-10、核心 K-1a/K-2/K-6a、读路径 R-1…R-3 全部落地，`baseline_1b` **46 / 61 条**（`tests/e2e` 全量 53 条，约 42s，连绿 9 轮）。Wave 3.5 上收了四个 helper 并修掉一处约四成概率的 flaky。下一步 Wave 4 | [tasks/009](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
+| **2** | `009-e2e-annotations` | Phase 1b | 后端 | **🚧** 2026-09-04：Wave 0–4 完成。写路径 W-1…W-10、核心 K-1a/K-2/K-6a、读路径 R-1…R-6a、书架往返 X-2a/b/c 全部落地，`baseline_1b` **55 / 61 条**（`tests/e2e` 全量 65 条 = 62 passed + 3 skipped，约 50s）。Wave 4 三路并行，`src/` 与 `helpers.py` 一行未动。下一步 Wave 5（WI-10，独占，几何） | [tasks/009](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
 | **3** | `011-backend-refactor` | Phase 2a+2b | 后端 | **⬛** 计划未写（故意，见[迁移计划 §9](20260816-tech-stack-migration/plan-tech-stack-migration.md)） | — |
 | **⟂** | `010-design-degradation-states` | Track D | **前端** | **⬜** WI-1 – WI-8 已定义 | [前端计划 §4](20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) |
 | **4** | `012-storage-format` | Phase 3 | 后端 | **⬛** 计划未写 | — |
@@ -51,22 +51,30 @@
 
 ### 现在该做什么
 
-> **在 `009-e2e-annotations` 上开 Wave 4：WI-13、WI-14、WI-15，并行度 3。**
+> **在 `009-e2e-annotations` 上开 Wave 5：WI-10，独占。**几何断言不与任何 WI 并行——
+> 视口尺寸与滚动位置是进程外的共享状态，同 worktree 并跑会互相踩。
 >
 > 波次编排的唯一定义处是 [tasks/009 §0.6](20260816-tech-stack-migration/tasks/009-e2e-annotations.md)，
 > 本文不复述编排理由，只记进度与下一步。
 >
 > **两个数不要混。** `baseline_1b` 有 **22 个用例编号**（§2 的 R-1…R-6、§3 的 W-1…W-10、
 > §4 的 K-1a/K-2/K-3/K-6a、§6 的 X-1/X-2）和 **61 个参数化条目**（`EXPECTED_BASELINE_ITEMS`，
-> 定义在 `scripts/lint_e2e_groups.py`）。进度按条目计：**46 / 61**。
+> 定义在 `scripts/lint_e2e_groups.py`）。进度按条目计：**55 / 61**。
 > 「实测 == 61」这条断言被**故意**推迟到 WI-17——每个 WI 都去加一次常量，那个脚本就成了
 > 13 条 WI 的串行写入点，并行当场作废。不要顺手把它提前。
 >
-> **已完成**（Wave 0–3.5）：基础设施与台账（五个 marker 家族、`soak-log.md`）、harness 自测、
-> **全部写路径** W-1…W-10、核心路径 K-1a/K-2/K-6a、读路径 R-1…R-3，以及 Wave 3.5 的 helper
-> 上收（`reader_frame` / `pathname_is` / `scan_marks` / `mark_id_union`，兑付欠账 #13）。
-> `suite_hash` 现为 `d44d99459b25`，处于 **pre-freeze**——**G2 的 soak 计数尚未开始，首行
+> **已完成**（Wave 0–4）：基础设施与台账（五个 marker 家族、`soak-log.md`）、harness 自测、
+> **全部写路径** W-1…W-10、核心路径 K-1a/K-2/K-6a、**全部读路径** R-1…R-6a、书架往返与集合
+> X-2a/b/c，以及 Wave 3.5 的 helper 上收（`reader_frame` / `pathname_is` / `scan_marks` /
+> `mark_id_union`，兑付欠账 #13）。R-6b 的三条以 skip 形态落在 `acceptance_4b1`，等欠账 #6。
+> `suite_hash` 现为 `b509a1235914`，处于 **pre-freeze**——**G2 的 soak 计数尚未开始，首行
 > 落账之前台账不构成对 G2 的任何宣称。**
+>
+> **Wave 4 实测订正了欠账 #15，也记下三处生产行为。** 字号 / 间距 ± 按钮的可访问名是按钮
+> **文本** `−`（U+2212）与 `+`，不是中文 `title`（accname 里 contents 先于 title），且四个按钮
+> 两两重名，所以限定容器是正确性要求而非讲究。新记欠账：主题四态是死表面（#21）、字号与
+> 间距传到 iframe 里**晚一拍**导致第一次点击对正文毫无效果（#22，用户可见）、多选模式类名
+> 与样式表对不上（#23）。
 >
 > **Wave 3.5 顺带清掉了一处挡在 Wave 4 前面的 flaky。** 该模块修前约四成概率红，根因是一次
 > 页面加载会跑**两遍** `loadAndRender()`，第二遍的 `normalize()` 会折叠测试刚装上的选区。
