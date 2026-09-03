@@ -226,7 +226,7 @@ WI-4 的实录（四次，全部已还原）：
 |---|---|---|
 | **K1** | 七个宿主元素在模板中齐备，标注 UI 正常 init（**前置条件成立**的正向证据） | 移除 `annotation-toolbar` 后重载 → 明确 `console.error` 且降级标记置位 |
 | **K6** | 在 `/read/{bookId}/{chapterIndex}` 创建标注，`notes.json` 的 `chapter_index` 等于 URL 里那个数 | 删掉 `location.pathname` 回退后，`window.Reader3Ctx` 缺失时**抛错**而非静默猜测 |
-| **W-5** | 见 §3 的 W-5a——色板点击只换「下一次用的颜色」，重按 marker 得到**两条并存**的标注，重按 wavy / underline 则 id 变了 | 见 §3 的 W-5b——「改色」成为一个真操作：颜色变、`id` 不变 |
+| **W-5** | 见 §3 的 W-5a——色板点击只换「下一次用的颜色」，重按 marker 得到**两条并存**的标注，重按 wavy / underline 则**标注没了**（订正见 §3 W-5a 下方） | 见 §3 的 W-5b——「改色」成为一个真操作：颜色变、`id` 不变 |
 
 K1 的 baseline 条是有价值的：它会在**任何人改模板删掉那七个 id 之一时**变红，而这正是 4B.2 外壳重写最可能干的事——不必等到 4B.1 才有护栏。
 
@@ -314,11 +314,16 @@ K1 的 baseline 条是有价值的：它会在**任何人改模板删掉那七�
 
 | # | 欠什么 | 欠账方 | 兑付方 | 验收怎么查 | 状态 |
 |---|---|---|---|---|---|
-| 1 | W-5a-⓪ 的 docstring 要写一条指回 W-7 的反向指针（W-7 那一侧已写好，按用例号 ＋ WI 号引用，没猜文件名） | WI-5 | **WI-6（Wave 2）** | `grep -l "test_w7_editing_a_note" tests/e2e/baseline_1b/` 能命中 WI-6 的模块 | 未结清 |
+| 1 | W-5a-⓪ 的 docstring 要写一条指回 W-7 的反向指针（W-7 那一侧已写好，按用例号 ＋ WI 号引用，没猜文件名） | WI-5 | **WI-6（Wave 2）** | `grep -l "test_w7_editing_a_note" tests/e2e/baseline_1b/` 能命中 WI-6 的模块 | **已结清**（WI-6 的 `test_write_recolor_and_delete.py` 命中） |
 | 2 | `EXPECTED_BASELINE_ITEMS = 61` 的「实测 == 61」断言（全程刻意不逐 WI 递增，否则 `lint_e2e_groups.py` 会变成 13 路串行写点） | §0.6 的并行前提 | **WI-17（Wave 7）** | 断言存在且实测条数等于常量 | 未结清 |
 | 3 | `soak-log.md` 的 `suite_hash` 变更史每波追加一行，写清作废原因 | 每一波 | **下一波收口时** | 变更史首行的哈希 == 当前实测值 | 滚动 |
 | 4 | W-7 改用 `assert_bystanders_unchanged` 之后**没跑过 e2e** | 2026-09-03 | 同日结清 | `uv run pytest tests/e2e --browser chromium` == 21 passed | **已结清**（21 passed / 14.07s） |
 | 5 | 生产模板仍硬依赖 Google Fonts CDN：`reader.html` 与 `library.html` 的 `<head>` 各有一组指向 `fonts.googleapis.com` / `fonts.gstatic.com` 的阻塞式 `<link>`。对一个**本地自托管的离线阅读器**来说，断网或够不到该域时首屏字体直接降级。e2e 已由 `context` 网关掐掉，**生产未修**——已知代价、显式推迟，不是遗漏 | 2026-09-03 | **待定**（需先决定自托管字体 vs 接受降级） | `tests/unit/test_frontend_external_hosts.py` 的 `EXPECTED_EXTERNAL_HOSTS` 变成空集且仍绿（该用例两个方向都红：新增未登记的域红，白名单留下已无人使用的域也红——所以兑付时删模板必须同步删登记） | 未结清 |
+| 6 | **`cfi` 永远是 `null`，全部锚定实际走纯文本路径。** `epub-renderer.js` 在 `rendition.on("rendered", (section, contents) => …)` 里把第二个实参当 `Contents` 存进 `currentContents`，但 epub.js 传的是 **view**。`IframeView` 有 `.document`，所以样式注入、点击、翻页全都照常工作，缺陷被完全掩盖——唯独没有 `cfiFromRange`，于是 `annotations.js` 里 `typeof contents.cfiFromRange === "function"` 这个卫语句**永假**，`cfi` 恒为 `null`。**这是生产缺陷，不是测试问题**，需单开工作项 | WI-7（2026-09-03 发现） | **待定**（前端计划，需自己的工作项） | 经 UI 创建的标注 `cfi != None`；WI-7 模块里那条 `cfi is None` 的绊线用例转为断反面 | 未结清 |
+| 7 | 矩阵 §WI-7 的 Gap 7「经 UI 创建的标注一律带 CFI」**已被证伪**（见第 6 行）。三处提法需订正：矩阵该条、以及任何以「有 CFI 兜底」为前提的锚定论述 | WI-7 | **兑付第 6 行的同一个工作项** | 全仓 grep 不到「一律带 CFI」这类未加限定的提法 | 未结清 |
+| 8 | `AnnotationRenderer.render()` 的 CFI 分支**零覆盖**——因第 6 行它今天是死代码。补它需要第 5 条用例，会让 `EXPECTED_BASELINE_ITEMS = 61` 变动，因此不能在 Wave 2 里就地补 | WI-7 | **WI-17（Wave 7）**，且**必须排在第 6 行修完之后** | 该分支有用例覆盖，且常量与实测条数同步更新 | 未结清 |
+| 9 | **改色 wavy / underline 会静默丢数据**（删成功、建失败、剩 0 条），根因与复现见 §3 W-5a 下方的订正段。W-5a-③ 今天把这个行为特征化下来了，**但没修** | WI-6（2026-09-03 发现） | **4B.1 / 前端 WI-14**，且应排在 W-5b 解 skip 之前 | 改色后选区上仍有且只有 1 条标注；W-5a-③ 转红即为正确的红，改法是删掉该用例而非改断言 | 未结清 |
+| 10 | `live_server` 的 `stdout=subprocess.PIPE` 从不在运行期 drain。管道满 64 KiB 后 uvicorn 卡死在 `write()`，此后每条 `page.goto` 都 30 秒超时。**建账起就潜伏，Wave 2 把套件涨到 35 条才引爆**（实测一轮写 74194 字节） | WI-1（建账时引入） | 2026-09-03 同日结清 | `uv run pytest tests/e2e --browser chromium` 全绿 | **已结清**（改为日志落文件；35 passed / 19.01s，修前 6 failed / 187.12s） |
 
 #### 欠账 4 的根因订正（2026-09-03）
 
@@ -433,7 +438,7 @@ child frame 内 document.createRange() → 写入 iframe 的 Selection
 | W-2 | 创建 **wavy** | 同上，且样式类型正确 |
 | W-3 | 创建 **underline** | 同上 |
 | W-4 | 创建 **note**（含笔记正文） | 刷新后 tooltip / Notes 面板能读回笔记文本 |
-| W-5a | **色板换色后重按同一动作**（yellow → green），`baseline-1b` | 特征化今天的三岔行为：①点色板只调 `setSelectedColor`，已有标注**不动**；②随后重按 marker 走 `toggleMarkerAnnotation`，旧黄条**保留**、另加一条绿的，两条 id 各自独立；③重按 wavy / underline 走 `toggleAnnotation`，**先删后建**，id 变了。三支各断一次，刷新后仍成立 |
+| W-5a | **色板换色后重按同一动作**（yellow → green），`baseline-1b` | 特征化今天的三岔行为：①点色板只调 `setSelectedColor`，已有标注**不动**；②随后重按 marker 走 `toggleMarkerAnnotation`，旧黄条**保留**、另加一条绿的，两条 id 各自独立；③重按 wavy / underline 走 `toggleAnnotation`，**删成功但建失败，选区上一条不剩**（订正见下）。三支各断一次，刷新后仍成立 |
 | W-5b | **改色**（yellow → green），`acceptance-4b1`、**以 skip 形态写** | 刷新后颜色为 green，且**标注 id 不变**（改色不是删了重建）。⚠️ 该行为 4B.1 才实现，不计入 1b 门槛 |
 | W-6 | **删除** | 刷新后该段文字上无 `<mark>`；`notes.json` 里对应条目消失；**其他标注不受影响** |
 | W-7 | **笔记编辑保存**（打开已有笔记 → 改文本 → 保存） | 刷新后读回新文本；这条走 `note-editor` → `commands.saveNote` 的完整链 |
@@ -442,6 +447,19 @@ child frame 内 document.createRange() → 写入 iframe 的 Selection
 | W-10 | 同章重复文本消歧 | 章内出现两处相同文字，标注第二处，刷新后落在**第二处**（prefix/suffix 生效） |
 
 **W-5 拆成 a / b 的理由**见 §0.5 的现状特征化小节；期望行为的落地定义在[前端计划](../../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md)的 WI-14。
+
+**W-5a-③ 的记述订正（2026-09-03，WI-6 实测）。** 上表原写「先删后建，id 变了」，**这是错的，
+今天的实际行为是删成功、建失败、选区上一条不剩**——一次静默的用户数据丢失。10/10 稳定复现，
+不是竞态。链路：`toggleAnnotation` 的异色分支 `await deleteAnnotations(anyIds)`；
+`deleteAnnotations` 在删完之后 `await renderer.loadAndRender()`；`render()` 调
+`clearExistingAnnotationMarks()`，后者对拆过的文本节点调 `parent.normalize()`，把仍被
+`this.currentRange` 引用的那几个节点合并掉，**选区就地塌成空**；执行流继续落到
+`createAnnotation`，此时 `quote` 已是空串，服务端的 `quote is required` 返回 **400**。
+净效果 `DELETE 204 → POST 400 → |S'| == 0`。
+
+订正只改「今天是什么」，不改裁决：W-5a 仍特征化今天的行为并计入 1b 门槛，W-5b 仍承载期望行为。
+**但连带成本比原记的大**——4B.1 兑付时要修的不只是「改色应保 id」，而是先修掉这条数据丢失；
+见欠账表第 9 行。
 
 **W-6 的反向断言不可省**：删除是唯一会破坏用户数据的操作，"删对了一条"和"顺手删掉了别的"在 UI 上看不出来。
 
