@@ -35,7 +35,7 @@
     },
     {
       "name": "packaging",
-      "description": "Builds a wheel, installs it into a clean venv with dependencies resolved at LATEST (uv.lock deliberately not used), starts a real reader3-server and hits four routes. The only place in the repo that would notice a dependency major bump breaking the installed app -- uv run and the unit lane both go through the pinned lock and stay green. ~17s, so it gates on push, not on commit.",
+      "description": "Builds a wheel, installs it into a clean venv with dependencies resolved at LATEST (uv.lock deliberately not used), starts a real reader3-server and hits four routes. The only place in the repo that would notice a dependency major bump breaking the installed app -- uv run and the unit lane both go through the pinned lock and stay green. ~50s measured 2026-09-03 (an earlier note said ~17s; that predates the current dependency set and the latest-version resolution it does on every run). Still gates on push, not on commit -- and the gap is the reason: at 17s someone would argue for moving it to commit, at 50s nobody will.",
       "command": "uv run pytest tests/integration -m slow",
       "gateOn": [
         "push"
