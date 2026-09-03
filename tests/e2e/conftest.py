@@ -205,20 +205,40 @@ def notes_isolation(request: pytest.FixtureRequest) -> Iterator[Optional[NotesIs
 
 
 @pytest.fixture(scope="session")
-def live_server(e2e_books_dir: Path) -> Iterator[str]:
+def live_server(
+    e2e_books_dir: Path, tmp_path_factory: pytest.TempPathFactory
+) -> Iterator[str]:
     """起服务，等 `/api/health`，产出 base URL。
 
     端口是内核分配的空闲口，**不是 8123**：8123 上多半坐着开发者自己的服务，撞上
     去的表现是用例读到别人的书库，而不是一个干脆的报错。
+
+    **为什么日志落文件，而不是 `stdout=PIPE`。** 这条服务活满整个 session，谁也不在
+    运行期读它的管道。管道是有容量的（macOS 上 64 KiB），uvicorn 的 access log 写满
+    之后 `write()` 就地阻塞——服务不是崩了，是**卡在写日志上**，从此不再应答任何请求。
+    表现极具误导性：前若干条用例全绿，越过某一条之后，**每一条要 `page.goto` 的用例都
+    30 秒超时**，而不碰网络的用例照常通过，于是红绿交错，看着像随机 flaky。
+    2026-09-03 本机就这样：套件从 21 条涨到 35 条，跨过了缓冲区，第 27 条之后全线超时；
+    同样这六条单独跑却是 9 passed / 7.12s。**用例数是压垮它的量，不是它的因。**
+    写进文件就没有容量上限，也不需要另起线程去 drain。
     """
     port = _free_port()
     base = f"http://127.0.0.1:{port}"
     exe = Path(sys.executable).parent / "reader3-server"
+    log_path = tmp_path_factory.mktemp("e2e-server") / "server.log"
     started = time.monotonic()
+    log_fh = log_path.open("w", encoding="utf-8")
+
+    def _log_tail(limit: int = 4000) -> str:
+        """日志尾巴。失败信息只需要最后这一截，整份可能有几百 KB。"""
+        log_fh.flush()
+        text = log_path.read_text(encoding="utf-8", errors="replace")
+        return text[-limit:] if len(text) > limit else text
+
     server = subprocess.Popen(
         [str(exe), "--port", str(port)],
         env=_server_env(e2e_books_dir),
-        stdout=subprocess.PIPE,
+        stdout=log_fh,
         stderr=subprocess.STDOUT,
         text=True,
     )
@@ -227,8 +247,9 @@ def live_server(e2e_books_dir: Path) -> Iterator[str]:
         ready = False
         while time.monotonic() < deadline:
             if server.poll() is not None:
-                out, _ = server.communicate(timeout=10)
-                pytest.fail(f"服务进程启动即退出（{server.returncode}）：\n{out}")
+                pytest.fail(
+                    f"服务进程启动即退出（{server.returncode}）：\n{_log_tail()}"
+                )
             try:
                 with urllib.request.urlopen(f"{base}/api/health", timeout=2) as r:
                     if r.status == 200:
@@ -239,19 +260,20 @@ def live_server(e2e_books_dir: Path) -> Iterator[str]:
                 time.sleep(0.1)
         if not ready:
             server.kill()
-            out, _ = server.communicate(timeout=10)
-            pytest.fail(f"{STARTUP_TIMEOUT_S}s 内没等到 /api/health：\n{out}")
+            server.wait(timeout=10)
+            pytest.fail(f"{STARTUP_TIMEOUT_S}s 内没等到 /api/health：\n{_log_tail()}")
         elapsed = time.monotonic() - started
-        print(f"\n[e2e] 服务冷启动 {elapsed:.2f}s → {base}")
+        print(f"\n[e2e] 服务冷启动 {elapsed:.2f}s → {base}（日志 {log_path}）")
         yield base
     finally:
-        # 先让进程退出再读 stdout：`.read()` 等的是 EOF，EOF 要等进程退出才来。
         server.terminate()
         try:
             server.wait(timeout=10)
         except subprocess.TimeoutExpired:
             server.kill()
             server.wait(timeout=10)
+        log_fh.close()
+        print(f"\n[e2e] 服务日志 {log_path.stat().st_size} 字节 → {log_path}")
 
 
 #: 服务跑在内核分配的空闲端口上，主机名恒为这三者之一。
