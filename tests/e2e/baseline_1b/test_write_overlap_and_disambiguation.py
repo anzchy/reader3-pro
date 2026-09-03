@@ -50,9 +50,9 @@
 ------------------------------------------------------------------------------
 任务书 §3 W-10 要的是「刷新后落在**第二处**」。章内只有一个 `<mark>` 时，「第 0 个 `<mark>`
 的文本等于 quote」是一句**恒真**——一个「永远高亮第一处」的实现照样绿。所以本模块的
-`_scan_marks` 把每个 `<mark>` 的文本节点在 body 文本轴上的起止偏移一并读出来，判据落在偏移上。
+`helpers.scan_marks` 把每个 `<mark>` 的文本节点在 body 文本轴上的起止偏移一并读出来，判据落在偏移上。
 
-`_scan_marks` 走 `TreeWalker(SHOW_TEXT)` 而不是 `body.textContent`：两者在本语料上同解，
+`scan_marks` 走 `TreeWalker(SHOW_TEXT)` 而不是 `body.textContent`：两者在本语料上同解，
 但前者与生产端 `buildTextIndex` 的取文本方式一致，不会因为将来有人往 body 里注入
 `<style>` 而两边错位。
 
@@ -147,6 +147,7 @@ from helpers import (  # type: ignore[import-not-found]
     assert_roundtrip,
     open_reader,
     read_notes,
+    scan_marks,
     seed_notes,
     select_in_frame,
     wait_for_notes,
@@ -210,48 +211,17 @@ REPEAT_STORED_SUFFIX = REPEAT_SUFFIX + "\n"
 # ---------------------------------------------------------------------------
 # 读 DOM：body 文本轴 ＋ 每个 `<mark>` 在轴上的位置与 id 集合
 # ---------------------------------------------------------------------------
-
-# 为什么用 `dataset.annotationIds` 而不是 `getAttribute("data-annotation-ids")`：
-# 后者会被 `scripts/lint_e2e_selectors.py` 的 `LOCATOR_CALL_RE` 当成一处选择器扫到
-# （它匹配 `.getAttribute(` 后面那个字符串实参），报「含非 data-* 属性选择器的部分」。
-# 那是一次误报，但让它误报再逐行放行，等于把这条 lint 的信噪比往下拉；换个等价 API 更便宜。
-_SCAN_MARKS_JS = r"""
-() => {
-  const body = document.body;
-  const doc = body.ownerDocument;
-  const walker = doc.createTreeWalker(body, NodeFilter.SHOW_TEXT);
-  const marks = [];
-  let text = "";
-  while (walker.nextNode()) {
-    const node = walker.currentNode;
-    const start = text.length;
-    text += node.data;
-    const parent = node.parentElement;
-    // `closest` 取的是**最内层**的那个 `<mark>`：applySegments 产出的三段是兄弟节点，
-    // 各含一个文本节点，于是这里一个文本节点恰好对应一段，顺序即 DOM 顺序。
-    const host = parent ? parent.closest('[data-testid="rd-anno-span"]') : null;
-    if (!host) continue;
-    let ids = null;
-    try {
-      ids = JSON.parse(host.dataset.annotationIds || "[]");
-    } catch (err) {
-      ids = null;  // 解析不出来就交给 Python 侧报，别在这里吞掉
-    }
-    marks.push({ text: node.data, start, end: start + node.data.length, ids,
-                 raw: host.dataset.annotationIds });
-  }
-  return { text, marks };
-}
-"""
-
-
-def _scan_marks(frame: Any) -> Dict[str, Any]:
-    """iframe body 的文本轴 ＋ 按 DOM 顺序排列的 `<mark>` 分段。
-
-    返回 ``{"text": str, "marks": [{"text", "start", "end", "ids", "raw"}, …]}``。
-    ``start`` / ``end`` 是在 ``text`` 上的字符偏移——本模块所有位置判据都落在它上面。
-    """
-    return frame.locator("body").evaluate(_SCAN_MARKS_JS)  # lint-e2e-selectors: allow —— iframe 内是用户那本书自己的 XHTML，不是我们的模板
+#
+# 扫描器本体已于 Wave 3.5 上收为 `helpers.scan_marks`（任务书 §0.6 欠账 #13）——它与
+# `test_read_paths.py` 的 `_scan_annotations` 已经重复，合并成了一个返回两种视图的函数。
+# 「为什么在 evaluate 里读 `dataset.annotationIds` 而不是 `getAttribute(...)`」这条取舍
+# 也随之只留在那一处，本模块不再抄一遍。
+#
+# 下面三个仍然留在本模块内，理由是**没有第二个模块会要**：`_segments` 的 `[(段文本, id
+# 集合), …]` 形状是 W-8b 的期望值形状（它直接进失败消息），`_all_ids` 是它上面的一行求并，
+# `_sole_mark` 的「恰好一个 `<mark>`」是 W-10 的判据而不是取值的方便写法。
+# `helpers.mark_id_union` 与 `_all_ids` 求的是同一个并集，但走的是**另一种视图**
+# （按元素 vs 按分段）且失败消息指向不同的生产函数，所以两者并存不是重复。
 
 
 def _segments(scan: Dict[str, Any]) -> List[Tuple[str, Set[str]]]:
@@ -403,7 +373,7 @@ def test_w8a_two_overlapping_annotations_both_persist_and_render(
 
     page.reload()
     frame = open_reader(page, live_server, BOOK_ID, 0, CH0_ANCHOR)
-    scan = _scan_marks(frame)
+    scan = scan_marks(frame)
 
     rendered_ids = _all_ids(scan)
     assert rendered_ids == {record_a["id"], record_b["id"]}, (
@@ -498,7 +468,7 @@ def test_w8b_overlapping_text_path_annotations_split_into_three_segments(
         f'[data-testid="rd-anno-span"][data-annotation-id="{W8B_WAVY_ID}"]'
     ).first.wait_for()
 
-    actual = _segments(_scan_marks(frame))
+    actual = _segments(scan_marks(frame))
     expected: List[Tuple[str, Set[str]]] = [
         ("Alpha ", {W8B_MARKER_ID}),
         ("pro", {W8B_MARKER_ID, W8B_WAVY_ID}),
@@ -546,7 +516,7 @@ def test_w10a_write_path_anchors_the_last_of_25_identical_phrases(
     assert read_notes(e2e_books_dir, BOOK_ID_REPEAT) == [], "隔离 fixture 没生效：起点不是空的"
 
     frame = open_reader(page, live_server, BOOK_ID_REPEAT, 0, REPEAT_ANCHOR)
-    _assert_corpus_coordinates(_scan_marks(frame)["text"])
+    _assert_corpus_coordinates(scan_marks(frame)["text"])
 
     select_in_frame(frame, REPEAT_QUOTE, occurrence=-1)
     page.get_by_test_id("rd-anno-type-marker").click()
@@ -573,7 +543,7 @@ def test_w10a_write_path_anchors_the_last_of_25_identical_phrases(
 
     page.reload()
     frame = open_reader(page, live_server, BOOK_ID_REPEAT, 0, REPEAT_ANCHOR)
-    scan = _scan_marks(frame)
+    scan = scan_marks(frame)
     _assert_corpus_coordinates(scan["text"])
     _assert_at_last_occurrence(_sole_mark(scan, REPEAT_QUOTE), scan["text"])
 
@@ -633,7 +603,7 @@ def test_w10b_text_fallback_path_anchors_the_last_of_25_identical_phrases(
         f'[data-testid="rd-anno-span"][data-annotation-id="{W10B_ID}"]'
     ).first.wait_for()
 
-    scan = _scan_marks(frame)
+    scan = scan_marks(frame)
     _assert_corpus_coordinates(scan["text"])
     mark = _sole_mark(scan, REPEAT_QUOTE)
     assert mark["ids"] == [W10B_ID], f"`<mark>` 挂的 id 是 {mark['ids']}，期望 [{W10B_ID!r}]"

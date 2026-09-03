@@ -78,7 +78,7 @@ R-1…R-6）、§0（六条写作纪律）、§0.6（波次编排，本模块属
 | D3 | R-1 末尾的 `not_to_contain_text(CH1_ANCHOR)` → `to_contain_text(CH1_ANCHOR)` | `AssertionError: Locator expected to contain text 'Beta prose.'` ／ `Actual value: OneAlpha prose.` ／ 调用日志 `14 × locator resolved to <body>…</body>` `- unexpected value "OneAlpha prose.` | 第 0 章渲染的**只是**第 0 章：反向那半句真在区分两章，不是恒真 |
 | D4 | R-2 的 URL 期望 `CH1_PATH` → `CH0_PATH`（正则与逐字 `assert` 两处一起改） | `AssertionError: Page URL expected to be 're.compile('/read/smoke_data/0(?:[#?].*)?$')'` ／ `Actual value: http://127.0.0.1:54246/read/smoke_data/1` ／ 调用日志 `Expect "to_have_url" with timeout 5000ms` `14 × locator resolved to <html lang="en">…</html>`；TOC 那一支的 `Actual value` 末尾多一个 `#`。三个参数**全部**红（`3 failed`） | URL 与正文两项**不是互相掩护**：正文那两行全程没红，URL 这一项自己咬住了章号 |
 | D4′ | 同 D4，但在**调整断言顺序之前**跑的第一枪 | `1 failed, 2 passed`——只有 `direct-url` 红 | **这一枪改了用例本身**：当时 URL 断言排在正文之前，而 `syncLocationToUrl` 写在 `epub-renderer.js` 的 `rendered` 回调里，站内换章时 `page.url` 在那一瞬**确实还是** `/read/smoke_data/0`，于是错的期望反而绿。据此把顺序改成「先正文、后 URL」，重跑即 D4 的三红。没有这一枪，两支站内导航的 URL 判据会长期停在一个可被时序吸收的位置 |
-| D5 | R-2 的正文期望 `CH1_ANCHOR` → `CH0_ANCHOR`（`_reader_frame` 与 `not_to_contain_text` 两行互换） | `AssertionError: Locator expected to contain text 'Alpha prose.'` ／ `Actual value: TwoBeta prose.` ／ `Aria snapshot: - heading "Two" [level=1] - paragraph: Beta prose.` | 同 D4 的另一侧：URL 那两行全程绿，正文这一项自己咬住了渲染内容 |
+| D5 | R-2 的正文期望 `CH1_ANCHOR` → `CH0_ANCHOR`（`reader_frame` 与 `not_to_contain_text` 两行互换；当时它还叫模块私有的 `_reader_frame`） | `AssertionError: Locator expected to contain text 'Alpha prose.'` ／ `Actual value: TwoBeta prose.` ／ `Aria snapshot: - heading "Two" [level=1] - paragraph: Beta prose.` | 同 D4 的另一侧：URL 那两行全程绿，正文这一项自己咬住了渲染内容 |
 | D6 | R-2 `direct-url` 那一支的 `expects_full_page_load` → `False` | `AssertionError: 导航后 window.__wi12_navigation_probe 是 None，期望站内导航把它留着（'wi12-set-before-navigation'）。这一支被判为站内导航，但它整页加载了——…` ／ `assert None == 'wi12-set-before-navigation'`（`1 failed, 2 passed`） | 「导航的性质」这第三项判据真在分辨整页 vs 站内 |
 | D7 | R-2 `chapter-next` / `toc-row` 两支的 `expects_full_page_load` → `True` | `AssertionError: 导航后 window.__wi12_navigation_probe 还在（'wi12-set-before-navigation'），期望整页加载把它冲掉。这一支被判为整页加载，但它是站内导航` ／ `assert 'wi12-set-before-navigation' is None`（`2 failed, 1 passed`，两支各红一次） | 同 D6 的反向：哨兵不是恒真也不是恒假，三个参数确实是**两条站内、一条整页** |
 | D8 | **R-3 的核心靶**：把「跨章条目不被渲染」的期望整体反过来——`R3_EXPECTED_MARK_TEXTS` → `["Alpha ", "prose"]`、`R3_EXPECTED_MARK_IDS` → 两个 id 都在、`R3_ID_OTHER not in scan["html"]` → `in` | `AssertionError: Locator expected to have text '['Alpha ', 'prose']'` ／ `Actual value: ['Alpha prose']` ／ 调用日志 `Expect "to_have_text" with timeout 5000ms` `14 × locator resolved to 1 element` | 这条断言**真的在测章节过滤**，不是恒真：今天第 0 章的 DOM 里**只有一个** `<mark>`、文本恰是 `'Alpha prose'`，把期望翻过来当场红 |
@@ -120,8 +120,11 @@ from epub_corpus import EPUB2_TITLE  # type: ignore[import-not-found]
 from helpers import (  # type: ignore[import-not-found]
     CH0_ANCHOR,
     CH1_ANCHOR,
+    mark_id_union,
     open_reader,
     read_notes,
+    reader_frame,
+    scan_marks,
     seed_notes,
 )
 
@@ -223,66 +226,12 @@ def _assert_corpus_unchanged() -> None:
 # ---------------------------------------------------------------------------
 # 读 DOM
 # ---------------------------------------------------------------------------
-
-# 为什么用 `dataset.annotationIds` 而不是 `getAttribute("data-annotation-ids")`：
-# 后者会被 `scripts/lint_e2e_selectors.py` 的 `LOCATOR_CALL_RE` 当成一处选择器扫到
-# （它匹配 `.getAttribute(` 后面那个字符串实参），报「含非 data-* 属性选择器的部分」。
-# 那是一次误报，但让它误报再逐行放行，等于把这条 lint 的信噪比往下拉。
-# 同样的取舍写在 `test_write_overlap_and_disambiguation.py` 的 `_SCAN_MARKS_JS` 旁边。
-_SCAN_ANNOTATIONS_JS = r"""
-() => {
-  const body = document.body;
-  const marks = Array.from(body.querySelectorAll('[data-testid="rd-anno-span"]'));
-  return {
-    texts: marks.map((m) => m.textContent),
-    // 每个 `<mark>` 的 id 列表原样带回；解析不出来就把生串交给 Python 侧报，别在这里吞。
-    ids: marks.map((m) => m.dataset.annotationIds || null),
-    // 「B 的 id 不出现在 DOM 的任何位置」这条判据要的是整份 HTML，不只是 `<mark>` 上那些
-    // 属性——一个把 id 写进别的属性、或写进注释里的实现，同样算「渲染了 B」。
-    html: body.innerHTML,
-  };
-}
-"""
-
-
-def _scan_annotations(frame: Any) -> Dict[str, Any]:
-    """iframe 内全部 `rd-anno-span` 的文本、id 列表，外加 body 的整份 HTML。"""
-    return frame.locator("body").evaluate(_SCAN_ANNOTATIONS_JS)  # lint-e2e-selectors: allow —— iframe 内是用户那本书自己的 XHTML，不是我们的模板
-
-
-def _mark_id_union(scan: Dict[str, Any]) -> set:
-    """所有 `<mark>` 的 `data-annotation-ids` 并集。解析失败当场抛，不吞。"""
-    union: set = set()
-    for raw in scan["ids"]:
-        if raw is None:
-            raise AssertionError(
-                "某个 `rd-anno-span` 上没有 `data-annotation-ids`。"
-                "`render()` / `applySegments` 改过这个属性的写法？"
-            )
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise AssertionError(
-                f"`data-annotation-ids` 不是合法 JSON：{raw!r}（{exc}）"
-            ) from exc
-        union |= set(parsed)
-    return union
-
-
-def _reader_frame(page: "Page", expect_text: str) -> Any:
-    """已经在阅读器页面上时，等到 iframe 里真的有正文，产出 `FrameLocator`。
-
-    与 `helpers.open_reader` 的区别只有一处：**它不 `goto`**。R-1 是从书库点进来的、
-    R-2 有两支是站内换章，两者都已经在页面上了，再 `goto` 一次就把被测的那次导航
-    冲掉了——用例会绿，但它证明的是 `goto` 能用，不是那个按钮能用。
-
-    （**该不该上收到 `helpers.py`**：见本模块提交时的报告。Wave 3 没有任何 WI 被授权改
-    共享文件，所以它先住在这里。）
-    """
-    expect(page.get_by_test_id("rd-shell")).to_be_visible()
-    frame = page.frame_locator('[data-testid="rd-viewport"] iframe')  # lint-e2e-selectors: allow —— iframe 元素由 epub.js 运行时创建，插不进 testid
-    expect(frame.locator("body")).to_contain_text(expect_text)  # lint-e2e-selectors: allow —— iframe 内是用户那本书自己的 XHTML，不是我们的模板
-    return frame
+#
+# `_scan_annotations` / `_mark_id_union` / `_reader_frame` 三个已于 Wave 3.5 上收到
+# `helpers.py`（任务书 §0.6 欠账 #13），分别叫 `scan_marks` / `mark_id_union` /
+# `reader_frame`。前两个与 `test_write_overlap_and_disambiguation.py` 的 `_scan_marks`
+# 合并成了同一个扫描器，「为什么在 evaluate 里读 `dataset.annotationIds`」这条取舍
+# 随之只留在那一处。
 
 
 # ---------------------------------------------------------------------------
@@ -322,7 +271,7 @@ def test_r1_library_card_opens_reader_showing_this_books_prose(
     # ARIA role/name 是选择器政策里与 testid 并列的那一半（任务书 §1），不是退让。
     card.get_by_role("link", name=f"Read {SMOKE_BOOK_TITLE}").click()
 
-    frame = _reader_frame(page, CH0_ANCHOR)
+    frame = reader_frame(page, CH0_ANCHOR)
 
     actual_path = urlparse(page.url).path
     assert actual_path == CH0_PATH, (
@@ -432,7 +381,7 @@ def test_r2_three_navigation_mechanisms_reach_chapter_one(
     page.evaluate(f"window.{NAV_PROBE} = {json.dumps(NAV_PROBE_VALUE)}")
     navigate(page, live_server)
 
-    frame = _reader_frame(page, CH1_ANCHOR)
+    frame = reader_frame(page, CH1_ANCHOR)
     expect(frame.locator("body")).not_to_contain_text(CH0_ANCHOR)  # lint-e2e-selectors: allow —— iframe 内是用户那本书自己的 XHTML，不是我们的模板
 
     expect(page).to_have_url(re.compile(re.escape(CH1_PATH) + r"(?:[#?].*)?$"))
@@ -543,7 +492,7 @@ def test_r3_only_current_chapter_annotations_are_rendered(
     # 它同时管住条数与顺序，是 (1)(2) 两条判据的自动重试形态。
     expect(spans).to_have_text(R3_EXPECTED_MARK_TEXTS)
 
-    scan = _scan_annotations(frame)
+    scan = scan_marks(frame)
     assert scan["texts"] == R3_EXPECTED_MARK_TEXTS, (
         f"第 0 章渲染出的 `<mark>` 文本序列是 {scan['texts']!r}，"
         f"不是期望的 {R3_EXPECTED_MARK_TEXTS!r}。"
@@ -555,7 +504,7 @@ def test_r3_only_current_chapter_annotations_are_rendered(
         f"不是期望的 {len(R3_EXPECTED_MARK_TEXTS)} 个：{scan['texts']!r}"
     )
 
-    id_union = _mark_id_union(scan)
+    id_union = mark_id_union(scan)
     assert id_union == R3_EXPECTED_MARK_IDS, (
         f"DOM 里出现的 annotation id 并集是 {id_union}，不是期望的 {R3_EXPECTED_MARK_IDS}"
     )

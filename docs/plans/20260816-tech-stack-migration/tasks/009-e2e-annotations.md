@@ -188,8 +188,8 @@ WI-4 的实录（四次，全部已还原）：
 
 | 组 | 内容 | 激活阶段 | 计入 1b 退出门槛 | 计入 Phase 3 soak |
 |---|---|---|:--:|:--:|
-| **`baseline-1b`** | §2 读路径 R-1…R-6、§3 写路径 W-1…W-10、§4 的 K-2 / K-3 / K-4 / K-5、§6 X-1 / X-2 | Phase 1b | ✅ | ✅ |
-| **`acceptance-4b1`** | §4 的 K-1（响亮失败）与 K-6 的抛错断言，＋ §3 的 **W-5b**（改色保 id）。**共 5 条**，见下方「条数」小节 | 4B.1 | ❌ | ❌ |
+| **`baseline-1b`** | §2 读路径 R-1…R-5 ＋ **R-6a**、§3 写路径 W-1…W-10、§4 的 K-2 / K-3 / K-4 / K-5、§6 X-1 / X-2 | Phase 1b | ✅ | ✅ |
+| **`acceptance-4b1`** | §4 的 K-1（响亮失败）与 K-6 的抛错断言，＋ §3 的 **W-5b**（改色保 id），＋ §2 的 **R-6b**（CFI 侧，2026-09-03 从 R-6 拆入）。**共 8 条**（原 5 条），见下方「条数」小节 | 4B.1 | ❌ | ❌ |
 | **`acceptance-p3`** | §5 的 DEG-S1–DEG-S4，**朴素横幅形态** | Phase 3 出口 | ❌ | ❌ |
 | **`acceptance-4a4`** | §5 的 DEG-S1–DEG-S4，**设计规格形态**（只改 testid 映射，断言语义不变） | 4A.4 | ❌ | ❌ |
 | **`acceptance-2a`** | DEG-S5 写冲突（本文 §7 已列为不在 1b） | Phase 2a | ❌ | ❌ |
@@ -329,7 +329,11 @@ K1 的 baseline 条是有价值的：它会在**任何人改模板删掉那七�
 | 10 | `live_server` 的 `stdout=subprocess.PIPE` 从不在运行期 drain。管道满 64 KiB 后 uvicorn 卡死在 `write()`，此后每条 `page.goto` 都 30 秒超时。**建账起就潜伏，Wave 2 把套件涨到 35 条才引爆**（实测一轮写 74194 字节） | WI-1（建账时引入） | 2026-09-03 同日结清 | `uv run pytest tests/e2e --browser chromium` 全绿 | **已结清**（改为日志落文件；35 passed / 19.01s，修前 6 failed / 187.12s） |
 | 11 | **`rd-page-prev` / `rd-page-next` 是死表面**：`reader.html` 的基础样式里就是 `.nav-zone-left, .nav-zone-right { display: none; }`（注释写着 keyboard-only navigation），且全仓 live 的 `js/*.js` 无任何绑定——唯一绑定在 `reader.html` **不加载**的 legacy `js/pagination.js` 里。有 testid 却点不动，点它只会等到 actionability 超时。**这不是测试问题**：一个带 testid、带 `title`、占 120px 宽度变量的元素永久不可达，要么补上绑定，要么连同 testid 一起删 | WI-9 / WI-12（2026-09-03 各自独立撞上） | **待定**（前端计划；`rd-page-*` 的去留是产品决定，不是测试决定） | 要么它可点且翻页，要么模板里不再有这两个 testid（届时 `lint_testid_naming.py` 的计数会变） | 未结清 |
 | 12 | **站内导航时 URL 落后于渲染**：`syncLocationToUrl()` 跑在 epub.js 的 `rendered` 回调里，所以点完 `rd-chapter-next` 或 TOC 行的那一刻，地址栏仍是旧章号。**任何先断 URL 的用例都在读陈旧状态**。WI-12 的定向破坏 D4′ 实测：把 URL 期望改成隔壁章号，两个站内分支照样绿；调换成「先断正文、再断 URL」后同一发子弹三条全红 | WI-12（2026-09-03 发现） | **无需修**——这是契约不是缺陷，欠的是**把它写进 helpers 的等待原语**，见第 13 行 | 全仓不存在「点击后立即同步读 `page.url`」的写法 | 记录在案 |
-| 13 | **三个本波产出的 helper 该上收到 `helpers.py`**：`_pathname_is`（等解析后的 pathname 而非 URL glob——TOC 行是 `<a href="#">`，导航后 URL 带尾随 `#`，`wait_for_url` 的 glob 永不匹配、白烧 30s，WI-9 为此花了一轮 spike）；`_reader_frame`（`open_reader` 去掉 `goto` 的那一半，凡「点进来」或站内导航的用例都要，重新 `goto` 会把被测的导航冲掉）；`_scan_annotations` / `_mark_id_union`（与 `test_write_overlap_and_disambiguation.py` 的 `_scan_marks` **已经重复**，两处都刻意在 evaluate 里读 `dataset.annotationIds` 以绕开选择器 lint 的误报——这个取舍该编码一次，不该每模块重新发现一遍） | Wave 3 | **下一个被授权改 `helpers.py` 的 WI**（§0.6 纪律 2：一波至多一个） | `grep -c "def _scan_marks\|def _scan_annotations" tests/e2e/baseline_1b/*.py` == 0 | 未结清 |
+| 13 | **三个本波产出的 helper 该上收到 `helpers.py`**：`_pathname_is`（等解析后的 pathname 而非 URL glob——TOC 行是 `<a href="#">`，导航后 URL 带尾随 `#`，`wait_for_url` 的 glob 永不匹配、白烧 30s，WI-9 为此花了一轮 spike）；`_reader_frame`（`open_reader` 去掉 `goto` 的那一半，凡「点进来」或站内导航的用例都要，重新 `goto` 会把被测的导航冲掉）；`_scan_annotations` / `_mark_id_union`（与 `test_write_overlap_and_disambiguation.py` 的 `_scan_marks` **已经重复**，两处都刻意在 evaluate 里读 `dataset.annotationIds` 以绕开选择器 lint 的误报——这个取舍该编码一次，不该每模块重新发现一遍） | Wave 3 | **下一个被授权改 `helpers.py` 的 WI**（§0.6 纪律 2：一波至多一个） | `grep -c "def _scan_marks\|def _scan_annotations" tests/e2e/baseline_1b/*.py` == 0 | **已结清**（Wave 3.5：`reader_frame` / `pathname_is` / `scan_marks` / `mark_id_union` 已上收，验收 grep 为 0） |
+| 14 | **R-6 拆 a/b 之后 `acceptance-4b1` 由 5 条变 8 条**，`EXPECTED_ACCEPTANCE_ITEMS` 因此从 14 变 17。**本波不改常量**——理由同第 2 行，逐 WI 递增会把 `lint_e2e_groups.py` 变成串行写点。R-6a 在 `baseline-1b` 里仍是三条，`EXPECTED_BASELINE_ITEMS = 61` 不受影响 | Wave 4 前的 R-6 裁定（2026-09-03） | **WI-17（Wave 7）**，与第 2 行同一次落地 | `EXPECTED_ACCEPTANCE_ITEMS == 17` 且四个 acceptance 目录实测合计等于它 | 未结清 |
+| 15 | **字号 ± 与段落间距 ± 四个按钮没有 testid**，R-6a 只能靠中文 `title` 的可访问名（`减小字号` / `放大字号` / `减小间距` / `增大间距`）定位。`get_by_role` 不经过选择器字符串，`lint_e2e_selectors.py` 拦不到——**合规但脆**，中文文案一改 R-6a 即断，且断的时候报的是「找不到元素」而不是「文案改了」 | Wave 4 派活前的实测（2026-09-03） | **4A**（给四个按钮补 testid，与 ADR-0014 的命名规则一致） | R-6a 改用 `get_by_test_id` 且不再出现中文可访问名 | 未结清 |
+| 16 | **一次页面加载会跑两遍 `loadAndRender()`**：`annotations.js` 在 `onContentsReady` 里当场调一次，同时又监听 `reader3:content:rendered`（由 `epub-renderer.js` 必发）触发一个 80ms 去抖的第二次。第二遍先 `clearExistingAnnotationMarks()` → `parent.normalize()`，再重建**数量完全相同**的 `<mark>`，所以「等 `<mark>` 数量到位」这个判据在结构上看不见它。夹在两遍之间装上的 live range 会被 `normalize()` 就地折叠成空 range，`getExistingAnnotationIds` 于是一条都匹配不到。**这是本模块约四成 flaky 的唯一根因**，一次解释了 `test_w5a0` / `test_w5a2` / `test_w5a3` 四个 ID 的三种不同表象 | Wave 3.5 收口时诊断出（2026-09-03） | **无需修**——加载期这是有界瞬态（80ms ＋ 一次 fetch），真实用户选不进这个窗口；欠的是**把它写进等待判据**，已由 `_open_ch0` 的 `wait_for_load_state("networkidle")` 兑付 | `tests/e2e` 连续 9 轮全绿（含 2 轮 CPU 打满），模块单跑 8/8 绿 | **记录在案**（测试侧已挡住） |
+| 17 | **同一双重重绘模式也出现在写入路径，那一侧疑似能伤到真人。** `createAnnotation` / `deleteAnnotations` 各自都已经 `await loadAndRender()`，紧接着 dispatch `reader3:annotations:updated`，而该事件同样被 `scheduleRefresh` 监听 ⇒ 80ms 后再跑一遍多余的 `loadAndRender()`。加载期那一遍只是测试隐患，写入期这一遍意味着**用户在 ~150ms 内连按两个工具栏按钮，第二次操作的 live range 可能被第一次的尾随重绘折叠**——即欠账 #9 那条数据丢失路径的一个真实世界变体。**未验证**，Wave 3.5 只是读代码时注意到，没有去复现 | Wave 3.5 收口时注意到（2026-09-03） | **待定**（前端计划；与欠账 #9 同一批人，建议同一个工作项一起看） | 连按两次工具栏按钮后标注数量与颜色都符合预期，且网络日志里没有 `quote: ""` 的 400 | 未结清 |
 
 #### 欠账 4 的根因订正（2026-09-03）
 
@@ -416,11 +420,41 @@ child frame 内 document.createRange() → 写入 iframe 的 Selection
 | R-3 | 既有标注恢复 | 预置 `notes.json` → 打开章节 → `<mark>` 出现在**预期的那段文字**上（比对 `textContent`，不是数量） |
 | R-4 | 翻章后重绘 | 换章 → 新章高亮数量正确 **且** 旧章高亮不残留（K4 的可失败断言） |
 | R-5 | 阅读页内搜索 | 命中高亮出现——**K5 的第二个消费方是 `search.js`**，这条用例是它唯一的护栏 |
-| R-6 | **改主题/字号/行距后既有标注仍锚定同一段文字** | 设计规格 §6.0 判定标准的**断言 C**。预置标注 → 记录其 CFI → 逐项切换主题、字号、行距 → 每次都重新解析同一条 CFI，`range.toString()` 等于存储的 `quote`；同时 `<mark>` 覆盖的 `textContent` 不变 |
+| R-6a | **改主题/字号/行距后既有标注仍锚定同一段文字**（`baseline-1b`） | 设计规格 §6.0 判定标准的**断言 C**，只取其文本侧：预置标注 → 打开章节 → 逐项切换主题、字号、行距 → 每次 `<mark>` 覆盖的 `textContent` 不变 |
+| R-6b | 同上的 **CFI 侧**（`acceptance-4b1`，skip 形态） | 每次切换后用 `window.ePub.CFI` 重解析存储的 CFI，`range.toString()` 等于存储的 `quote`。⚠️ 今天 `cfi` 恒为 `null`，该断言无对象——拆分理由见下 |
 
 > **R-6 为什么必须存在**：设计规格 §6.0 从一开始就写着「Phase 1b 的 E2E 必须覆盖『改栏宽后既有标注仍能正确高亮』」，但本文此前**没有对应用例**——一条只写在设计文档里、没有落到用例表的门槛等于没有。
 >
-> **参数会随功能增长**：主题、字号、行距三项**今天就存在**（`reader.html` 的 Font Settings + `applyThemeSettings()`），所以 R-6 属 `baseline-1b`。D5 的**正文栏宽**要到 4B.3 才有，届时它作为 R-6 的**第四个参数**加入，而不是新开一组；**4B.3 的退出门槛需包含「R-6 的栏宽参数已启用并绿灯」**。
+> **参数会随功能增长**：主题、字号、行距三项**今天就存在**（`reader.html` 的 Font Settings + `applyThemeSettings()`），所以 R-6a 属 `baseline-1b`。D5 的**正文栏宽**要到 4B.3 才有，届时它作为 R-6a 的**第四个参数**加入，而不是新开一组；**4B.3 的退出门槛需包含「R-6a 的栏宽参数已启用并绿灯」**。
+
+> **R-6 为什么在 2026-09-03 拆成 a / b（Wave 4 派活前的裁定）**：本条与矩阵 §WI-14 都写于
+> 09-01，那时 Input 还写着「预置一条标注**含 `cfi`**——本条与 W-8b/R-3/R-4 相反，它测的正是
+> CFI 路径在重排后的稳定性」。**两天后 WI-7 把这个前提证伪了**：欠账 #6 实测 `cfi` 恒为
+> `null`（`currentContents` 存的是 view 不是 `Contents`，`cfiFromRange` 永不存在），欠账 #8
+> 据此认定 `AnnotationRenderer.render()` 的 CFI 分支是死代码。矩阵没人回头调和这两处。
+>
+> **技术上这条仍跑得起来**——`seed_notes` 能手写一个 CFI 进 `notes.json`，`ePub.CFI` 是独立
+> 解析器、多半解得开。**问题是它跑起来在特征化什么**：一条生产永远不会产生的记录，走一条
+> 生产永远不会执行的分支。按 §0.5 的定性，那不是安全网，是在写期望行为——**期望行为归
+> `acceptance-4b1`**，和 W-5b 一个去处、一个理由。
+>
+> **拆法照 W-5 的成例**：文本侧（断言 b）留 `baseline-1b`，走今天真实生效的纯文本锚定路径，
+> **这条才是护住迁移的那条**；CFI 侧（断言 a）以 skip 形态写进 `acceptance-4b1`，与欠账 #6
+> 的修复同期解开。**条目数不变**：R-6a 仍是「主题 / 字号 / 行距」三个参数项、三条，WI-14 在
+> 矩阵里的配额（3 条）不动；`acceptance-4b1` 由 5 条涨到 8 条，那笔账归 WI-17，见欠账 #14。
+
+> **R-6a 的三个参数在生产里的真实抓手（2026-09-03 实测，覆盖矩阵 §WI-14 的记法）**：
+>
+> - **主题**四态有 testid：`rd-pref-theme-paper` / `-sepia` / `-green` / `-night`。先点
+>   `rd-rail-font` 开面板。
+> - **字号 ± 与间距 ± 没有 testid**，只有 `id` 与中文 `title`，只能靠 `get_by_role` 的可访问名。
+>   矩阵写的名字**三个里错了三个**，以模板为准：字号是 `减小字号` / **`放大字号`**（不是「增大字号」），
+>   间距是 `减小间距` / `增大间距`。
+> - 容器 testid 是 `rd-pref-size` 与 **`rd-pref-leading`**，但后者在 UI 上的标签是**「段落间距」**
+>   而非「行距」。用例命名与 docstring 用「间距」，别沿用矩阵的「行距」——名字对不上时，
+>   下一个人会去找一个不存在的控件。
+> - 这条脆弱性登记为欠账 #15：`get_by_role` 不经过选择器字符串，lint 不拦，**合规但脆**，
+>   中文文案一改本条即断。
 
 > **R-2 / R-4 可用的导航机制（2026-09-02 实测，覆盖此前的记法）**：
 >

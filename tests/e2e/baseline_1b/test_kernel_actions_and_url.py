@@ -113,6 +113,7 @@ from helpers import (  # type: ignore[import-not-found]
     CH1_QUOTE,
     SELECTION_TIMEOUT_MS,
     open_reader,
+    pathname_is,
     read_notes,
     seed_notes,
     select_in_frame,
@@ -168,8 +169,9 @@ K6_EXPECTED_IN_CHAPTER_0 = 0
 # ---------------------------------------------------------------------------
 # 本模块自用的小工具
 #
-# 三个都刻意留在本模块内，不进 `helpers.py`——本波没有任何 WI 被授权改共享文件。
-# 哪些值得日后上收，写在交付报告里。
+# 三个里的 `_pathname_is` 已于 Wave 3.5 上收为 `helpers.pathname_is`（任务书 §0.6 欠账 #13），
+# 剩下两段 JS 常量留在本模块内：它们各自只服务一条用例（K-2 的 ask_ai、K-6a 的翻章哨兵），
+# 没有第二个模块会要。`_served_annotations` 同理——全仓只有本模块调它，不构成重复。
 # ---------------------------------------------------------------------------
 
 #: 在**选区建立之前**装一次性监听器，把 `reader3:ai:ask` 的 detail 存到 window 上。
@@ -186,22 +188,6 @@ _ASK_LISTENER_JS = """() => {
 #: 在翻章之前给 window 打一个标记。`history.replaceState` 不换 document，标记会活下来；
 #: 一旦哪天翻章退化成整页跳转，document 重建，标记消失，这条断言会红。
 _RELOAD_SENTINEL_JS = "() => { window.__k6NoReload = true; }"
-
-
-def _pathname_is(page: Page, expected: str) -> None:
-    """等 URL 的 **pathname** 变成 `expected`，并把它作为断言。
-
-    **为什么不用 `page.wait_for_url("**/read/cjk_data/1")`。** TOC 行是
-    `<a href="#" onclick="findAndGo(…)">`，浏览器在跑完 onclick 之后还是会把 `#` 追加到
-    地址上，最终 URL 是 `…/read/cjk_data/1#`。glob 匹配的是整串，`#` 一挂上去就永远不匹配，
-    表现是 30s 超时而不是「章号不对」——这条弯路在 spike 阶段真的踩到过一次。
-    比对 `new URL(location.href).pathname` 天然把 hash 与 query 排除在外。
-    """
-    page.wait_for_function(
-        "(want) => new URL(window.location.href).pathname === want",
-        arg=expected,
-        timeout=SELECTION_TIMEOUT_MS,
-    )
 
 
 def _served_annotations(page: Page, base_url: str, book_id: str, chapter: int) -> List[Dict[str, Any]]:
@@ -549,7 +535,7 @@ def test_k6a_in_page_chapter_turn_stamps_the_new_chapter(
         f'[data-testid="rd-toc-row"][data-file-href="{K6_TURN_TO_HREF}"]'
     ).click()
 
-    _pathname_is(page, f"/read/{BOOK_ID_CJK}/{K6_EXPECTED_IN_URL_CHAPTER}")
+    pathname_is(page, f"/read/{BOOK_ID_CJK}/{K6_EXPECTED_IN_URL_CHAPTER}")
 
     # 整页跳转会把这个标记连同 document 一起扔掉。它还在，说明改址走的确实是
     # `history.replaceState`——这一条是「站内翻章」这个前提本身的判据。

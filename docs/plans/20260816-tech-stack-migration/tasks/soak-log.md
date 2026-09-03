@@ -26,7 +26,7 @@
   | git hash-object --stdin; } | cut -c1-12
 ```
 
-当前 `suite_hash` 值：`6fac77825ac7`（2026-09-03 实测输出，非誊抄）。
+当前 `suite_hash` 值：`d44d99459b25`（2026-09-03 实测输出，非誊抄）。
 
 **这个值处于 pre-freeze，不是冻结值。** G2 尚未开始，baseline_1b 的 61 条用例也还没写完
 （现在 `baseline_1b` 收集到 46 条：WI-3 的 harness 自测 9 条 ＋ WI-4 的创建路径 3 条 ＋ WI-5 的
@@ -43,6 +43,12 @@
 都在这里先拿到过一个「没变」的旧值（本次为 `06114374b405` → `6672e32e6687`）。
 
 值的变更史（每次改都要写清作废原因，不要只覆盖数字）：
+
+- `d44d99459b25` ← Wave 3.5 的 helper 上收 ＋ 一处 flaky 修复。**用例条数一条没变**（`baseline_1b` 仍 46、`tests/e2e` 仍 53），所以这次作废的不是「测了什么」，而是「怎么等」。
+  - **helper 上收**（兑付欠账 #13）：`reader_frame` / `pathname_is` / `scan_marks` / `mark_id_union` 从三个 `baseline_1b` 模块提进 `helpers.py`，`open_reader` 改为委托 `reader_frame`。纯搬移——`git diff -U0 -- tests/ | grep assert` 全程只有一行变化，且是 `_scan_marks` → `scan_marks` 的改名。`scan_marks` 的返回值是两种旧形态的**超集**（`text`＋`marks` 的文本节点视角，与 `texts`＋`ids`＋`html` 的 `<mark>` 元素视角），两者都返回而不是互相推导，因为一个 `<mark>` 里有多个文本节点时它们会分叉。
+  - **flaky 修复**（欠账 #16）：`test_write_recolor_and_delete.py` 的 `_open_ch0` 加了 `wait_for_load_state("networkidle")` ＋ 一次重复的数量断言。修前该模块约四成概率红；修后全量连绿 9 轮（末两轮 CPU 打满）、模块单跑 8/8 绿。**没有任何断言被删改或放松**，改的只是等待判据。
+  - **代价**：全量耗时 24.51s → **约 42s**。多出来的十几秒全部是等第二遍重绘落定，是买确定性的钱。
+  - 生产代码一行没动（`git diff --stat -- src/ designs/ scripts/ tests/e2e/conftest.py` 为空）。
 
 - `6fac77825ac7` ← Wave 3（WI-9/11/12）三个新模块。**纯用例增量，harness 与语料一行未动**——`conftest.py` / `helpers.py` / `tests/fixtures/*` 这次都没进来，所以作废理由只有一个，比 Wave 2 那次干净。
   - `baseline_1b/test_kernel_actions_and_url.py`（K-2 七个 `data-action` 各一条结果断言 ＋ K-6a 直接进入 ×3 ＋ 站内翻章 ×1，共 **11 条**）、`test_kernel_host_elements.py`（K-1a 宿主齐备 ＋ init 行为证据，共 **2 条**）、`test_read_paths.py`（R-1 ＋ R-2 三机制 ＋ R-3，共 **5 条**）。baseline_1b **28 → 46 条**，`tests/e2e` 全量 **35 → 53 条**，全量耗时 19.01s → **24.51s**。生产代码一行没动（`git diff --stat -- src/ designs/` 为空）。

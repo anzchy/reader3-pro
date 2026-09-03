@@ -1,12 +1,16 @@
 """E2E 共享 helpers —— 全套 W / R / K 用例只从这里取选区、读写 `notes.json`、换算几何。
 
-十个函数，一个都不许在用例里各写一遍：
+十四个函数，一个都不许在用例里各写一遍：
 
     select_in_frame(frame, quote, occurrence=0)   §1 的程序化选区标准路径
     read_notes(books_dir, book_id)                读回 notes.json 的 list[dict]
     seed_notes(books_dir, book_id, annotations)   预置标注（R-3 / R-6 / DEG-S1 用）
     viewport_rect_of_selection(page, frame)       iframe 内 rect → 视口坐标
-    open_reader(page, base_url, book_id, i, txt)  打开阅读器并等到 iframe 里有正文
+    reader_frame(page, expect_text)               已在阅读器页上时等到 iframe 里有正文
+    open_reader(page, base_url, book_id, i, txt)  goto ＋ reader_frame
+    pathname_is(page, expected)                   等 URL 的 pathname 变成 expected
+    scan_marks(frame)                             iframe 内 `<mark>` 的两种视图 ＋ body HTML
+    mark_id_union(scan)                           所有 `<mark>` 的 annotation id 并集
     wait_for_notes(books_dir, book_id, count)     等落库稳定到 count 条
     wait_for_note_text(books_dir, book_id, id, s) 等某条的 note_text 变成 s（PUT 路径用）
     assert_roundtrip(page, books_dir, book_id, …) §0 的「刷新 → 高亮回到同一段文字」收尾
@@ -29,6 +33,15 @@
 `assert_roundtrip` 多了 `expected_count`（默认 1，三个既有调用点行为不变），新增
 `wait_for_note_text`（PUT 改的是内容不是条数，等条数等不到任何东西）。理由分别写在
 两个函数自己的 docstring 里。
+
+**Wave 3.5（2026-09-03）上收了四个 Wave 3 产出的私有 helper**（任务书 §0.6 跨波欠账 #13），
+一次纯搬家，没有一条断言改过：`reader_frame`（`open_reader` 去掉 `goto` 的那一半，`open_reader`
+现在**委托给它**，两处等 iframe 的逻辑只剩一份）、`pathname_is`（等解析后的 pathname，
+理由见它自己的 docstring）、`scan_marks` ＋ `mark_id_union`（`test_read_paths.py` 的
+`_scan_annotations` / `_mark_id_union` 与 `test_write_overlap_and_disambiguation.py` 的
+`_scan_marks` **已经重复**，合并成一个返回两种视图的扫描器）。上收的理由与 Wave 0 同形：
+Wave 4 有三条 WI 并行开工，三条都要点进来 / 站内导航 / 数 `<mark>`，重复两份时只是重复，
+三个 agent 同时改就会漂成三份。
 
 **这个文件不属于任何一个组 marker，但它在 `suite_hash` 的覆盖面内**
 （`docs/plans/20260816-tech-stack-migration/tasks/soak-log.md` 的哈希命令点名了它）：
@@ -53,6 +66,7 @@ from typing import (
     List,
     Mapping,
     Sequence,
+    Set,
     Union,
 )
 
@@ -107,21 +121,59 @@ CH1_ANCHOR = "Beta prose."
 # ---------------------------------------------------------------------------
 
 
-def open_reader(
-    page: "Page", base_url: str, book_id: str, chapter_index: int, expect_text: str
-) -> "FrameLocator":
-    """打开阅读器并等到 iframe 里真的有正文。
+def reader_frame(page: "Page", expect_text: str) -> "FrameLocator":
+    """**已经在阅读器页面上**时，等到 iframe 里真的有正文，产出 `FrameLocator`。
 
     先等外层壳，再等 iframe：壳都没有的话，下面的等待会白等满超时，报出来的是
     「找不到 frame」而不是「页面根本没渲染」——smoke 里已经付过一次这个学费。
+
+    **与 `open_reader` 的区别只有一处：它不 `goto`。** 凡是「点进来」的用例（R-1 从书库点
+    书卡）或站内导航的用例（R-2 的 `rd-chapter-next` 与 TOC 行两支）都必须走这一半：再
+    `goto` 一次就把被测的那次导航冲掉了——用例会绿，但它证明的是 `goto` 能用，不是那个按钮
+    能用。`open_reader` 反过来**委托给本函数**，等 iframe 的逻辑因此只有一份。
     """
     from playwright.sync_api import expect
 
-    page.goto(f"{base_url}/read/{book_id}/{chapter_index}")
     expect(page.get_by_test_id("rd-shell")).to_be_visible()
     frame = page.frame_locator('[data-testid="rd-viewport"] iframe')  # lint-e2e-selectors: allow —— iframe 元素由 epub.js 运行时创建，插不进 testid
     expect(frame.locator("body")).to_contain_text(expect_text)  # lint-e2e-selectors: allow —— iframe 内是用户那本书自己的 XHTML，不是我们的模板
     return frame
+
+
+def open_reader(
+    page: "Page", base_url: str, book_id: str, chapter_index: int, expect_text: str
+) -> "FrameLocator":
+    """`goto` 到 `/read/{book_id}/{chapter_index}`，再等到 iframe 里真的有正文。
+
+    等待那一半在 `reader_frame` 里，本函数只多一个 `goto`。**直接进入**的用例用这个；
+    「点进来」或站内导航的用例用 `reader_frame`。
+    """
+    page.goto(f"{base_url}/read/{book_id}/{chapter_index}")
+    return reader_frame(page, expect_text)
+
+
+def pathname_is(page: "Page", expected: str) -> None:
+    """等 URL 的 **pathname** 变成 `expected`，并把它作为断言。
+
+    **为什么不用 `page.wait_for_url("**/read/cjk_data/1")`。** TOC 行是
+    `<a href="#" onclick="findAndGo(…)">`，浏览器在跑完 onclick 之后还是会把 `#` 追加到
+    地址上，最终 URL 是 `…/read/cjk_data/1#`。glob 匹配的是整串，`#` 一挂上去就永远不匹配，
+    表现是 30s 超时而不是「章号不对」——这条弯路在 spike 阶段真的踩到过一次。
+    比对 `new URL(location.href).pathname` 天然把 hash 与 query 排除在外。
+
+    ⚠️ **URL 落后于渲染，所以本函数不能第一个断**（任务书 §0.6 跨波欠账 #12）。
+    `syncLocationToUrl()` 跑在 epub.js 的 `rendered` 回调里，站内导航（`rd-chapter-next`、
+    TOC 行）点完的那一刻地址栏还是**旧章号**。WI-12 的定向破坏 D4′ 实测到这件事：把 URL
+    期望改成隔壁章号，两个站内分支照样绿——它们读到的确实还是旧地址；把顺序调成
+    「先断正文、再断 URL」之后，同一发子弹三条全红。所以站内导航的用例要先用
+    `reader_frame(page, 期望正文)` 把渲染等出来，再调本函数。本函数自己会重试到超时，
+    这一点不改变上面那条顺序要求：先断 URL 就是在一个陈旧状态上做判断。
+    """
+    page.wait_for_function(
+        "(want) => new URL(window.location.href).pathname === want",
+        arg=expected,
+        timeout=SELECTION_TIMEOUT_MS,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -340,6 +392,116 @@ def clear_selection_and_drain(page: "Page", frame: "FrameLocator") -> None:
         arg=SELECTION_DEBOUNCE_MS + SELECTION_DEBOUNCE_SLACK_MS,
         timeout=SELECTION_TIMEOUT_MS,
     )
+
+
+# ---------------------------------------------------------------------------
+# 读 DOM：iframe 内的 `<mark>`
+# ---------------------------------------------------------------------------
+
+# **为什么在 evaluate 里读 `dataset.annotationIds`，而不是 `getAttribute("data-annotation-ids")`。**
+# 后者会被 `scripts/lint_e2e_selectors.py` 的 `LOCATOR_CALL_RE` 当成一处选择器扫到——它匹配
+# `.getAttribute(` 后面那个字符串实参，于是把属性名当成选择器，报「含非 data-* 属性选择器
+# 的部分」。那是一次**误报**，但让它误报再逐行 `# lint-e2e-selectors: allow`，等于拿这条 lint
+# 的信噪比去换一行方便；`dataset` 是等价 API，更便宜。
+#
+# 这个取舍原先在 `test_read_paths.py` 与 `test_write_overlap_and_disambiguation.py` **各写
+# 了一遍**（两处都是各自独立发现的）。编码在这里一次，是为了下一个要数 `<mark>` 的模块不必
+# 第三次重新发现它——它一旦被重新发现，多半是在「为什么 lint 红了」那一步，而不是在读注释。
+_SCAN_MARKS_JS = r"""
+() => {
+  const body = document.body;
+  const doc = body.ownerDocument;
+
+  // --- 视图一：body 文本轴 ＋ 逐文本节点的分段 --------------------------------
+  // 位置一律用「body 文本里的字符偏移」表达，绝不用「第几个 `<mark>`」：章内只有一个
+  // `<mark>` 时，「第 0 个 `<mark>` 的文本等于 quote」是一句恒真，一个「永远高亮第一处」
+  // 的实现照样绿（W-10 靠偏移把它咬住）。
+  //
+  // 走 TreeWalker(SHOW_TEXT) 而不是 `body.textContent`：两者在今天的语料上同解，但前者与
+  // 生产端 `buildTextIndex` 的取文本方式一致，不会因为将来有人往 body 里注入 `<style>`
+  // 而两边错位。
+  const walker = doc.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+  const marks = [];
+  let text = "";
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    const start = text.length;
+    text += node.data;
+    const parent = node.parentElement;
+    // `closest` 取的是**最内层**的那个 `<mark>`：applySegments 产出的三段是兄弟节点，
+    // 各含一个文本节点，于是这里一个文本节点恰好对应一段，顺序即 DOM 顺序。
+    const host = parent ? parent.closest('[data-testid="rd-anno-span"]') : null;
+    if (!host) continue;
+    let ids = null;
+    try {
+      ids = JSON.parse(host.dataset.annotationIds || "[]");
+    } catch (err) {
+      ids = null;  // 解析不出来就交给 Python 侧报，别在这里吞掉
+    }
+    marks.push({ text: node.data, start, end: start + node.data.length, ids,
+                 raw: host.dataset.annotationIds });
+  }
+
+  // --- 视图二：逐 `<mark>` 元素 -------------------------------------------------
+  // 与视图一的分段不是一回事：视图一按文本节点切，视图二按元素数。R-3 的「文本序列 ==
+  // ['Alpha prose']」要的是后者——「同一段文字渲染了两遍」在元素数上显形，在分段上不一定。
+  const spans = Array.from(body.querySelectorAll('[data-testid="rd-anno-span"]'));
+
+  return {
+    text,
+    marks,
+    texts: spans.map((m) => m.textContent),
+    // 每个 `<mark>` 的 id 列表原样带回；解析不出来就把生串交给 Python 侧报，别在这里吞。
+    ids: spans.map((m) => m.dataset.annotationIds || null),
+    // 「某个 id 不出现在 DOM 的任何位置」这条判据要的是整份 HTML，不只是 `<mark>` 上那些
+    // 属性——一个把 id 写进别的属性、或写进注释里的实现，同样算「渲染了它」。
+    html: body.innerHTML,
+  };
+}
+"""
+
+
+def scan_marks(frame: "FrameLocator") -> Dict[str, Any]:
+    """iframe 内 `rd-anno-span` 的**两种视图**，外加 body 的整份 HTML。
+
+    返回::
+
+        {
+          "text":  str,                 # body 的连续文本轴（TreeWalker(SHOW_TEXT) 拼起来的）
+          "marks": [{"text", "start", "end", "ids", "raw"}, …],   # 逐文本节点的分段，DOM 顺序
+          "texts": [str, …],            # 逐 `<mark>` 元素的 textContent
+          "ids":   [str | None, …],     # 逐 `<mark>` 元素的 `data-annotation-ids` 生串
+          "html":  str,                 # body.innerHTML
+        }
+
+    ``marks`` 里的 ``start`` / ``end`` 是在 ``text`` 上的字符偏移；重叠标注被
+    ``applySegments`` 切成的每一段各占一项。``texts`` / ``ids`` 则是**按元素**数，
+    两种视图在「一个 `<mark>` 含多个文本节点」时会分叉——所以两种都带回来，由调用方按
+    自己的判据挑，而不是在这里替它选一个。
+
+    合并自 `test_read_paths.py` 的 `_scan_annotations` 与
+    `test_write_overlap_and_disambiguation.py` 的 `_scan_marks`（任务书 §0.6 欠账 #13）。
+    """
+    return frame.locator("body").evaluate(_SCAN_MARKS_JS)  # lint-e2e-selectors: allow —— iframe 内是用户那本书自己的 XHTML，不是我们的模板
+
+
+def mark_id_union(scan: Dict[str, Any]) -> Set[str]:
+    """所有 `<mark>` 的 `data-annotation-ids` 并集（按元素，即 ``scan["ids"]``）。解析失败当场抛，不吞。"""
+    union: Set[str] = set()
+    for raw in scan["ids"]:
+        if raw is None:
+            raise AssertionError(
+                "某个 `rd-anno-span` 上没有 `data-annotation-ids`。"
+                "`render()` / `applySegments` 改过这个属性的写法？"
+            )
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise AssertionError(
+                f"`data-annotation-ids` 不是合法 JSON：{raw!r}（{exc}）"
+            ) from exc
+        union |= set(parsed)
+    return union
 
 
 # ---------------------------------------------------------------------------

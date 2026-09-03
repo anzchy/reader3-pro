@@ -39,7 +39,7 @@
 | **0** | `007-hygiene-and-contracts` | Phase 0 | 后端 | **✅** 2026-08-24 合入（PR #18） | [tasks/007](20260816-tech-stack-migration/tasks/007-hygiene-and-contracts.md) |
 | **1** | `008-test-safety-net` | Phase 1a | 后端 | **✅** 2026-08-26 合入（PR #19） | [tasks/008](20260816-tech-stack-migration/tasks/008-test-safety-net.md) |
 | **1.5** | *(009 harness spike)* | — | — | **✅** 2026-08-26 完成（`36a6ac2` 落在 `master`，lint 收尾 `7ed87e1`） | 本文 §2 的 P-2 |
-| **2** | `009-e2e-annotations` | Phase 1b | 后端 | **🚧** 2026-09-03：Wave 0–3 完成。写路径 W-1…W-10、核心 K-1a/K-2/K-6a、读路径 R-1…R-3 全部落地，`baseline_1b` **46 / 61 条**（`tests/e2e` 全量 53 条，24.51s 全绿）。下一步 Wave 4 | [tasks/009](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
+| **2** | `009-e2e-annotations` | Phase 1b | 后端 | **🚧** 2026-09-03：Wave 0–3.5 完成。写路径 W-1…W-10、核心 K-1a/K-2/K-6a、读路径 R-1…R-3 全部落地，`baseline_1b` **46 / 61 条**（`tests/e2e` 全量 53 条，约 42s，连绿 9 轮）。Wave 3.5 上收了四个 helper 并修掉一处约四成概率的 flaky。下一步 Wave 4 | [tasks/009](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
 | **3** | `011-backend-refactor` | Phase 2a+2b | 后端 | **⬛** 计划未写（故意，见[迁移计划 §9](20260816-tech-stack-migration/plan-tech-stack-migration.md)） | — |
 | **⟂** | `010-design-degradation-states` | Track D | **前端** | **⬜** WI-1 – WI-8 已定义 | [前端计划 §4](20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) |
 | **4** | `012-storage-format` | Phase 3 | 后端 | **⬛** 计划未写 | — |
@@ -62,10 +62,17 @@
 > 「实测 == 61」这条断言被**故意**推迟到 WI-17——每个 WI 都去加一次常量，那个脚本就成了
 > 13 条 WI 的串行写入点，并行当场作废。不要顺手把它提前。
 >
-> **已完成**（Wave 0–3）：基础设施与台账（五个 marker 家族、`soak-log.md`）、harness 自测、
-> **全部写路径** W-1…W-10、核心路径 K-1a/K-2/K-6a、读路径 R-1…R-3。`suite_hash` 现为
-> `6fac77825ac7`，处于 **pre-freeze**——**G2 的 soak 计数尚未开始，首行落账之前台账不构成
-> 对 G2 的任何宣称。**
+> **已完成**（Wave 0–3.5）：基础设施与台账（五个 marker 家族、`soak-log.md`）、harness 自测、
+> **全部写路径** W-1…W-10、核心路径 K-1a/K-2/K-6a、读路径 R-1…R-3，以及 Wave 3.5 的 helper
+> 上收（`reader_frame` / `pathname_is` / `scan_marks` / `mark_id_union`，兑付欠账 #13）。
+> `suite_hash` 现为 `d44d99459b25`，处于 **pre-freeze**——**G2 的 soak 计数尚未开始，首行
+> 落账之前台账不构成对 G2 的任何宣称。**
+>
+> **Wave 3.5 顺带清掉了一处挡在 Wave 4 前面的 flaky。** 该模块修前约四成概率红，根因是一次
+> 页面加载会跑**两遍** `loadAndRender()`，第二遍的 `normalize()` 会折叠测试刚装上的选区。
+> 判据由「等 `<mark>` 数量」换成「等网络静默」后，全量连绿 9 轮（末两轮 CPU 打满）。
+> **这必须先清**：Wave 4 要同时开三个 agent，并行只会加剧争用，三份验证跑各自随机见红。
+> 代价是全量耗时 24.51s → 约 42s。详见欠账 #16 / #17。
 >
 > **Wave 4 的三条**同样只加用例、无共享写入点：WI-13（R-4/R-5）、WI-14（R-6）、WI-15（X-2）。
 > 纪律 3 仍然生效——写用例可以并行，**跑门禁必须串行**（`state.json` 与 `receipts.json`
