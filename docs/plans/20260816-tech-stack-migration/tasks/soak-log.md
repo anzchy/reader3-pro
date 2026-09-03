@@ -26,7 +26,7 @@
   | git hash-object --stdin; } | cut -c1-12
 ```
 
-当前 `suite_hash` 值：`777174826be2`（2026-09-03 实测输出，非誊抄）。
+当前 `suite_hash` 值：`5e3da7c797f6`（2026-09-03 实测输出，非誊抄）。
 
 **这个值处于 pre-freeze，不是冻结值。** G2 尚未开始，baseline_1b 的 22 条用例也还没写完
 （现在 `baseline_1b` 收集到 14 条：WI-3 的 harness 自测 9 条 ＋ WI-4 的创建路径 3 条 ＋ WI-5 的
@@ -39,6 +39,7 @@
 
 值的变更史（每次改都要写清作废原因，不要只覆盖数字）：
 
+- `5e3da7c797f6` ← `tests/e2e/conftest.py` 新增 `context` fixture，把浏览器的出网掐到只剩被测服务。**用例条数没变**（仍是 baseline_1b 14 条 / `tests/e2e` 21 条），断言一条没动，变的是用例在什么网络条件下跑——这恰恰是让它作废的理由：改之前，这套用例的绿依赖于跑它的人能连上 `fonts.googleapis.com`，改之后不依赖了，两次「21 passed」不是同一套条件下的同一件事。全量耗时 32s → **14.07s**，差额就是原先真的去取了那两个字体域。
 - `777174826be2` ← §0 第六条纪律落地：`helpers.py` 新增 `assert_bystanders_unchanged`（旁观条守恒从「各用例就地写一行 assert」抽成共用函数），W-7 改为调用它。**用例条数没变**（仍是 14 条），断言语义也没变（整字典等值原样），变的是它住在哪里——抽出来是为了让 `tests/unit/test_e2e_bystander_discipline.py` 有一个 grep 得到的名字可查。同 Wave 0，纯搬家一样让哈希作废。
 - `6672e32e6687` ← Wave 1（WI-5）：新增 `baseline_1b/test_write_note_editor.py`（W-4 / W-7 两条，12 → 14 条），同时改 `helpers.py`——`assert_roundtrip` 加 `expected_count`（默认 1，三个既有调用点行为不变）、新增 `wait_for_note_text` 与 `_pick_target`。**两个被 hash 覆盖的文件同时改**，既有条数变了、既有文件内容也变了，两个理由各自都足以让旧值作废。（同批还改了 `scripts/lint_e2e_selectors.py`，但它**不在** hash 命令的文件清单内，不构成本次作废的原因——它的影响是扫描面 14 → 20 处，记在下面一段。）
 - `06114374b405` ← Wave 0 的 helper 上收：四个私有 helper 从两个 baseline 模块提进 `helpers.py`，**三个被 hash 覆盖的文件同时改**。用例条数没变（前后都是 19 条、断言集合逐条比对无增删改），变的只是它们住在哪个文件里——`suite_hash` 覆盖的是文件内容而不是用例条数，所以纯搬家一样让它作废。

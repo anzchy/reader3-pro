@@ -25,6 +25,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+from urllib.parse import urlparse
 from typing import Callable, Iterator, Optional, Tuple
 
 import pytest
@@ -251,3 +252,49 @@ def live_server(e2e_books_dir: Path) -> Iterator[str]:
         except subprocess.TimeoutExpired:
             server.kill()
             server.wait(timeout=10)
+
+
+#: 服务跑在内核分配的空闲端口上，主机名恒为这三者之一。
+_LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+@pytest.fixture
+def context(context):  # type: ignore[no-untyped-def]
+    """把浏览器的出网掐掉：只放行打到被测服务的请求。
+
+    **这不是加固，是修一个真发生过的整套挂掉。** `reader.html` 与 `library.html` 的
+    `<head>` 里各有一组指向 `fonts.googleapis.com` / `fonts.gstatic.com` 的
+    `<link rel="stylesheet">`。它阻塞渲染，因而也阻塞 `load`——够不到那个域的机器上，
+    `page.goto(..., wait_until="load")` 会**每次都**挂满 30 秒超时，然后整条用例红。
+    2026-09-03 本机就这样：16 条用例各挂 30 秒，一轮 545 秒，而同一个 commit
+    二十分钟前还是 21 passed / 32s。排查时最误导人的一点是 `curl` 说这个域可达——
+    curl 走的是环境变量 `http_proxy`，chromium 走的是**系统代理**，两条路不是同一条。
+
+    **为什么按「非本机一律 abort」写，而不是把那两个字体域列进黑名单。** 黑名单只挡
+    今天已知的两个域；真正要钉的不变式是「e2e 只跟被测服务说话」。往模板里新加一个
+    CDN 依赖，黑名单写法会让它继续走真网络——通了就悄悄通过（于是用例的绿依赖于跑它
+    的人能上外网），不通就又是一轮 30 秒 × N。白名单写法让它立刻、确定地失败在
+    「资源没加载」上，而不是失败在超时上，且失败信息里带着被拦的 URL。
+
+    **为什么是 abort 而不是 fulfill 一个空响应。** 空 CSS 也是一次成功加载，页面会
+    当作字体已就位；abort 让浏览器走它本来就有的降级路径（回落到 `font-family` 列表
+    里的下一个），这才是没有外网时用户真实看到的那一页。
+
+    非 http(s) 的 scheme（`data:` / `blob:`，epub.js 渲染正文时大量使用）一律放行——
+    它们根本不出网，拦它们只会把渲染打断。
+    """
+    blocked: set[str] = set()
+
+    def _gate(route, request) -> None:  # type: ignore[no-untyped-def]
+        parsed = urlparse(request.url)
+        if parsed.scheme not in ("http", "https") or parsed.hostname in _LOCAL_HOSTS:
+            route.continue_()
+            return
+        blocked.add(f"{parsed.scheme}://{parsed.netloc}")
+        route.abort()
+
+    context.route("**/*", _gate)
+    yield context
+    if blocked:
+        # 只报不判：拦掉哪些外部域是**事实**，该不该有是设计决定，不该由这里替谁做。
+        print(f"\n[e2e] 已拦下的外部请求域：{sorted(blocked)}")

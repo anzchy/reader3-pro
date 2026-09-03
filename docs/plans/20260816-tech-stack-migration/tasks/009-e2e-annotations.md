@@ -317,7 +317,27 @@ K1 的 baseline 条是有价值的：它会在**任何人改模板删掉那七�
 | 1 | W-5a-⓪ 的 docstring 要写一条指回 W-7 的反向指针（W-7 那一侧已写好，按用例号 ＋ WI 号引用，没猜文件名） | WI-5 | **WI-6（Wave 2）** | `grep -l "test_w7_editing_a_note" tests/e2e/baseline_1b/` 能命中 WI-6 的模块 | 未结清 |
 | 2 | `EXPECTED_BASELINE_ITEMS = 61` 的「实测 == 61」断言（全程刻意不逐 WI 递增，否则 `lint_e2e_groups.py` 会变成 13 路串行写点） | §0.6 的并行前提 | **WI-17（Wave 7）** | 断言存在且实测条数等于常量 | 未结清 |
 | 3 | `soak-log.md` 的 `suite_hash` 变更史每波追加一行，写清作废原因 | 每一波 | **下一波收口时** | 变更史首行的哈希 == 当前实测值 | 滚动 |
-| 4 | W-7 改用 `assert_bystanders_unchanged` 之后**没跑过 e2e**——落地当天本机 swap 11.1G/12G，chromium 的 `page.goto` 稳定 30s 超时。已确认是环境而非改动：**同一条用例在 stash 掉全部改动的 HEAD 上一样红**，而二十分钟前同一个 commit 是 21 passed / 32s | 2026-09-03 | **下一次 e2e 可跑时（push 之前）** | `uv run pytest tests/e2e --browser chromium` 回到 21 passed | 未结清 |
+| 4 | W-7 改用 `assert_bystanders_unchanged` 之后**没跑过 e2e** | 2026-09-03 | 同日结清 | `uv run pytest tests/e2e --browser chromium` == 21 passed | **已结清**（21 passed / 14.07s） |
+| 5 | 生产模板仍硬依赖 Google Fonts CDN：`reader.html` 与 `library.html` 的 `<head>` 各有一组指向 `fonts.googleapis.com` / `fonts.gstatic.com` 的阻塞式 `<link>`。对一个**本地自托管的离线阅读器**来说，断网或够不到该域时首屏字体直接降级。e2e 已由 `context` 网关掐掉，**生产未修**——已知代价、显式推迟，不是遗漏 | 2026-09-03 | **待定**（需先决定自托管字体 vs 接受降级） | `tests/unit/test_frontend_external_hosts.py` 的 `EXPECTED_EXTERNAL_HOSTS` 变成空集且仍绿（该用例两个方向都红：新增未登记的域红，白名单留下已无人使用的域也红——所以兑付时删模板必须同步删登记） | 未结清 |
+
+#### 欠账 4 的根因订正（2026-09-03）
+
+原记录把根因写成「本机 swap 11.1G/12G，chromium 在重度换页下加载不动」。**这是错的**，
+连同当时那条看起来很有力的隔离证据一起错——「stash 掉全部改动、在 HEAD 上一样红」只证明了
+**不是改动引起的**，它对「是内存引起的」一点支持都没有，我当时把这两件事混为一谈了。
+
+实际根因：**chromium 够不到 `fonts.googleapis.com`**。两个模板的 `<head>` 里有阻塞渲染的
+字体 `<link>`，该请求 30 秒超时 → 整页 `load` 事件永不到达 → 每条要开页面的用例各挂 30 秒
+（16 × 30s ≈ 545s，与实测的 545.03s 吻合）。
+
+排查中被证伪的两条，记下来是因为它们各自都长得很像根因：
+
+* **内存**：chromium 冷启动实测 0.26s，`goto about:blank` 0.01s。浏览器毫无问题。
+* **磁盘**：清出 44 GB（可用 25Gi → 69Gi）之后，故障**一模一样**。
+
+最误导人的一步是用 `curl` 测那个域，得到「可达、0.7s」。**`curl` 走环境变量 `http_proxy`
+（:7890），chromium 走系统代理（:10808），两条路不是同一条。**下次测「浏览器能不能连上某个
+域」，必须用浏览器测：`page.goto(那个 URL)`，不要用 curl 代打。
 
 ⚠️ **取 `suite_hash` 前必须先 `git add`。** 那条命令读的是**索引**不是工作区，新用例文件在
 `git add` 之前对 `git ls-files -s` 根本不存在。WI-4、Wave 0、WI-5 三次都先拿到过一个「没变」
