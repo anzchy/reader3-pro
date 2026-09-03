@@ -26,18 +26,28 @@
   | git hash-object --stdin; } | cut -c1-12
 ```
 
-当前 `suite_hash` 值：`355afedd106b`（2026-09-03 实测输出，非誊抄）。
+当前 `suite_hash` 值：`6fac77825ac7`（2026-09-03 实测输出，非誊抄）。
 
 **这个值处于 pre-freeze，不是冻结值。** G2 尚未开始，baseline_1b 的 61 条用例也还没写完
-（现在 `baseline_1b` 收集到 28 条：WI-3 的 harness 自测 9 条 ＋ WI-4 的创建路径 3 条 ＋ WI-5 的
-笔记创建/编辑 2 条 ＋ Wave 2 的 14 条；`tests/e2e` 全量 35 条，差额是白名单里的 smoke 与 testid
-唯一性），后面每落一条用例它都会变。写在这里是免得后来者拿今天这个值当冻结值。
+（现在 `baseline_1b` 收集到 46 条：WI-3 的 harness 自测 9 条 ＋ WI-4 的创建路径 3 条 ＋ WI-5 的
+笔记创建/编辑 2 条 ＋ Wave 2 的 14 条 ＋ Wave 3 的 18 条；`tests/e2e` 全量 53 条，差额是白名单
+里的 smoke 与 testid 唯一性），后面每落一条用例它都会变。写在这里是免得后来者拿今天这个值
+当冻结值。
+
+**「61」是目标，不是当前计数。** `scripts/lint_e2e_groups.py` 的 `EXPECTED_BASELINE_ITEMS`
+从 WI-1 起就写着 61，且**故意**不随每个 WI 递增——递增会把那个脚本变成 13 路串行写入点，
+波内并行当场作废。「实测 == 61」这条断言归 WI-17，在最后一次落地。
 
 **取值前必须先 `git add`。** 上面这条命令读的是**索引**，不是工作区：新用例文件在 `git add`
 之前对 `git ls-files -s` 根本不存在，改过的 `helpers.py` 也仍报旧内容。WI-4、Wave 0、WI-5 三次
 都在这里先拿到过一个「没变」的旧值（本次为 `06114374b405` → `6672e32e6687`）。
 
 值的变更史（每次改都要写清作废原因，不要只覆盖数字）：
+
+- `6fac77825ac7` ← Wave 3（WI-9/11/12）三个新模块。**纯用例增量，harness 与语料一行未动**——`conftest.py` / `helpers.py` / `tests/fixtures/*` 这次都没进来，所以作废理由只有一个，比 Wave 2 那次干净。
+  - `baseline_1b/test_kernel_actions_and_url.py`（K-2 七个 `data-action` 各一条结果断言 ＋ K-6a 直接进入 ×3 ＋ 站内翻章 ×1，共 **11 条**）、`test_kernel_host_elements.py`（K-1a 宿主齐备 ＋ init 行为证据，共 **2 条**）、`test_read_paths.py`（R-1 ＋ R-2 三机制 ＋ R-3，共 **5 条**）。baseline_1b **28 → 46 条**，`tests/e2e` 全量 **35 → 53 条**，全量耗时 19.01s → **24.51s**。生产代码一行没动（`git diff --stat -- src/ designs/` 为空）。
+  - **本波实测到一处与既有记述冲突的事实，记在这里因为它会影响「同一套用例」的解读**：`rd-page-prev` / `rd-page-next` 是**死表面**——`reader.html` 的基础样式里就是 `display: none`（注释写着 keyboard-only navigation），且全仓 live 的 `js/*.js` 无任何绑定，唯一绑定在 `reader.html` 根本不加载的 legacy `js/pagination.js` 里。任何点它的用例只会等到 actionability 超时。R-2 的「三种导航机制」因此实际是 `rd-chapter-next`（站内，`<a href>` 被 `preventDefault` 截住）、TOC 行 `findAndGo()`（站内）、直接 `goto`（整页），而**不是**生成的 plan 里写的 `rd-page-next`。
+  - **另一处实测契约**：站内导航时 **URL 落后于渲染**。`syncLocationToUrl()` 跑在 epub.js 的 `rendered` 回调里，所以点完 `rd-chapter-next` 或 TOC 行的那一刻，地址栏还是旧章号。WI-12 的定向破坏 D4′ 就是这么发现的：把 URL 期望改成隔壁章号，两个站内分支**照样绿**——因为断言执行时 URL 确实还是旧的。调换成「先断正文、再断 URL」之后同一发子弹三条全红。**任何先断 URL 的用例都在读陈旧状态。**
 
 - `355afedd106b` ← Wave 2（WI-6/7/8）三个新模块 ＋ `tests/e2e/conftest.py` 的服务日志改道。**两个理由各自都足以让旧值作废，这里一并记。**
   - **用例增量**：`baseline_1b/test_write_recolor_and_delete.py`（W-5a-⓪①②③ ＋ W-6，5 个 def → 8 条参数化）、`test_write_overlap_and_disambiguation.py`（W-8a/8b、W-10a/10b 共 4 条）、`test_write_cjk_boundary.py`（W-9a/9b 共 2 条）。baseline_1b **14 → 28 条**，`tests/e2e` 全量 **21 → 35 条**。生产代码一行没动（`git diff --stat` 为空）。

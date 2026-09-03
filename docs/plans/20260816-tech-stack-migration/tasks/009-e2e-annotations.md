@@ -241,7 +241,10 @@ K1 的 baseline 条是有价值的：它会在**任何人改模板删掉那七�
 > （矩阵，最高权威）与 `.claude/tdd-guardian/plan-20260901-122813.md`（生成计划，最低权威，
 > 已知在 WI-6 一处过期）；本节只引用编号，不复述内容。
 >
-> **WI-1…WI-4 已完成**（基础设施、台账、harness、W-1/W-2/W-3 创建路径），下表是剩下的 13 条。
+> **进度（2026-09-03）**：Wave 0 / 1 / 2 / 3 已完成，**WI-1…WI-9、WI-11、WI-12 已落地**。
+> 写路径 W-1…W-10 全部就位；契约 K-1a / K-2 / K-6a 与读路径 R-1…R-3 本波补齐。
+> `baseline_1b` **46 / 61 条**（`tests/e2e` 全量 53 条，24.51s 全绿）。**下一波是 Wave 4**
+> （WI-13、WI-14、WI-15）。
 
 ### 为什么并行是可行的
 
@@ -263,14 +266,14 @@ K1 的 baseline 条是有价值的：它会在**任何人改模板删掉那七�
 
 | 波 | WI | 并行度 | 为什么这么排 |
 |---|---|:--:|---|
-| **Wave 0** | helper 上收（无 WI 编号） | 1 | 见下 |
-| **Wave 1** | WI-5 | 1（探针） | 见下 |
-| **Wave 2** | WI-6、WI-7、WI-8 | 3 | 写路径收尾。三条各建自己的模块，互不相干；WI-8 要的 CJK 语料（`build_cjk` / `cjk_data`）在 WI-3 已经进 conftest，所以它不碰共享文件 |
-| **Wave 3** | WI-9、WI-11、WI-12 | 3 | 契约（K-2/K-6a、K-1a）＋ 读路径基础（R-1…R-3）。都只读标注，不改写路径 |
-| **Wave 4** | WI-13、WI-14、WI-15 | 3 | R-4/R-5、R-6、X-2。同上 |
+| ~~**Wave 0**~~ ✅ | helper 上收（无 WI 编号） | 1 | 见下 |
+| ~~**Wave 1**~~ ✅ | WI-5 | 1（探针） | 见下 |
+| ~~**Wave 2**~~ ✅ | WI-6、WI-7、WI-8 | 3 | 写路径收尾。三条各建自己的模块，互不相干；WI-8 要的 CJK 语料（`build_cjk` / `cjk_data`）在 WI-3 已经进 conftest，所以它不碰共享文件 |
+| ~~**Wave 3**~~ ✅ | WI-9、WI-11、WI-12 | 3 | 契约（K-2/K-6a、K-1a）＋ 读路径基础（R-1…R-3）。都只读标注，不改写路径 |
+| **Wave 4** ⬅ **下一波** | WI-13、WI-14、WI-15 | 3 | R-4/R-5、R-6、X-2。同上 |
 | **Wave 5** | WI-10 | 1（独占） | 见下 |
 | **Wave 6** | WI-16 | 1（独占） | 唯一要改 `tests/e2e/conftest.py` 的一条（桩 provider 的 server env）。conftest 是 session 级 fixture 的定义处，改它会影响同时在跑的每一条用例 |
-| **Wave 7** | WI-17 | 1（独占） | 11 条 skip 形态用例 ＋ 分组存量守卫 ＋「实际 == 61」。它的断言的分母是前六波的全部产出，任何一条没落地它就红。**必须最后，且必须在 Wave 6 的门禁绿之后** |
+| **Wave 7** | WI-17 | 1（独占） | 14 条 skip 形态用例 ＋ 分组存量守卫 ＋「实际 == 61」。它的断言的分母是前六波的全部产出，任何一条没落地它就红。**必须最后，且必须在 Wave 6 的门禁绿之后** |
 
 **Wave 0 为什么必须先于一切**：`_open_reader` 与 `_wait_for_notes` **今天已经在两个模块里各有一份**
 （`baseline_1b/test_harness_helpers.py` 与 `baseline_1b/test_write_create_annotations.py` 各自都定义了这两个私有函数）。两份的时候还只是
@@ -324,6 +327,9 @@ K1 的 baseline 条是有价值的：它会在**任何人改模板删掉那七�
 | 8 | `AnnotationRenderer.render()` 的 CFI 分支**零覆盖**——因第 6 行它今天是死代码。补它需要第 5 条用例，会让 `EXPECTED_BASELINE_ITEMS = 61` 变动，因此不能在 Wave 2 里就地补 | WI-7 | **WI-17（Wave 7）**，且**必须排在第 6 行修完之后** | 该分支有用例覆盖，且常量与实测条数同步更新 | 未结清 |
 | 9 | **改色 wavy / underline 会静默丢数据**（删成功、建失败、剩 0 条），根因与复现见 §3 W-5a 下方的订正段。W-5a-③ 今天把这个行为特征化下来了，**但没修** | WI-6（2026-09-03 发现） | **4B.1 / 前端 WI-14**，且应排在 W-5b 解 skip 之前 | 改色后选区上仍有且只有 1 条标注；W-5a-③ 转红即为正确的红，改法是删掉该用例而非改断言 | 未结清 |
 | 10 | `live_server` 的 `stdout=subprocess.PIPE` 从不在运行期 drain。管道满 64 KiB 后 uvicorn 卡死在 `write()`，此后每条 `page.goto` 都 30 秒超时。**建账起就潜伏，Wave 2 把套件涨到 35 条才引爆**（实测一轮写 74194 字节） | WI-1（建账时引入） | 2026-09-03 同日结清 | `uv run pytest tests/e2e --browser chromium` 全绿 | **已结清**（改为日志落文件；35 passed / 19.01s，修前 6 failed / 187.12s） |
+| 11 | **`rd-page-prev` / `rd-page-next` 是死表面**：`reader.html` 的基础样式里就是 `.nav-zone-left, .nav-zone-right { display: none; }`（注释写着 keyboard-only navigation），且全仓 live 的 `js/*.js` 无任何绑定——唯一绑定在 `reader.html` **不加载**的 legacy `js/pagination.js` 里。有 testid 却点不动，点它只会等到 actionability 超时。**这不是测试问题**：一个带 testid、带 `title`、占 120px 宽度变量的元素永久不可达，要么补上绑定，要么连同 testid 一起删 | WI-9 / WI-12（2026-09-03 各自独立撞上） | **待定**（前端计划；`rd-page-*` 的去留是产品决定，不是测试决定） | 要么它可点且翻页，要么模板里不再有这两个 testid（届时 `lint_testid_naming.py` 的计数会变） | 未结清 |
+| 12 | **站内导航时 URL 落后于渲染**：`syncLocationToUrl()` 跑在 epub.js 的 `rendered` 回调里，所以点完 `rd-chapter-next` 或 TOC 行的那一刻，地址栏仍是旧章号。**任何先断 URL 的用例都在读陈旧状态**。WI-12 的定向破坏 D4′ 实测：把 URL 期望改成隔壁章号，两个站内分支照样绿；调换成「先断正文、再断 URL」后同一发子弹三条全红 | WI-12（2026-09-03 发现） | **无需修**——这是契约不是缺陷，欠的是**把它写进 helpers 的等待原语**，见第 13 行 | 全仓不存在「点击后立即同步读 `page.url`」的写法 | 记录在案 |
+| 13 | **三个本波产出的 helper 该上收到 `helpers.py`**：`_pathname_is`（等解析后的 pathname 而非 URL glob——TOC 行是 `<a href="#">`，导航后 URL 带尾随 `#`，`wait_for_url` 的 glob 永不匹配、白烧 30s，WI-9 为此花了一轮 spike）；`_reader_frame`（`open_reader` 去掉 `goto` 的那一半，凡「点进来」或站内导航的用例都要，重新 `goto` 会把被测的导航冲掉）；`_scan_annotations` / `_mark_id_union`（与 `test_write_overlap_and_disambiguation.py` 的 `_scan_marks` **已经重复**，两处都刻意在 evaluate 里读 `dataset.annotationIds` 以绕开选择器 lint 的误报——这个取舍该编码一次，不该每模块重新发现一遍） | Wave 3 | **下一个被授权改 `helpers.py` 的 WI**（§0.6 纪律 2：一波至多一个） | `grep -c "def _scan_marks\|def _scan_annotations" tests/e2e/baseline_1b/*.py` == 0 | 未结清 |
 
 #### 欠账 4 的根因订正（2026-09-03）
 

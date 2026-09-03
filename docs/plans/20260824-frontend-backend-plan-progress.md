@@ -39,7 +39,7 @@
 | **0** | `007-hygiene-and-contracts` | Phase 0 | 后端 | **✅** 2026-08-24 合入（PR #18） | [tasks/007](20260816-tech-stack-migration/tasks/007-hygiene-and-contracts.md) |
 | **1** | `008-test-safety-net` | Phase 1a | 后端 | **✅** 2026-08-26 合入（PR #19） | [tasks/008](20260816-tech-stack-migration/tasks/008-test-safety-net.md) |
 | **1.5** | *(009 harness spike)* | — | — | **✅** 2026-08-26 完成（`36a6ac2` 落在 `master`，lint 收尾 `7ed87e1`） | 本文 §2 的 P-2 |
-| **2** | `009-e2e-annotations` | Phase 1b | 后端 | **🚧** 2026-09-03：分支上 22 个 commit，Wave 0–2 完成。写路径 W-1…W-10 全部落地，`baseline_1b` **28 / 61 条**（`tests/e2e` 全量 35 条，19s 全绿）。下一步 Wave 3 | [tasks/009](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
+| **2** | `009-e2e-annotations` | Phase 1b | 后端 | **🚧** 2026-09-03：Wave 0–3 完成。写路径 W-1…W-10、核心 K-1a/K-2/K-6a、读路径 R-1…R-3 全部落地，`baseline_1b` **46 / 61 条**（`tests/e2e` 全量 53 条，24.51s 全绿）。下一步 Wave 4 | [tasks/009](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
 | **3** | `011-backend-refactor` | Phase 2a+2b | 后端 | **⬛** 计划未写（故意，见[迁移计划 §9](20260816-tech-stack-migration/plan-tech-stack-migration.md)） | — |
 | **⟂** | `010-design-degradation-states` | Track D | **前端** | **⬜** WI-1 – WI-8 已定义 | [前端计划 §4](20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) |
 | **4** | `012-storage-format` | Phase 3 | 后端 | **⬛** 计划未写 | — |
@@ -51,30 +51,36 @@
 
 ### 现在该做什么
 
-> **在 `009-e2e-annotations` 上开 Wave 3：WI-9、WI-11、WI-12，并行度 3。**
+> **在 `009-e2e-annotations` 上开 Wave 4：WI-13、WI-14、WI-15，并行度 3。**
 >
 > 波次编排的唯一定义处是 [tasks/009 §0.6](20260816-tech-stack-migration/tasks/009-e2e-annotations.md)，
 > 本文不复述编排理由，只记进度与下一步。
 >
 > **两个数不要混。** `baseline_1b` 有 **22 个用例编号**（§2 的 R-1…R-6、§3 的 W-1…W-10、
-> §4 的 K-2/K-3/K-4/K-5、§6 的 X-1/X-2）和 **61 个参数化条目**（`EXPECTED_BASELINE_ITEMS`，
-> 定义在 `scripts/lint_e2e_groups.py`）。进度按条目计：**28 / 61**。
+> §4 的 K-1a/K-2/K-3/K-6a、§6 的 X-1/X-2）和 **61 个参数化条目**（`EXPECTED_BASELINE_ITEMS`，
+> 定义在 `scripts/lint_e2e_groups.py`）。进度按条目计：**46 / 61**。
 > 「实测 == 61」这条断言被**故意**推迟到 WI-17——每个 WI 都去加一次常量，那个脚本就成了
 > 13 条 WI 的串行写入点，并行当场作废。不要顺手把它提前。
 >
-> **已完成**（Wave 0–2）：基础设施与台账（五个 marker 家族、`soak-log.md`）、harness 自测、
-> 以及**全部写路径** W-1…W-10。`suite_hash` 现为 `355afedd106b`，处于 **pre-freeze**——
-> **G2 的 soak 计数尚未开始，首行落账之前台账不构成对 G2 的任何宣称。**
+> **已完成**（Wave 0–3）：基础设施与台账（五个 marker 家族、`soak-log.md`）、harness 自测、
+> **全部写路径** W-1…W-10、核心路径 K-1a/K-2/K-6a、读路径 R-1…R-3。`suite_hash` 现为
+> `6fac77825ac7`，处于 **pre-freeze**——**G2 的 soak 计数尚未开始，首行落账之前台账不构成
+> 对 G2 的任何宣称。**
 >
-> **Wave 3 的三条**都只读标注、不改写路径，因而互不相干：WI-9（K-2 七个 `data-action`
-> 逐个点、K-6a URL 章号形状）、WI-11（K-1a 七个宿主元素的正向证据）、WI-12（R-1/R-2/R-3
-> 读路径基础）。**本波没有共享写入点**，§0.6 纪律 2 的授权制自动满足；纪律 3 仍然生效——
-> 写用例可以并行，**跑门禁必须串行**（`state.json` 与 `receipts.json` 是全局可变状态）。
+> **Wave 4 的三条**同样只加用例、无共享写入点：WI-13（R-4/R-5）、WI-14（R-6）、WI-15（X-2）。
+> 纪律 3 仍然生效——写用例可以并行，**跑门禁必须串行**（`state.json` 与 `receipts.json`
+> 是全局可变状态）。
 >
 > **Wave 2 撞出两个生产缺陷，都只记录未修**（1b 是安全网，不是行为变更窗口）：`cfi` 恒为
 > `null`（锚定实际 100% 走文本路径），以及**改色 wavy/underline 会静默丢数据**。两条都在
 > tasks/009 的欠账表里（#6、#9），兑付方是 4B.1 / 前端 WI-14。**#9 会挡住 W-5b 解 skip**，
 > 排 4B.1 时要把它算进去。
+>
+> **Wave 3 又撞出两条，同样只记录未修**：`rd-page-prev` / `rd-page-next` 是**死表面**
+> （基础样式即 `display: none`，唯一绑定在 `reader.html` 不加载的 legacy `js/pagination.js` 里，
+> 点它只会等到 actionability 超时）；以及**站内导航时 URL 落后于渲染**（`syncLocationToUrl()`
+> 跑在 epub.js 的 `rendered` 回调里，先断 URL 的用例读到的是陈旧状态——WI-12 的定向破坏实测
+> 到了这一点）。两条落在 tasks/009 欠账表 #11、#12，配套的 helper 上收欠账是 #13。
 
 ---
 
