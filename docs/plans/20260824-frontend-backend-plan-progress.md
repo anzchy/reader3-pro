@@ -21,7 +21,7 @@
 | 事实 | 唯一定义处 |
 |---|---|
 | 分支编号、归属哪份计划 | [`plan-tech-stack-migration.md` §9](20260816-tech-stack-migration/plan-tech-stack-migration.md) |
-| 每个分支的完成状态 | [`CLAUDE.md`](../../CLAUDE.md) 的里程碑表 |
+| 每个分支的完成状态 | [`plan-and-branch-map` skill](../../.claude/skills/plan-and-branch-map/SKILL.md) 的里程碑表（2026-09-01 `d11da98` 从 `CLAUDE.md` 搬出，按需加载） |
 | 每个分支内部的逐项 ✅ | `20260816-tech-stack-migration/tasks/{分支}.md`（后端）／前端计划 §4 的 `### WI-N:`（前端） |
 | 阶段进入／退出门槛 | [`plan-tech-stack-migration.md` §7](20260816-tech-stack-migration/plan-tech-stack-migration.md) |
 | 依赖图（谁等谁） | 同上 §9.1 |
@@ -201,15 +201,17 @@ git rev-list --count master..008-test-safety-net
 #   007 / 008 用 checkbox（008 有 10 条）
 grep -c '^\- \[x\]' docs/plans/20260816-tech-stack-migration/tasks/008-test-safety-net.md
 grep -c '^\- \[ \]' docs/plans/20260816-tech-stack-migration/tasks/008-test-safety-net.md
-#   009 用表格（R-n 读路径 / W-n 写路径 / X-n 其他，共 18 条），checkbox 数恒为 0——
-#   对 009 跑上面两条会得到 0 / 0，那是「配方不适用」，不是「没进度」。
-grep -cE '^\| [A-Z]+-[0-9]+ ' docs/plans/20260816-tech-stack-migration/tasks/009-e2e-annotations.md
+#   009 的用例表没有状态列，checkbox 数恒为 0——对 009 跑上面两条会得到 0 / 0，
+#   那是「配方不适用」，不是「没进度」。009 的进度按 pytest item 数：
+uv run pytest tests/e2e --collect-only -q -m baseline_1b -p no:cacheprovider | tail -1   # 分子；分母 61 在 scripts/lint_e2e_groups.py
+grep -c '^| ~~\*\*Wave' docs/plans/20260816-tech-stack-migration/tasks/009-e2e-annotations.md  # 已收口的波次数（共 8 波：0–7）
+grep -c '未结清' docs/plans/20260816-tech-stack-migration/tasks/009-e2e-annotations.md          # 跨波欠账未结清行数
 
 # 前端工作项清单
 grep -n '^### WI-' docs/plans/20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md
 
 # soak 进度（台账建起来之后）
-cat docs/plans/20260816-tech-stack-migration/soak-log.md 2>/dev/null || echo '台账尚未建立（009 的 G2 产物）'
+grep -cE '^\| 20[0-9]{2}-' docs/plans/20260816-tech-stack-migration/tasks/soak-log.md 2>/dev/null || echo '台账尚未建立（009 的 G2 产物）'   # 数据行数；0 = 已建账未开始计数
 
 # CI 最近一次运行（CI 仅在发版与手动 workflow_dispatch 时触发）
 gh run list --limit 5
@@ -233,6 +235,14 @@ gh run list --limit 5
 | 2026-08-26 | spike 证伪 009 骨架 §1 的 `webServer` 前提，改为拉子进程的 `live_server` fixture；**本文 §2 的 P-2 同步更正** | 本文 §2（P-2）／[tasks/009 的「现状实测」](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
 | 2026-08-26 | spike 撞出 009 的两类硬阻塞（testid 重名 · K1 两个宿主无 testid），**列为 009 开工的头两件事，排在写用例之前** | 同上「现状实测」／本文 §1「现在该做什么」 |
 | 2026-08-26 | 发布 **v1.5.0**（tag `v1.5.0`，`881b7f9`）——007＋008 两阶段成果的第一次对外发版 | [Release v1.5.0](https://github.com/anzchy/reader3-pro/releases/tag/v1.5.0)／`pyproject.toml` |
+| 2026-08-31 → 09-01 | **ADR-0014** 立项并落地（`9ce4397` → `c127b17`）：有界集合各持唯一 testid，复合选择器收回给无界 id 独用；009 的两类硬阻塞由此解除，唯一性检查进真浏览器（`225966c`） | [ADR-0014](../adr/0014-bounded-testid-enumeration.md)／[tasks/009 的「现状实测」](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
+| 2026-09-01 | **W-5 拆成 W-5a / W-5b**（`1b3d9be`）：1b 只特征化今天的三岔行为，真正的改色归 4B.1 以 skip 形态写；`tests/fixtures/epub_corpus.py` 纳入 `suite_hash` 覆盖面 | [tasks/009 §3 / §8](20260816-tech-stack-migration/tasks/009-e2e-annotations.md)／[迁移计划 §7](20260816-tech-stack-migration/plan-tech-stack-migration.md) |
+| 2026-09-02 | 1b 基础设施落地（`0e411f8`）：五个组 marker ＋ `--strict-markers`、组目录用 `.gitkeep`、`soak-log.md` 建账（pre-freeze）、`select_in_frame` 标准路径；**G2 补「绿」的判据**（`passed == EXPECTED_BASELINE_ITEMS` 且其余四计数为 0）与 commit 级禁 skip 护栏 | [tasks/009 §0.5 / §1 / §8](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
+| 2026-09-03 | 009 剩余 WI 按 **八波编排**（Wave 0–7，`d0335a5` 起）：并行上限 3、共享文件授权制、写用例并行跑门禁串行；跨波欠账单开一张表 | [tasks/009 §0.6](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
+| 2026-09-03 | **R-6 拆成 R-6a / R-6b**（`4ed7dff`）：`cfi` 今天恒为 `null`（欠账 #6），CFI 侧锚定归 4B.1 以 skip 形态写 | [tasks/009 §0.5 / §2](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
+| 2026-09-04 | Wave 4 收口（`f518be3`）：`baseline_1b` 55 / 61 条。撞出的五条生产缺陷（#15 / #21 / #22 / #23 / #24）**只记录不修**，兑付方写进前端计划 §6.1；#18（集合名连字符）指向 011 | [tasks/009 跨波欠账](20260816-tech-stack-migration/tasks/009-e2e-annotations.md)／[前端计划 §6.1](20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) |
+| 2026-09-04 | **009 合并后先插一条小分支修欠账 #22**（用户可见、两行改动），不插进 009；分支号开分支当天分配（`f27cf5c`） | 本文 §1「现在该做什么」 |
+| 2026-09-04 | 「定向破坏只走 `page.route`，绝不原地改 `src/`」从 009 欠账 #25 上收为工程实践，消费者是 011/013/014（`f27cf5c`） | [迁移计划 §5 工程实践表](20260816-tech-stack-migration/plan-tech-stack-migration.md) |
 
 > **来源**：2026-08-24 与 Codex（`gpt-5.6-terra`）的一次定向复核。Codex 选 C 并提出五条风险，
 > 其中三条经核对成立并已回写（见上表后两行）；两条不成立——它担心 010 的九条门槛「形式完成、

@@ -261,7 +261,7 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 
 **Phase 1b**
 
-- [ ] Playwright E2E：书库导航、epub.js 渲染、iframe 内标注**创建与恢复**、AI SSE 流式。**完整用例清单见 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md)**——含写路径（四类型创建 / 改色 / 删除 / 笔记保存）、K1–K6 与 DEG-S1–DEG-S4 的正向证据，以及「断言刷新后高亮回到同一段文字」这条统一收尾
+- [ ] Playwright E2E：书库导航、epub.js 渲染、iframe 内标注**创建与恢复**、AI SSE 流式。**完整用例清单见 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md)**——含写路径（四类型创建 / 改色的现状特征化 **W-5a**（真正的改色 W-5b 归 4B.1，2026-09-01 拆分） / 删除 / 笔记保存）、K1–K6 与 DEG-S1–DEG-S4 的正向证据，以及「断言刷新后高亮回到同一段文字」这条统一收尾
 - [ ] E2E 必须进**本地 tdd-guardian 的 `e2e` lane**（`gateOn: push`），不得挂成「想起来才跑」的旁路任务——Phase 4A 的前置条件依赖它，soak 也数它（改基见 §7）
 
 **验收**: 测试门禁生效——**本地 tdd-guardian 门禁**，不是 GitHub 的 required check（CI 仅发版触发，改基说明见 §7 的 soak 门槛小节）；核心路径（摄取/搜索/笔记/路由）有回归保护。完整门槛见 §7。
@@ -386,7 +386,7 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 |---|---|---|
 | Phase 0 ✅ | — | **门槛已全部满足，阶段于 2026-08-24 关闭**（合入记录见 [`tasks/007-hygiene-and-contracts.md`](./tasks/007-hygiene-and-contracts.md) 的「合入记录」，本表不重述）。P0-1/P0-2 修复并人工 smoke（**六项 checklist 的正文在 [`tasks/007-hygiene-and-contracts.md`](./tasks/007-hygiene-and-contracts.md) §8.1**，本文只引用不重述）；`--port` 与 `/api/health` 可用；testid 在原型与模板两侧一致；**两条 lint 都在 CI 里生效**——选择器 lint（约束 `tests/e2e/`）与命名 lint（约束模板与原型，正则以 §6 步骤 0.5 的 **canonical 代码块**为准，违规数归零）；**0.8 的 token 悬空引用 lint 在 CI 里生效且为 0**。三条 lint 落在 `.github/workflows/lint.yml` 的同一个 job 里，分三步跑 |
 | Phase 1a | Phase 0 | 测试门禁生效（**本地 tdd-guardian**，非 required check——见本节 soak 小节的改基说明）；42 路由契约测试通过；**API v1 形状冻结**；性能基准记录在案 |
-| Phase 1b | 0.3 + 0.5 | **本行的展开（G1/G2 两道门）在 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) §8，本表不重述**。**`baseline-1b` 组**在**本地 `e2e` lane** 绿灯并入 `soak-log.md` 台账（原写「主 CI（非 nightly）」，2026-08-24 随 CI 改为仅发版触发而改基，见本节 soak 小节）；**用例覆盖写路径**（四类型创建 / 改色 / 删除 / 笔记保存，断言为刷新后回到同一段文字）；K2–K5 与 K1/K6 的**现状特征化**条各一条正向证据；连续 3 次全量运行零 flaky；其余组**用例写完并 review**，以 skip 形态存在。⚠️ K1/K6 的新行为与 DEG-S1–DEG-S4 的横幅**不在本阶段门槛内**——它们要到 4B.1 / Phase 3 / 4A.4 才存在，写进 1b 会形成依赖环。分组见 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) §0.5 |
+| Phase 1b | 0.3 + 0.5 | **本行的展开（G1/G2 两道门）在 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) §8，本表不重述**。**`baseline-1b` 组**在**本地 `e2e` lane** 绿灯并入 `soak-log.md` 台账（原写「主 CI（非 nightly）」，2026-08-24 随 CI 改为仅发版触发而改基，见本节 soak 小节）；**用例覆盖写路径**（四类型创建 / 改色的现状特征化 **W-5a**（W-5b 归 4B.1）/ 删除 / 笔记保存，断言为刷新后回到同一段文字）；K2–K5 与 K1/K6 的**现状特征化**条各一条正向证据；连续 3 次全量运行零 flaky；其余组**用例写完并 review**，以 skip 形态存在。⚠️ K1/K6 的新行为与 DEG-S1–DEG-S4 的横幅**不在本阶段门槛内**——它们要到 4B.1 / Phase 3 / 4A.4 才存在，写进 1b 会形成依赖环。分组见 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) §0.5 |
 | Track D | Phase 0 | DEG-S1–DEG-S5 设计完成并回写设计规格 §6.4；合同 2 剩余两项收口；loading 骨架屏补齐 |
 | Phase 2a | 1a | 每个 router < 500 行；`book_store` **三处** loader 合并（第四处已作为死代码删除，见附录 A 的 A5）；**notes 乐观并发落地**；行为不变由 1a 证明 |
 | Phase 2b | 2a | 跨库搜索性能相对基准可量化改善；`_normalize_with_map` 差分测试通过 |
