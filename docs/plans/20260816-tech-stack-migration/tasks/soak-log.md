@@ -26,13 +26,14 @@
   | git hash-object --stdin; } | cut -c1-12
 ```
 
-当前 `suite_hash` 值：`b509a1235914`（2026-09-04 实测输出，非誊抄）。
+当前 `suite_hash` 值：`39f502b41e65`（2026-09-04 Wave 5 收口实测输出，非誊抄）。
 
-**这个值处于 pre-freeze，不是冻结值。** G2 尚未开始，baseline_1b 的 61 条用例也还没写完
-（现在 `baseline_1b` 收集到 55 条：WI-3 的 harness 自测 9 条 ＋ WI-4 的创建路径 3 条 ＋ WI-5 的
-笔记创建/编辑 2 条 ＋ Wave 2 的 14 条 ＋ Wave 3 的 18 条 ＋ Wave 4 的 9 条；`tests/e2e` 全量 65 条，
-差额是 `acceptance_4b1` 的 3 条 skip 与白名单里的 smoke、testid 唯一性），后面每落一条用例它都会变。写在这里是免得后来者拿今天这个值
-当冻结值。
+**这个值处于 pre-freeze，不是冻结值。** G2 尚未开始。`baseline_1b` 的 61 条**今天第一次收集齐**
+（WI-3 的 harness 自测 9 条 ＋ WI-4 的创建路径 3 条 ＋ WI-5 的笔记创建/编辑 2 条 ＋ Wave 2 的 14 条
+＋ Wave 3 的 18 条 ＋ Wave 4 的 9 条 ＋ Wave 5 的 6 条；`tests/e2e` 全量 71 条，差额是 `acceptance_4b1`
+的 3 条 skip 与白名单里的 smoke、testid 唯一性），但 Wave 6 要改 `conftest.py`、Wave 7 要往
+acceptance 目录落 skip 用例并写「实测 == 61」的守卫——前者在覆盖面内、必然再变一次。写在这里是
+免得后来者拿今天这个值当冻结值。
 
 **「61」是目标，不是当前计数。** `scripts/lint_e2e_groups.py` 的 `EXPECTED_BASELINE_ITEMS`
 从 WI-1 起就写着 61，且**故意**不随每个 WI 递增——递增会把那个脚本变成 13 路串行写入点，
@@ -44,6 +45,12 @@
 
 值的变更史（每次改都要写清作废原因，不要只覆盖数字）：
 
+- `39f502b41e65` ← Wave 5（WI-10）一个新模块 ＋ `helpers.py` 与七个既有模块的 helper 上收。**两个理由各自都足以让旧值作废。**
+  - **用例增量**：`baseline_1b/test_kernel_overlay_geometry.py`（K-3a 三浮层 `position: fixed` ＋ 祖先链无包含块制造者 ×3、K-3b 工具条对选区的绝对对位、K-3b′ 平移协变差分、K-3c 笔记编辑器贴边，共 **6 条**）。baseline_1b **55 → 61 条**（`EXPECTED_BASELINE_ITEMS` 的分母今天第一次被实测填满；「实测 == 61」的断言仍留给 WI-17），`tests/e2e` 全量 **65 → 71 条**（68 passed + 3 skipped），全量耗时约 50s → **约 53s**。
+  - **helper 上收**（兑付欠账 #25）：`open_ch0`（三份合一）/ `settle_marks` / `open_reader_settled` / `open_font_popover` / `content_style` / `assert_corpus_unchanged` / `assert_visible_book_ids` / `collections_file` / `read_collections` / `http_json` / `delete_collections_with_prefix` / `frame_box` 进 `helpers.py`，七个模块切换调用点。除 `assert_corpus_unchanged` 外全是改名；那一个是把四个模块各自的字面量绊线抽成共有形状 `assert_corpus_unchanged(*checks)`，每模块的期望值与消息文本逐字留在各自的 `CORPUS_CHECKS` 里（§0 第五条：基准仍是字面量）。
+  - **两处实测订正**（已写进任务书 §4 K-3 行）：三个浮层是 `<body>` 的直接子元素，祖先链只有 `BODY → HTML`，`rd-shell` 是兄弟——「给 `rd-shell` 加 transform 必红」这个纸面配方对着真实 DOM 是 6/6 绿，破坏点必须是 `<body>`；`smoke_data` 上 `Alpha prose` 的选区中心 x ≈ 130 落在 clamp 带内（下界 220），几何三条改用 `repeat_data`（s1 `deck`#6 cx 379 / top 180，s2 `lamp`#22 cx 735 / top 406）。实测布局 `frame_box = {x: 0, y: 40, w: 1280, h: 640}`，`Y_TOL = 20 < 40` 成立。
+  - **定向破坏 5 处全部走 `page.route` 改写响应体**，`src/` 一行未动（`git diff --quiet -- src/` 退出 0）。其中一发证明了 K-3b 与 K-3b′ 并存的理由：删掉 `offsetRect` 的 `frameRect.top` 项，K-3b / K-3c 的 Y 轴红，**K-3b′ 绿**（偏移在差分里抵消）。
+  - 红收据 `009-WI-10`（lane e2e）记 `green`，verify 判 `SEPARATION-BROKEN`：成因是录红后回填 `SABOTAGE_LOG` 字符串（第 546–563 行），用指纹逐行核对，全部 `assert` / `pytest.fail` 行与收据一致，无断言改动。
 - `b509a1235914` ← Wave 4（WI-13/14/15）四个新模块。**纯用例增量，harness、语料、helper 与生产代码全部一行未动**——`conftest.py` / `helpers.py` / `tests/fixtures/*` / `src/` 这次都没进来（共享文件授权制见 §0.6，本波无人被授权）。
   - `baseline_1b/test_read_chapter_change_and_search.py`（R-4 换章重绘 ＋ R-5 iframe 内搜索高亮 latin/cjk 各一，**3 条**）、`test_read_presentation_anchoring.py`（R-6a 主题四态 / 字号 ± / 间距 ± 三条参数化，**3 条**）、`test_library_nav_and_collections.py`（X-2a 书架⇄阅读器往返、X-2b 侧栏范围切换、X-2c 集合范围书单，**3 条**）；`acceptance_4b1/test_r6b_cfi_reanchoring.py`（R-6b 三条，模块级 skip，**3 条**）。baseline_1b **46 → 55 条**，`tests/e2e` 全量 **53 → 65 条**（62 passed + 3 skipped），全量耗时约 42s → **约 50.4s**。
   - **三路并行的一条纪律，是本波最该带走的东西**：三个 agent 共用一个 worktree，WI-14 在跑定向破坏时把 `epub-renderer.js` 就地改了，被并跑的 WI-13 当场撞见。WI-13 的处置是对的——不碰它，自己**全程用 `page.route` 改写响应体**做破坏，一次都没写 `src/`。共享 worktree 的并行波次里这应当是硬性写法（已记为欠账 #25）。

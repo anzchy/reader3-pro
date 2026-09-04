@@ -39,7 +39,7 @@
 | **0** | `007-hygiene-and-contracts` | Phase 0 | 后端 | **✅** 2026-08-24 合入（PR #18） | [tasks/007](20260816-tech-stack-migration/tasks/007-hygiene-and-contracts.md) |
 | **1** | `008-test-safety-net` | Phase 1a | 后端 | **✅** 2026-08-26 合入（PR #19） | [tasks/008](20260816-tech-stack-migration/tasks/008-test-safety-net.md) |
 | **1.5** | *(009 harness spike)* | — | — | **✅** 2026-08-26 完成（`36a6ac2` 落在 `master`，lint 收尾 `7ed87e1`） | 本文 §2 的 P-2 |
-| **2** | `009-e2e-annotations` | Phase 1b | 后端 | **🚧** 2026-09-04：Wave 0–4 完成。写路径 W-1…W-10、核心 K-1a/K-2/K-6a、读路径 R-1…R-6a、书架往返 X-2a/b/c 全部落地，`baseline_1b` **55 / 61 条**（`tests/e2e` 全量 65 条 = 62 passed + 3 skipped，约 50s）。Wave 4 三路并行，`src/` 与 `helpers.py` 一行未动。下一步 Wave 5（WI-10，独占，几何） | [tasks/009](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
+| **2** | `009-e2e-annotations` | Phase 1b | 后端 | **🚧** 2026-09-04：Wave 0–5 完成。写路径 W-1…W-10、读路径 R-1…R-6a、核心 K-1a/K-2/K-3/K-6a、书架往返 X-2a/b/c 全部落地，`baseline_1b` **61 / 61 条**（`tests/e2e` 全量 71 条 = 68 passed + 3 skipped，约 53s）。`src/` 一行未动。剩 Wave 6（WI-16，X-1 AI 流式）与 Wave 7（WI-17，skip 形态 ＋ 分组守卫），G1 在 Wave 7 之后 | [tasks/009](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
 | **3** | `011-backend-refactor` | Phase 2a+2b | 后端 | **⬛** 计划未写（故意，见[迁移计划 §9](20260816-tech-stack-migration/plan-tech-stack-migration.md)） | — |
 | **⟂** | `010-design-degradation-states` | Track D | **前端** | **⬜** WI-1 – WI-8 已定义 | [前端计划 §4](20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) |
 | **4** | `012-storage-format` | Phase 3 | 后端 | **⬛** 计划未写 | — |
@@ -51,8 +51,16 @@
 
 ### 现在该做什么
 
-> **在 `009-e2e-annotations` 上开 Wave 5：WI-10，独占。**几何断言不与任何 WI 并行——
-> 视口尺寸与滚动位置是进程外的共享状态，同 worktree 并跑会互相踩。
+> **在 `009-e2e-annotations` 上开 Wave 6：WI-16（X-1 AI SSE 流式，含桩 provider），独占。**
+> 它是唯一被授权改 `tests/e2e/conftest.py` 的一条（桩 provider 的 server env）；conftest 是
+> session 级 fixture 的定义处，改它会影响同时在跑的每一条用例，所以不并行。`acf7ccf` 已把
+> 服务子进程的 AI 配置路径钉在沙箱内，WI-16 在此之上接桩即可。
+>
+> **Wave 5 已于 2026-09-04 收口**：K-3 六条落地，`baseline_1b` 到达 **61 / 61**。两处实测订正
+> 写进了 tasks/009 §4 的 K-3 行：三个浮层是 `<body>` 的直接子元素而非 `rd-shell` 的后代，
+> 「给 `rd-shell` 加 transform 必红」这个纸面配方不成立、要加在 `<body>` 上；`smoke_data`
+> 的选区中心 x ≈ 130 落在 clamp 带内，几何三条改用 `repeat_data`。欠账 #25 的 helper 上收
+> 同批兑付。
 >
 > **009 合并之后先插一条小分支修欠账 #22**（2026-09-04 裁定）。字号 / 段落间距的第一次点击对正文毫无效果——`applySettings()` 跑在 `saveSettings()` 之前，而 `buildContentCss()` 回读 `localStorage`。**用户可见、改动两行**，不值得等整个 4B.3（前端计划 WI-18）。放在 009 之后而不是插进 009，是因为 009 是安全网分支、不改行为（`tasks/009` §0.5）；分支号按 [§9 的规则](20260816-tech-stack-migration/plan-tech-stack-migration.md) 在开分支当天分配，现在不预留。修完 `R-6a` 的 `stimulus_moves` 守卫会红，那是**正确的红**。
 >
