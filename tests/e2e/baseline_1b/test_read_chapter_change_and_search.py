@@ -37,7 +37,8 @@ iframe 内用户那本书自己的 `body`、以及 `search.js` 运行时插进�
 `[data-testid="rd-toc-row"][data-file-href="…"]` 走 ADR-0014 的闭合判别位清单。
 
 **载入期竞态**：一次章节加载会跑两遍 `loadAndRender()`，中间有一个 `<mark>` 被拆光的窗口。
-所有一次性快照（`scan_marks`）都必须在 `_settled()` 之后取，理由见 `_settled` 的 docstring。
+所有一次性快照（`scan_marks`）都必须在 `helpers.settle_marks()` 之后取，理由见它的 docstring
+（本模块原先的 `_settled` 已于 Wave 5 上收，欠账 #25）。
 
 破坏证据见两个用例各自的 docstring；其中一枪**没打响**，那条负面结果连同它暴露的护栏缺口
 一起记在 R-4 的破坏表末尾。
@@ -50,19 +51,21 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import FrameLocator, Page, expect
+from playwright.sync_api import Page, expect
 
 from conftest import BOOK_ID, BOOK_ID_CJK  # type: ignore[import-not-found]
 from epub_corpus import CJK_SEARCH_TERM  # type: ignore[import-not-found]
 from helpers import (  # type: ignore[import-not-found]
     CH0_ANCHOR,
     CH1_ANCHOR,
+    assert_corpus_unchanged,
     mark_id_union,
     open_reader,
     pathname_is,
     reader_frame,
     scan_marks,
     seed_notes,
+    settle_marks,
 )
 
 pytestmark = pytest.mark.baseline_1b
@@ -119,7 +122,7 @@ R5_EXPECTED_MARK_EN = "Alpha"
 
 #: CJK 检索词。它是 `咖啡館` 的**子串**——这正是无空格语言与拉丁语在检索上分岔的地方，
 #: 也是本条参数化 ×2 的全部理由。语料侧的定义在 `epub_corpus.CJK_SEARCH_TERM`，由
-#: `_assert_corpus_unchanged` 钉住，见其 docstring。
+#: `CORPUS_CHECKS` 钉住，见其注释。
 R5_TERM_CJK = "咖啡"
 R5_EXPECTED_MARK_CJK = "咖啡"
 
@@ -140,42 +143,19 @@ R5_EXPECTED_MARK_COUNT = 1
 ENTER = "Enter"
 
 
-def _assert_corpus_unchanged() -> None:
-    """语料探针：**不参与判据**，只把失败点提前。
-
-    R-5 的 CJK 参数只有在检索词确实是 `咖啡館` 的子串时，才在测「无空格语言」这件事。
-    语料常量一旦被改，主判据的表现是「搜不到命中，命中计数断言超时」——一句说不清原因的
-    话。这里先响一次，把人指到 `epub_corpus.CJK_SEARCH_TERM` 上。
-    """
-    assert CJK_SEARCH_TERM == R5_TERM_CJK, (
+#: 语料探针（喂给 `helpers.assert_corpus_unchanged`）：**不参与判据**，只把失败点提前。
+#:
+#: R-5 的 CJK 参数只有在检索词确实是 `咖啡館` 的子串时，才在测「无空格语言」这件事。
+#: 语料常量一旦被改，主判据的表现是「搜不到命中，命中计数断言超时」——一句说不清原因的
+#: 话。这里先响一次，把人指到 `epub_corpus.CJK_SEARCH_TERM` 上。
+CORPUS_CHECKS = (
+    (
+        CJK_SEARCH_TERM,
+        R5_TERM_CJK,
         f"CJK 语料的检索词变了：`epub_corpus.CJK_SEARCH_TERM` 现在是 {CJK_SEARCH_TERM!r}，"
-        f"本模块按 {R5_TERM_CJK!r} 写死了期望。改语料要一起改这里"
-    )
-
-
-def _settled(page: Page, frame: FrameLocator, expected_marks: int) -> None:
-    """等到标注重绘**全部**落定：`<mark>` 数量到位，且网络静默。
-
-    ⚠️ **光等 `<mark>` 数量不够。** 一次章节加载会跑两遍 `loadAndRender()`：
-    `onContentsReady` 里当场一遍，`reader3:content:rendered` 触发的 80ms 去抖再一遍；
-    第二遍先 `clearExistingAnnotationMarks()` → `normalize()`，**再按同样的数据重建出数量
-    完全相同的 `<mark>`**。所以计数断言在第一遍就已经满足，结构上看不见第二遍（任务书
-    §0.6 跨波欠账 #16，完整推导写在 `test_write_recolor_and_delete.py` 的 `_open_ch0`
-    docstring 里）。
-
-    **本模块为什么也必须挡它，尽管它不建选区。** 欠账 #16 记的后果是「夹在两遍之间装上的
-    live range 会被 `normalize()` 折叠」，那确实与本模块无关。但**两遍之间还有一个 `<mark>`
-    被拆光的窗口**：`scan_marks` 是一次性快照，不像 `expect()` 会自动重试。快照若落进那个
-    窗口，`texts` 是 `[]`、`ids` 是空集，R-4 的判据会以一种和真缺陷无法区分的形状红。等到
-    网络静默之后再取快照，取到的就是不会再变的那一份。
-
-    判据取「网络静默」而不是别的：第二遍重绘唯一的外部可观测事件就是它那次 notes fetch，
-    而 80ms 的去抖窗口远小于 `networkidle` 的 500ms 判定窗口，所以这次 fetch 一定落在窗口
-    内、一定会把它顶开。这不是 sleep——等不到静默会超时而红。
-    """
-    expect(frame.get_by_test_id("rd-anno-span")).to_have_count(expected_marks)
-    page.wait_for_load_state("networkidle")
-    expect(frame.get_by_test_id("rd-anno-span")).to_have_count(expected_marks)
+        f"本模块按 {R5_TERM_CJK!r} 写死了期望。改语料要一起改这里",
+    ),
+)
 
 
 def _seed_two_chapters(books_dir: Path) -> None:
@@ -277,7 +257,7 @@ def test_r4_chapter_change_repaints_with_only_the_new_chapters_annotations(
     | D5 | 翻章前 `delete window.Reader3Epub.displaySectionIndex`，逼 `findAndGo()` 走 `window.location.href` 兜底 | `AssertionError: 翻章后 window.__wi13_navigation_probe 是 None，…` / `assert None == 'wi13-set-before-toc-click'` —— `1 failed, 2 passed` |
 
     **D3 是本条构造的全部理由，值得单独说。** 它红在 id 那一项上，而它前面的
-    `_settled(…, 1)`（`<mark>` **计数**）和 `after["texts"] == ["prose"]`（**文本**）
+    `settle_marks(…, 1)`（`<mark>` **计数**）和 `after["texts"] == ["prose"]`（**文本**）
     **全都绿着过去了**——两条 annotation 覆盖同一段文字，`buildSegments` 把它们合并成了
     **一个**挂两个 id 的 span。也就是说：计数与文本这两项对「换章时取了全书标注」是**结构
     性失明**的，只有 `data-annotation-ids` 能看见。这就是矩阵 R1 重构要求两条 seed 用同一
@@ -302,7 +282,7 @@ def test_r4_chapter_change_repaints_with_only_the_new_chapters_annotations(
 
     # --- 翻章前：第 0 章只有 A ------------------------------------------------
     frame = open_reader(page, live_server, BOOK_ID, 0, CH0_ANCHOR)
-    _settled(page, frame, R4_EXPECTED_MARK_COUNT)
+    settle_marks(page, frame, R4_EXPECTED_MARK_COUNT)
     before = scan_marks(frame)
     assert before["texts"] == [R4_EXPECTED_MARK_TEXT], (
         f"翻章前第 0 章的 `<mark>` 文本序列是 {before['texts']!r}，"
@@ -324,7 +304,7 @@ def test_r4_chapter_change_repaints_with_only_the_new_chapters_annotations(
     # --- 翻章后：第 1 章只有 B，A 一个字都不剩 --------------------------------
     frame = reader_frame(page, CH1_ANCHOR)
     expect(frame.locator("body")).not_to_contain_text(CH0_ANCHOR)  # lint-e2e-selectors: allow —— iframe 内是用户那本书自己的 XHTML，不是我们的模板
-    _settled(page, frame, R4_EXPECTED_MARK_COUNT)
+    settle_marks(page, frame, R4_EXPECTED_MARK_COUNT)
 
     after = scan_marks(frame)
     assert after["texts"] == [R4_EXPECTED_MARK_TEXT], (
@@ -433,14 +413,14 @@ def test_r5_in_reader_search_highlights_the_hit_inside_the_iframe(
     |---|---|---|
     | D6 | `R5_EXPECTED_MARK_CJK` 改成 `"咖啡館"` | `AssertionError: Locator expected to have text '咖啡館'  Actual value: 咖啡` / `14 × locator resolved to <mark class="search-match search-current">咖啡</mark>` —— `1 failed, 2 passed`（**只红 cjk 一支，latin 仍绿**，两支参数各自独立） |
     | D7 | route 改写 `search.js`，给 `applyHighlights(container, term, caseSensitive) {` 后面塞一句 `return [];` | `AssertionError: Locator expected to have count '1'  Actual value: 0` / `14 × locator resolved to 0 elements` —— `2 failed, 1 passed` |
-    | D8 | `_assert_corpus_unchanged` 的期望侧改成 `"咖啡館"` | `AssertionError: CJK 语料的检索词变了：`epub_corpus.CJK_SEARCH_TERM` 现在是 '咖啡'…` / `assert '咖啡' == '咖啡館'` —— 探针先响，人被直接指到语料上 |
+    | D8 | `CORPUS_CHECKS`（当时还是 `_assert_corpus_unchanged`）的期望侧改成 `"咖啡館"` | `AssertionError: CJK 语料的检索词变了：`epub_corpus.CJK_SEARCH_TERM` 现在是 '咖啡'…` / `assert '咖啡' == '咖啡館'` —— 探针先响，人被直接指到语料上 |
 
     **D7 就是矩阵点名的那个失败模式，值得单独说。** 它两支参数一起红，而红点全部落在
     **iframe 内**那两项上——它前面的 `expect(hits).to_have_count(1)`（结果面板命中数）
     **是绿的**。也就是说 D7 复现的正是「面板出结果、iframe 内不高亮」：一个只断「结果条数
     > 0」的用例在 D7 下会**全绿放过**。判据必须落在 iframe 这一侧，这里有实跑的证据。
     """
-    _assert_corpus_unchanged()
+    assert_corpus_unchanged(*CORPUS_CHECKS)
 
     open_reader(page, live_server, book_id, start_chapter, start_anchor)
 

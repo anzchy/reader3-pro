@@ -80,13 +80,13 @@ from pathlib import Path
 from typing import Callable, Dict, Tuple
 
 import pytest
-from playwright.sync_api import FrameLocator, Page, expect
+from playwright.sync_api import Page, expect
 
 from conftest import BOOK_ID  # type: ignore[import-not-found]
 from helpers import (  # type: ignore[import-not-found]
-    CH0_ANCHOR,
     CH0_QUOTE,
-    open_reader,
+    open_ch0,
+    open_font_popover,
     select_in_frame,
     wait_for_notes,
 )
@@ -105,9 +105,6 @@ pytestmark = [
         )
     ),
 ]
-
-
-CH0_INDEX = 0
 
 #: 期望：重解析出来的 Range 覆盖的文本。**独立写一遍字面量**，不写 `CH0_QUOTE`
 #: （§0 第五条纪律）：输入与期望同源就等于拿自己比自己，两侧一起改照样绿。
@@ -213,28 +210,6 @@ _REANCHOR_JS = (
 )
 
 
-def _open_ch0(page: Page, base_url: str) -> FrameLocator:
-    """打开第 0 章，等到**两遍**加载期重绘都跑完（欠账 #16）。
-
-    一次加载会跑两遍 `loadAndRender()`，两遍之后 `<mark>` 数量完全相同，所以计数断言看不见
-    第二遍；唯一的外部可观测事件是它那次 `/api/notes/` fetch。判据与完整实测的定义处是
-    `tests/e2e/baseline_1b/test_write_recolor_and_delete.py` 的 `_open_ch0` docstring。
-    """
-    frame = open_reader(page, base_url, BOOK_ID, CH0_INDEX, CH0_ANCHOR)
-    page.wait_for_load_state("networkidle")
-    return frame
-
-
-def _open_font_popover(page: Page) -> None:
-    """点 `rd-rail-font` 打开字体面板。三个参数的控件都住在里面。
-
-    面板对**面板内部**的点击不关闭（`reader.html` 判的是 `popup.contains(e.target)`），
-    所以整条用例只开一次。
-    """
-    page.get_by_test_id("rd-rail-font").click()
-    expect(page.get_by_test_id("rd-font-popover")).to_be_visible()
-
-
 @pytest.mark.parametrize(
     "change",
     R6B_CHANGES,
@@ -261,7 +236,7 @@ def test_r6b_stored_cfi_still_resolves_to_the_quote_after_presentation_change(
     第 (2)(3) 步**每一步之后都做**，不是做完所有步骤再做一次：「第二次点击把 CFI 指飞了」
     在只断终态的写法里是不可见的。
     """
-    frame = _open_ch0(page, live_server)
+    frame = open_ch0(page, live_server)
 
     # ---- 走真实创建路径，让 CFI 是生产自己生成的那一串（理由见模块 docstring）----
     select_in_frame(frame, CH0_QUOTE)
@@ -281,7 +256,7 @@ def test_r6b_stored_cfi_still_resolves_to_the_quote_after_presentation_change(
         f"    完整条目：{record}"
     )
 
-    _open_font_popover(page)
+    open_font_popover(page)
 
     for step_label, apply_step in change.steps:
         apply_step(page)

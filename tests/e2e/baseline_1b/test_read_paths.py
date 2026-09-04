@@ -85,7 +85,7 @@ R-1…R-6）、§0（六条写作纪律）、§0.6（波次编排，本模块属
 | D9 | R-3 第 (4) 项 API 佐证的期望 `[R3_ID_CURRENT]` → `[R3_ID_CURRENT, R3_ID_OTHER]` | `assert ['wi12-r3-current-chapter'] == ['wi12-r3-cur...ther-chapter']` ／ `Right contains one more item: 'wi12-r3-other-chapter'` | 服务端那一项是独立的一道：`GET /api/notes/smoke_data/0` 今天确实只交出本章那一条，(1)(2)(3) 与 (4) 能分辨「服务端丢了过滤」与「`loadAndRender` 渲错了」 |
 
 **D1 详录**（它比其余各条多一步，值得单列）：先只改 `SMOKE_BOOK_TITLE`，红的是语料探针
-`_assert_corpus_unchanged`——这正是探针存在的意义：它把失败点从「点不到那个链接，超时 30s」
+`assert_corpus_unchanged(*CORPUS_CHECKS)`——这正是探针存在的意义：它把失败点从「点不到那个链接，超时 30s」
 提前到一句说得清的话。把探针一并放宽（`assert True or …`）之后再跑，才拿到真正的主判据
 失败，即 30 秒定位超时。调用日志里那半行完整形态是
 `waiting for locator(…lib-book-card…lib 复合选择器…).get_by_role("link", name="Read Nineteen Twenty Three")`；
@@ -120,6 +120,7 @@ from epub_corpus import EPUB2_TITLE  # type: ignore[import-not-found]
 from helpers import (  # type: ignore[import-not-found]
     CH0_ANCHOR,
     CH1_ANCHOR,
+    assert_corpus_unchanged,
     mark_id_union,
     open_reader,
     read_notes,
@@ -136,7 +137,7 @@ pytestmark = pytest.mark.baseline_1b
 # ---------------------------------------------------------------------------
 #
 # 期望值不从被测源头（`epub_corpus` 的语料常量、`conftest` 的 BOOK_ID）切出来：从同一个
-# 源头切出期望值，语料一改断言跟着改，永远绿。下面 `_assert_corpus_unchanged` 是**另一
+# 源头切出期望值，语料一改断言跟着改，永远绿。下面 `assert_corpus_unchanged(*CORPUS_CHECKS)` 是**另一
 # 回事**——它不参与判据，只在语料被改动时把失败点从「点不到链接，超时 30s」提前到一句说得
 # 清的话。参照 `test_write_cjk_boundary.py` 里 `CJK_CH0_QUOTE` 那一段的做法。
 
@@ -197,30 +198,37 @@ R3_EXPECTED_MARK_TEXTS = ["Alpha prose"]
 R3_EXPECTED_MARK_IDS = {R3_ID_CURRENT}
 
 
-def _assert_corpus_unchanged() -> None:
-    """语料与 fixture 常量没被改过。**这不是判据，是诊断**。
-
-    本模块把语料的书名、两章正文里的 token 抄成了字面量。抄本与原本分家时，真正的失败点
-    在别处（R-1 是「点不到 `Read …` 那个链接」的 30s 超时，R-3 是「一个 `<mark>` 都没有」），
-    正确但要读三层才明白。先在这里说清楚。
-
-    反过来，**不能**用这些常量直接派生期望值：那样语料一改期望值跟着改，「书卡指到别的书」
-    「B 的 quote 在本章不再可匹配」这类缺陷就再也不会红（§0 第五条纪律）。
-    """
-    assert BOOK_ID == SMOKE_BOOK_ID, (
+#: 语料绊线（喂给 `helpers.assert_corpus_unchanged`）：语料与 fixture 常量没被改过。
+#: **这不是判据，是诊断**。
+#:
+#: 本模块把语料的书名、两章正文里的 token 抄成了字面量。抄本与原本分家时，真正的失败点
+#: 在别处（R-1 是「点不到 `Read …` 那个链接」的 30s 超时，R-3 是「一个 `<mark>` 都没有」），
+#: 正确但要读三层才明白。先在这里说清楚。
+#:
+#: 反过来，**不能**用这些常量直接派生期望值：那样语料一改期望值跟着改，「书卡指到别的书」
+#: 「B 的 quote 在本章不再可匹配」这类缺陷就再也不会红（§0 第五条纪律）。
+CORPUS_CHECKS = (
+    (
+        BOOK_ID,
+        SMOKE_BOOK_ID,
         f"fixture 书库的第一本改名了：{BOOK_ID!r} != {SMOKE_BOOK_ID!r}。"
-        f"本模块三条 URL 期望（{CH0_PATH} / {CH1_PATH}）都是照着它写死的，要一起改。"
-    )
-    assert EPUB2_TITLE == SMOKE_BOOK_TITLE, (
+        f"本模块三条 URL 期望（{CH0_PATH} / {CH1_PATH}）都是照着它写死的，要一起改。",
+    ),
+    (
+        EPUB2_TITLE,
+        SMOKE_BOOK_TITLE,
         f"语料书名变了：{EPUB2_TITLE!r} != {SMOKE_BOOK_TITLE!r}。"
-        f"R-1 靠 `Read {{书名}}` 这个 ARIA 名点进书卡，改语料要一起改这里。"
-    )
-    assert R3_OTHER_QUOTE in CH0_ANCHOR and R3_OTHER_QUOTE in CH1_ANCHOR, (
+        f"R-1 靠 `Read {{书名}}` 这个 ARIA 名点进书卡，改语料要一起改这里。",
+    ),
+    (
+        R3_OTHER_QUOTE in CH0_ANCHOR and R3_OTHER_QUOTE in CH1_ANCHOR,
+        True,
         f"token {R3_OTHER_QUOTE!r} 不再是两章共有的了"
         f"（第 0 章 {CH0_ANCHOR!r}，第 1 章 {CH1_ANCHOR!r}）。"
         "R-3 的全部力量来自「跨章那一条在本章也匹配得上」——共有性一没，"
-        "「渲染了所有标注」的错误实现就又能让这条用例绿了（矩阵 Gap 2）。"
-    )
+        "「渲染了所有标注」的错误实现就又能让这条用例绿了（矩阵 Gap 2）。",
+    ),
+)
 
 
 # ---------------------------------------------------------------------------
@@ -261,7 +269,7 @@ def test_r1_library_card_opens_reader_showing_this_books_prose(
     把 `process_epub` 产出的 spine 倒序 ⇒ (2)(3) 红。没有「返回预期值」的捷径能让它绿
     ——判据落在**另一个进程渲染出来的 DOM** 与浏览器自己的地址栏上。
     """
-    _assert_corpus_unchanged()
+    assert_corpus_unchanged(*CORPUS_CHECKS)
 
     page.goto(f"{live_server}/")
     card = page.locator(f'[data-testid="lib-book-card"][data-book-id="{SMOKE_BOOK_ID}"]')
@@ -373,7 +381,7 @@ def test_r2_three_navigation_mechanisms_reach_chapter_one(
     TOC 行是 `<a href="#">`，点击会给地址栏留一个空 hash，而 `syncLocationToUrl` 只改
     `pathname`，hash 原样留着——path 那一项仍然是逐字等号。
     """
-    _assert_corpus_unchanged()
+    assert_corpus_unchanged(*CORPUS_CHECKS)
 
     frame = open_reader(page, live_server, BOOK_ID, 0, CH0_ANCHOR)
     expect(frame.locator("body")).not_to_contain_text(CH1_ANCHOR)  # lint-e2e-selectors: allow —— iframe 内是用户那本书自己的 XHTML，不是我们的模板
@@ -448,7 +456,7 @@ def test_r3_only_current_chapter_annotations_are_rendered(
     这个两段形状是矩阵推演出来的；D8 那一枪实测到的是它的反面——今天第 0 章只有一个
     `<mark>`、文本是 `'Alpha prose'`，所以本条判据有咬合而不是恒真（见模块 docstring 的破坏表）。
     """
-    _assert_corpus_unchanged()
+    assert_corpus_unchanged(*CORPUS_CHECKS)
     assert read_notes(e2e_books_dir, BOOK_ID) == [], "隔离 fixture 没生效：起点不是空的"
 
     seed_notes(

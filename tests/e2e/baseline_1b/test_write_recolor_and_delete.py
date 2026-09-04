@@ -43,9 +43,11 @@ marker 那一支（W-5a-②）不经过这条路——它不先删，所以 `cur
 「删成功、建失败」这个**结果**是确定的：只要选区还活着，异色分支必然走这条路。
 但**能不能活着走到这里**曾经是竞态，当时没看出来。2026-09-03 实测本模块约四成概率红在
 「一次 DELETE 都没发」上，根因不在改色分支，而在一次页面加载会跑**两遍**
-`loadAndRender()`，第二遍的 `normalize()` 把测试刚装上的选区就地折叠——详见 `_open_ch0`
-的 docstring。原先那句「实测 10/10 稳定，不是竞态」写过头了：10/10 是真的，但它测的是
-「赢下那场加载竞态之后」的稳定性。`_open_ch0` 现在等到网络静默、两遍重绘都跑完才返回，
+`loadAndRender()`，第二遍的 `normalize()` 把测试刚装上的选区就地折叠——详见
+`helpers.settle_marks` 的 docstring（欠账 #16 的等待纪律唯一定义处；本模块原先的 `_open_ch0`
+已于 Wave 5 上收为 `helpers.open_ch0`，欠账 #25）。原先那句「实测 10/10 稳定，不是竞态」
+写过头了：10/10 是真的，但它测的是「赢下那场加载竞态之后」的稳定性。`open_ch0` 现在等到
+网络静默、两遍重绘都跑完才返回，
 这条路才真的确定。
 
 **这是一个真实的生产缺陷（用户数据丢失），不是本模块的构造问题。** 本模块按「特征化今天
@@ -104,10 +106,9 @@ from playwright.sync_api import Page, Response, expect
 
 from conftest import BOOK_ID  # type: ignore[import-not-found]
 from helpers import (  # type: ignore[import-not-found]
-    CH0_ANCHOR,
     CH0_QUOTE,
     assert_bystanders_unchanged,
-    open_reader,
+    open_ch0,
     read_notes,
     seed_notes,
     select_in_frame,
@@ -187,58 +188,6 @@ def _notes_payload(books_dir: Path, book_id: str) -> Dict[str, Any]:
     return json.loads(raw)
 
 
-def _open_ch0(page: Page, base_url: str, expected_marks: int):  # type: ignore[no-untyped-def]
-    """打开（或刷新）第 0 章，并**等到重绘全部落定**：`<mark>` 数量到位、且网络静默。
-
-    等这一下不是防御性等待，是必需的前置条件，两个理由写在模块 docstring 的
-    「为什么每一步之间都要刷新」那一节：`getAnnotationMetaForRange` 需要 DOM 里真的有
-    `<mark>`；而 `loadAndRender()` 的重绘会拆 `<mark>` 并 `normalize()` 文本节点，
-    任何早于它建好的选区都会在那一刻失效。
-
-    ------------------------------------------------------------------------
-    ⚠️ **为什么光等 `<mark>` 数量不够：一次页面加载会跑两遍 `loadAndRender()`**
-    ------------------------------------------------------------------------
-    实测（2026-09-03，chromium，本模块 ~40% flaky 的根因）：`annotations.js` 的模块尾部
-    对同一次章节加载挂了**两个互相独立的重绘触发器**——
-
-      1. `Reader3Epub.onContentsReady(...)` 回调里**当场**调一次
-         `ui.renderer.loadAndRender()`；
-      2. `window.addEventListener("reader3:content:rendered", scheduleRefresh)`，而
-         `scheduleRefresh` 是一个 **80ms 去抖**的 `loadAndRender()`；
-         `epub-renderer.js` 在 `rendered` 里必发 `reader3:content:rendered`。
-
-    于是每次开章都有**第二遍**重绘，落在第一遍之后约 80ms ＋ 一个 `/api/notes/` 往返。
-    第二遍照样跑 `clearExistingAnnotationMarks()` → `parent.normalize()`，把 `<mark>`
-    拆掉、合并文本节点，**再按同样的数据重建出数量完全相同的 `<mark>`**。
-
-    这就是 `to_have_count(expected_marks)` 看不见它的原因：两遍重绘之后 `<mark>` 的
-    **数量一模一样**，计数断言在第一遍就已经满足，于是本 helper 会在第二遍还没跑的时候
-    返回。紧接着 `select_in_frame` 装上的那个 **live `Range`**，会在第二遍的
-    `normalize()` 里被就地折叠成空 range（实测 `range.toString() === ""`）。后果是
-    `getExistingAnnotationIds` 一条都找不到 ⇒ `toggleAnnotation` **一次 DELETE 都不发**，
-    直接走 `createAnnotation` 并带着空 `quote` 吃一个 400。表现就是本模块 W-5a-⓪/②/③
-    随机红，而红的形状各不相同（少一次 DELETE、少一条新增、条数没变）。
-
-    **判据换成「网络静默」而不是「`<mark>` 数量」，是因为第二遍重绘唯一的外部可观测事件
-    就是它那次 `/api/notes/` fetch。** `networkidle` 等的是「500ms 内没有在途请求」——
-    而 `render()` 是在 `resp.json()` 之后**同步**跑完的，远早于那 500ms 窗口结束。所以
-    `networkidle` 落定 ⇒ 两遍重绘都已经跑完 ⇒ 此后装上的选区不会再被任何重绘拆掉。
-    这不是 sleep：等不到静默它会超时而红，等到了就是一个确定的终态。
-
-    `expected_marks == 0` 那一支其实不受影响（没有 `<mark>` 可拆，
-    `clearExistingAnnotationMarks` 空转、`applySegments` 也空转，live range 毫发无伤），
-    但判据统一写在这里比按参数分岔可靠——「这一次到底有没有 mark」不该是调用点要想的事。
-
-    **这只改了「怎么等」，没有改「断什么」。** 数量断言原样保留，且移到静默之后再断一次
-    ——断的是同一件事，只是断在一个不会再变的状态上。
-    """
-    frame = open_reader(page, base_url, BOOK_ID, CH0_INDEX, CH0_ANCHOR)
-    expect(frame.get_by_test_id("rd-anno-span")).to_have_count(expected_marks)
-    page.wait_for_load_state("networkidle")
-    expect(frame.get_by_test_id("rd-anno-span")).to_have_count(expected_marks)
-    return frame
-
-
 def _is_notes_post(response: Response) -> bool:
     return response.request.method == "POST" and "/api/notes/" in response.url
 
@@ -305,19 +254,19 @@ def test_w5a0_same_color_repress_removes_only_the_selected_one(
     assert read_notes(e2e_books_dir, BOOK_ID) == [], "隔离 fixture 没生效：起点不是空的"
 
     # --- 1. 在 "Alpha prose" 上建目标条 ---------------------------------------
-    frame = _open_ch0(page, live_server, expected_marks=0)
+    frame = open_ch0(page, live_server, expected_marks=0)
     select_in_frame(frame, CH0_QUOTE)
     page.get_by_test_id(action_testid).click()
     wait_for_notes(e2e_books_dir, BOOK_ID, 1)
 
     # --- 2. 刷新 → 在 "One" 上用**同一个 action、同一个默认色**再建一条旁观条 -----
-    frame = _open_ch0(page, live_server, expected_marks=1)
+    frame = open_ch0(page, live_server, expected_marks=1)
     select_in_frame(frame, BYSTANDER_QUOTE)
     page.get_by_test_id(action_testid).click()
     wait_for_notes(e2e_books_dir, BOOK_ID, 2)
 
     # --- 3. 刷新 → 读出两条，断前置条件 ---------------------------------------
-    frame = _open_ch0(page, live_server, expected_marks=2)
+    frame = open_ch0(page, live_server, expected_marks=2)
     before = read_notes(e2e_books_dir, BOOK_ID)
     assert len(before) == 2, f"toggle 触发之前同章应当恰好 2 条，实际 {len(before)} 条：{before}"
     target = _pick(before, CH0_QUOTE)
@@ -341,7 +290,7 @@ def test_w5a0_same_color_repress_removes_only_the_selected_one(
     wait_for_notes(e2e_books_dir, BOOK_ID, 1)
 
     # --- 断言 ------------------------------------------------------------------
-    frame = _open_ch0(page, live_server, expected_marks=1)
+    frame = open_ch0(page, live_server, expected_marks=1)
     after = read_notes(e2e_books_dir, BOOK_ID)
 
     # (1) 列表等值：既断了 target 消失，也断了 bystander 还在、还只有它一条、顺序没乱
@@ -407,14 +356,14 @@ def test_w5a1_color_swatch_click_changes_no_existing_annotation(
     """
     assert read_notes(e2e_books_dir, BOOK_ID) == [], "隔离 fixture 没生效：起点不是空的"
 
-    frame = _open_ch0(page, live_server, expected_marks=0)
+    frame = open_ch0(page, live_server, expected_marks=0)
     select_in_frame(frame, CH0_QUOTE)
     page.get_by_test_id("rd-anno-type-marker").click()
     before = wait_for_notes(e2e_books_dir, BOOK_ID, 1)
     record_before = dict(before[0])
 
     # 刷新之后再点色板：`selectedColor` 此刻是复位后的默认色，点绿色是一次**真的换色**。
-    frame = _open_ch0(page, live_server, expected_marks=1)
+    frame = open_ch0(page, live_server, expected_marks=1)
     assert record_before["color"] != SWATCH_COLOR, (
         f"预置那条的颜色本来就是 {SWATCH_COLOR!r}，点同色色板不构成一次换色，"
         f"本条会退化成一句恒真。完整条目：{record_before}"
@@ -430,7 +379,7 @@ def test_w5a1_color_swatch_click_changes_no_existing_annotation(
     )
 
     # **不点任何 action**，直接刷新。
-    frame = _open_ch0(page, live_server, expected_marks=1)
+    frame = open_ch0(page, live_server, expected_marks=1)
     after = read_notes(e2e_books_dir, BOOK_ID)
 
     assert _ids(after) == _ids(before), (
@@ -474,19 +423,19 @@ def test_w5a2_recolor_then_repress_marker_adds_a_second_one(
     """
     assert read_notes(e2e_books_dir, BOOK_ID) == [], "隔离 fixture 没生效：起点不是空的"
 
-    frame = _open_ch0(page, live_server, expected_marks=0)
+    frame = open_ch0(page, live_server, expected_marks=0)
     select_in_frame(frame, CH0_QUOTE)
     page.get_by_test_id("rd-anno-type-marker").click()
     before = wait_for_notes(e2e_books_dir, BOOK_ID, 1)
     first_id = str(before[0]["id"])
 
-    frame = _open_ch0(page, live_server, expected_marks=1)
+    frame = open_ch0(page, live_server, expected_marks=1)
     select_in_frame(frame, CH0_QUOTE)
     page.get_by_test_id(SWATCH_TESTID).click()
     page.get_by_test_id("rd-anno-type-marker").click()
     wait_for_notes(e2e_books_dir, BOOK_ID, 2)
 
-    frame = _open_ch0(page, live_server, expected_marks=1)  # 两条重合 ⇒ 合并成一个 `<mark>`
+    frame = open_ch0(page, live_server, expected_marks=1)  # 两条重合 ⇒ 合并成一个 `<mark>`
     after = read_notes(e2e_books_dir, BOOK_ID)
 
     assert len(after) == 2, f"异色重按 marker 之后不是 2 条，而是 {len(after)} 条：{after}"
@@ -559,7 +508,7 @@ def test_w5a3_recolor_then_repress_destroys_without_replacing(
     这个**结果**是确定的（选区活着就必然走这条路），但 2026-09-03 发现「能不能活着走到
     这里」曾是竞态：加载期第二遍 `loadAndRender()` 会折叠测试装上的选区，那种情况下一次
     DELETE 都不发。原先那句「实测 10/10 稳定，不是竞态」测的是赢下那场竞态之后的稳定性。
-    现在由 `_open_ch0` 等网络静默兜住，见其 docstring。
+    现在由 `helpers.open_ch0` 等网络静默兜住，见 `helpers.settle_marks` 的 docstring。
 
     所以本条断三件事，第三件是机制层面的：
 
@@ -578,7 +527,7 @@ def test_w5a3_recolor_then_repress_destroys_without_replacing(
     """
     assert read_notes(e2e_books_dir, BOOK_ID) == [], "隔离 fixture 没生效：起点不是空的"
 
-    frame = _open_ch0(page, live_server, expected_marks=0)
+    frame = open_ch0(page, live_server, expected_marks=0)
     select_in_frame(frame, CH0_QUOTE)
     page.get_by_test_id(action_testid).click()
     before = wait_for_notes(e2e_books_dir, BOOK_ID, 1)
@@ -588,7 +537,7 @@ def test_w5a3_recolor_then_repress_destroys_without_replacing(
         f"预置那条的 type 是 {before[0]['type']!r}，不是按下的 {expected_type!r}"
     )
 
-    frame = _open_ch0(page, live_server, expected_marks=1)
+    frame = open_ch0(page, live_server, expected_marks=1)
     select_in_frame(frame, CH0_QUOTE)
     page.get_by_test_id(SWATCH_TESTID).click()
 
@@ -621,7 +570,7 @@ def test_w5a3_recolor_then_repress_destroys_without_replacing(
     )
 
     wait_for_notes(e2e_books_dir, BOOK_ID, EXPECTED_AFTER_RECOLOR_TOGGLE)
-    frame = _open_ch0(page, live_server, expected_marks=0)
+    frame = open_ch0(page, live_server, expected_marks=0)
     after = read_notes(e2e_books_dir, BOOK_ID)
 
     assert len(after) == EXPECTED_AFTER_RECOLOR_TOGGLE, (
@@ -700,7 +649,7 @@ def test_w6_delete_removes_only_the_clicked_annotation(
     )
     bystander_before = dict(before[1])
 
-    frame = _open_ch0(page, live_server, expected_marks=EXPECTED_BEFORE_DELETE)
+    frame = open_ch0(page, live_server, expected_marks=EXPECTED_BEFORE_DELETE)
 
     target_mark = frame.locator(
         f'[data-testid="rd-anno-span"][data-annotation-id="{W6_TARGET_ID}"]'
@@ -715,7 +664,7 @@ def test_w6_delete_removes_only_the_clicked_annotation(
     page.get_by_test_id("rd-anno-delete").click()
 
     wait_for_notes(e2e_books_dir, BOOK_ID, EXPECTED_AFTER_DELETE)
-    frame = _open_ch0(page, live_server, expected_marks=EXPECTED_AFTER_DELETE)
+    frame = open_ch0(page, live_server, expected_marks=EXPECTED_AFTER_DELETE)
     after = read_notes(e2e_books_dir, BOOK_ID)
 
     # --- 基数：从 2 变 1，字面量基准 ------------------------------------------

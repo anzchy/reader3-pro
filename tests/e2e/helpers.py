@@ -1,6 +1,6 @@
 """E2E 共享 helpers —— 全套 W / R / K 用例只从这里取选区、读写 `notes.json`、换算几何。
 
-十四个函数，一个都不许在用例里各写一遍：
+二十六个函数，一个都不许在用例里各写一遍：
 
     select_in_frame(frame, quote, occurrence=0)   §1 的程序化选区标准路径
     read_notes(books_dir, book_id)                读回 notes.json 的 list[dict]
@@ -16,6 +16,18 @@
     assert_roundtrip(page, books_dir, book_id, …) §0 的「刷新 → 高亮回到同一段文字」收尾
     assert_bystanders_unchanged(before, after, ids) 没碰过的条目逐字段原样（§0 第六条纪律）
     clear_selection_and_drain(page, frame)        清选区并等去抖窗口排空
+    settle_marks(page, frame, n)                  等加载期两遍重绘落定：`<mark>` 到位且网络静默
+    open_reader_settled(page, base_url, …)        open_reader ＋ settle_marks / networkidle
+    open_ch0(page, base_url, expected_marks=…)    smoke 书第 0 章 ＋ 上一条（三个模块曾各抄一份）
+    open_font_popover(page)                       点 `rd-rail-font` 并等面板可见
+    content_style(frame, props)                   iframe body 的几项 computed style（前置守卫用）
+    frame_box(page)                               iframe 元素的视口矩形（几何用例的偏移来源）
+    assert_corpus_unchanged(*checks)              语料绊线：(actual, expected, message) 逐项比对
+    assert_visible_book_ids(page, ids, where=…)   书库页「哪几本可见」的集合等值
+    collections_file(books_dir)                   集合持久化文件的沙箱内路径
+    read_collections(books_dir)                   读回集合列表（文件不存在 ⇒ []）
+    http_json(url, method=…)                      打被测服务的一次裸 HTTP 调用
+    delete_collections_with_prefix(base_url, p)   按名字前缀清掉集合（幂等）
 
 **为什么集中在一处。** 这些断言的耦合面是**生产代码的实现细节**——工具条的 class 名、
 `mouseup` 监听挂在哪个 document 上、`notes.json` 的顶层形状。散到 38 个用例里，
@@ -43,6 +55,18 @@
 Wave 4 有三条 WI 并行开工，三条都要点进来 / 站内导航 / 数 `<mark>`，重复两份时只是重复，
 三个 agent 同时改就会漂成三份。
 
+**Wave 5（2026-09-04，WI-10）兑付了任务书 §0.6 跨波欠账 #25**：Wave 4 三条并行 WI 各自留下的
+私有 helper 一次上收，一条断言的文本都没改，只改了名字与住址。`open_ch0` 之前**已经重复三份**
+（`test_write_recolor_and_delete.py` / `test_read_presentation_anchoring.py` /
+`acceptance_4b1/test_r6b_cfi_reanchoring.py`），而它背着欠账 #16 的等待纪律——每复制一份就多一处
+会悄悄退化的等待；WI-13 的 `_settled` 是同一条纪律的又一次转写。现在那条纪律只住在 `settle_marks`
+一处，`open_ch0` / `open_reader_settled` 都委托给它。四个模块各自的 `_assert_corpus_unchanged`
+**不是同一个函数**（各查各的字面量），上收的是它们共有的形状——「一组 (实际值, 期望值, 消息)
+逐项比对，不等即抛」——消息文本原样留在各模块的 `CORPUS_CHECKS` 里；这样做的代价是那几条
+`assert` 不再经过 pytest 的断言改写（少一行 `assert a == b` 的自动展开），换来的是一个 grep 得到
+的名字（§0 第六条纪律）。`frame_box` 是本波新增：K-3 的三条几何用例都要 iframe 的视口偏移，
+`viewport_rect_of_selection` 原先自己取，现在委托过来，同一个 locator 只写一次。
+
 **这个文件不属于任何一个组 marker，但它在 `suite_hash` 的覆盖面内**
 （`docs/plans/20260816-tech-stack-migration/tasks/soak-log.md` 的哈希命令点名了它）：
 改它等于改整套 baseline 的内容，soak 计数应当随之清零。
@@ -57,6 +81,8 @@ from __future__ import annotations
 
 import json
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -65,8 +91,10 @@ from typing import (
     Dict,
     List,
     Mapping,
+    Optional,
     Sequence,
     Set,
+    Tuple,
     Union,
 )
 
@@ -110,6 +138,7 @@ NOTES_WAIT_S = 8.0
 #
 # 放在这里而不是各模块自己写一份：这是**共享 fixture 书的事实**，Wave 2 之后有三条 WI
 # 会同时需要它。三份字面量各自演化的表现，是其中两条用例静默地测了另一段文字。
+CH0_INDEX = 0
 CH0_QUOTE = "Alpha prose"
 CH0_ANCHOR = "Alpha prose."
 CH1_QUOTE = "Beta prose"
@@ -392,6 +421,142 @@ def clear_selection_and_drain(page: "Page", frame: "FrameLocator") -> None:
         arg=SELECTION_DEBOUNCE_MS + SELECTION_DEBOUNCE_SLACK_MS,
         timeout=SELECTION_TIMEOUT_MS,
     )
+
+
+# ---------------------------------------------------------------------------
+# 页面：等加载期的双重重绘落定（任务书 §0.6 欠账 #16 的等待纪律，**唯一定义处**）
+# ---------------------------------------------------------------------------
+
+
+def settle_marks(page: "Page", frame: "FrameLocator", expected_marks: int) -> None:
+    """等到标注重绘**全部**落定：`<mark>` 数量到位，且网络静默。
+
+    ⚠️ **光等 `<mark>` 数量不够：一次页面加载会跑两遍 `loadAndRender()`。**
+    实测（2026-09-03，chromium，`test_write_recolor_and_delete.py` 约四成 flaky 的根因）：
+    `annotations.js` 的模块尾部对同一次章节加载挂了**两个互相独立的重绘触发器**——
+
+      1. `Reader3Epub.onContentsReady(...)` 回调里**当场**调一次 `ui.renderer.loadAndRender()`；
+      2. `window.addEventListener("reader3:content:rendered", scheduleRefresh)`，而
+         `scheduleRefresh` 是一个 **80ms 去抖**的 `loadAndRender()`；
+         `epub-renderer.js` 在 `rendered` 里必发 `reader3:content:rendered`。
+
+    于是每次开章都有**第二遍**重绘，落在第一遍之后约 80ms ＋ 一个 `/api/notes/` 往返。
+    第二遍照样跑 `clearExistingAnnotationMarks()` → `parent.normalize()`，把 `<mark>` 拆掉、
+    合并文本节点，**再按同样的数据重建出数量完全相同的 `<mark>`**。所以 `to_have_count`
+    在第一遍就已经满足，结构上看不见第二遍。两类用例各有各的受害方式：
+
+    * **建选区的用例**：紧接着 `select_in_frame` 装上的 live `Range` 会在第二遍的
+      `normalize()` 里被就地折叠成空 range（实测 `range.toString() === ""`），
+      `getExistingAnnotationIds` 一条都找不到 ⇒ `toggleAnnotation` 一次 DELETE 都不发，
+      直接走 `createAnnotation` 并带着空 `quote` 吃一个 400。
+    * **只读快照的用例**（`scan_marks` 是一次性快照，不像 `expect()` 会自动重试）：
+      两遍之间有一个 `<mark>` 被拆光的窗口，快照落进去就是 `texts == []`、`ids` 空集，
+      判据会以一种和真缺陷无法区分的形状红。
+
+    **判据取「网络静默」而不是别的**：第二遍重绘唯一的外部可观测事件就是它那次 notes
+    fetch，而 80ms 的去抖窗口远小于 `networkidle` 的 500ms 判定窗口，所以这次 fetch 一定
+    落在窗口内、一定会把它顶开；`render()` 又是在 `resp.json()` 之后**同步**跑完的，远早于
+    那 500ms 结束。`networkidle` 落定 ⇒ 两遍重绘都已经跑完。这不是 sleep——等不到静默会
+    超时而红，等到了就是一个确定的终态。
+
+    `expected_marks == 0` 那一支其实不受影响（没有 `<mark>` 可拆），但判据统一写在这里比
+    按参数分岔可靠——「这一次到底有没有 mark」不该是调用点要想的事。数量断言在静默前后各
+    断一次——断的是同一件事，只是第二次断在一个不会再变的状态上。
+
+    合并自 `test_read_chapter_change_and_search.py` 的 `_settled` 与三份 `_open_ch0` 的
+    等待段（任务书 §0.6 欠账 #25）。
+    """
+    from playwright.sync_api import expect
+
+    expect(frame.get_by_test_id("rd-anno-span")).to_have_count(expected_marks)
+    page.wait_for_load_state("networkidle")
+    expect(frame.get_by_test_id("rd-anno-span")).to_have_count(expected_marks)
+
+
+def open_reader_settled(
+    page: "Page",
+    base_url: str,
+    book_id: str,
+    chapter_index: int,
+    expect_text: str,
+    *,
+    expected_marks: Optional[int] = None,
+) -> "FrameLocator":
+    """`open_reader` ＋ 等两遍加载期重绘跑完（见 `settle_marks`）。
+
+    ``expected_marks`` 给了就走 `settle_marks`（计数 → 静默 → 计数）；不给只等网络静默——
+    那是「本章有几条标注不是本用例关心的事」时的形态（R-6b 与 K-3 的几何用例都是这样）。
+    """
+    frame = open_reader(page, base_url, book_id, chapter_index, expect_text)
+    if expected_marks is None:
+        page.wait_for_load_state("networkidle")
+    else:
+        settle_marks(page, frame, expected_marks)
+    return frame
+
+
+def open_ch0(
+    page: "Page", base_url: str, *, expected_marks: Optional[int] = None
+) -> "FrameLocator":
+    """打开（或刷新）smoke 书的第 0 章，并**等到重绘全部落定**。
+
+    等这一下不是防御性等待，是必需的前置条件：`getAnnotationMetaForRange` 需要 DOM 里真的
+    有 `<mark>`；而第二遍 `loadAndRender()` 的重绘会拆 `<mark>` 并 `normalize()` 文本节点，
+    任何早于它建好的选区都会在那一刻失效（完整推导在 `settle_marks` 的 docstring）。
+
+    `BOOK_ID` 从 `conftest` 里**函数内**取：本文件被 unit lane 按路径加载，模块级不能碰
+    `conftest`（理由见文件头）；而 smoke 书的目录名只该有一个定义处，这里不抄第二份。
+    """
+    from conftest import BOOK_ID  # type: ignore[import-not-found]
+
+    return open_reader_settled(
+        page, base_url, BOOK_ID, CH0_INDEX, CH0_ANCHOR, expected_marks=expected_marks
+    )
+
+
+def open_font_popover(page: "Page") -> None:
+    """点 `rd-rail-font` 打开字体面板，并等它真的可见。
+
+    三个表现层参数的控件都住在这个面板里。面板对**面板内部**的点击不关闭
+    （`reader.html` 的 document click 处理器判的是 `popup.contains(e.target)`），所以整条
+    用例只开一次；一步一开会把「上一步是不是把面板关掉了」这件事藏进重开动作里。
+    """
+    from playwright.sync_api import expect
+
+    page.get_by_test_id("rd-rail-font").click()
+    expect(page.get_by_test_id("rd-font-popover")).to_be_visible()
+
+
+_CONTENT_STYLE_JS = (
+    "(body, props) => { const c = getComputedStyle(body); const out = {};"
+    " for (const p of props) out[p] = c[p]; return out; }"
+)
+
+
+def content_style(frame: "FrameLocator", props: Sequence[str]) -> Dict[str, str]:
+    """iframe body 上那几项 computed style。**只用于前置守卫，不是 Law 的判据。**
+
+    读的是「表现层变更有没有真的落到被测的那一层上」。没有它，一个像主题四态那样**根本
+    没有监听器**的控件会让整条参数静默空转——点四下、什么都不发生、然后断言标注没变。
+    """
+    return frame.locator("body").evaluate(  # lint-e2e-selectors: allow —— iframe 内是用户那本书自己的 XHTML，不是我们的模板
+        _CONTENT_STYLE_JS, list(props)
+    )
+
+
+def frame_box(page: "Page") -> Dict[str, float]:
+    """epub.js 那个 iframe 元素的视口矩形（Playwright `bounding_box()`，键是 x/y/width/height）。
+
+    它是 K-3 全部几何换算的偏移来源：`annotations.js` 的 `offsetRect` 把 iframe 内 rect 加上
+    `frameEl.getBoundingClientRect()`，这里用 Playwright 的 `bounding_box()` 独立取同一个量。
+    未开 TOC 时实测 `{x: 0, y: 40, width: 1280, height: 640}`（1280×720 视口）：横向偏移是 **0**，
+    纵向偏移来自 `.pagination-container { padding-top: 40px }`。
+    """
+    frame_el = page.locator('[data-testid="rd-viewport"] iframe')  # lint-e2e-selectors: allow —— iframe 元素由 epub.js 运行时创建，插不进 testid
+    box = frame_el.bounding_box()
+    if box is None:
+        raise AssertionError("frame_box: iframe 元素没有 bounding box（还没渲染？）")
+    return box
 
 
 # ---------------------------------------------------------------------------
@@ -842,10 +1007,7 @@ def viewport_rect_of_selection(page: "Page", frame: "FrameLocator") -> Dict[str,
             "viewport_rect_of_selection: iframe 内没有选区。先调 select_in_frame()。"
         )
 
-    frame_el = page.locator('[data-testid="rd-viewport"] iframe')  # lint-e2e-selectors: allow —— iframe 元素由 epub.js 运行时创建，插不进 testid
-    box = frame_el.bounding_box()
-    if box is None:
-        raise AssertionError("viewport_rect_of_selection: iframe 元素没有 bounding box（还没渲染？）")
+    box = frame_box(page)
 
     return {
         "left": inner["left"] + box["x"],
@@ -855,3 +1017,119 @@ def viewport_rect_of_selection(page: "Page", frame: "FrameLocator") -> Dict[str,
         "width": inner["width"],
         "height": inner["height"],
     }
+
+
+# ---------------------------------------------------------------------------
+# 语料绊线
+# ---------------------------------------------------------------------------
+
+
+def assert_corpus_unchanged(*checks: Tuple[Any, Any, str]) -> None:
+    """语料绊线：每一项是 ``(actual, expected, message)``，``actual != expected`` 即抛 ``message``。
+
+    **这不是判据，是诊断。** 各模块把语料里的句子 / 书名 / token 抄成了字面量（§0 第五条
+    纪律：期望值不得从语料派生，否则语料一改期望值跟着改，永远绿）。抄本与原本分家时，
+    真正的失败点在三层之外（`select_in_frame` 的「章内找不到 …」、R-1 的 30s 超时、R-3 的
+    「一个 `<mark>` 都没有」），正确但要读三层才明白。绊线把失败点提前到用例第一行，并把人
+    直接指到语料上。
+
+    四个模块原先各有一份 `_assert_corpus_unchanged`，**查的东西各不相同**，共有的只是这个
+    形状。所以上收的是形状，消息文本原样留在各模块的 `CORPUS_CHECKS` 里（欠账 #25）。
+    """
+    for actual, expected, message in checks:
+        if actual != expected:
+            raise AssertionError(message)
+
+
+# ---------------------------------------------------------------------------
+# 书库页：可见书目
+# ---------------------------------------------------------------------------
+
+
+def assert_visible_book_ids(page: "Page", expected_visible: Set[str], *, where: str) -> None:
+    """断言「书库页上**可见**的书卡恰好是 `expected_visible` 这几本」。
+
+    两半合起来才是集合等值，缺哪一半都有具体的坏实现能全绿：
+
+      1. `lib-book-card` 的**总数**恒等于语料本数——`applyFilters` 只挂 `hidden` 属性，
+         从不删节点，所以总数是一个与范围无关的不变量。少了这一半，一个「多渲了一张
+         陌生书卡」的实现不会红。
+      2. 语料里的**每一本**逐个断 visible／hidden。少了这一半，「把 A 藏了、把 B 放出来」
+         这种换位错误不会红——它连总数都不改。
+
+    本数从 `E2E_BOOK_IDS` 派生，不写字面量 4（矩阵 §WI-15 X-2a 原文）。`E2E_BOOK_IDS`
+    从 `conftest` 里**函数内**取，理由同 `open_ch0`。
+    """
+    from conftest import E2E_BOOK_IDS  # type: ignore[import-not-found]
+    from playwright.sync_api import expect
+
+    all_book_ids: Set[str] = set(E2E_BOOK_IDS)
+    cards = page.locator('[data-testid="lib-book-card"]')
+    expect(cards, f"{where}：书卡节点总数应恒等于语料本数（过滤只挂 hidden，不删节点）").to_have_count(
+        len(E2E_BOOK_IDS)
+    )
+    for book_id in sorted(all_book_ids):
+        card = page.locator(f'[data-testid="lib-book-card"][data-book-id="{book_id}"]')
+        expect(card, f"{where}：{book_id} 的书卡应恰好有 1 个节点").to_have_count(1)
+        if book_id in expected_visible:
+            expect(card, f"{where}：{book_id} 应可见（期望可见集合 {sorted(expected_visible)}）").to_be_visible()
+        else:
+            expect(card, f"{where}：{book_id} 应被隐藏（期望可见集合 {sorted(expected_visible)}）").to_be_hidden()
+
+
+# ---------------------------------------------------------------------------
+# 集合：读盘与清理
+# ---------------------------------------------------------------------------
+
+
+def collections_file(books_dir: PathLike) -> Path:
+    """集合的持久化文件。
+
+    路径口径来自 `server._collections_file_path`：`collections_path(project_root)`，
+    而 `project_root == dirname(BOOKS_DIR)`。**沙箱内**——`e2e_books_dir` 是
+    `tmp/e2e*/books`，所以这里是 `tmp/e2e*/config/library_collections.json`，
+    与开发者真实仓库根下的 `config/` 无关。
+    """
+    return Path(books_dir).parent / "config" / "library_collections.json"
+
+
+def read_collections(books_dir: PathLike) -> List[Dict[str, Any]]:
+    """读持久化文件里的集合列表。文件不存在＝一个集合都没有（缺省态是「不存在」）。"""
+    path = collections_file(books_dir)
+    if not path.exists():
+        return []
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return [dict(c) for c in (data.get("collections") or [])]
+
+
+def http_json(url: str, *, method: str = "GET") -> Any:
+    """打被测服务的一次裸 HTTP 调用。
+
+    不带 `Origin` / `Sec-Fetch-Site`：`server._is_cross_site` 对空 `Origin` 明确放行
+    （「curl／原生客户端：刻意放行」），且 e2e 的服务不设 `READER3_TOKEN`。
+    """
+    req = urllib.request.Request(url, method=method)
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        body = resp.read()
+    return json.loads(body) if body else None
+
+
+def delete_collections_with_prefix(base_url: str, prefix: str) -> None:
+    """把名字以 `prefix` 开头的集合全删掉。**幂等**，且不因失败中断。
+
+    按前缀扫而不是按某一个 id 删：用例可能在「已创建、还没读到 id」之间失败，也可能上一轮
+    被 SIGKILL 掉而留下别的后缀。404（已经没了）按成功处理——finalizer 报错会掩盖用例自己
+    的失败原因。
+    """
+    try:
+        data = http_json(f"{base_url}/api/collections")
+    except (urllib.error.URLError, OSError):
+        return
+    for col in (data or {}).get("collections") or []:
+        if not str(col.get("name") or "").startswith(prefix):
+            continue
+        try:
+            http_json(f"{base_url}/api/collections/{col['id']}", method="DELETE")
+        except urllib.error.HTTPError as e:
+            if e.code != 404:
+                raise

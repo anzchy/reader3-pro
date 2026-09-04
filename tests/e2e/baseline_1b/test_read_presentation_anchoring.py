@@ -126,18 +126,18 @@ skip 形态，与欠账 #6 的修复同期解开。本模块只留**文本侧（
 （字号 16px / 间距 1.8），是一次**真实发生过**的重排。
 
 -------------------------------------------------------------------------------
-**加载期的双重重绘（欠账 #16）：为什么 `_open_ch0` 要等网络静默**
+**加载期的双重重绘（欠账 #16）：为什么 `open_ch0` 要等网络静默**
 -------------------------------------------------------------------------------
 一次页面加载会跑**两遍** `loadAndRender()`——`annotations.js` 在 `onContentsReady` 里当场
 一次，外加 `reader3:content:rendered` 触发的 80ms 去抖第二次。第二遍先
 `clearExistingAnnotationMarks()` → `normalize()`，再重建**数量完全相同**的 `<mark>`，所以
 「等 `<mark>` 数量到位」这个判据在结构上看不见它。完整实测记在
-`tests/e2e/baseline_1b/test_write_recolor_and_delete.py` 的 `_open_ch0` docstring 里
-（那是它的定义处，本模块不复述）。
+`helpers.settle_marks` 的 docstring 里（那是它的定义处，本模块不复述）。
 
-**本模块直接暴露在这个窗口下**：它开章 → 读 `<mark>` 文本 → 开始交互。所以本模块的
-`_open_ch0` 照抄同一条纪律——`to_have_count(1)` → `wait_for_load_state("networkidle")` →
-再 `to_have_count(1)`。等的是可观测条件，不是 sleep。
+**本模块直接暴露在这个窗口下**：它开章 → 读 `<mark>` 文本 → 开始交互。所以本模块走
+`helpers.open_ch0(…, expected_marks=1)`——`to_have_count(1)` → `wait_for_load_state("networkidle")`
+→ 再 `to_have_count(1)`。等的是可观测条件，不是 sleep。（本模块原先自带的 `_open_ch0` /
+`_open_font_popover` / `_content_style` 已于 Wave 5 上收进 `helpers.py`，欠账 #25。）
 
 **表现层变更本身不触发重绘**（实测）：`applyThemeSettings()` 只是同步改写 iframe 里那个
 `#reader3-epub-theme` 的 `<style>`，既不重新 `fetch /api/notes/`，也不碰 `<mark>`。
@@ -211,16 +211,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, Tuple
+from typing import Callable, Tuple
 
 import pytest
-from playwright.sync_api import FrameLocator, Page, expect
+from playwright.sync_api import Page
 
 from conftest import BOOK_ID  # type: ignore[import-not-found]
 from helpers import (  # type: ignore[import-not-found]
-    CH0_ANCHOR,
     CH0_QUOTE,
-    open_reader,
+    content_style,
+    open_ch0,
+    open_font_popover,
     seed_notes,
 )
 
@@ -365,59 +366,6 @@ R6A_CHANGES: Tuple[PresentationChange, ...] = (
 
 
 # ---------------------------------------------------------------------------
-# 本模块私有的三个 helper
-# ---------------------------------------------------------------------------
-#
-# 三个都**刻意留在模块内**：本波（Wave 4）没有任何 WI 被授权改 `tests/e2e/helpers.py`
-# （任务书 §0.6 纪律 2：一波至多一个）。哪个该上收、上收的理由是什么，写在本模块的回报里，
-# 按欠账 #13 的成例交给下一个被授权改 helpers 的 WI。
-
-
-def _open_ch0(page: Page, base_url: str) -> FrameLocator:
-    """打开第 0 章，等到**两遍**加载期重绘都跑完。
-
-    判据与理由的定义处是 `test_write_recolor_and_delete.py` 的 `_open_ch0` docstring
-    （欠账 #16）：一次加载跑两遍 `loadAndRender()`，两遍之后 `<mark>` 数量**完全相同**，
-    所以计数断言看不见第二遍；第二遍唯一的外部可观测事件是它那次 `/api/notes/` fetch，
-    因此判据是网络静默。数量断言在静默前后各断一次——断的是同一件事，只是第二次断在一个
-    不会再变的状态上。
-    """
-    frame = open_reader(page, base_url, BOOK_ID, CH0_INDEX, CH0_ANCHOR)
-    expect(frame.get_by_test_id("rd-anno-span")).to_have_count(R6A_EXPECTED_MARK_COUNT)
-    page.wait_for_load_state("networkidle")
-    expect(frame.get_by_test_id("rd-anno-span")).to_have_count(R6A_EXPECTED_MARK_COUNT)
-    return frame
-
-
-def _open_font_popover(page: Page) -> None:
-    """点 `rd-rail-font` 打开字体面板，并等它真的可见。
-
-    三个参数的控件都住在这个面板里。面板对**面板内部**的点击不关闭
-    （`reader.html` 的 document click 处理器判的是 `popup.contains(e.target)`），所以整条
-    用例只开一次；一步一开会把「上一步是不是把面板关掉了」这件事藏进重开动作里。
-    """
-    page.get_by_test_id("rd-rail-font").click()
-    expect(page.get_by_test_id("rd-font-popover")).to_be_visible()
-
-
-_CONTENT_STYLE_JS = (
-    "(body, props) => { const c = getComputedStyle(body); const out = {};"
-    " for (const p of props) out[p] = c[p]; return out; }"
-)
-
-
-def _content_style(frame: FrameLocator, props: Tuple[str, ...]) -> Dict[str, str]:
-    """iframe body 上那几项 computed style。**只用于前置守卫，不是 Law 的判据。**
-
-    读的是「表现层变更有没有真的落到被测的那一层上」。没有它，一个像主题四态那样**根本
-    没有监听器**的控件会让整条参数静默空转——点四下、什么都不发生、然后断言标注没变。
-    """
-    return frame.locator("body").evaluate(  # lint-e2e-selectors: allow —— iframe 内是用户那本书自己的 XHTML，不是我们的模板
-        _CONTENT_STYLE_JS, list(props)
-    )
-
-
-# ---------------------------------------------------------------------------
 # R-6a
 # ---------------------------------------------------------------------------
 
@@ -471,7 +419,7 @@ def test_r6a_presentation_change_keeps_the_annotation_on_the_same_text(
         ],
     )
 
-    frame = _open_ch0(page, live_server)
+    frame = open_ch0(page, live_server, expected_marks=R6A_EXPECTED_MARK_COUNT)
     span = frame.get_by_test_id("rd-anno-span")
 
     # 起跑线：一次表现层动作都还没施加，此时就不对的话，后面每一步的红都指错方向。
@@ -487,9 +435,9 @@ def test_r6a_presentation_change_keeps_the_annotation_on_the_same_text(
         "或 `render()` 的分段算错了。"
     )
 
-    before_style = _content_style(frame, change.stimulus_props)
+    before_style = content_style(frame, change.stimulus_props)
 
-    _open_font_popover(page)
+    open_font_popover(page)
 
     for step_label, apply_step in change.steps:
         apply_step(page)
@@ -511,7 +459,7 @@ def test_r6a_presentation_change_keeps_the_annotation_on_the_same_text(
             f"    参数：{change.label}"
         )
 
-    after_style = _content_style(frame, change.stimulus_props)
+    after_style = content_style(frame, change.stimulus_props)
     moved = after_style != before_style
     assert moved == change.stimulus_moves, (
         f"前置守卫：参数「{change.label}」施加完 {len(change.steps)} 步之后，iframe body 上的 "

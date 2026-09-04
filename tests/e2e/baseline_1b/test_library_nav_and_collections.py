@@ -17,7 +17,7 @@
 **书目断言一律断「哪几本可见」，不断「可见几本」。** `applyFilters()` 的实现是给不匹配的
 卡片挂 `hidden` 属性（`setHidden`），全部四张卡片**始终留在 DOM 里**。所以
 `to_have_count(4)` 对「过滤把 A 藏了、把 B 放出来」这种换位错误完全是盲的。本模块统一走
-`_assert_visible_book_ids`：先断卡片总数等于语料本数，再对**每一本**逐个断
+`helpers.assert_visible_book_ids`：先断卡片总数等于语料本数，再对**每一本**逐个断
 visible／hidden。这两半合起来才是集合等值——少了前一半，多渲一张陌生卡片不会红；少了
 后一半，任何换位都不会红。
 
@@ -27,7 +27,7 @@ visible／hidden。这两半合起来才是集合等值——少了前一半，�
 
 **X-2a 的返回那一程不能只断 URL。** 「回到 `/`」和「回到一个能列出全部四本书的书库」是两
 件事：服务端 `_scan_books` 坏掉时 URL 照样是 `/`，页面却是 `lib-empty`。所以返回后重跑一次
-`_assert_visible_book_ids`，并且把它排在 URL 断言**之前**——先断可观测的渲染结果，再断
+`helpers.assert_visible_book_ids`，并且把它排在 URL 断言**之前**——先断可观测的渲染结果，再断
 地址栏（任务书 §0.6 跨波欠账 #12 的顺序要求；本条虽是整页导航、不受那条竞态影响，但顺序
 统一比按情况分岔可靠）。
 
@@ -83,21 +83,19 @@ S2c 与 S4b 各自额外动了**用例自己**的一行（删掉排在前面的�
 短路了，不删就永远轮不到它说话。两次都在同一轮内按备份逐字节还原，`diff` 无输出。
 
 -------------------------------------------------------------------------------
-本模块留在原地、下一波该上收进 `helpers.py` 的东西
+Wave 4 留在原地、Wave 5 已上收进 `helpers.py` 的东西（欠账 #25）
 -------------------------------------------------------------------------------
-`_assert_visible_book_ids`、`_read_collections`、`_delete_collections_with_prefix` 三个都是
-**书库页**的通用件，不是本模块特有的构造。本波没有任何 WI 被授权改 `tests/e2e/helpers.py`
-（§0.6 纪律 2），所以照欠账 #13 的先例先留在模块内，并在回报里点名等待上收。
+`assert_visible_book_ids`、`read_collections` / `collections_file`、`http_json` /
+`delete_collections_with_prefix` 都是**书库页**的通用件，不是本模块特有的构造。Wave 4 没有任何
+WI 被授权改 `tests/e2e/helpers.py`（§0.6 纪律 2），所以当时照欠账 #13 的先例留在模块内；
+Wave 5 的 WI-10 一次上收，断言文本原样，只改了名字与住址。
 """
 
 from __future__ import annotations
 
-import json
-import urllib.error
-import urllib.request
 import uuid
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Set
+from typing import Iterator, List, Set
 from urllib.parse import urlparse
 
 import pytest
@@ -105,7 +103,14 @@ from playwright.sync_api import Page, expect
 
 from conftest import BOOK_ID, E2E_BOOK_IDS  # type: ignore[import-not-found]
 from epub_corpus import EPUB2_TITLE  # type: ignore[import-not-found]
-from helpers import pathname_is, reader_frame  # type: ignore[import-not-found]
+from helpers import (  # type: ignore[import-not-found]
+    assert_corpus_unchanged,
+    assert_visible_book_ids,
+    delete_collections_with_prefix,
+    pathname_is,
+    read_collections,
+    reader_frame,
+)
 
 pytestmark = pytest.mark.baseline_1b
 
@@ -140,105 +145,22 @@ ALL_BOOK_IDS: Set[str] = set(E2E_BOOK_IDS)
 COLLECTION_NAME_PREFIX = "wi15_x2c_"
 
 
-def _assert_corpus_unchanged() -> None:
-    """绊线：本模块的字面量期望值与 fixture 语料脱钩时，报「语料改名了」而不是「没找到」。"""
-    assert BOOK_ID == SMOKE_BOOK_ID, (
+#: 绊线（喂给 `helpers.assert_corpus_unchanged`）：本模块的字面量期望值与 fixture 语料脱钩时，
+#: 报「语料改名了」而不是「没找到」。
+CORPUS_CHECKS = (
+    (
+        BOOK_ID,
+        SMOKE_BOOK_ID,
         f"fixture 书库的第一本改名了：{BOOK_ID!r} != {SMOKE_BOOK_ID!r}。"
-        "本模块的 CH0_PATH 等字面量需要跟着改。"
-    )
-    assert SMOKE_BOOK_ID in ALL_BOOK_IDS, (
-        f"{SMOKE_BOOK_ID!r} 不在 E2E_BOOK_IDS={sorted(ALL_BOOK_IDS)!r} 里"
-    )
-    assert len(ALL_BOOK_IDS) == len(E2E_BOOK_IDS), "E2E_BOOK_IDS 里有重复的书库目录名"
-
-
-# ---------------------------------------------------------------------------
-# 书库页的可见书目断言（模块局部；下一波该上收进 helpers.py）
-# ---------------------------------------------------------------------------
-
-
-def _assert_visible_book_ids(page: Page, expected_visible: Set[str], *, where: str) -> None:
-    """断言「书库页上**可见**的书卡恰好是 `expected_visible` 这几本」。
-
-    两半合起来才是集合等值，缺哪一半都有具体的坏实现能全绿：
-
-      1. `lib-book-card` 的**总数**恒等于语料本数——`applyFilters` 只挂 `hidden` 属性，
-         从不删节点，所以总数是一个与范围无关的不变量。少了这一半，一个「多渲了一张
-         陌生书卡」的实现不会红。
-      2. 语料里的**每一本**逐个断 visible／hidden。少了这一半，「把 A 藏了、把 B 放出来」
-         这种换位错误不会红——它连总数都不改。
-
-    本数从 `E2E_BOOK_IDS` 派生，不写字面量 4（矩阵 §WI-15 X-2a 原文）。
-    """
-    cards = page.locator('[data-testid="lib-book-card"]')
-    expect(cards, f"{where}：书卡节点总数应恒等于语料本数（过滤只挂 hidden，不删节点）").to_have_count(
-        len(E2E_BOOK_IDS)
-    )
-    for book_id in sorted(ALL_BOOK_IDS):
-        card = page.locator(f'[data-testid="lib-book-card"][data-book-id="{book_id}"]')
-        expect(card, f"{where}：{book_id} 的书卡应恰好有 1 个节点").to_have_count(1)
-        if book_id in expected_visible:
-            expect(card, f"{where}：{book_id} 应可见（期望可见集合 {sorted(expected_visible)}）").to_be_visible()
-        else:
-            expect(card, f"{where}：{book_id} 应被隐藏（期望可见集合 {sorted(expected_visible)}）").to_be_hidden()
-
-
-# ---------------------------------------------------------------------------
-# 集合：读盘与清理（模块局部；下一波该上收进 helpers.py）
-# ---------------------------------------------------------------------------
-
-
-def _collections_file(books_dir: Path) -> Path:
-    """集合的持久化文件。
-
-    路径口径来自 `server._collections_file_path`：`collections_path(project_root)`，
-    而 `project_root == dirname(BOOKS_DIR)`。**沙箱内**——`e2e_books_dir` 是
-    `tmp/e2e*/books`，所以这里是 `tmp/e2e*/config/library_collections.json`，
-    与开发者真实仓库根下的 `config/` 无关。
-    """
-    return books_dir.parent / "config" / "library_collections.json"
-
-
-def _read_collections(books_dir: Path) -> List[Dict[str, Any]]:
-    """读持久化文件里的集合列表。文件不存在＝一个集合都没有（缺省态是「不存在」）。"""
-    path = _collections_file(books_dir)
-    if not path.exists():
-        return []
-    data = json.loads(path.read_text(encoding="utf-8"))
-    return [dict(c) for c in (data.get("collections") or [])]
-
-
-def _http_json(url: str, *, method: str = "GET") -> Any:
-    """打被测服务的一次裸 HTTP 调用。
-
-    不带 `Origin` / `Sec-Fetch-Site`：`server._is_cross_site` 对空 `Origin` 明确放行
-    （「curl／原生客户端：刻意放行」），且 e2e 的服务不设 `READER3_TOKEN`。
-    """
-    req = urllib.request.Request(url, method=method)
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        body = resp.read()
-    return json.loads(body) if body else None
-
-
-def _delete_collections_with_prefix(base_url: str, prefix: str) -> None:
-    """把名字以 `prefix` 开头的集合全删掉。**幂等**，且不因失败中断。
-
-    按前缀扫而不是按某一个 id 删：用例可能在「已创建、还没读到 id」之间失败，也可能上一轮
-    被 SIGKILL 掉而留下别的后缀。404（已经没了）按成功处理——finalizer 报错会掩盖用例自己
-    的失败原因。
-    """
-    try:
-        data = _http_json(f"{base_url}/api/collections")
-    except (urllib.error.URLError, OSError):
-        return
-    for col in (data or {}).get("collections") or []:
-        if not str(col.get("name") or "").startswith(prefix):
-            continue
-        try:
-            _http_json(f"{base_url}/api/collections/{col['id']}", method="DELETE")
-        except urllib.error.HTTPError as e:
-            if e.code != 404:
-                raise
+        "本模块的 CH0_PATH 等字面量需要跟着改。",
+    ),
+    (
+        SMOKE_BOOK_ID in ALL_BOOK_IDS,
+        True,
+        f"{SMOKE_BOOK_ID!r} 不在 E2E_BOOK_IDS={sorted(ALL_BOOK_IDS)!r} 里",
+    ),
+    (len(ALL_BOOK_IDS), len(E2E_BOOK_IDS), "E2E_BOOK_IDS 里有重复的书库目录名"),
+)
 
 
 @pytest.fixture
@@ -252,12 +174,12 @@ def x2c_collection_name(live_server: str) -> Iterator[str]:
     做判断），**后置**清掉本轮自己建的。只做后置的话，一次 SIGKILL 会把脏状态永久留给
     同一个 session 里后面的每一条用例和 `test_testid_dom_uniqueness.py`。
     """
-    _delete_collections_with_prefix(live_server, COLLECTION_NAME_PREFIX)
+    delete_collections_with_prefix(live_server, COLLECTION_NAME_PREFIX)
     name = f"{COLLECTION_NAME_PREFIX}{uuid.uuid4().hex[:8]}"
     try:
         yield name
     finally:
-        _delete_collections_with_prefix(live_server, COLLECTION_NAME_PREFIX)
+        delete_collections_with_prefix(live_server, COLLECTION_NAME_PREFIX)
 
 
 # ---------------------------------------------------------------------------
@@ -296,10 +218,10 @@ def test_x2a_library_to_reader_and_back_round_trip(
     而这里只有 `reader_frame` 的 `to_contain_text` ——正文文本在两遍重绘之间不变，
     `expect` 自带重试，没有可被 `normalize()` 折叠的东西。
     """
-    _assert_corpus_unchanged()
+    assert_corpus_unchanged(*CORPUS_CHECKS)
 
     page.goto(f"{live_server}{LIBRARY_PATH}")
-    _assert_visible_book_ids(page, ALL_BOOK_IDS, where="出发前的书库")
+    assert_visible_book_ids(page, ALL_BOOK_IDS, where="出发前的书库")
 
     card = page.locator(f'[data-testid="lib-book-card"][data-book-id="{SMOKE_BOOK_ID}"]')
     # 卡内那个 `<a>` 没有自己的 testid，只有 `aria-label="Read {{ book.title }}"`。
@@ -316,7 +238,7 @@ def test_x2a_library_to_reader_and_back_round_trip(
     page.get_by_role("link", name="Back to Library").click()
 
     # 先断渲染结果、再断地址栏（任务书 §0.6 欠账 #12 的顺序要求）。
-    _assert_visible_book_ids(page, ALL_BOOK_IDS, where="返回后的书库")
+    assert_visible_book_ids(page, ALL_BOOK_IDS, where="返回后的书库")
     pathname_is(page, LIBRARY_PATH)
 
 
@@ -342,7 +264,7 @@ def test_x2b_sidebar_scope_switch_yields_the_right_book_list(
 
       * **`all`**：可见集合 == 四本。这是页面初始态，同时也是后两项的对照基准。
       * **`format:epub`**：可见集合 == 四本（域退化：四本都是 epub）。判据仍然不是
-        「和刚才一样」——`_assert_visible_book_ids` 断的是与**字面量常量**
+        「和刚才一样」——`helpers.assert_visible_book_ids` 断的是与**字面量常量**
         `ALL_BOOK_IDS` 的集合等值，所以一个「format 过滤按 title 匹配」的实现照样红。
       * **`format:pdf`**：**边界，断它 disabled 且点不动，而不是跳过它**（矩阵原文）。
         两半：`to_be_disabled()`，以及 `click(force=True)` 之后可见集合**没有变化**。
@@ -357,23 +279,23 @@ def test_x2b_sidebar_scope_switch_yields_the_right_book_list(
     （不派发 click）＋ 应用没有给它别的激活路径。不加 `force` 的话 Playwright 会先在
     actionability 上超时，那证明的是 Playwright 的检查工作正常，不是应用的行为。
     """
-    _assert_corpus_unchanged()
+    assert_corpus_unchanged(*CORPUS_CHECKS)
 
     page.goto(f"{live_server}{LIBRARY_PATH}")
 
     # 等价类 1：all（初始态）
     expect(page.get_by_test_id("lib-sidebar-scope-all")).to_be_visible()
-    _assert_visible_book_ids(page, ALL_BOOK_IDS, where="范围 all")
+    assert_visible_book_ids(page, ALL_BOOK_IDS, where="范围 all")
 
     # 等价类 2：format:epub
     page.get_by_test_id("lib-sidebar-scope-epub").click()
-    _assert_visible_book_ids(page, ALL_BOOK_IDS, where="范围 format:epub")
+    assert_visible_book_ids(page, ALL_BOOK_IDS, where="范围 format:epub")
 
     # 等价类 3：format:pdf —— 边界，断 disabled 且点不动
     pdf_scope = page.get_by_test_id("lib-sidebar-scope-pdf")
     expect(pdf_scope, "format:pdf 是尚未支持的格式，侧栏按钮必须是 disabled").to_be_disabled()
     pdf_scope.click(force=True)
-    _assert_visible_book_ids(
+    assert_visible_book_ids(
         page, ALL_BOOK_IDS, where="强行点过 format:pdf 之后（范围应仍是 format:epub）"
     )
 
@@ -427,15 +349,15 @@ def test_x2c_collection_scope_lists_exactly_the_added_book(
     照常通过——但真人用触屏或键盘时，选择模式没有任何视觉反馈。已在回报里点名，按 §0.5
     「特征化今天的行为」不在本波修。
     """
-    _assert_corpus_unchanged()
+    assert_corpus_unchanged(*CORPUS_CHECKS)
 
-    assert _read_collections(e2e_books_dir) == [] or all(
+    assert read_collections(e2e_books_dir) == [] or all(
         not str(c.get("name") or "").startswith(COLLECTION_NAME_PREFIX)
-        for c in _read_collections(e2e_books_dir)
+        for c in read_collections(e2e_books_dir)
     ), "清理 fixture 的前置扫描没生效：起点上还有同前缀的残留集合"
 
     page.goto(f"{live_server}{LIBRARY_PATH}")
-    _assert_visible_book_ids(page, ALL_BOOK_IDS, where="建集合前的书库")
+    assert_visible_book_ids(page, ALL_BOOK_IDS, where="建集合前的书库")
 
     # ---- 建集合 ----------------------------------------------------------
     page.get_by_test_id("lib-sidebar-create-collection").click()
@@ -445,11 +367,11 @@ def test_x2c_collection_scope_lists_exactly_the_added_book(
     expect(page.get_by_test_id("lib-modal-create-collection")).to_be_hidden()
 
     created = [
-        c for c in _read_collections(e2e_books_dir) if c.get("name") == x2c_collection_name
+        c for c in read_collections(e2e_books_dir) if c.get("name") == x2c_collection_name
     ]
     assert len(created) == 1, (
         f"创建之后 library_collections.json 里应恰好有 1 个名为 {x2c_collection_name!r} 的集合，"
-        f"实际 {len(created)} 个：{_read_collections(e2e_books_dir)!r}"
+        f"实际 {len(created)} 个：{read_collections(e2e_books_dir)!r}"
     )
     collection_id = str(created[0]["id"])
     assert created[0].get("book_ids") == [], (
@@ -474,7 +396,7 @@ def test_x2c_collection_scope_lists_exactly_the_added_book(
 
     # 判据 2：持久化文件的终态
     def _persisted_book_ids() -> List[str]:
-        for c in _read_collections(e2e_books_dir):
+        for c in read_collections(e2e_books_dir):
             if str(c.get("id")) == collection_id:
                 return [str(x) for x in (c.get("book_ids") or [])]
         return []
@@ -491,11 +413,11 @@ def test_x2c_collection_scope_lists_exactly_the_added_book(
     )
     expect(collection_row).to_be_visible()
     collection_row.get_by_role("button", name=x2c_collection_name).click()
-    _assert_visible_book_ids(page, {SMOKE_BOOK_ID}, where="切到新集合的范围下")
+    assert_visible_book_ids(page, {SMOKE_BOOK_ID}, where="切到新集合的范围下")
 
     # ---- 判据 3：切回 all --------------------------------------------------
     page.get_by_test_id("lib-sidebar-scope-all").click()
-    _assert_visible_book_ids(page, ALL_BOOK_IDS, where="从集合切回 all")
+    assert_visible_book_ids(page, ALL_BOOK_IDS, where="从集合切回 all")
 
     # ---- 判据 4：刷新之后重做判据 1（往返）--------------------------------
     page.reload()
@@ -504,4 +426,4 @@ def test_x2c_collection_scope_lists_exactly_the_added_book(
     )
     expect(collection_row_after).to_be_visible()
     collection_row_after.get_by_role("button", name=x2c_collection_name).click()
-    _assert_visible_book_ids(page, {SMOKE_BOOK_ID}, where="刷新后再切到该集合（往返断言）")
+    assert_visible_book_ids(page, {SMOKE_BOOK_ID}, where="刷新后再切到该集合（往返断言）")

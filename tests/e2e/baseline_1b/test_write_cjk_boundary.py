@@ -99,6 +99,7 @@ from playwright.sync_api import Page, expect
 from conftest import BOOK_ID_CJK  # type: ignore[import-not-found]
 from epub_corpus import CJK_SENTENCES  # type: ignore[import-not-found]
 from helpers import (  # type: ignore[import-not-found]
+    assert_corpus_unchanged,
     assert_roundtrip,
     open_reader,
     read_notes,
@@ -118,7 +119,7 @@ pytestmark = pytest.mark.baseline_1b
 # 从同一个源头切出期望值，等于拿运行期读到的值比运行期读到的值，语料一改这里跟着改，
 # 断言永远绿。写死之后，「选区滑了一个字」在失败消息里是一个人能一眼认出的字面量。
 #
-# 下面那句 `_assert_corpus_unchanged` 是**另一回事**：它不参与判据，只在语料被改动时
+# 下面那句 `assert_corpus_unchanged(*CORPUS_CHECKS)` 是**另一回事**：它不参与判据，只在语料被改动时
 # 把失败点从 `select_in_frame: 章内找不到 …` 提前到一句说得清的话。
 
 #: 到位探针（`open_reader` 的 `expect_text`）。含全角句号，与 quote 的用途相反——
@@ -181,24 +182,28 @@ W9B_OLD_BODY = "旧的笔记内容"
 W9B_NEW_BODY = "新的筆記內容，含日文かな與한글。"
 
 
-def _assert_corpus_unchanged() -> None:
-    """语料没被改过。**这不是判据，是诊断**。
-
-    `build_cjk` 的三句写在 `tests/fixtures/epub_corpus.py`，本模块把其中两句抄成了
-    字面量。抄本与原本分家时，真正的失败点在 `select_in_frame` 里，报出来的是
-    「章内找不到 '咖啡館裡'（body 文本 11 字符，开头 …）」——正确，但要读三层才明白。
-    先在这里说清楚。
-
-    反过来，**不能**用 `CJK_SENTENCES[0]` 直接派生期望值：那样语料一改期望值跟着改，
-    「选区滑了一个字」这类缺陷就再也不会红（§0 第五条纪律）。
-    """
-    assert CJK_SENTENCES[0] == CJK_CH0_ANCHOR, (
+#: 语料绊线（喂给 `helpers.assert_corpus_unchanged`）。**这不是判据，是诊断**。
+#:
+#: `build_cjk` 的三句写在 `tests/fixtures/epub_corpus.py`，本模块把其中两句抄成了
+#: 字面量。抄本与原本分家时，真正的失败点在 `select_in_frame` 里，报出来的是
+#: 「章内找不到 '咖啡館裡'（body 文本 11 字符，开头 …）」——正确，但要读三层才明白。
+#: 先在这里说清楚。
+#:
+#: 反过来，**不能**用 `CJK_SENTENCES[0]` 直接派生期望值：那样语料一改期望值跟着改，
+#: 「选区滑了一个字」这类缺陷就再也不会红（§0 第五条纪律）。
+CORPUS_CHECKS = (
+    (
+        CJK_SENTENCES[0],
+        CJK_CH0_ANCHOR,
         f"语料第一句变了：{CJK_SENTENCES[0]!r} != {CJK_CH0_ANCHOR!r}。"
-        "本模块的 quote / prefix / suffix 三个字面量都是从这一句上量出来的，要一起改。"
-    )
-    assert CJK_SENTENCES[1] == CJK_CH1_ANCHOR, (
-        f"语料第二句变了：{CJK_SENTENCES[1]!r} != {CJK_CH1_ANCHOR!r}。"
-    )
+        "本模块的 quote / prefix / suffix 三个字面量都是从这一句上量出来的，要一起改。",
+    ),
+    (
+        CJK_SENTENCES[1],
+        CJK_CH1_ANCHOR,
+        f"语料第二句变了：{CJK_SENTENCES[1]!r} != {CJK_CH1_ANCHOR!r}。",
+    ),
+)
 
 
 def test_w9a_cjk_marker_keeps_quote_prefix_suffix_on_codepoint_boundaries(
@@ -226,7 +231,7 @@ def test_w9a_cjk_marker_keeps_quote_prefix_suffix_on_codepoint_boundaries(
     NFC/NFD 不同规范化形式的字符串会判不等，而 `list(...)` 的失败消息会把是哪一个码点
     不同直接指出来，这在 CJK 上比一条「两个看起来一样的串不相等」有用得多。
     """
-    _assert_corpus_unchanged()
+    assert_corpus_unchanged(*CORPUS_CHECKS)
     assert read_notes(e2e_books_dir, BOOK_ID_CJK) == [], "隔离 fixture 没生效：起点不是空的"
 
     # 期望值本身的元断言：字符数与字节数必须不同，否则第 1 条判据分辨不出两种口径。
@@ -326,7 +331,7 @@ def test_w9b_cjk_note_body_survives_edit_and_reload(
     末尾的 `focus()` 把选区折叠，epub.js 的 `selected` 不再 emit）。本条因此不加任何
     sleep、不加重试。
     """
-    _assert_corpus_unchanged()
+    assert_corpus_unchanged(*CORPUS_CHECKS)
 
     seed_notes(
         e2e_books_dir,
