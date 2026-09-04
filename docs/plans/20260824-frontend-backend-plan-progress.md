@@ -54,6 +54,8 @@
 > **在 `009-e2e-annotations` 上开 Wave 5：WI-10，独占。**几何断言不与任何 WI 并行——
 > 视口尺寸与滚动位置是进程外的共享状态，同 worktree 并跑会互相踩。
 >
+> **009 合并之后先插一条小分支修欠账 #22**（2026-09-04 裁定）。字号 / 段落间距的第一次点击对正文毫无效果——`applySettings()` 跑在 `saveSettings()` 之前，而 `buildContentCss()` 回读 `localStorage`。**用户可见、改动两行**，不值得等整个 4B.3（前端计划 WI-18）。放在 009 之后而不是插进 009，是因为 009 是安全网分支、不改行为（`tasks/009` §0.5）；分支号按 [§9 的规则](20260816-tech-stack-migration/plan-tech-stack-migration.md) 在开分支当天分配，现在不预留。修完 `R-6a` 的 `stimulus_moves` 守卫会红，那是**正确的红**。
+>
 > 波次编排的唯一定义处是 [tasks/009 §0.6](20260816-tech-stack-migration/tasks/009-e2e-annotations.md)，
 > 本文不复述编排理由，只记进度与下一步。
 >
