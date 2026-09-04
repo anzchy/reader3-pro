@@ -17,7 +17,9 @@
 
 from __future__ import annotations
 
+import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -37,6 +39,12 @@ from epub_corpus import (  # type: ignore[import-not-found]
     build_epub2,
     build_epub3,
     build_huge_epub,
+)
+# 同一机制取 AI provider 桩（WI-16 · X-1）。桩模块不 import playwright，unit lane 也能用它。
+from ai_stub import (  # type: ignore[import-not-found]
+    RENDER_WAIT_TIMEOUT_S,
+    STUB_GATE_TIMEOUT,
+    OllamaStub,
 )
 
 # 冷启动要 import fastapi + ebooklib + chromadb 依赖链，机器慢时几秒起步。
@@ -320,3 +328,108 @@ def context(context):  # type: ignore[no-untyped-def]
     if blocked:
         # 只报不判：拦掉哪些外部域是**事实**，该不该有是设计决定，不该由这里替谁做。
         print(f"\n[e2e] 已拦下的外部请求域：{sorted(blocked)}")
+
+
+# ---------------------------------------------------------------------------
+# AI provider 桩（WI-16 · X-1 AI SSE 流式）
+# ---------------------------------------------------------------------------
+#
+# **桩为什么是 ollama 形状，不是 openai 形状（矩阵 §A）。** `server.py` 的 `event_gen`
+# 里只有 `worker_ollama` 逐块推送（逐行读 NDJSON、每行推一个 `chunk` 事件）；所有其他
+# provider 走 `worker_non_stream`，把整段回答作为**单个** `chunk` 事件推出。用 openai
+# 形状的桩，`rd-ai-thread` 的 DOM 更新次数恒为 1，X-1a「增量渲染」不可能绿——那不是
+# 实现有问题，是用例选错了 provider。附带收益：`ollama` 不在 `_provider_requires_api_key`
+# 的集合里，沙箱 settings 不必编一个假 key；`_ollama_root_base_url` 会削掉结尾的 `/v1`，
+# 桩的 `base_url` 直接写 `http://127.0.0.1:{port}` 即可；`validated_url` 允许 http + 任意
+# 有 host 的地址，127.0.0.1 通得过出网闸。
+#
+# **为什么不需要给 `live_server` 加参数、也不需要第二个服务进程。** `_server_env` 已经把
+# `READER3_AI_SETTINGS` 显式注回沙箱内的绝对路径（不变式钉在
+# `tests/unit/test_e2e_server_env_isolation.py`），而 `load_ai_settings()` 是**每请求读盘**。
+# 所以 X-1 只需要一个 **function 级 fixture** 在用例期间写那份文件、用完删掉。其他用例
+# 看到的仍是「文件不存在 ⇒ `default_settings_dict()` ⇒ 无 key ⇒ provider 以未配置干净拒绝」
+# 这个确定态。
+#
+# **桩由服务进程调用，不由浏览器调用。** 上面 `context` fixture 掐的是浏览器出网；服务
+# 子进程打 127.0.0.1 上的桩不经过它。两者互不干涉。
+
+#: 沙箱 settings 里 ollama 的 `model_name`。任意非空串即可（`get_provider_settings` 要求非空）。
+AI_STUB_MODEL = "stub-model"
+
+#: 沙箱 settings 里 ollama 的 `timeout_s`。它同时是三样东西的上界：`worker_ollama` 每次
+#: `readline()` 的 socket 超时、队列租约的 deadline（`queue.py`：`acquire` 时刻 + timeout_s）、
+#: 以及 X-1c 第二次提问在队列上等前一个租约的上限。
+#:
+#: 序关系：必须 **> STUB_GATE_TIMEOUT**（否则桩在 gate 上阻塞的那 5s 会被服务端当成 provider
+#: 读超时，SSE 推 `error`，X-1a′ 的因果链在被测代码之外就断了）；必须 **< RENDER_WAIT_TIMEOUT_S**
+#: （否则 X-1c「租约没释放」这个要抓的缺陷会表现为用例等待超时，而不是「第二次拿到了
+#: `Error: AI request timed out`」这条可诊断的断言失败）。这不是给用例另起的一套超时——
+#: 用例只用 `ai_stub.py` 里那三个常量；这是 settings 文件里一个字段的取值，写成常量是
+#: 为了让它相对那三个常量的位置可被机器检查。
+AI_STUB_PROVIDER_TIMEOUT_S = 10
+assert STUB_GATE_TIMEOUT < AI_STUB_PROVIDER_TIMEOUT_S < RENDER_WAIT_TIMEOUT_S
+
+
+def _reset_ai_conversations(books_dir: Path) -> None:
+    """删掉每本书的 `ai_conversations/`——服务端在 SSE `done` 时与前端 PUT 同步时都会往这里写。
+
+    复位到「不存在」，理由同 `_reset_notes`：那才是 `conversations.py` 唯一会返回空列表的
+    合法状态。不复位的话，下一条用例打开面板时 `restoreConversation()` 会从磁盘捞回上一条
+    用例的会话，`rd-ai-thread` 里于是先有了历史消息——`lastElementChild` 仍然取得对，但
+    「第二次提问是同一面板里的新问题」这句就不再是从空线程起算的了。
+    """
+    for book_id in E2E_BOOK_IDS:
+        shutil.rmtree(books_dir / book_id / "ai_conversations", ignore_errors=True)
+
+
+@pytest.fixture
+def ai_stub() -> Iterator[OllamaStub]:
+    """function 级：一条用例一个桩，端口由内核分配，用完关掉。
+
+    默认 `gate_mode=False`（四块一口气写完）；要握手的用例在拿到桩之后自己置
+    `stub.gate_mode = True`，用完的 gate 由用例自己 `set()`。
+    """
+    with OllamaStub() as stub:
+        yield stub
+
+
+@pytest.fixture
+def ai_settings_ollama(ai_stub: OllamaStub, e2e_books_dir: Path) -> Iterator[Path]:
+    """把沙箱 `ai_settings.json` 写成「default_provider=ollama、enabled、base_url=桩地址」，用完删掉。
+
+    路径与 `_server_env` 注入的 `READER3_AI_SETTINGS` **必须是同一个文件**，否则服务端读的是
+    另一份而用例毫无察觉。这里不改 `_server_env`（本波它一行不动），而是在运行期比对一次：
+    两处算出来的路径不同就当场 fail。
+
+    产出的是文件路径，方便用例在失败信息里点名它。
+
+    前后各复位一次 `ai_conversations/`：前置清掉上一条硬崩留下的残留，后置清掉本条自己写的
+    ——与 `notes_isolation` 同款理由。
+    """
+    settings_path = (e2e_books_dir.parent / "ai_settings.json").resolve()
+    injected = Path(_server_env(e2e_books_dir)["READER3_AI_SETTINGS"])
+    if injected != settings_path:
+        pytest.fail(
+            f"ai_settings 路径与 _server_env 注入的不一致：fixture 写 {settings_path}，"
+            f"服务读 {injected}。两处必须同一个文件。"
+        )
+    settings = {
+        "default_provider": "ollama",
+        "preferences": {"streaming_enabled": True},
+        "providers": {
+            "ollama": {
+                "enabled": True,
+                "base_url": ai_stub.base_url,
+                "model_name": AI_STUB_MODEL,
+                "timeout_s": AI_STUB_PROVIDER_TIMEOUT_S,
+                "max_retries": 0,
+            }
+        },
+    }
+    _reset_ai_conversations(e2e_books_dir)
+    settings_path.write_text(json.dumps(settings, ensure_ascii=False, indent=2), encoding="utf-8")
+    try:
+        yield settings_path
+    finally:
+        settings_path.unlink(missing_ok=True)
+        _reset_ai_conversations(e2e_books_dir)
