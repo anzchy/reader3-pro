@@ -39,7 +39,7 @@
 | **0** | `007-hygiene-and-contracts` | Phase 0 | 后端 | **✅** 2026-08-24 合入（PR #18） | [tasks/007](20260816-tech-stack-migration/tasks/007-hygiene-and-contracts.md) |
 | **1** | `008-test-safety-net` | Phase 1a | 后端 | **✅** 2026-08-26 合入（PR #19） | [tasks/008](20260816-tech-stack-migration/tasks/008-test-safety-net.md) |
 | **1.5** | *(009 harness spike)* | — | — | **✅** 2026-08-26 完成（`36a6ac2` 落在 `master`，lint 收尾 `7ed87e1`） | 本文 §2 的 P-2 |
-| **2** | `009-e2e-annotations` | Phase 1b | 后端 | **🚧** 2026-09-04：Wave 0–5 完成。写路径 W-1…W-10、读路径 R-1…R-6a、核心 K-1a/K-2/K-3/K-6a、书架往返 X-2a/b/c 全部落地，`baseline_1b` **61 / 61 条**（`tests/e2e` 全量 71 条 = 68 passed + 3 skipped，约 53s）。`src/` 一行未动。剩 Wave 6（WI-16，X-1 AI 流式）与 Wave 7（WI-17，skip 形态 ＋ 分组守卫），G1 在 Wave 7 之后 | [tasks/009](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
+| **2** | `009-e2e-annotations` | Phase 1b | 后端 | **🚧** 2026-09-04：Wave 0–6 完成，**22 个 baseline 用例编号全部落地**（R-1…R-6a、W-1…W-10、K-1a/K-2/K-3/K-6a、X-1/X-2），`baseline_1b` 收集 **65 条**（`tests/e2e` 全量 75 条 = 72 passed + 3 skipped，约 58s）。`src/` 一行未动。只剩 Wave 7（WI-17：14 条 skip 形态 ＋ 分组守卫 ＋ 把常量 61 改成实测 65），G1 在 Wave 7 之后 | [tasks/009](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
 | **3** | `011-backend-refactor` | Phase 2a+2b | 后端 | **⬛** 计划未写（故意，见[迁移计划 §9](20260816-tech-stack-migration/plan-tech-stack-migration.md)） | — |
 | **⟂** | `010-design-degradation-states` | Track D | **前端** | **⬜** WI-1 – WI-8 已定义 | [前端计划 §4](20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) |
 | **4** | `012-storage-format` | Phase 3 | 后端 | **⬛** 计划未写 | — |
@@ -51,10 +51,17 @@
 
 ### 现在该做什么
 
-> **在 `009-e2e-annotations` 上开 Wave 6：WI-16（X-1 AI SSE 流式，含桩 provider），独占。**
-> 它是唯一被授权改 `tests/e2e/conftest.py` 的一条（桩 provider 的 server env）；conftest 是
-> session 级 fixture 的定义处，改它会影响同时在跑的每一条用例，所以不并行。`acf7ccf` 已把
-> 服务子进程的 AI 配置路径钉在沙箱内，WI-16 在此之上接桩即可。
+> **在 `009-e2e-annotations` 上开 Wave 7：WI-17，独占，也是最后一波。** 内容三件：
+> 四个 acceptance 目录里的 skip 形态用例（W-5b、K-1b、K-6b、DEG-S1–S4 两组、DEG-S5，条数以
+> 任务书 §0.5 为准，欠账 #14 说 acceptance 该是 17 不是 14）、分组存量守卫（`lint_e2e_groups.py`
+> 的执行体：三分划分律 ＋ 白名单悬空检查 ＋ skip 轴护栏）、以及把 `EXPECTED_BASELINE_ITEMS`
+> 从预估的 61 改成实测的 **65** 并加「实测 == 常量」断言（欠账 #2）。它的分母是前六波的全部
+> 产出，所以必须最后。Wave 7 绿之后 G1 达成，解锁 4A；G2 另算。
+>
+> **Wave 6 已于 2026-09-04 收口**：X-1 四条落地，桩是 ollama 形状（只有它在服务端逐块推），
+> X-1a′ 用握手把「浏览器先渲染出首块、上游才发末块」变成可判定的因果断言。两处实测订正写进了
+> 任务书 §6 X-1 行：未建索引的书走**整句子串匹配**（新欠账 #26，指向 011），以及 `done` 后
+> 引用页脚追加在同一节点里。
 >
 > **Wave 5 已于 2026-09-04 收口**：K-3 六条落地，`baseline_1b` 到达 **61 / 61**。两处实测订正
 > 写进了 tasks/009 §4 的 K-3 行：三个浮层是 `<body>` 的直接子元素而非 `rd-shell` 的后代，
@@ -69,9 +76,11 @@
 >
 > **两个数不要混。** `baseline_1b` 有 **22 个用例编号**（§2 的 R-1…R-6、§3 的 W-1…W-10、
 > §4 的 K-1a/K-2/K-3/K-6a、§6 的 X-1/X-2）和 **61 个参数化条目**（`EXPECTED_BASELINE_ITEMS`，
-> 定义在 `scripts/lint_e2e_groups.py`）。进度按条目计：**55 / 61**。
-> 「实测 == 61」这条断言被**故意**推迟到 WI-17——每个 WI 都去加一次常量，那个脚本就成了
-> 13 条 WI 的串行写入点，并行当场作废。不要顺手把它提前。
+> 定义在 `scripts/lint_e2e_groups.py`）。进度按条目计：**实测 65**（Wave 6 后，22 个编号全部落地）。
+> **61 是 09-01 矩阵按 41 个测试函数推算的预估，已把 X-1 算在内**；各模块参数化条数在实现中漂移，
+> Wave 5 收到 61 只是碰巧等于常量，不是「收齐」。把常量改成实测值并加「实测 == 常量」断言被
+> **故意**推迟到 WI-17——每个 WI 都去加一次常量，那个脚本就成了 13 条 WI 的串行写入点，
+> 并行当场作废。不要顺手把它提前。
 >
 > **已完成**（Wave 0–4）：基础设施与台账（五个 marker 家族、`soak-log.md`）、harness 自测、
 > **全部写路径** W-1…W-10、核心路径 K-1a/K-2/K-6a、**全部读路径** R-1…R-6a、书架往返与集合

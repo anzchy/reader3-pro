@@ -22,22 +22,25 @@
 # baseline_1b 组用例 + harness 配置 + fixtures 的内容哈希，前 12 位
 { git ls-files -s tests/e2e/baseline_1b tests/e2e/conftest.py tests/e2e/helpers.py \
     tests/e2e/test_harness_smoke.py tests/fixtures/epub_corpus.py tests/fixtures/epub_zip.py \
-    tests/conftest.py \
+    tests/fixtures/ai_stub.py tests/conftest.py \
   | git hash-object --stdin; } | cut -c1-12
 ```
 
-当前 `suite_hash` 值：`39f502b41e65`（2026-09-04 Wave 5 收口实测输出，非誊抄）。
+当前 `suite_hash` 值：`91de0e171b5c`（2026-09-04 Wave 6 收口实测输出，非誊抄）。
 
-**这个值处于 pre-freeze，不是冻结值。** G2 尚未开始。`baseline_1b` 的 61 条**今天第一次收集齐**
-（WI-3 的 harness 自测 9 条 ＋ WI-4 的创建路径 3 条 ＋ WI-5 的笔记创建/编辑 2 条 ＋ Wave 2 的 14 条
-＋ Wave 3 的 18 条 ＋ Wave 4 的 9 条 ＋ Wave 5 的 6 条；`tests/e2e` 全量 71 条，差额是 `acceptance_4b1`
-的 3 条 skip 与白名单里的 smoke、testid 唯一性），但 Wave 6 要改 `conftest.py`、Wave 7 要往
-acceptance 目录落 skip 用例并写「实测 == 61」的守卫——前者在覆盖面内、必然再变一次。写在这里是
-免得后来者拿今天这个值当冻结值。
+**这个值处于 pre-freeze，不是冻结值。** G2 尚未开始。`baseline_1b` 的 22 个用例编号**今天全部落地**，
+收集到 **65 条**（WI-3 的 harness 自测 9 条 ＋ WI-4 的创建路径 3 条 ＋ WI-5 的笔记创建/编辑 2 条
+＋ Wave 2 的 14 条 ＋ Wave 3 的 18 条 ＋ Wave 4 的 9 条 ＋ Wave 5 的 6 条 ＋ Wave 6 的 4 条；
+`tests/e2e` 全量 75 条，差额是 `acceptance_4b1` 的 3 条 skip 与白名单里的 smoke、testid 唯一性）。
+Wave 7 还要往 acceptance 目录落 skip 用例并写「实测 == 常量」的守卫，acceptance 目录不在覆盖面内，
+但守卫若碰 `conftest.py` 就会再变一次。写在这里是免得后来者拿今天这个值当冻结值。
 
-**「61」是目标，不是当前计数。** `scripts/lint_e2e_groups.py` 的 `EXPECTED_BASELINE_ITEMS`
-从 WI-1 起就写着 61，且**故意**不随每个 WI 递增——递增会把那个脚本变成 13 路串行写入点，
-波内并行当场作废。「实测 == 61」这条断言归 WI-17，在最后一次落地。
+**「61」是 2026-09-01 矩阵的预估，不是实测。** `scripts/lint_e2e_groups.py` 的 `EXPECTED_BASELINE_ITEMS`
+从 WI-1 起就写着 61（矩阵按 41 个测试函数推算的 collected 数，已把 X-1 的 4 条算在内），且**故意**
+不随每个 WI 递增——递增会把那个脚本变成 13 路串行写入点，波内并行当场作废。各模块的参数化条数
+在实现中漂移（harness 自测 9、W-5a 8、K-2 11 等），所以 Wave 5 收到的 61 只是碰巧等于常量，
+**不是「收齐」**；Wave 6 之后实测是 65。把常量改成实测值并加「实测 == 常量」断言归 WI-17
+（跨波欠账 #2）。
 
 **取值前必须先 `git add`。** 上面这条命令读的是**索引**，不是工作区：新用例文件在 `git add`
 之前对 `git ls-files -s` 根本不存在，改过的 `helpers.py` 也仍报旧内容。WI-4、Wave 0、WI-5 三次
@@ -45,6 +48,13 @@ acceptance 目录落 skip 用例并写「实测 == 61」的守卫——前者在
 
 值的变更史（每次改都要写清作废原因，不要只覆盖数字）：
 
+- `91de0e171b5c` ← Wave 6（WI-16）一个新模块 ＋ `tests/e2e/conftest.py` 新增两个 function 级 fixture ＋ 覆盖面**新增一个文件** `tests/fixtures/ai_stub.py`。三个理由各自都足以让旧值作废。
+  - **用例增量**：`baseline_1b/test_other_ai_streaming.py`（X-1a 增量渲染且每帧是前缀、X-1a′ 桩侧握手「首块渲染 happens-before 末块发送」、X-1b 终态等值 ＋ 零真实出网 ＋ 引用页脚、X-1c stop 后重发完整收到，共 **4 条**）。baseline_1b **61 → 65 条**，`tests/e2e` 全量 **71 → 75 条**（72 passed + 3 skipped），全量耗时约 53s → **约 58s**。
+  - **harness**：`conftest.py` 新增 `ai_stub`（ollama 形状的进程内 NDJSON 桩，127.0.0.1 临时端口）与 `ai_settings_ollama`（在沙箱 `ai_settings.json` 写入 `default_provider=ollama` 指向桩，用完删掉，前后复位 `ai_conversations/`）。`_server_env` 一行未动，其注入的 `READER3_AI_SETTINGS` 路径与 fixture 写的文件在运行期比对相等。**桩必须是 ollama 形状**：`server.py` 只有 `worker_ollama` 逐块推送，其余 provider 走 `worker_non_stream` 把整段答案当一个 `chunk`，浏览器侧 DOM 更新恒为 1 次，X-1a 不可能绿（矩阵 §A）。
+  - **覆盖面新增 `tests/fixtures/ai_stub.py`**：它进了 `baseline_1b` 的 import 闭包，`test_soak_log_contract.py` 的闭包检查会要求它出现在上面的命令里。桩自身的「gate 超时后干净收尾、不发末块、不断连接」契约由 `tests/unit/test_ai_stub_contract.py`（3 条，unit lane）钉住——X-1a′ 的失败形态（断言失败而非 timeout）全靠它。
+  - **两处实测订正**（已写进任务书 §6 X-1 行）：`rag.py` 的 `_keyword_fallback` 是**整句子串匹配**，矩阵给的提问 `"Alpha 这一章讲了什么？"` 对未建索引的沙箱书返回 400，本模块提问必须是正文逐字子串（`QUESTION = "Alpha prose"`）；`done` 后 `renderAll()` 会在**同一节点**里追加 `div.ai-citations`，快照不能读 `lastElementChild.innerText`，改读该节点自己的文本节点。
+  - **定向破坏 4 处**（3 处 `page.route` 改写 `ai.js`，1 处改桩的临时副本），`src/` 一行未动。关键一发：把流式分支改成 `await resp.text()` 后回放，X-1a′ 以 `assert stub.completed is True` 失败、耗时 5.06s——证明 R2 的超时序关系把失败形态钉在了「断言失败」而不是「timeout」。S3（删 `abort()`）暴露首版 X-1c 对「stop 不中止 fetch」是盲的，录红后**追加**两条断言（`gate_timed_out is False`、`completed is False`），既有断言零改动。
+  - 红收据 `009-WI-16`（lane e2e）记 `green`，verify 判 `SEPARATION-BROKEN`：逐行指纹核对，新增 21 行全在 X-1c 的追加断言与 `SABOTAGE_LOG` 块内，消失的记录行 1 条（破坏表占位）。
 - `39f502b41e65` ← Wave 5（WI-10）一个新模块 ＋ `helpers.py` 与七个既有模块的 helper 上收。**两个理由各自都足以让旧值作废。**
   - **用例增量**：`baseline_1b/test_kernel_overlay_geometry.py`（K-3a 三浮层 `position: fixed` ＋ 祖先链无包含块制造者 ×3、K-3b 工具条对选区的绝对对位、K-3b′ 平移协变差分、K-3c 笔记编辑器贴边，共 **6 条**）。baseline_1b **55 → 61 条**（`EXPECTED_BASELINE_ITEMS` 的分母今天第一次被实测填满；「实测 == 61」的断言仍留给 WI-17），`tests/e2e` 全量 **65 → 71 条**（68 passed + 3 skipped），全量耗时约 50s → **约 53s**。
   - **helper 上收**（兑付欠账 #25）：`open_ch0`（三份合一）/ `settle_marks` / `open_reader_settled` / `open_font_popover` / `content_style` / `assert_corpus_unchanged` / `assert_visible_book_ids` / `collections_file` / `read_collections` / `http_json` / `delete_collections_with_prefix` / `frame_box` 进 `helpers.py`，七个模块切换调用点。除 `assert_corpus_unchanged` 外全是改名；那一个是把四个模块各自的字面量绊线抽成共有形状 `assert_corpus_unchanged(*checks)`，每模块的期望值与消息文本逐字留在各自的 `CORPUS_CHECKS` 里（§0 第五条：基准仍是字面量）。

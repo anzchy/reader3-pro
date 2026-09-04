@@ -271,9 +271,9 @@ K1 的 baseline 条是有价值的：它会在**任何人改模板删掉那七�
 | ~~**Wave 2**~~ ✅ | WI-6、WI-7、WI-8 | 3 | 写路径收尾。三条各建自己的模块，互不相干；WI-8 要的 CJK 语料（`build_cjk` / `cjk_data`）在 WI-3 已经进 conftest，所以它不碰共享文件 |
 | ~~**Wave 3**~~ ✅ | WI-9、WI-11、WI-12 | 3 | 契约（K-2/K-6a、K-1a）＋ 读路径基础（R-1…R-3）。都只读标注，不改写路径 |
 | ~~**Wave 4**~~ ✅ | WI-13、WI-14、WI-15 | 3 | R-4/R-5、R-6、X-2。同上。2026-09-04 `f518be3` 收口 |
-| ~~**Wave 5**~~ ✅ | WI-10 | 1（独占） | 见下。2026-09-04 收口：K-3a×3 / K-3b / K-3b′ / K-3c 六条，`baseline_1b` **61 / 61**；欠账 #25 的 helper 上收同批兑付 |
-| **Wave 6** ⬅ **下一波** | WI-16 | 1（独占） | 唯一要改 `tests/e2e/conftest.py` 的一条（桩 provider 的 server env）。conftest 是 session 级 fixture 的定义处，改它会影响同时在跑的每一条用例 |
-| **Wave 7** | WI-17 | 1（独占） | 14 条 skip 形态用例 ＋ 分组存量守卫 ＋「实际 == 61」。它的断言的分母是前六波的全部产出，任何一条没落地它就红。**必须最后，且必须在 Wave 6 的门禁绿之后** |
+| ~~**Wave 5**~~ ✅ | WI-10 | 1（独占） | 见下。2026-09-04 收口：K-3a×3 / K-3b / K-3b′ / K-3c 六条，`baseline_1b` 收到 61 条（与常量 61 相等是巧合——常量是矩阵预估且已含 X-1，见 soak-log）；欠账 #25 的 helper 上收同批兑付 |
+| ~~**Wave 6**~~ ✅ | WI-16 | 1（独占） | 2026-09-04 收口：X-1a / X-1a′ / X-1b / X-1c 四条 ＋ 桩契约 unit 用例 3 条，`baseline_1b` **65 条**，22 个用例编号全部落地。 唯一要改 `tests/e2e/conftest.py` 的一条（桩 provider 的 server env）。conftest 是 session 级 fixture 的定义处，改它会影响同时在跑的每一条用例 |
+| **Wave 7** ⬅ **下一波** | WI-17 | 1（独占） | 14 条 skip 形态用例 ＋ 分组存量守卫 ＋「实际 == 常量」（常量须先由预估的 61 改成实测的 65，欠账 #2）。它的断言的分母是前六波的全部产出，任何一条没落地它就红。**必须最后，且必须在 Wave 6 的门禁绿之后** |
 
 **Wave 0 为什么必须先于一切**：`_open_reader` 与 `_wait_for_notes` **今天已经在两个模块里各有一份**
 （`baseline_1b/test_harness_helpers.py` 与 `baseline_1b/test_write_create_annotations.py` 各自都定义了这两个私有函数）。两份的时候还只是
@@ -342,6 +342,7 @@ K1 的 baseline 条是有价值的：它会在**任何人改模板删掉那七�
 | 23 | **多选模式没有视觉反馈**：`library.js` 的 `setSelectMode` 往 `<body>` 上加的类叫 `select-mode`，而样式表里写的是 `.selection-mode .select-checkbox { opacity: 1 }`——**两个名字对不上**，于是进入多选模式后复选框仍是 `opacity: 0`，只有 `.book-card:hover` 那条兜底规则能让鼠标悬停时露出来。键盘用户与触屏用户因此完全看不到自己已经进了多选模式 | WI-15（2026-09-04 发现，主控独立复验两处类名） | **前端计划 WI-13**（4A.4 书库页切片；改一个类名即可，但哪个名字是设计想要的归那边裁定，见其 §6.1） | 进入多选模式后不悬停也能看到复选框 | 未结清 |
 | 24 | **阅读器左栏的「回书架」链接没有 testid**，只有 `title="Back to Library"`（`reader.html` 的 `<a href="/" class="rt-btn">`）。X-2a 的往返因此只能靠英文 title 的可访问名，**与欠账 #15 同一脆弱类**：合规、lint 拦不到、改文案即断 | WI-15（2026-09-04） | **4A**（补 testid，命名按 ADR-0014） | X-2a 改用 `get_by_test_id` | 未结清 |
 | 25 | **Wave 4 又攒下一批该上收的 helper，且 `_open_ch0` 已经重复三份**（`test_write_recolor_and_delete.py`、WI-14 的 baseline 模块、WI-14 的 acceptance 模块）——它同时**背着欠账 #16 的等待纪律**，复制一份就多一处会悄悄退化的等待；WI-13 的 `_settled(page, frame, expected_marks)` 是同一条纪律的又一次转写。连带待上收：`_open_font_popover`、`_content_style`、`_assert_corpus_unchanged`，以及 WI-15 的 `_assert_visible_book_ids` / `_read_collections` / `_collections_file` / `_delete_collections_with_prefix` / `_http_json`。**另需写进 §0.6 的不是 helper 而是一条纪律**：共享 worktree 的并行波次里，定向破坏一律走 `page.route` 改写响应体，**绝不原地改 `src/`**——Wave 4 里 WI-14 的 S1 破坏被并跑的 WI-13 当场撞见（WI-13 处置正确：不碰，自己全程走 `page.route`） | Wave 4（2026-09-04） | **Wave 5 的 WI-10**（下一个被授权写 `helpers.py` 的工作项；共享文件授权制见 §0.6） | `grep -c "def _open_ch0\|def _settled" tests/e2e/baseline_1b/*.py tests/e2e/acceptance_4b1/*.py` 为 0。**纪律那一半已结清**：009 里已无并行波次（Wave 5/6/7 全独占），真正的消费者是 011/013/014，所以它已上收进[迁移计划 §5 的工程实践表](../plan-tech-stack-migration.md)，不留在本表 | **已结清**（Wave 5 / WI-10，2026-09-04：十一个 helper 进 `helpers.py`，七个模块切换调用点，验收 grep 为 0。唯一非纯改名的是 `assert_corpus_unchanged`——四个模块各查各的字面量，抽成 `assert_corpus_unchanged(*checks)`，期望值与消息逐字留在各模块的 `CORPUS_CHECKS`，基准仍是字面量） |
+| 26 | **未建索引的书，AI 提问只在「整句是正文子串」时才能回答**：`ai/rag.py` 的 `_keyword_fallback` 用 `text.lower().find(query.lower())` 拿**整个提问**当子串找，不分词。实测 `'Alpha prose'` 200、`'Alpha 这一章讲了什么？'` 400（`This book is not indexed for semantic retrieval yet`）。用户在没跑 `--index` 的书上问任何自然语言问题都会被拒，而错误文案只说「没建索引」，不说「换个问法」。这是降级路径的可用性缺陷，不是 bug；009 只特征化（X-1 的提问因此取 `"Alpha prose"`） | WI-16（2026-09-04 实测） | **011**（`rag.py` 属后端重构范围；改法是分词后任一关键词命中即回退，或至少把 400 文案改成可操作的） | 未建索引的书上，含正文关键词的自然语言提问返回 200 SSE；X-1 的 `QUESTION` 届时可改回矩阵原句并保持绿 | 未结清 |
 
 #### 欠账 4 的根因订正（2026-09-03）
 
@@ -553,7 +554,7 @@ child frame 内 document.createRange() → 写入 iframe 的 Selection
 
 | # | 用例 | 说明 |
 |---|---|---|
-| X-1 | AI SSE 流式 | 首 token 到达 + 流正常结束 + 中断可恢复 |
+| X-1 | AI SSE 流式 | 首 token 到达 + 流正常结束 + 中断可恢复。**落地（2026-09-04，`tests/e2e/baseline_1b/test_other_ai_streaming.py`，4 条 ＋ `tests/unit/test_ai_stub_contract.py` 3 条）**：桩是 **ollama 形状**的进程内 NDJSON 服务（`tests/fixtures/ai_stub.py`），因为 `server.py` 只有 `worker_ollama` 逐块推、其余 provider 整段一个 `chunk`；沙箱 `ai_settings.json` 由 function 级 fixture 写/删，`_server_env` 未动。X-1a′ 用 `threading.Event` 握手把「首块已渲染 happens-before 末块发出」变成可判定，三个超时常量 `5 < 15 < 30` 写成模块级断言。**两处实测订正**：(a) `rag.py` 的 `_keyword_fallback` 是**整句子串匹配**而非分词命中——矩阵给的提问 `"Alpha 这一章讲了什么？"` 对未建索引的书返回 400 普通 JSON（在任何 SSE 帧之前），提问必须是正文逐字子串（`"Alpha prose"`）；(b) `done` 后 `renderAll()` 在同一消息节点里追加 `div.ai-citations`，快照不能读 `lastElementChild.innerText`，改读该节点自己的文本节点，引用页脚在 X-1b 单独断 |
 | X-2 | 书库导航与集合切换 | 4A.4 切页时的护栏 |
 
 ---
