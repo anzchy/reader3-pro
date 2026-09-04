@@ -9,10 +9,12 @@
 不会拉浏览器，也绝不会碰开发者真实的 `books/`（`tests/conftest.py` 顶部那条
 `shutil.rmtree()` 警告说的就是这个）。
 
-**本 WI 不断的东西**：`EXPECTED_BASELINE_ITEMS`(61) 与 `EXPECTED_ACCEPTANCE_ITEMS`(14)
-这两段。矩阵第二条用例的 Expected output 写的是三段等式，但 61 条 baseline 和 14 条
-acceptance 的用例文件在 WI-1 阶段一个都还没写，那段等式此刻不可能绿。三段等式整体
-由 **WI-17 的划分律用例**承担；WI-1 只记录它的两个前置条件——marker 拼错必须响亮，
+**本 WI 不断的东西**：`EXPECTED_BASELINE_ITEMS` 与 `EXPECTED_ACCEPTANCE_ITEMS`
+这两段。矩阵第二条用例的 Expected output 写的是三段等式，但 baseline 和 acceptance
+的用例文件在 WI-1 阶段一个都还没写，那段等式此刻不可能绿。三段等式整体
+由 **WI-17 的划分律用例**承担（`tests/unit/test_e2e_group_guard.py`，2026-09-04 已落地：
+baseline 实测 65、acceptance 按目录 8/4/4/1 合计 17，常量随之从预估的 61/14 改为实测值）；
+WI-1 只记录它的两个前置条件——marker 拼错必须响亮，
 目录布局不能打断既有 import——外加**从没被记录过的根目录基线**
 （`EXPECTED_UNGROUPED_ITEMS`，任务书 §0.5「需要回写」第 5 条）。
 
@@ -79,7 +81,17 @@ def _load_groups_lint() -> ModuleType:
     spec = importlib.util.spec_from_file_location("lint_e2e_groups_under_test", GROUPS_LINT_PATH)
     assert spec is not None and spec.loader is not None, f"无法从 {GROUPS_LINT_PATH} 加载"
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    # exec_module 之前必须先登记进 sys.modules（importlib 文档给的标准写法）。被加载的脚本里
+    # 有 @dataclass 且用了字符串注解，dataclasses._is_type() 会去 sys.modules.get(cls.__module__)
+    # 取模块对象解析注解；没登记就拿到 None，随即 AttributeError: 'NoneType' has no attribute
+    # '__dict__'。这行不是可省的样板——删掉它，这个 helper 会在加载期直接炸。
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        # 加载失败就不要把半成品留在 sys.modules 里，否则重复调用会拿到坏模块。
+        sys.modules.pop(spec.name, None)
+        raise
     return module
 
 

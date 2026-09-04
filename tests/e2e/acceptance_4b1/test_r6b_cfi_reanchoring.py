@@ -52,8 +52,9 @@ skip 形态，`acceptance_4b1` 组。矩阵：`.claude/tdd-guardian/tests-202609
 1. 欠账 #6 修好（`currentContents` 存真正的 `Contents`，或另给一条拿得到 `cfiFromRange`
    的路），确认新建标注的 `cfi` 不再是 `null`。
 2. 删掉模块级 `pytest.mark.skip`，跑本模块。
-3. `EXPECTED_ACCEPTANCE_ITEMS` 从 14 改成 17（欠账 **#14**，已挂在 WI-17 名下）。
-   **本模块不改它**——三个 WI 并行往 `acceptance_*` 里加条目，谁都改这个常量就会互相打架。
+3. 条数常量**不必再改**：欠账 **#14** 已由 WI-17 结清，`scripts/lint_e2e_groups.py` 的
+   `EXPECTED_ACCEPTANCE_PER_DIR["acceptance_4b1"]` 按 8 计（R-6b 3 ＋ K-1b ＋ K-6b ＋ W-5b 3），
+   解 skip 只是让这三条从 skipped 变 passed，不改收集条数。
 4. 若第 1 步之后 `range.toString()` 与 `quote` 对不上（差空白、差首尾一两个字符），
    那是**真红**：CFI 的 `toRange` 与我们建它时用的 Range 之间存在偏移，别改期望值去迁就，
    先看 `annotations.js` 建 CFI 时传的是不是同一个 Range。
@@ -97,11 +98,11 @@ pytestmark = [
     pytest.mark.acceptance_4b1,
     pytest.mark.skip(
         reason=(
-            "跨波欠账 #6：`cfi` 恒为 null——`epub-renderer.js` 把 epub.js 的 view 当作 "
-            "Contents 存进 currentContents，`cfiFromRange` 不存在，`annotations.js` 的卫语句"
+            "激活阶段 4B.1（与跨波欠账 #6 的修复同期）：`cfi` 恒为 null——`epub-renderer.js` 把 epub.js 的 "
+            "view 当作 Contents 存进 currentContents，`cfiFromRange` 不存在，`annotations.js` 的卫语句"
             "永假，所以生产从未产出过带 CFI 的记录，本组三条今天无对象（不是失败）。"
-            "兑付欠账 #6 后删本行，并由 WI-17 把 EXPECTED_ACCEPTANCE_ITEMS 从 14 改到 17"
-            "（欠账 #14）。"
+            "到期动作：兑付欠账 #6 后删本行；条数常量 EXPECTED_ACCEPTANCE_PER_DIR['acceptance_4b1'] 已按 8 计"
+            "（欠账 #14 由 WI-17 结清），不必再改。"
         )
     ),
 ]
