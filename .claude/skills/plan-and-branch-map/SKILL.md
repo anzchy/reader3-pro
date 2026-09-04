@@ -72,7 +72,7 @@ Do not invent a new number without updating that table.
 |---|---|---|---|
 | M0 — Phase 0 contracts + hygiene | `007-hygiene-and-contracts` | migration | ✅ Merged (PR #18) |
 | M1 — tests + CI + API freeze | `008-test-safety-net` | migration | ✅ Merged (PR #19) |
-| M1b — Playwright E2E | `009-e2e-annotations` | migration | 🚧 In progress (Wave 0–6 of 8 done; all 22 `baseline_1b` case ids landed, 65 items collected; Wave 7 (skip-form cases + group guards) pending; G1 / G2 not met, soak not started) |
+| M1b — Playwright E2E | `009-e2e-annotations` | migration | 🔨 Done on branch, not merged (all 8 waves closed 2026-09-04; **G1 met**: `baseline_1b` 65 items green, 17 skip-form acceptance items, 89 collected, three lints rc=0. **G2 not started** — `suite_hash` still pre-freeze, soak ledger has zero rows) |
 | MD — design degradation states | `010-design-degradation-states` | **frontend** | WI-1 – WI-8 |
 | M2 — backend refactor | `011-backend-refactor` | migration | Allocated |
 | M3 — storage migration | `012-storage-format` | migration | Allocated |

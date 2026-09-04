@@ -39,7 +39,7 @@
 | **0** | `007-hygiene-and-contracts` | Phase 0 | 后端 | **✅** 2026-08-24 合入（PR #18） | [tasks/007](20260816-tech-stack-migration/tasks/007-hygiene-and-contracts.md) |
 | **1** | `008-test-safety-net` | Phase 1a | 后端 | **✅** 2026-08-26 合入（PR #19） | [tasks/008](20260816-tech-stack-migration/tasks/008-test-safety-net.md) |
 | **1.5** | *(009 harness spike)* | — | — | **✅** 2026-08-26 完成（`36a6ac2` 落在 `master`，lint 收尾 `7ed87e1`） | 本文 §2 的 P-2 |
-| **2** | `009-e2e-annotations` | Phase 1b | 后端 | **🚧** 2026-09-04：Wave 0–6 完成，**22 个 baseline 用例编号全部落地**（R-1…R-6a、W-1…W-10、K-1a/K-2/K-3/K-6a、X-1/X-2），`baseline_1b` 收集 **65 条**（`tests/e2e` 全量 75 条 = 72 passed + 3 skipped，约 58s）。`src/` 一行未动。只剩 Wave 7（WI-17：14 条 skip 形态 ＋ 分组守卫 ＋ 把常量 61 改成实测 65），G1 在 Wave 7 之后 | [tasks/009](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
+| **2** | `009-e2e-annotations` | Phase 1b | 后端 | **🔨** 2026-09-04：**八波（0–7）全部收口，G1 达成**。`baseline_1b` **65 条**全绿，验收三组 **17 条** skip 形态就位，`tests/e2e` 全量 **89 条**（72 passed + 17 skipped，约 58s）。分组守卫、选择器 lint、testid 命名 lint 三条 rc=0；unit + contract **954 条**绿。`src/` 一行未动。**G2 未开始**（`suite_hash` 仍 pre-freeze，台账零行） | [tasks/009](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
 | **3** | `011-backend-refactor` | Phase 2a+2b | 后端 | **⬛** 计划未写（故意，见[迁移计划 §9](20260816-tech-stack-migration/plan-tech-stack-migration.md)） | — |
 | **⟂** | `010-design-degradation-states` | Track D | **前端** | **⬜** WI-1 – WI-8 已定义 | [前端计划 §4](20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) |
 | **4** | `012-storage-format` | Phase 3 | 后端 | **⬛** 计划未写 | — |
@@ -51,12 +51,24 @@
 
 ### 现在该做什么
 
-> **在 `009-e2e-annotations` 上开 Wave 7：WI-17，独占，也是最后一波。** 内容三件：
-> 四个 acceptance 目录里的 skip 形态用例（W-5b、K-1b、K-6b、DEG-S1–S4 两组、DEG-S5，条数以
-> 任务书 §0.5 为准，欠账 #14 说 acceptance 该是 17 不是 14）、分组存量守卫（`lint_e2e_groups.py`
-> 的执行体：三分划分律 ＋ 白名单悬空检查 ＋ skip 轴护栏）、以及把 `EXPECTED_BASELINE_ITEMS`
-> 从预估的 61 改成实测的 **65** 并加「实测 == 常量」断言（欠账 #2）。它的分母是前六波的全部
-> 产出，所以必须最后。Wave 7 绿之后 G1 达成，解锁 4A；G2 另算。
+> **009 的用例工作到此为止，G1 已达成。下一步是两件可以并行的事，都不是"再写用例"。**
+>
+> **一、决定要不要现在起跑 G2。** 起跑动作是：连续 3 次 `baseline_1b` 全量绿、往台账写第一行、
+> `suite_hash` 由此**冻结**。冻结之后再动 `baseline_1b` / `conftest.py` / `helpers.py` / 那几个
+> fixture，计数按迁移计划 §7 从零重来。所以这不是一个技术动作，是一次背书——**Phase 3 要的
+> ≥10 次 / ≥5 个工作日从第一行的日期开始数，日历时间买不回来，起跑早比起跑晚划算，前提是你
+> 确实不打算再改这套用例了。** 已知会碰它的只有欠账 #22 那条小分支（改的是 `src/`，不碰用例）。
+>
+> **二、把 009 合入，然后按 §2 的顺序进 011**（soak 与 011 同期跑，这正是 P-3 采纳 C 方案的理由）。
+> 合入之后先插欠账 #22 的小分支（下面那条 2026-09-04 裁定）。**G1 同时解锁了 013（Phase 4A）**——
+> 它要的是 G1 不是 soak，可与 011 / 012 交错。
+>
+> **Wave 7 已于 2026-09-04 收口，八波编排结束**：验收组 17 条 skip 用例（4b1 8 / p3 4 / 4a4 4 /
+> 2a 1）、`lint_e2e_groups.py` 分组守卫、`soak_run.py`、共用 DEG 断言体。常量全部由预估改实测并
+> 相互派生（65 / 17 / 7，合计 89 = 实测收集数），欠账 #2 与 #14 结清。**本波录到全支唯一一次真红**
+> （99 条里 37 条失败，`assertion-failure`），verify 判 `SEPARATION-HELD`；前六波是特征化用例，
+> 红在结构上不可得，只能靠定向破坏作证。**并修掉了 G2 判据里的一处死锁**（见下面 2026-09-04 的
+> 决策行），那处不修，soak 会永远开不出绿灯，且失败形态与「还没开始数」完全同形。
 >
 > **Wave 6 已于 2026-09-04 收口**：X-1 四条落地，桩是 ollama 形状（只有它在服务端逐块推），
 > X-1a′ 用握手把「浏览器先渲染出首块、上游才发末块」变成可判定的因果断言。两处实测订正写进了
@@ -220,7 +232,9 @@ grep -c '^\- \[x\]' docs/plans/20260816-tech-stack-migration/tasks/008-test-safe
 grep -c '^\- \[ \]' docs/plans/20260816-tech-stack-migration/tasks/008-test-safety-net.md
 #   009 的用例表没有状态列，checkbox 数恒为 0——对 009 跑上面两条会得到 0 / 0，
 #   那是「配方不适用」，不是「没进度」。009 的进度按 pytest item 数：
-uv run pytest tests/e2e --collect-only -q -m baseline_1b -p no:cacheprovider | tail -1   # 分子；分母 61 在 scripts/lint_e2e_groups.py
+uv run pytest tests/e2e --collect-only -q -m baseline_1b -p no:cacheprovider | tail -1   # 应为 65/89（24 deselected）
+uv run python scripts/lint_e2e_groups.py   # rc=0 才算数；它把三条轴（划分律／条数／skip）一次跑完，
+                                           # 常量 65 / 17 / 7 与派生总数 89 都在它的摘要行里，别再手抄分母
 grep -c '^| ~~\*\*Wave' docs/plans/20260816-tech-stack-migration/tasks/009-e2e-annotations.md  # 已收口的波次数（共 8 波：0–7）
 grep -c '未结清' docs/plans/20260816-tech-stack-migration/tasks/009-e2e-annotations.md          # 跨波欠账未结清行数
 
@@ -259,6 +273,10 @@ gh run list --limit 5
 | 2026-09-03 | **R-6 拆成 R-6a / R-6b**（`4ed7dff`）：`cfi` 今天恒为 `null`（欠账 #6），CFI 侧锚定归 4B.1 以 skip 形态写 | [tasks/009 §0.5 / §2](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
 | 2026-09-04 | Wave 4 收口（`f518be3`）：`baseline_1b` 55 / 61 条。撞出的五条生产缺陷（#15 / #21 / #22 / #23 / #24）**只记录不修**，兑付方写进前端计划 §6.1；#18（集合名连字符）指向 011 | [tasks/009 跨波欠账](20260816-tech-stack-migration/tasks/009-e2e-annotations.md)／[前端计划 §6.1](20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) |
 | 2026-09-04 | **009 合并后先插一条小分支修欠账 #22**（用户可见、两行改动），不插进 009；分支号开分支当天分配（`f27cf5c`） | 本文 §1「现在该做什么」 |
+| 2026-09-04 | **G2 的「绿」判据订正：`deselected == 0` → `deselected` 恰好等于验收 ＋ 白名单条数（派生，非字面量）**。原文把一个巧合写成了规格——写它时 `tests/e2e` 整棵树都是 baseline，`-m baseline_1b` 恰好 deselect 0 条；Wave 7 落地 24 条非 baseline item 后，soak 真跑必判红，**这道门变成永远开不出绿灯的门，且失败形态与「还没开始数」同形** | [tasks/009 §8 G2](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
+| 2026-09-04 | **G1 的「并往 `soak-log.md` 记账」取「不落账」解**。该句与台账表头「首行落账之前不构成对 G2 的任何宣称」直接冲突，照字面无法同时满足。G1 要的是**演示得出一次可记账的绿**（`soak_run.py` 不带 `--append`），真写第一行留给 G2 那天——写下去就启动了 §7 的清零时钟 | 同上 §8 G1 |
+| 2026-09-04 | **欠账 #19 取「删预言」而非「补用例」**：K4 的 `reader3:chapter:change` 监听可单独剪断而全套件不红（`scheduleRefresh` 冗余接在三个事件 ＋ 一路回调上）。断言某一根具体监听存在等于把冗余布线钉成规格，011 / 014 重写外壳时只会变成假警报。矩阵里那句自检预言已划掉并附证伪记录 | tasks/009 欠账 #19 |
+| 2026-09-04 | **欠账 #8（CFI 分支零覆盖）由 WI-17 改派 011 / 014**，与欠账 #6 同一次兑付。它的前置是「#6 修完之后」，而 #6 是生产缺陷、009 全程不动 `src/`——**在 cfi 真的写得进去之前，为死代码补的用例只会锁死死代码的形状** | tasks/009 欠账 #8 |
 | 2026-09-04 | 「定向破坏只走 `page.route`，绝不原地改 `src/`」从 009 欠账 #25 上收为工程实践，消费者是 011/013/014（`f27cf5c`） | [迁移计划 §5 工程实践表](20260816-tech-stack-migration/plan-tech-stack-migration.md) |
 
 > **来源**：2026-08-24 与 Codex（`gpt-5.6-terra`）的一次定向复核。Codex 选 C 并提出五条风险，

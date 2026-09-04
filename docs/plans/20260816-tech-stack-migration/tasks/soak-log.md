@@ -26,21 +26,25 @@
   | git hash-object --stdin; } | cut -c1-12
 ```
 
-当前 `suite_hash` 值：`91de0e171b5c`（2026-09-04 Wave 6 收口实测输出，非誊抄）。
+当前 `suite_hash` 值：`91de0e171b5c`（2026-09-04 Wave 6 收口实测输出，非誊抄；**Wave 7 收口后重算，值不变**——见下方变更史第一条）。
 
 **这个值处于 pre-freeze，不是冻结值。** G2 尚未开始。`baseline_1b` 的 22 个用例编号**今天全部落地**，
 收集到 **65 条**（WI-3 的 harness 自测 9 条 ＋ WI-4 的创建路径 3 条 ＋ WI-5 的笔记创建/编辑 2 条
 ＋ Wave 2 的 14 条 ＋ Wave 3 的 18 条 ＋ Wave 4 的 9 条 ＋ Wave 5 的 6 条 ＋ Wave 6 的 4 条；
 `tests/e2e` 全量 75 条，差额是 `acceptance_4b1` 的 3 条 skip 与白名单里的 smoke、testid 唯一性）。
-Wave 7 还要往 acceptance 目录落 skip 用例并写「实测 == 常量」的守卫，acceptance 目录不在覆盖面内，
-但守卫若碰 `conftest.py` 就会再变一次。写在这里是免得后来者拿今天这个值当冻结值。
+~~Wave 7 还要往 acceptance 目录落 skip 用例并写「实测 == 常量」的守卫，acceptance 目录不在覆盖面内，
+但守卫若碰 `conftest.py` 就会再变一次。~~ **Wave 7 已收口，那个「再变一次」没有发生**：守卫写在
+`scripts/lint_e2e_groups.py` 里，一次也没碰 `tests/e2e/conftest.py` / `helpers.py` / `baseline_1b/**`，
+覆盖面内八个路径全部零改动，重算得到同一个 `91de0e171b5c`。写在这里是免得后来者拿今天这个值当冻结值——
+**八波都收口了，它仍然是 pre-freeze**：冻结发生在 G2 落第一行账那天，不在用例写完那天。
 
 **「61」是 2026-09-01 矩阵的预估，不是实测。** `scripts/lint_e2e_groups.py` 的 `EXPECTED_BASELINE_ITEMS`
 从 WI-1 起就写着 61（矩阵按 41 个测试函数推算的 collected 数，已把 X-1 的 4 条算在内），且**故意**
 不随每个 WI 递增——递增会把那个脚本变成 13 路串行写入点，波内并行当场作废。各模块的参数化条数
 在实现中漂移（harness 自测 9、W-5a 8、K-2 11 等），所以 Wave 5 收到的 61 只是碰巧等于常量，
-**不是「收齐」**；Wave 6 之后实测是 65。把常量改成实测值并加「实测 == 常量」断言归 WI-17
-（跨波欠账 #2）。
+**不是「收齐」**；Wave 6 之后实测是 65。~~把常量改成实测值并加「实测 == 常量」断言归 WI-17
+（跨波欠账 #2）。~~ **2026-09-04 Wave 7 已兑付**：常量改成实测的 65，条数轴断言落在
+`scripts/lint_e2e_groups.py`，实测不等即 rc=1 并把两个数一起印进消息；欠账 #2 结清。
 
 **取值前必须先 `git add`。** 上面这条命令读的是**索引**，不是工作区：新用例文件在 `git add`
 之前对 `git ls-files -s` 根本不存在，改过的 `helpers.py` 也仍报旧内容。WI-4、Wave 0、WI-5 三次
@@ -48,6 +52,13 @@ Wave 7 还要往 acceptance 目录落 skip 用例并写「实测 == 常量」的
 
 值的变更史（每次改都要写清作废原因，不要只覆盖数字）：
 
+- **`91de0e171b5c`（不变）← Wave 7（WI-17）收口。这是变更史上第一条「值没变」的记录，它本身就是证据。**
+  - **为什么该不变**：本波产出全在覆盖面之外——验收目录四个（`acceptance_4b1` / `_p3` / `_4a4` / `_2a`，共 17 条 skip 用例）、`scripts/lint_e2e_groups.py` / `soak_run.py` / `e2e_group_probe.py`、`tests/fixtures/deg_assertions.py`（只进验收模块的 import 闭包，不进 baseline 的）、四个 unit 模块。覆盖面内那八个路径一个都没被碰。**`baseline_1b` 一条没加、harness 一个字没动，哈希就该纹丝不动**；它要是变了，说明有人往安全网里塞了东西。
+  - **分组守卫落地**：`EXPECTED_BASELINE_ITEMS` 61 → **65**（欠账 #2）、`EXPECTED_ACCEPTANCE_ITEMS` 由 `EXPECTED_ACCEPTANCE_PER_DIR` **派生**得 17（欠账 #14）、`EXPECTED_UNGROUPED_ITEMS` **7**，派生总数 **89** ＝ 实测收集数。三分划分律（每条 item 恰好一个组标记，否则其模块须在白名单里）＋ 条数轴 ＋ skip 轴（`ast.walk` 全模块扫 skip 构造）三条轴独立成立。
+  - **定向破坏 3 处，最要紧的是第 2 处**：往 `baseline_1b` 某个用例函数体第一行插 `pytest.skip(...)` —— **条数轴纹丝不动（仍 65/65、89 条），只有 skip 轴响**。这正是 §8 G2 那条「commit 级护栏」担心的形态：给一条不稳的 baseline 用例挂 skip，收集数看不出来，台账的 `result` 列也看不出来。另两处：移走一个 3 条的验收模块（条数轴报出目录名与两个数）、把白名单模块改名（划分律 / 白名单 / 条数三处互相印证，抓出「悬空白名单条目」）。三处均在 scratchpad 的仓库副本上进行，真实树 `git diff --quiet -- src/` 全程通过。
+  - **`soak_run.py` 的一处死锁，本波发现并修复**：判据原文（§8 G2）写「`deselected == 0`」，而 soak 发的是 `-m baseline_1b`，Wave 7 之后必然筛掉 24 条 → 真跑得 `65 passed, 24 deselected` → **判红、拒绝记账，且失败形态与「还没开始数」完全同形**。判据改为「`deselected` 恰好等于验收 ＋ 白名单条数」（派生，非字面量 24），多筛少筛仍各自判红。修的是脚本与 §8 的定义处，**红收据 `009-WI-17` 里已记录的断言一行未改**——`test_soak_run.py` 的 `has-deselected` 合成用例（`n-1 passed, 1 deselected`）在新判据下照样红，四条新用例是纯追加。
+  - **首次跑出可记账的绿**：`65 passed, 24 deselected in 48.34s`，`verdict: green（可记账：是）`，dry run 未写台账。这满足 G1 的「演示得出一次可记账的绿」（口径澄清见任务书 §8 G1 的 2026-09-04 注），**不等于 G2 开始计数**。
+  - **红收据 `009-WI-17`（lane unit）记 `red`，`kind: assertion-failure`（99 条里 37 条失败），verify 判 `SEPARATION-HELD`。这是本支唯一一次真红**——前六波都是特征化用例，红在结构上不可得（§0 第四条），只能靠定向破坏作证。记录的两个文件 `test_e2e_group_guard.py` / `test_soak_run.py` 从此**只能追加**：前者的破坏实录是追加一个同名 `SABOTAGE_LOG` 重新绑定（不就地回填占位符），后者的四条新用例追加在文件尾。
 - `91de0e171b5c` ← Wave 6（WI-16）一个新模块 ＋ `tests/e2e/conftest.py` 新增两个 function 级 fixture ＋ 覆盖面**新增一个文件** `tests/fixtures/ai_stub.py`。三个理由各自都足以让旧值作废。
   - **用例增量**：`baseline_1b/test_other_ai_streaming.py`（X-1a 增量渲染且每帧是前缀、X-1a′ 桩侧握手「首块渲染 happens-before 末块发送」、X-1b 终态等值 ＋ 零真实出网 ＋ 引用页脚、X-1c stop 后重发完整收到，共 **4 条**）。baseline_1b **61 → 65 条**，`tests/e2e` 全量 **71 → 75 条**（72 passed + 3 skipped），全量耗时约 53s → **约 58s**。
   - **harness**：`conftest.py` 新增 `ai_stub`（ollama 形状的进程内 NDJSON 桩，127.0.0.1 临时端口）与 `ai_settings_ollama`（在沙箱 `ai_settings.json` 写入 `default_provider=ollama` 指向桩，用完删掉，前后复位 `ai_conversations/`）。`_server_env` 一行未动，其注入的 `READER3_AI_SETTINGS` 路径与 fixture 写的文件在运行期比对相等。**桩必须是 ollama 形状**：`server.py` 只有 `worker_ollama` 逐块推送，其余 provider 走 `worker_non_stream` 把整段答案当一个 `chunk`，浏览器侧 DOM 更新恒为 1 次，X-1a 不可能绿（矩阵 §A）。
