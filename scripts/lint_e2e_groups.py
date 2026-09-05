@@ -48,7 +48,7 @@ item 真的被 skip**。`pytestmark` 在模块里被第二次赋值（或被 `+=
 conftest 对 `tests/e2e` 下的每一条用例都生效）以及它和 `tests/e2e/conftest.py` 各自 import
 的 fixture 模块（`tests/fixtures/epub_corpus.py`、`tests/fixtures/ai_stub.py`…）。一条
 `@pytest.fixture(autouse=True)` 里的 `pytest.skip(...)` 写进 `tests/conftest.py`，可以把
-65 条 baseline 全部摘掉，而旧的域 R 一声不响。`baseline_domain_files()` 因此从
+66 条 baseline 全部摘掉，而旧的域 R 一声不响。`baseline_domain_files()` 因此从
 「root→tests→tests/e2e→baseline_1b 的 conftest 链 ＋ helpers ＋ baseline_1b/**」出发，
 沿 `import` 求传递闭包，只收 `tests/` 树内的模块（`src/` 不属于测试的 skip 轴，
 白名单模块自己的合法 skip 也仍在域外）。
@@ -64,7 +64,7 @@ commit 级护栏点名的那句代码——
             pytest.skip(f"e2e server unavailable: {e}")
 
 在 AST 里的位置是 `Module → FunctionDef → Try → ExceptHandler → Expr → Call`，**深度 5**。
-任何只看模块顶层语句或只看 `pytestmark` 赋值的实现都看不见它，而它的后果是 65 条
+任何只看模块顶层语句或只看 `pytestmark` 赋值的实现都看不见它，而它的后果是 66 条
 baseline 全部 skipped、push gate 全绿。「扫顶层」是这类检查最自然、也最常见的写法，
 所以把理由写在这里。
 
@@ -98,7 +98,7 @@ baseline 全部 skipped、push gate 全绿。「扫顶层」是这类检查最�
 `test_testid_dom_uniqueness.py`——那是 ADR-0014 的运行期唯一性护栏，与 009 无关。
 把总数焊死，等于把那个套件的条数写进 009 的门槛：它将来加一个 parametrize 值，红的
 会是 009 的用例，而修法（改总数）与被改的东西毫无关系。派生式只钉三件事：baseline
-恰好 65、acceptance 恰好 17、其余 item 的模块必须在白名单里。
+恰好 66、acceptance 恰好 17、其余 item 的模块必须在白名单里。
 
 **常量的变更史**（改数字必须写理由，不要只覆盖）：
 
@@ -107,6 +107,12 @@ baseline 全部 skipped、push gate 全绿。「扫顶层」是这类检查最�
   本文件变成 13 路串行写入点，波内并行当场作废）。各模块的参数化条数在实现中漂移（harness
   自测 9、W-5a 8、K-2 11、K-3 6、X-1 4 …），Wave 6 收口后实测 65。「实测 == 常量」的断言由
   `tests/unit/test_e2e_group_guard.py` 承担，本文件的 `check_tree` 同时执行。
+- `EXPECTED_BASELINE_ITEMS` 65 → **66**（2026-09-05，审计发现 #60）。009 分支改了
+  `library.js` 的 `syncSelectionForBookId`（选择态的选择器从裸的 `[data-book-id="…"]` 限定到
+  `.book-card` / `.book-row`），而那是一处**没有判据守着的生产语义变更**。补的判据是
+  `tests/e2e/baseline_1b/test_library_nav_and_collections.py::test_x2d_...`，**恰好一条 item**
+  ——选中与取消在同一条里做往返，不拆参数化。理由与可失败性证据（S5／S5b／S5c）写在该模块的
+  docstring 里。
 - `EXPECTED_ACCEPTANCE_ITEMS` 14 → **17**（同日，欠账 #14）：R-6 拆 a/b 后 R-6b 三条落进
   `acceptance_4b1`（Wave 4），该目录由 5 变 8。改成按目录定义再求和，是让「哪个目录少了一条」
   在失败消息里直接可读。
@@ -139,7 +145,7 @@ BASELINE_MARKER = "baseline_1b"
 ACCEPTANCE_MARKERS = GROUP_MARKERS[1:]
 
 # `tests/e2e/baseline_1b/` 下的期望 item 数。**实测值**（变更史见文件头）。
-EXPECTED_BASELINE_ITEMS = 65
+EXPECTED_BASELINE_ITEMS = 66
 
 # 四个 acceptance 目录各自的期望 item 数。合计由此派生，不另写字面量。
 #   acceptance_4b1：R-6b ×3（Wave 4）＋ K-1b ＋ K-6b ＋ W-5b ×3（{marker, wavy, underline}，

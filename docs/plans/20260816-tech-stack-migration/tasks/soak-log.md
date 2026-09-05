@@ -39,12 +39,12 @@
   | git hash-object --stdin; } | cut -c1-12
 ```
 
-当前 `suite_hash` 值：`91de0e171b5c`（2026-09-04 Wave 6 收口实测输出，非誊抄；**Wave 7 收口后重算，值不变**）。
-**2026-09-05 起这个值是「暂时的」**：覆盖面内两个文件已被审计修复改动，只是还没进索引，一 `git add` 就变——
-见下方变更史第一条，新值待冻结时现算。
+当前 `suite_hash` 值：`e7e0f9626df5`（2026-09-05 审计发现 #60 收口后实测输出，非誊抄）。
+前值 `cde2751eb133` 已作废——见下方变更史第一条。
 
 **这个值处于 pre-freeze，不是冻结值。** G2 尚未开始。`baseline_1b` 的 22 个用例编号**今天全部落地**，
-收集到 **65 条**（WI-3 的 harness 自测 9 条 ＋ WI-4 的创建路径 3 条 ＋ WI-5 的笔记创建/编辑 2 条
+收集到 **65 条**（以下这段是 Wave 7 当天的快照，`baseline_1b` 此后增至 **66 条**、`tests/e2e`
+全量增至 **90 条**，增量见变更史；此处保留原数字是因为它记的是那一天的事实）（WI-3 的 harness 自测 9 条 ＋ WI-4 的创建路径 3 条 ＋ WI-5 的笔记创建/编辑 2 条
 ＋ Wave 2 的 14 条 ＋ Wave 3 的 18 条 ＋ Wave 4 的 9 条 ＋ Wave 5 的 6 条 ＋ Wave 6 的 4 条；
 `tests/e2e` 全量 75 条，差额是 `acceptance_4b1` 的 3 条 skip 与白名单里的 smoke、testid 唯一性）。
 ~~Wave 7 还要往 acceptance 目录落 skip 用例并写「实测 == 常量」的守卫，acceptance 目录不在覆盖面内，
@@ -67,19 +67,31 @@
 
 值的变更史（每次改都要写清作废原因，不要只覆盖数字）：
 
-- **（待重算）← 2026-09-05 审计修复波。值**会**变，新值现在还不能写死。**
-  - **为什么会变**：覆盖面内的两个路径被审计修复动了——`tests/conftest.py`（marker 表达式守卫
-    重写）与 `tests/fixtures/ai_stub.py`（新增 `bound_host` 属性）。两处都是修复，不是给 soak
-    放水；但它们在八个路径里，套件内容变了，`suite_hash` 就该跟着变。
-  - **为什么现在还是 `91de0e171b5c`**：`git ls-files -s` 读的是**索引**，这两个文件此刻还没
-    `git add`。所以「当前值没变」是假象，不是稳定——**任何人一 `git add`，值就动**。这正是上面
-    「取值前必须先 `git add`」那条说的坑，这次是它第四次咬人。
-  - **新值 = 待定，必须在冻结时现算，不许誊抄。** 本条写下时这两个文件仍在被并行修改，
-    此刻算出来的任何 12 位都会在下一次编辑后作废。冻结时（G2 落第一行账之前）跑一次上面
-    那段配方，把实测值补在这里。
-  - **这次改动是免费的，因为 G2 还没开始**：上表 **零数据行**，没有任何计数会被这次变更清零。
-    §7 的「`suite_hash` 变了 ⇒ 清零」清的是已有的绿行，而现在一行都没有。**同一处改动放到
-    G2 开始之后做，代价是三次连绿全部作废**——所以覆盖面内的修改要么现在做完，要么等下一轮。
+- **`e7e0f9626df5` ← 2026-09-05 审计发现 #60 收口。前值 `cde2751eb133` 作废。**
+  - **为什么会变**：覆盖面里只动了一个文件——`tests/e2e/baseline_1b/test_library_nav_and_collections.py`
+    新增 X-2d 一条（`test_x2d_selection_marks_only_book_cards_and_rows_not_status_pills`），
+    把 `library.js` 里 `syncSelectionForBookId` 的作用域语义钉住。同波次还改了
+    `scripts/lint_e2e_groups.py`（`EXPECTED_BASELINE_ITEMS` 65→66）与
+    `tests/unit/test_e2e_group_guard.py`（65→66、89→90），但那两个文件**不在覆盖面八个路径里**，
+    不影响哈希。
+  - **`baseline_1b` 66 条 / `tests/e2e` 全量 90 条**，三分律 66 + 17 + 7 = 90 成立。
+  - **这次变更仍然是免费的**：台账依旧零数据行，G2 未起跑，改覆盖面不重置任何计数。
+  - **它不改变「先修 #22 再冻结」的顺序**：#22 仍会动 `test_read_presentation_anchoring.py`，
+    哈希还要再变一次。**冻结当天必须重算，永远不要誊抄本行的值。**
+
+- **`cde2751eb133` ← 2026-09-05 审计修复波（commit `fd989f1`）。前值 `91de0e171b5c` 作废。**
+  - **为什么会变**：覆盖面八个路径里有 **12 个文件**被 Codex 九维审计的修复动了——`tests/conftest.py`
+    （marker 表达式改真解析、提取不出名字时 fail closed）、`tests/fixtures/ai_stub.py`（新增只读
+    `bound_host`）、`tests/e2e/helpers.py`（`mark_id_union` 形状守卫、新增
+    `wait_for_write_activity_settled`）、`tests/e2e/baseline_1b/` 下 9 个模块（空转判据补断言）。
+    **每一处都是把判据改严，没有一处给 soak 放水**；但套件内容变了，`suite_hash` 就该跟着变。
+  - **上一条写的「两个文件」是漏计**，写下时另外 10 个还在被并行修改。留着这句是为了记住：
+    在一波并行修改**进行中**盘点覆盖面，盘出来的一定偏小。
+  - **这次改动是免费的**：上表**零数据行**，没有任何计数被清零。§7 的「`suite_hash` 变了 ⇒ 清零」
+    清的是已有的绿行，而现在一行都没有。**同一处改动放到 G2 开始之后做，代价是三次连绿全部作废。**
+  - **这个值仍然是 pre-freeze，不是冻结值。** 冻结发生在 G2 落第一行账那天。且按任务书 §8 与
+    2026-09-04 的排序裁定，**#22 会碰 `test_read_presentation_anchoring.py`（覆盖面内），所以
+    这个值在 #22 收口后还会再变一次**——冻结时必须重算，不许誊抄本行。
 - **`91de0e171b5c`（不变）← Wave 7（WI-17）收口。这是变更史上第一条「值没变」的记录，它本身就是证据。**
   - **为什么该不变**：本波产出全在覆盖面之外——验收目录四个（`acceptance_4b1` / `_p3` / `_4a4` / `_2a`，共 17 条 skip 用例）、`scripts/lint_e2e_groups.py` / `soak_run.py` / `e2e_group_probe.py`、`tests/fixtures/deg_assertions.py`（只进验收模块的 import 闭包，不进 baseline 的）、四个 unit 模块。覆盖面内那八个路径一个都没被碰。**`baseline_1b` 一条没加、harness 一个字没动，哈希就该纹丝不动**；它要是变了，说明有人往安全网里塞了东西。
   - **分组守卫落地**：`EXPECTED_BASELINE_ITEMS` 61 → **65**（欠账 #2）、`EXPECTED_ACCEPTANCE_ITEMS` 由 `EXPECTED_ACCEPTANCE_PER_DIR` **派生**得 17（欠账 #14）、`EXPECTED_UNGROUPED_ITEMS` **7**，派生总数 **89** ＝ 实测收集数。三分划分律（每条 item 恰好一个组标记，否则其模块须在白名单里）＋ 条数轴 ＋ skip 轴（`ast.walk` 全模块扫 skip 构造）三条轴独立成立。

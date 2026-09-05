@@ -16,7 +16,7 @@
 3. **`baseline_1b` 的收集可达链上零 skip 构造**——包括 fixture 体、辅助函数体、
    `try/except` 处理器里的（Gap D）。一句
    `except Exception: pytest.skip(...)` 写进 `tests/e2e/conftest.py` 的 `live_server`，
-   后果是 65 条 baseline 全部 skipped、push gate 全绿。判据必须 `ast.walk` 整个模块，
+   后果是 66 条 baseline 全部 skipped、push gate 全绿。判据必须 `ast.walk` 整个模块，
    不是扫 `Module.body`：那句 skip 在 AST 里的深度是 5。
 
 **本文件的两个域，不可互相替代**：真实仓库树（本条 1/2/4/5/6/7）与 `tmp_path` 上的
@@ -107,13 +107,13 @@ SUBPROCESS_TIMEOUT_S = 300
 #
 # 本文件是 `scripts/lint_e2e_groups.py` 的独立 oracle。把期望值写成
 # `g.EXPECTED_BASELINE_ITEMS` 的形式，断言就退化成 `x == x`：删掉三条 baseline 用例、
-# 把常量从 65 改成 62，守卫与它的守卫**同时**变绿，而门槛已经低了三条。
+# 把常量从 66 改成 63，守卫与它的守卫**同时**变绿，而门槛已经低了三条。
 # 这里的数字与守卫脚本各写一份，两份必须相等——这才是欠账 #2「实测 == 常量」的完整形态。
 #
 # 改这里的数字**必须**同时改 `scripts/lint_e2e_groups.py` 并在两处写明理由；
 # 只改一处会红，那正是它存在的意义。
 # --------------------------------------------------------------------------
-CANONICAL_BASELINE_ITEMS = 65
+CANONICAL_BASELINE_ITEMS = 66
 CANONICAL_ACCEPTANCE_PER_DIR: Dict[str, int] = {
     "acceptance_4b1": 8,
     "acceptance_p3": 4,
@@ -122,7 +122,7 @@ CANONICAL_ACCEPTANCE_PER_DIR: Dict[str, int] = {
 }
 CANONICAL_ACCEPTANCE_ITEMS = 17
 CANONICAL_UNGROUPED_ITEMS = 7
-CANONICAL_E2E_ITEMS = 89
+CANONICAL_E2E_ITEMS = 90
 
 
 # --------------------------------------------------------------------------
@@ -328,7 +328,7 @@ def test_real_tree_collection_is_a_partition_and_counts_match() -> None:
 # Case 2b：三段条数钉在**本文件的字面量**上（property / S4 / L1）
 # --------------------------------------------------------------------------
 def test_canonical_counts_are_pinned_independently_of_the_guard_constants() -> None:
-    """65 / 8+4+4+1 / 7 / 89 四段，实测与**本文件的字面量**相等，且守卫常量与之相等。
+    """66 / 8+4+4+1 / 7 / 90 四段，实测与**本文件的字面量**相等，且守卫常量与之相等。
 
     点名的失败模式：上一条把期望值写成 `g.EXPECTED_*`，于是「删三条 baseline 用例 ＋
     把常量改成 62」这套动作让守卫、守卫的守卫、soak 分母**三者同时**变绿——断言退化成
@@ -503,7 +503,7 @@ def _m_unregistered_root_module(spec: Dict[str, str]) -> None:
 
 
 def _m_skip_in_root_conftest(spec: Dict[str, str]) -> None:
-    """域 R 漏了 `tests/conftest.py`：一条 autouse fixture 能把 65 条 baseline 全摘掉。
+    """域 R 漏了 `tests/conftest.py`：一条 autouse fixture 能把 66 条 baseline 全摘掉。
 
     根 conftest 对 `tests/e2e` 下的每一条用例都生效，却不在旧的三条硬编码路径里。
     收集条数一条不少（skip 发生在运行期），静态 skip 轴一声不响。
@@ -1171,6 +1171,11 @@ SABOTAGE_LOG = """
 # 用 `python scripts/lint_e2e_groups.py <副本根>` 打靶；真实树全程未改，
 # `git diff --quiet -- src/` 通过。每次破坏后都还原并 `diff -q` 与真实树逐字节比对，
 # 再重跑守卫确认回到全绿。
+#
+# **下面两个字符串里的 65 / 89 是誊抄，故意不随常量更新**（2026-09-05 注）：它们是那几次
+# 运行的**逐字输出**，当天 baseline 就是 65 条、全量就是 89 条。审计发现 #60 之后常量升到
+# 66 / 90，把誊抄一起改掉会把「跑过一次并抄回来」的证据变成一句无法核对的声明——那正是
+# §0 第四条纪律要防的东西。要判断誊抄是否过期，看的是上面 `CANONICAL_*` 那几个字面量。
 # --------------------------------------------------------------------------
 SABOTAGE_LOG = """
 副本基线（未破坏）：
