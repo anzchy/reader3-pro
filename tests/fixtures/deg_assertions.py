@@ -16,6 +16,14 @@ unit lane 直接测正反两面）；`run_deg_sN(page, ...)` 是 Playwright 驱�
 读 DOM → 交给纯判据）。分层是为了让 14 条 skip 用例的**判据**在解 skip 之前就被跑过——
 一条到期才第一次被执行的断言，与从没写过没有区别。
 
+**判据一律比身份，不比条数**（2026-09-05 审计，四条 High/Medium 同一根因）。「几条 / 几个 /
+几本」是最容易恰好撞对的观测量：`GET /api/notes` 交出**另一批**标注、未迁移清单列**另一批**书、
+重建按钮长在**页面别处**、新格式书卡**整批没渲染**——四种都能让条数分毫不差地通过。所以：
+`judge_deg_s1` 收 `served_records` 并逐字段比对（`S1_SERVED_IDENTITY_FIELDS`），
+`judge_deg_s3` 收 `listed_book_ids` 比集合，`judge_deg_s2` 的按钮在**横幅内部**数，
+`judge_deg_s4` 先要求每张书卡恰好 1 张再看角标。条数参数保留，但只是身份判据的一个投影；
+两条否定断言（「新格式书不含 pkl 角标」「对照服务无告警条」）都先证明对象存在再断否定。
+
 **模块级不 import playwright**：本文件被 unit lane 按裸模块名加载，浏览器依赖装歪不该让
 一条纯判据用例红在与它无关的地方。Playwright 只在 `run_*` 函数体内 import。
 
@@ -96,6 +104,15 @@ DEG_S1_REQUIRED_PHRASES = ("暂停套用", "未删除")
 DEG_S2_BANNER_PHRASE = "索引已过期"
 #: 第五态**不得**冒充「未索引」（前端计划 WI-3：`|| STATUS_META.not_indexed` 本身就是 bug）。
 NOT_INDEXED_LABEL = "未索引"
+#: 书卡第五态自己的规范文案片段。**与横幅那条是两个独立的定义**，尽管今天字面相同：
+#: 横幅住在搜索面板（`lib-degrade-s2`），第五态住在书卡（`lib-status-stale`），两处可以
+#: 各自改文案。合成一个常量等于把「两处都要说对」偷偷降级成「一处说对就行」。
+#:
+#: **为什么光有 `lib-status-stale` 这个 testid 还不够。** 前端计划 WI-3 的锅正是
+#: `STATUS_META[status] || STATUS_META.not_indexed`：渲染器可以在 stale 的槽位里填**任何**
+#: 一态的文案。原判据只查「非空且不含『未索引』」，于是一本 stale 书被标成「已索引」照样绿——
+#: 那恰是 DEG-S2 要消灭的形状（用户以为结果是全的）。判据必须落在文案本身上。
+DEG_S2_STALE_STATUS_PHRASE = "索引已过期"
 #: ADR-0009：`storage_format(book_id) -> Literal["json", "pkl"]`。角标文案里要能看到旧格式的字面。
 STORAGE_FORMAT_PKL = "pkl"
 
@@ -117,6 +134,32 @@ DEG_S1_ANCHOR = "Alpha prose."
 #: 旧格式书的目录名。必须以 `_data` 结尾（`server.py` 只扫这种目录），且不与 `E2E_BOOKS` 撞名。
 LEGACY_BOOK_ID = "legacy_pkl_data"
 NEW_FORMAT_FILES = ("manifest.json", "chapters.jsonl")
+
+#: DEG-S3 未迁移书目清单里，每一项**必须**带的稳定标识属性。取 ADR-0014 闭合清单里的
+#: `data-book-id`（书目录名取值无界，正是该清单要覆盖的那一类），所以不新增任何 testid。
+#: 判据要的是**这批书是哪几本**，不是「有几本」——条数相等而书目全错，是最容易通过的错。
+LIST_ITEM_BOOK_ID_ATTR = "data-book-id"
+
+#: `GET /api/notes` 交出的记录与 `notes.json` 上的记录必须逐字段相等的字段清单。
+#: 两个字段**有意**不在里面，各有各的合法理由：
+#:   * `orphaned` —— 服务端每次读都按当前 spine 重算（`_refresh_orphaned_annotations`），
+#:     盘上那一份是上次写入时的快照，两者不等是设计使然；
+#:   * `note_text` —— 服务端交出前做 `html.unescape`，与盘上的转义形态可以合法地不同。
+#: 其余字段是「stale 只暂停套用、不改内容」这条契约的可观测面：任何一项对不上，都说明
+#: 服务端在降级路径上动了用户数据。
+S1_SERVED_IDENTITY_FIELDS = (
+    "id",
+    "book_id",
+    "chapter_index",
+    "type",
+    "color",
+    "quote",
+    "prefix",
+    "suffix",
+    "position",
+    "cfi",
+    "created_at",
+)
 
 STARTUP_TIMEOUT_S = 60
 
@@ -208,7 +251,30 @@ def make_legacy_format_book(books_dir: PathLike, source_book_id: str, legacy_boo
 
 
 def remove_book_dir(path: PathLike) -> None:
-    shutil.rmtree(Path(path), ignore_errors=True)
+    """删掉注入的那本降级书。**不吞错误**——删不掉必须当场炸。
+
+    原实现是 `shutil.rmtree(..., ignore_errors=True)`。它住在 `run_deg_s4` 的 `finally` 里，
+    而那本 `legacy_pkl_data` 是**注入 session 级书库**的：删失败（权限、残留句柄、目录被占）
+    时静默返回，之后同一 session 里每一条数书、遍历书库、断书卡集合的用例都会多看见一本书，
+    红在与它八竿子打不着的地方。清理失败要么不存在，要么必须点名路径地喊出来。
+
+    「目录本来就不在」不算失败：那正是本函数要达到的终态，且在 `finally` 里对它抛错会把
+    真正的失败原因（body 里那个异常）盖掉。
+    """
+    target = Path(path)
+    try:
+        shutil.rmtree(target)
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        raise RuntimeError(
+            f"注入的降级书目录删不掉：{target} → {exc}。"
+            "它还在 session 级书库里，后面每一条按书库集合断言的用例都会被它污染"
+        ) from exc
+    if target.exists():
+        raise RuntimeError(
+            f"rmtree 没报错，但 {target} 仍然存在——注入的降级书留在了 session 级书库里"
+        )
 
 
 def pkl_only_book_ids(books_dir: PathLike) -> List[str]:
@@ -317,12 +383,20 @@ def judge_deg_s1(
     banner_text: str,
     records_before: Sequence[Mapping[str, Any]],
     records_after: Sequence[Mapping[str, Any]],
-    served_count: int,
+    served_records: Optional[Sequence[Mapping[str, Any]]] = None,
+    served_count: Optional[int] = None,
     mark_count: int,
     badge_count: int,
     excerpt_text: str,
 ) -> None:
-    """DEG-S1：横幅文案同时含「暂停套用」与「未删除」；一条不少；正文零 `<mark>`；逐条角标数 == stale 条数；摘录含 quote 原文。"""
+    """DEG-S1：横幅文案同时含「暂停套用」与「未删除」；交出来的**就是盘上那批**；正文零 `<mark>`；逐条角标数 == stale 条数；摘录含 quote 原文。
+
+    **`served_records` 才是判据，`served_count` 只是它的一个投影。** 原实现只比条数，于是
+    `GET /api/notes` 换掉、串章、张冠李戴地交出**另一批**标注，只要条数凑上就一路绿——而
+    DEG-S1 要证的恰恰是「这一条没被动」。两个参数都保留是为了向后兼容既有调用点，但
+    `served_records` 给了就以它为准（并顺带核对 `served_count` 与它自洽）；两个都不给，
+    等于什么都没观测到，直接抛。
+    """
     for phrase in DEG_S1_REQUIRED_PHRASES:
         if phrase not in banner_text:
             raise AssertionError(
@@ -334,10 +408,49 @@ def judge_deg_s1(
             f"DEG-S1 之下 notes.json 的标注变了（stale 只停止套用，一条都不该动）：\n"
             f"  前：{list(records_before)}\n  后：{list(records_after)}"
         )
-    if served_count != len(records_before):
+    if served_records is None and served_count is None:
         raise AssertionError(
-            f"GET /api/notes 交出 {served_count} 条，盘上 {len(records_before)} 条——服务端把 stale 标注吞掉了"
+            "judge_deg_s1 既没收到 served_records 也没收到 served_count——"
+            "`GET /api/notes` 这一路根本没被观测，判据是空的"
         )
+    served: Optional[List[Dict[str, Any]]] = (
+        [dict(r) for r in served_records] if served_records is not None else None
+    )
+    if served is not None and served_count is not None and served_count != len(served):
+        raise AssertionError(
+            f"观测自相矛盾：served_count={served_count}，但 served_records 有 {len(served)} 条"
+        )
+    effective_count = len(served) if served is not None else int(served_count or 0)
+    if effective_count != len(records_before):
+        raise AssertionError(
+            f"GET /api/notes 交出 {effective_count} 条，盘上 {len(records_before)} 条——服务端把 stale 标注吞掉了"
+        )
+    if served is not None:
+        before_ids = [str(r.get("id")) for r in records_before]
+        served_ids = [str(r.get("id")) for r in served]
+        if len(set(served_ids)) != len(served_ids):
+            raise AssertionError(f"GET /api/notes 交出的 id 有重复：{served_ids}")
+        if sorted(served_ids) != sorted(before_ids):
+            raise AssertionError(
+                "GET /api/notes 交出的不是盘上那批标注（条数相同 ≠ 同一批）：\n"
+                f"  盘上：{sorted(before_ids)}\n  交出：{sorted(served_ids)}"
+            )
+        by_id = {str(r.get("id")): r for r in served}
+        for disk_record in records_before:
+            rid = str(disk_record.get("id"))
+            api_record = by_id[rid]
+            for field in S1_SERVED_IDENTITY_FIELDS:
+                if field not in disk_record:
+                    continue
+                if field not in api_record:
+                    raise AssertionError(
+                        f"GET /api/notes 交出的 id={rid} 少了字段 {field!r}：{api_record}"
+                    )
+                if api_record[field] != disk_record[field]:
+                    raise AssertionError(
+                        f"id={rid} 的 {field} 交出的是 {api_record[field]!r}，盘上是 "
+                        f"{disk_record[field]!r}——stale 只暂停套用，不许改内容"
+                    )
     if mark_count != 0:
         raise AssertionError(f"stale 之下正文里仍有 {mark_count} 个 rd-anno-span——标注套用没有停")
     if badge_count != len(records_before):
@@ -361,6 +474,17 @@ def judge_deg_s2(*, status_text: str, banner_text: str, reindex_count: int) -> N
         raise AssertionError(f"搜索面板顶部提示条文案里没有「{DEG_S2_BANNER_PHRASE}」：{banner_text!r}")
     if reindex_count != 1:
         raise AssertionError(f"提示条上的重建按钮应恰好 1 个，实际 {reindex_count} 个")
+    # 最后一条：第五态的文案必须是**第五态自己的**，不是任意一句非「未索引」的话。
+    #
+    # 位置有意放在末尾。上面四条各自守着一个更早、更具体的失效模式（空文案 / 冒充未索引 /
+    # 横幅文案 / 按钮基数），把这条插到中间会让那四条的失败消息被这一条抢走——一次
+    # 「按钮数不对」的失败会被报成「文案不对」，把人指向错的地方。
+    if DEG_S2_STALE_STATUS_PHRASE not in status_text:
+        raise AssertionError(
+            f"书卡第五态的文案 {status_text!r} 里没有「{DEG_S2_STALE_STATUS_PHRASE}」——"
+            "「非空且不是『未索引』」不构成判据：一本 stale 书被标成「已索引」正好落在这个缝里，"
+            "而那是 DEG-S2 要消灭的头号形状（用户以为搜索结果是全的）"
+        )
 
 
 def judge_deg_s3(
@@ -373,8 +497,16 @@ def judge_deg_s3(
     list_visible_after_second_toggle: bool,
     listed_count: int,
     expected_listed_count: int,
+    listed_book_ids: Optional[Sequence[str]] = None,
+    expected_book_ids: Optional[Sequence[str]] = None,
 ) -> None:
-    """DEG-S3：对照服务上无告警条；pickle 服务上书库与阅读器**都**有，文案同一份；清单默认折叠、可展开再折叠、条数正确。"""
+    """DEG-S3：对照服务上无告警条；pickle 服务上书库与阅读器**都**有，文案同一份；清单默认折叠、可展开再折叠、**列的是哪几本**正确。
+
+    条数（`listed_count`）留着，但它不是判据的全部：一份列出了**别的**书的清单，只要长度
+    撞上就通过原来的那条断言。`listed_book_ids` / `expected_book_ids` 成对给出时按**集合**
+    逐个对，多一本少一本都点名。两个都不给等于只观测了长度——既有调用点仍能工作，但
+    e2e 驱动 `run_deg_s3` 一律给。
+    """
     if control_lib_banner_count != 0:
         raise AssertionError(
             f"未设 READER3_ALLOW_PICKLE 的服务上也出现了 {control_lib_banner_count} 个 S3 告警条——横幅常亮等于没有横幅"
@@ -398,10 +530,63 @@ def judge_deg_s3(
         raise AssertionError(
             f"清单列出 {listed_count} 本，沙箱里只有 pkl 的书有 {expected_listed_count} 本"
         )
+    if (listed_book_ids is None) != (expected_book_ids is None):
+        raise AssertionError(
+            "listed_book_ids 与 expected_book_ids 必须成对给出——只给一半，比对就无从谈起"
+        )
+    if listed_book_ids is None or expected_book_ids is None:
+        return
+    listed = [str(b) for b in listed_book_ids]
+    expected = [str(b) for b in expected_book_ids]
+    if not expected:
+        raise AssertionError(
+            "沙箱里一本「只有 pkl」的书都没有——DEG-S3 的清单断言在这种书库上是空真的，"
+            "先把降级条件造出来（`make_legacy_format_book`），别让一条永远成立的断言冒充证据"
+        )
+    if len(set(listed)) != len(listed):
+        raise AssertionError(f"未迁移书目清单里有重复项：{listed}")
+    extra = sorted(set(listed) - set(expected))
+    missing = sorted(set(expected) - set(listed))
+    if extra or missing:
+        raise AssertionError(
+            "未迁移书目清单列的不是「只有 pkl」的那批书（条数相等 ≠ 同一批）：\n"
+            f"  多列了：{extra}\n  漏列了：{missing}\n"
+            f"  清单：{sorted(listed)}\n  期望：{sorted(expected)}"
+        )
 
 
-def judge_deg_s4(*, legacy_badge_text: str, fresh_badge_texts: Sequence[str]) -> None:
-    """DEG-S4：旧格式书的角标文案含 `pkl`；新格式书要么没有角标，要么角标文案不含 `pkl`。"""
+def judge_deg_s4(
+    *,
+    legacy_badge_text: str,
+    fresh_badge_texts: Sequence[str],
+    legacy_cards_seen: Optional[int] = None,
+    fresh_cards_seen: Optional[Mapping[str, int]] = None,
+) -> None:
+    """DEG-S4：两类书卡都**在**（各恰好一张）；旧格式书的角标文案含 `pkl`；新格式书要么没有角标，要么角标文案不含 `pkl`。
+
+    **先证卡在，再证它没戴 pkl 角标。** 「新格式书的角标不含 pkl」是个否定断言，缺卡时它是
+    空真的：一个把所有新格式书统统漏渲染的书库页，`fresh_badge_texts` 是空列表，原判据全绿。
+    `fresh_cards_seen`（书 id → 该 id 在页面上解析出的书卡数）把「卡在」变成正向证据，
+    每本必须恰好 1 张——0 张是漏渲染，≥2 张是重复渲染，两者都会让后面的角标断言失去意义。
+
+    两个新参数可选，是为了兼容既有调用点；e2e 驱动 `run_deg_s4` 一律给。
+    """
+    if legacy_cards_seen is not None and legacy_cards_seen != 1:
+        raise AssertionError(
+            f"旧格式书 {LEGACY_BOOK_ID} 的书卡在书库页上解析出 {legacy_cards_seen} 张，期望恰好 1 张——"
+            "S4 的正面（角标含 pkl）没有对象"
+        )
+    if fresh_cards_seen is not None:
+        if not fresh_cards_seen:
+            raise AssertionError(
+                "一本新格式书都没传进来——「新格式书的角标不含 pkl」这条否定断言没有对象，是空真的"
+            )
+        bad = sorted((book_id, n) for book_id, n in fresh_cards_seen.items() if n != 1)
+        if bad:
+            raise AssertionError(
+                f"这些新格式书的书卡不是恰好 1 张（书 id, 实际张数）：{bad}。"
+                "缺卡时「角标不含 pkl」空真——漏渲染整批新格式书的书库页会全绿"
+            )
     if STORAGE_FORMAT_PKL not in legacy_badge_text.lower():
         raise AssertionError(
             f"旧格式书的 storage_format 角标文案 {legacy_badge_text!r} 里看不到 {STORAGE_FORMAT_PKL!r}"
@@ -455,6 +640,8 @@ def run_deg_s1(page: "Page", base_url: str, books_dir: PathLike, book_id: str, t
         banner_text=banner_text,
         records_before=before,
         records_after=read_notes_raw(books_dir, book_id),
+        # 交出去的是**记录本身**，不只是条数：判据要比 id 与逐字段内容。
+        served_records=served,
         served_count=len(served),
         mark_count=mark_count,
         badge_count=badge_count,
@@ -481,7 +668,10 @@ def run_deg_s2(page: "Page", base_url: str, books_dir: PathLike, book_id: str, t
         judge_deg_s2(
             status_text=status_text,
             banner_text=banner.inner_text(),
-            reindex_count=page.get_by_test_id(testids["s2_reindex"]).count(),
+            # 在**横幅内部**数，不是全页数。设计规格 §6.4 要的是「提示条上的重建按钮」——
+            # 全页计数会被页面上任何别处的重建按钮（书卡上的、批量索引面板里的）满足，
+            # 于是一条压根没长按钮的提示条也能过。作用域就是断言的一部分。
+            reindex_count=banner.get_by_test_id(testids["s2_reindex"]).count(),
         )
     finally:
         shutil.rmtree(meta_path.parent, ignore_errors=True)
@@ -514,7 +704,19 @@ def run_deg_s3(
     visible_before = listing.count() > 0 and listing.is_visible()
     page.get_by_test_id(testids["s3_toggle"]).click()
     expect(listing).to_be_visible()
-    listed_count = listing.get_by_role("listitem").count()
+    items = listing.get_by_role("listitem").all()
+    listed_count = len(items)
+    # 每一项的稳定标识，而不是「有几项」。缺 data-book-id 就当场抛：一份「渲染得出来但
+    # 认不出是哪几本」的清单，对「哪些书还没迁移」这个问题一点用都没有，对判据同样没用。
+    listed_book_ids: List[str] = []
+    for index, item in enumerate(items):
+        book_attr = item.get_attribute(LIST_ITEM_BOOK_ID_ATTR)
+        if not book_attr:
+            raise AssertionError(
+                f"未迁移书目清单的第 {index} 项没有 {LIST_ITEM_BOOK_ID_ATTR}（文本：{item.inner_text()!r}）——"
+                "清单必须能被机器认出列的是哪几本书，否则条数对了也证明不了列对了"
+            )
+        listed_book_ids.append(book_attr)
     page.get_by_test_id(testids["s3_toggle"]).click()
     expect(listing).to_be_hidden()
     visible_after_second = listing.is_visible()
@@ -532,6 +734,8 @@ def run_deg_s3(
         list_visible_after_second_toggle=visible_after_second,
         listed_count=listed_count,
         expected_listed_count=len(pkl_only_book_ids(books_dir)),
+        listed_book_ids=listed_book_ids,
+        expected_book_ids=pkl_only_book_ids(books_dir),
     )
 
 
@@ -551,13 +755,36 @@ def run_deg_s4(
     try:
         page.goto(f"{base_url}/")
         page.wait_for_load_state("networkidle")
-        legacy_badge = _card(page, testids["s4_card"], LEGACY_BOOK_ID).get_by_test_id(testids["s4_badge"])
-        expect(legacy_badge).to_be_visible()
+
+        # 先数**书卡**，再看角标。缺卡时「角标不含 pkl」是空真的（见 judge_deg_s4），
+        # 所以这里不能像原来那样只在 `badge.count()` 为真时才收集：那等于把「这本书压根
+        # 没渲染出来」和「渲染出来了、没戴 pkl 角标」判成同一件事。
+        legacy_card = _card(page, testids["s4_card"], LEGACY_BOOK_ID)
+        legacy_cards_seen = legacy_card.count()
+        fresh_cards_seen: Dict[str, int] = {}
         fresh_texts: List[str] = []
         for fresh_id in fresh_book_ids:
-            badge = _card(page, testids["s4_card"], fresh_id).get_by_test_id(testids["s4_badge"])
+            card = _card(page, testids["s4_card"], fresh_id)
+            seen = card.count()
+            fresh_cards_seen[fresh_id] = seen
+            if seen != 1:
+                # 不在这里抛：整张表要收全，判据才能一次点名所有缺卡的书。
+                continue
+            badge = card.get_by_test_id(testids["s4_badge"])
             if badge.count():
                 fresh_texts.append(badge.inner_text())
-        judge_deg_s4(legacy_badge_text=legacy_badge.inner_text(), fresh_badge_texts=fresh_texts)
+
+        legacy_badge_text = ""
+        if legacy_cards_seen == 1:
+            legacy_badge = legacy_card.get_by_test_id(testids["s4_badge"])
+            expect(legacy_badge).to_be_visible()
+            legacy_badge_text = legacy_badge.inner_text()
+
+        judge_deg_s4(
+            legacy_badge_text=legacy_badge_text,
+            fresh_badge_texts=fresh_texts,
+            legacy_cards_seen=legacy_cards_seen,
+            fresh_cards_seen=fresh_cards_seen,
+        )
     finally:
         remove_book_dir(legacy_dir)

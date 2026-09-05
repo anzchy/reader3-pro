@@ -1,6 +1,6 @@
 """E2E 共享 helpers —— 全套 W / R / K 用例只从这里取选区、读写 `notes.json`、换算几何。
 
-二十六个函数，一个都不许在用例里各写一遍：
+二十七个函数，一个都不许在用例里各写一遍：
 
     select_in_frame(frame, quote, occurrence=0)   §1 的程序化选区标准路径
     read_notes(books_dir, book_id)                读回 notes.json 的 list[dict]
@@ -13,6 +13,7 @@
     mark_id_union(scan)                           所有 `<mark>` 的 annotation id 并集
     wait_for_notes(books_dir, book_id, count)     等落库稳定到 count 条
     wait_for_note_text(books_dir, book_id, id, s) 等某条的 note_text 变成 s（PUT 路径用）
+    wait_for_write_activity_settled(page)          等 `/api/notes/` 的请求真的停下来
     assert_roundtrip(page, books_dir, book_id, …) §0 的「刷新 → 高亮回到同一段文字」收尾
     assert_bystanders_unchanged(before, after, ids) 没碰过的条目逐字段原样（§0 第六条纪律）
     clear_selection_and_drain(page, frame)        清选区并等去抖窗口排空
@@ -125,6 +126,15 @@ SELECTION_TIMEOUT_MS = 8000
 #: 等落库的硬上限。写路径是 fetch，点完按钮到文件出现之间隔着一次网络往返 + 一次原子写。
 #: `wait_for_notes` 的默认上限，两个模块里原本各有一份同值的 `NOTES_WAIT_S`。
 NOTES_WAIT_S = 8.0
+
+#: 标注读写端点的 URL 特征。`wait_for_write_activity_settled` 用它挑出「与标注有关的那些
+#: 请求」——书页自己的静态资源、epub.js 的分章抓取都不算写活动。
+NOTES_ENDPOINT_MARKER = "/api/notes/"
+
+#: 「写活动排空」的静默窗口：这么久之内没有新的 `/api/notes/` 请求、且没有在途的，
+#: 才算这次动作发完了。取 500ms 是与 Playwright `networkidle` 的判定窗口同一个数量级
+#: （它也是「500ms 无网络连接」），不是拍脑袋——理由见 `wait_for_write_activity_settled`。
+WRITE_SETTLE_QUIET_MS = 500
 
 
 # ---------------------------------------------------------------------------
@@ -402,7 +412,15 @@ def select_in_frame(frame: "FrameLocator", quote: str, occurrence: int = 0) -> N
 def clear_selection_and_drain(page: "Page", frame: "FrameLocator") -> None:
     """清掉 iframe 内的选区，并等 `onSelection` 的去抖窗口排空。
 
-    W-1（真实拖选）用来在「量完几何」与「开始拖」之间把场地清干净。`select_in_frame`
+    **当前无调用方（2026-09-05 审计 #3 之后）。** W-1 曾用它在「量完几何」与「开始拖」之间
+    清场，但那条路本身就是洞：它清选区、却清不掉 `Reader3AnnotationUI.currentRange`，于是
+    一条完全坏掉的真实拖选路径仍能拿陈旧的程序化 range 把标注建出来。W-1 改成用**游离
+    range**（`doc.createRange()`，从不 `addRange`）量几何，压根不触发 `onSelection`，也就
+    不需要事后清场。保留本函数是因为 `test_write_create_annotations.py` 与
+    `test_kernel_actions_and_url.py` 的散文仍引它解释那条被废弃的旧路；真要删，连同那两处
+    散文一起删。
+
+    以下是它原本的时序理由，仍然属实：`select_in_frame`
     返回之后，`handleRenditionSelection` 的自持循环会以 ~250ms 一拍持续刷新
     `lastSelectionAt`（时序实测记在上面 `select_in_frame` 的 docstring 里）；此时直接
     拖选，我们的 `mouseup` 有约 120/250 的概率落进 `annotations.js:695` 的守卫里被丢掉。
@@ -651,7 +669,17 @@ def scan_marks(frame: "FrameLocator") -> Dict[str, Any]:
 
 
 def mark_id_union(scan: Dict[str, Any]) -> Set[str]:
-    """所有 `<mark>` 的 `data-annotation-ids` 并集（按元素，即 ``scan["ids"]``）。解析失败当场抛，不吞。"""
+    """所有 `<mark>` 的 `data-annotation-ids` 并集（按元素，即 ``scan["ids"]``）。解析失败当场抛，不吞。
+
+    **形状必须是「字符串数组」，不是「任何 JSON」**（2026-09-05 审计 D1）。早先的写法是
+    `json.loads(raw)` 之后直接 `set(parsed)`，而 `set()` 对**字典**取的是它的**键**——于是
+    一个把属性写成 ``{"a1": 0, "a2": 0}`` 的生产实现（对象而不是数组）会让每一条读路径
+    判据照常绿，因为并集恰好等于那几个 id。契约是数组（`annotations.js` 写的是
+    `JSON.stringify(ids)`，`ids` 是一个 `Array<string>`），所以这里把契约本身断出来：
+    不是数组 ⇒ 抛，元素不是字符串 ⇒ 抛，两条消息都点名**实际服务到 DOM 上的那一串**。
+
+    这条守卫钉在 `tests/unit/test_e2e_helpers_notes_roundtrip.py`（unit lane，纯 Python）。
+    """
     union: Set[str] = set()
     for raw in scan["ids"]:
         if raw is None:
@@ -665,6 +693,19 @@ def mark_id_union(scan: Dict[str, Any]) -> Set[str]:
             raise AssertionError(
                 f"`data-annotation-ids` 不是合法 JSON：{raw!r}（{exc}）"
             ) from exc
+        if not isinstance(parsed, list):
+            raise AssertionError(
+                f"`data-annotation-ids` 必须是 JSON **数组**，实际服务到 DOM 上的是一个 "
+                f"{type(parsed).__name__}：{raw!r}。"
+                "（`set()` 对字典取的是键，所以一个键恰好是那些 id 的对象会静默地骗过并集判据。）"
+            )
+        bad = [item for item in parsed if not isinstance(item, str)]
+        if bad:
+            raise AssertionError(
+                f"`data-annotation-ids` 数组里有非字符串元素 {bad!r}，实际服务到 DOM 上的是 {raw!r}。"
+                "（id 是字符串；数字/None/嵌套结构进了并集之后，后面的集合比对会以一种"
+                "与真缺陷无法区分的形状红。）"
+            )
         union |= set(parsed)
     return union
 
@@ -672,6 +713,71 @@ def mark_id_union(scan: Dict[str, Any]) -> Set[str]:
 # ---------------------------------------------------------------------------
 # notes.json
 # ---------------------------------------------------------------------------
+
+
+def wait_for_write_activity_settled(
+    page: "Page",
+    *,
+    quiet_ms: int = WRITE_SETTLE_QUIET_MS,
+    timeout_ms: int = SELECTION_TIMEOUT_MS,
+) -> int:
+    """等到页面**不再发标注写请求**：`quiet_ms` 内没有新的 `/api/notes/`，且没有在途的。
+    返回这段观察期内看到的请求数（做诊断用）。
+
+    **为什么不是 `page.wait_for_load_state("networkidle")`**（2026-09-05 实测，这条是本函数
+    存在的全部理由）。`networkidle` 是一个**文档生命周期事件**：它对当前文档只到达一次，
+    此后页面里再发多少 `fetch` 都不会把它重新打开。实测在阅读器页上点完「marker」之后立刻
+    调它，**0.001s 就返回**，而那一刻 `notes.json` 里还是 **0 条**——它连本次点击的那一次写
+    都没等到，更不用说等一次延迟补发。`settle_marks` 里那一处仍然有效，因为它紧跟在
+    `goto` 之后，等的是**新文档**第一次到达 networkidle。两处不能互相替代。
+
+    所以这里自己数：从 Playwright 的 `request` / `requestfinished` / `requestfailed` 事件
+    里挑出 URL 含 `/api/notes/` 的那些，维护「在途数」与「最后一次活动的时刻」，等到
+    在途为 0 且静默超过 `quiet_ms`。它观察的是**网络层**，而不是 `window.fetch`——一个
+    在页面加载时就把 `fetch` 抓在手里的重复写会绕过任何 JS 层的探针，绕不过这里。
+
+    **这不是 sleep。** 判据是一个可观测条件（「在途为 0 且静默 `quiet_ms`」），循环里的
+    50ms 只是轮询节拍（与 `wait_for_notes` 同款），等不到就抛。静默窗口本身是有限的，
+    所以它挡的是「延迟到 `quiet_ms` 以内补发」的重复写；比这更长的延迟没有任何有界等待
+    能覆盖，那属于 soak 的时间尺度，不属于一条用例的收尾。
+    """
+    marker = NOTES_ENDPOINT_MARKER
+    state = {"inflight": 0, "seen": 0, "last": time.monotonic()}
+
+    def _started(request: Any) -> None:
+        if marker in request.url:
+            state["inflight"] += 1
+            state["seen"] += 1
+            state["last"] = time.monotonic()
+
+    def _ended(request: Any) -> None:
+        if marker in request.url:
+            state["inflight"] = max(0, state["inflight"] - 1)
+            state["last"] = time.monotonic()
+
+    page.on("request", _started)
+    page.on("requestfinished", _ended)
+    page.on("requestfailed", _ended)
+    try:
+        deadline = time.monotonic() + timeout_ms / 1000
+        while True:
+            quiet_s = time.monotonic() - state["last"]
+            if state["inflight"] == 0 and quiet_s >= quiet_ms / 1000:
+                return int(state["seen"])
+            if time.monotonic() > deadline:
+                raise AssertionError(
+                    f"{timeout_ms}ms 内 {marker} 的请求没有停下来："
+                    f"在途 {state['inflight']} 个，本段观察共 {state['seen']} 次请求。"
+                    "（页面在反复重发写请求？）"
+                )
+            # `wait_for_timeout` 而不是 `time.sleep`：同步 API 只有在等 Playwright 自己的
+            # 操作时才会把浏览器那边的事件泵到本进程，纯 Python 的 sleep 收不到上面那三个
+            # 回调，静默判据会因此永远成立。
+            page.wait_for_timeout(50)
+    finally:
+        page.remove_listener("request", _started)
+        page.remove_listener("requestfinished", _ended)
+        page.remove_listener("requestfailed", _ended)
 
 
 def _notes_path(books_dir: PathLike, book_id: str) -> Path:
@@ -850,6 +956,30 @@ def assert_roundtrip(
     ⚠️ ``expected_count > 1`` 时本函数只保证「目标那条往返成功、总数没变」。**同章其他
     条目有没有被顺手改掉，这里不管**——那是调用方要断的守恒律（见 W-7 的整字典等值）。
     把旁观条的判据塞进这里会让它对每个调用点都变成一句恒真。
+
+    ------------------------------------------------------------------------
+    **刷新之前必须先等写活动排空**（2026-09-05 审计 D2）
+    ------------------------------------------------------------------------
+    本函数存在的第二个理由，是下面那句「终态恰好 N 条」——它要抓的是「一次动作写了不止
+    一条」。而 2026-09-05 之前，`wait_for_notes` 一看到中间态就返回，紧接着就
+    `page.reload()`：**导航会把页面上还没发出的那次重复写整个取消掉**（pending 的
+    `setTimeout` 连同它的 `fetch` 随旧文档一起销毁）。于是一条「点一下，稍后再补发一次
+    POST」的缺陷，会因为我们刷新得够快而**在盘上从未出现过第二条**，判据照常绿——
+    这个函数在它最该咬人的那一类缺陷上恰好是盲的。
+
+    修法是在刷新之前等 `wait_for_write_activity_settled(page)`：`/api/notes/` 的请求在途数
+    归零、且静默满 500ms。重复写全都表现为一次多余的 `/api/notes/` 往返，只要它落在这个
+    窗口内就会把窗口顶开，我们于是等到它落盘之后才刷新，随后那句
+    `len(...) == expected_count` 当场红。
+
+    ⚠️ **这里不能用 `page.wait_for_load_state("networkidle")`**——2026-09-05 实测它在这个
+    位置 0.001s 就返回（`networkidle` 是文档生命周期事件，对当前文档只到达一次，页面之后
+    再发多少 fetch 都不会重开它），那一刻盘上还是 0 条。完整实测记在
+    `wait_for_write_activity_settled` 的 docstring 里。
+
+    静默之后**在刷新前先断一次条数**，而不是只留刷新后那一次：两次断的是同一件事，但前
+    一次断在「刷新还没来得及抹掉任何东西」的时刻上，失败消息因此能把人指向写路径本身。
+    刷新后那一次照旧保留——它多守一件事：刷新期间的重绘不许再补写一条。
     """
     from playwright.sync_api import expect
 
@@ -862,6 +992,16 @@ def assert_roundtrip(
     assert record["quote"] == quote, (
         f"落库的 quote 是 {record['quote']!r}，不是选中的 {quote!r}。"
         f"（生产端取 `buildTextIndex(...).text.slice(s, e)`，多吃/少吃一个字符都会在这里显形）"
+    )
+
+    # 见上面 docstring 末节：先等写活动排空，再刷新。顺序反过来，刷新会替一个「延迟补发
+    # 第二次写」的缺陷把证据销毁。
+    requests_seen = wait_for_write_activity_settled(page)
+    before_reload = read_notes(books_dir, book_id)
+    assert len(before_reload) == expected_count, (
+        f"写活动排空之后、刷新之前，盘上不是恰好 {expected_count} 条，而是 {len(before_reload)} 条——"
+        f"这次动作发了不止一次写（`wait_for_notes` 读到的是中间态；本次收尾期间观察到 "
+        f"{requests_seen} 次 {NOTES_ENDPOINT_MARKER} 请求）：{before_reload}"
     )
 
     page.reload()

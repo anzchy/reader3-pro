@@ -7,19 +7,67 @@ Lane layout (see .claude/tdd-guardian/config.json):
     tests/e2e/          Playwright against a live server
 """
 
-import os
-import re
 import sys
 from pathlib import Path
 
 import pytest
+from _pytest.mark.expression import IDENT_PREFIX, Expression
 
-# Marker names that are pytest's own expression grammar, not markers.
-_MARKEXPR_KEYWORDS = {"and", "or", "not", "True", "False", "None"}
-_IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
-# `-m "marker(name='x')"` is legal in pytest 8+; the kwargs inside the parens are
-# not marker names, so they are stripped before identifiers are extracted.
-_MARK_ARGS_RE = re.compile(r"\([^()]*\)")
+# `True` / `False` / `None` are legal identifiers in pytest's `-m` grammar and are
+# evaluated as literals, not looked up as markers. `and` / `or` / `not` never reach
+# here at all -- the parser turns them into operators, not identifiers.
+_MARKEXPR_LITERALS = {"True", "False", "None"}
+
+
+def _compile_markexpr(markexpr: str) -> Expression:
+    """Parse a `-m` expression with pytest's own parser. Seam for the fail-closed test."""
+    return Expression.compile(markexpr)
+
+
+def _marker_names(markexpr: str) -> set[str]:
+    """Every marker identifier in a `-m` expression.
+
+    Extraction goes through pytest's own parser rather than a regex over the raw
+    string, because the two things a regex has to tell apart look identical from
+    the outside: `mark(name='x')` is a marker with keyword arguments (`name` is
+    NOT a marker), while `(a or b)` is Boolean grouping (`a` and `b` both ARE).
+    The previous implementation deleted every parenthesised run before extracting
+    identifiers, so `-m "(baseline_1b_typo)"` reduced to the empty string, passed
+    validation, and then silently selected zero tests -- the exact "green-looking
+    empty set" this hook exists to prevent. Regression cases:
+    `tests/unit/test_markexpr_guard.py`.
+
+    `Expression.compile` builds a Python AST in which each marker identifier
+    becomes a `Name` load prefixed with `IDENT_PREFIX`; those land in the compiled
+    code object's `co_names`. Reading them there is exhaustive, which evaluating
+    the expression against a recording matcher would not be -- `and` / `or` short
+    circuit, so `a and (typo or b)` never asks about `b`.
+    """
+    try:
+        compiled = _compile_markexpr(markexpr)
+    except SyntaxError as exc:
+        raise pytest.UsageError(
+            f"-m expression is not valid pytest marker syntax: {markexpr!r} ({exc.msg})"
+        ) from exc
+    co_names = getattr(getattr(compiled, "_code", None), "co_names", None)
+    names = {
+        name[len(IDENT_PREFIX):]
+        for name in (co_names or ())
+        if isinstance(name, str) and name.startswith(IDENT_PREFIX)
+    }
+    if not names and markexpr.strip():
+        # Fail closed. An empty result here means the extraction itself broke (a
+        # pytest internal changed shape), and a broken extractor is indistinguishable
+        # from "every marker in this expression is known" -- which would turn this
+        # whole hook into a no-op without anything going red.
+        raise pytest.UsageError(
+            f"could not extract marker names from the -m expression {markexpr!r}. "
+            "tests/conftest.py reads them out of pytest's own compiled match "
+            "expression; that internal has probably changed shape. Fix the extractor "
+            "(see tests/unit/test_markexpr_guard.py) -- do not skip the check, or a "
+            "misspelt marker will again select zero tests and report a green empty set."
+        )
+    return names
 
 
 @pytest.hookimpl(trylast=True)
@@ -46,13 +94,10 @@ def pytest_configure(config: pytest.Config) -> None:
     if not markexpr.strip():
         return
     known = {line.split(":", 1)[0].split("(", 1)[0].strip() for line in config.getini("markers")}
-    stripped = _MARK_ARGS_RE.sub(" ", markexpr)
     unknown = sorted(
-        {
-            name
-            for name in _IDENT_RE.findall(stripped)
-            if name not in _MARKEXPR_KEYWORDS and name not in known
-        }
+        name
+        for name in _marker_names(markexpr)
+        if name not in _MARKEXPR_LITERALS and name not in known
     )
     if unknown:
         raise pytest.UsageError(

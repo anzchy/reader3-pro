@@ -68,7 +68,7 @@ marker 那一支（W-5a-②）不经过这条路——它不先删，所以 `cur
    sleep，等的是一个可观测的确定条件；等不到就红。
 
 ------------------------------------------------------------------------------
-**可失败性证据（§0 第四条纪律，定向破坏实录，2026-09-03，五处全部已还原）**
+**可失败性证据（§0 第四条纪律，定向破坏实录，2026-09-03；D6 为 2026-09-05 补，全部已还原）**
 ------------------------------------------------------------------------------
 本模块五组用例全是特征化用例——被测行为上线数月，**红不可得**。§0 明令不得靠破坏生产代码
 去伪造一次红，所以下面每一处破坏都打在**用例自己的期望值**上，每次只动一个判据：动一个
@@ -80,12 +80,17 @@ marker 那一支（W-5a-②）不经过这条路——它不先删，所以 `cur
 | D2 | W-6 的 `assert len(after) == EXPECTED_AFTER_DELETE` 改成 `== EXPECTED_BEFORE_DELETE` | `AssertionError: 删掉一条之后 notes.json 应当恰好剩 2 条（删前 2 条），实际 1 条：[{'id': 'wi6-w6-bystander-marker', …}]` ／ `assert 1 == 2` | 基数判据真的在数数（2 → 1），不是 `> 0` 那种对「删光」也绿的弱断言 |
 | D3 | W-5a-② 的 `== {first_id, green_id}` 改成 `== {first_id}` | `AssertionError: 合并后的 <mark> 携带的 id 集合是 {'349464b7-…', '84c2b431-…'}，期望 …` ／ `Extra items in the left set: '349464b7-…'` | 「两条并存、且都渲染进同一个 `<mark>`」的 DOM 侧证据——磁盘对了而渲染丢了必须红 |
 | D4 | W-5a-③ 的 `assert len(after) == EXPECTED_AFTER_RECOLOR_TOGGLE` 改成 `== 1`（即矩阵原文的期望值） | `AssertionError: 异色重按 wavy 之后 notes.json 应当剩 1 条，实际 0 条：[]` ／ `assert 0 == 1`（underline 同） | 「删成功、建失败」这条特征化结论本身——**这一次红正是矩阵原期望值会得到的结果**，是本模块偏离矩阵的实证 |
+| D6 | **不是改期望值**：`page.route` 把 `annotations.js` 的 `toggleAnnotation` 异色分支改成「POST 先发、DELETE 后发」（`const p = createAnnotation(...); await deleteAnnotations(...); await p;`，并把 `currentRange` 先 `collapse` 保证 POST 照旧 400），另用一条 route 把 POST 的响应压后 0.6s，好让 DELETE 的 204 先回来 | `AssertionError: /api/notes/ 上的写请求发出顺序是 ['POST', 'DELETE']，期望 ['DELETE', 'POST']` ／ `At index 0 diff: 'POST' != 'DELETE'` | W-5a-③ 的**写序**判据（`EXPECTED_WRITE_SEQUENCE`）。**同一次破坏下，补它之前的 W-5a-③ 两个参数全绿**——`deletes == [204]` 与 `expect_response` 各自只答「发生过没有」，记不下先后（009 审计 F5） |
 | D5 | W-5a-① 的 `changed_ids=frozenset()` 改成 `changed_ids={after[0]["id"]}` | `AssertionError: 没有旁观条可断：before 里的 id 是 ['ab748640-…']，而 changed_ids 是 ['ab748640-…']——两者相减为空。这次调用什么都没断到（预置漏了旁观条？changed_ids 写宽了？）` | 恒等律的守卫不空转：`changed_ids` 一旦放宽到把唯一那条也算进去，`assert_bystanders_unchanged` 自己就拒收 |
 
-五次破坏各自单跑、逐次还原；还原后本文件与破坏前**逐字节相同**（`diff` 无输出），
-`git diff --stat -- src tests scripts` 与 `git status --short -- src` 均无输出，
+六次破坏各自单跑、逐次还原；还原后本文件与破坏前**逐字节相同**（`diff`／`cmp` 无输出），
 全模块复跑 8 passed。**生产代码（`src/`）在本模块落地全过程中一个字节都没有改过**——
-§0 明令不得靠改实现去伪造一次红，上面五次全部打在用例自己的期望值上。
+D1–D5 打在用例自己的期望值上，D6 改的是生产代码的行为，但走 Playwright `page.route` 改写
+**响应体**，落盘的 `src/` 一字未动；`git diff --quiet -- src/` 是本分支的硬不变式。
+
+⚠️ **别拿 `git diff --stat -- tests` 当本文件的还原收据**：本文件在 009 分支上是**未跟踪**的
+新文件，`git diff` 对它恒空，改没改过都一样。可核验的收据是上面逐字抄录的失败输出，加上
+还原后对破坏前备份做的逐字节比对。`src/` 那一半不受此限——它是被跟踪的，`git diff` 对它有效。
 
 ------------------------------------------------------------------------------
 **【交叉指针】W-5a-⓪ 的旁观条与 WI-5 的 W-7 是同一个构造，两条都不是冗余**
@@ -147,6 +152,10 @@ EXPECTED_AFTER_RECOLOR_TOGGLE = 0
 #: 异色重按 wavy / underline 时那次注定失败的 POST 的状态码与 payload 里的 quote。
 #: 断死它们是为了给「删了没建成」这个结论一个**机制层面的**判据：将来若有人把 stale
 #: range 修好，红的会是这两条，且失败消息直接说清楚变的是哪一环。
+#: 异色重按这一支在 `/api/notes/` 上发出的写请求序列，字面量（§0 第五条纪律）。
+#: 只收 DELETE / POST：GET 是 `loadAndRender()` 的重绘噪声，每次重绘都有一次。
+EXPECTED_WRITE_SEQUENCE = ["DELETE", "POST"]
+
 EXPECTED_FAILED_POST_STATUS = 400
 EXPECTED_FAILED_POST_QUOTE = ""
 
@@ -514,11 +523,14 @@ def test_w5a3_recolor_then_repress_destroys_without_replacing(
 
       1. `S ∩ S' == ∅`（矩阵的律，今天以 `S' == ∅` 的形式平凡成立）；
       2. `len(S') == 0`（**字面量基准**，写 1 会稳定假红）；
-      3. 那次替代性 POST 确实发生过、确实带着空 `quote`、确实被 400 拒收。
+      3. 那次替代性 POST 确实发生过、确实带着空 `quote`、确实被 400 拒收，**且它发生在
+         那次 DELETE 之后**——顺序由 `EXPECTED_WRITE_SEQUENCE` 逐项断死。
 
     第 3 条不是装饰：只断「剩 0 条」的话，一个「异色重按 = 纯删除，压根不试图新建」的
     实现也全绿，而那是**另一种**语义。断死 DELETE→POST(400) 这个序列，本条才真的在描述
-    今天这条路走过了哪几步。
+    今天这条路走过了哪几步。**「序列」这两个字曾经名不副实**：DELETE 与 POST 原先各由
+    一个独立的收集器记，两者都只答「有没有发生过」，一个「先建后删」的实现照样全绿
+    （009 审计 F5）。现在两者收进同一个有序列表，顺序反了当场红。
 
     **【4B.1 配对（Gap 10）】本条两个参数在 4B.1 之后都会变红**，与
     `acceptance_4b1` 的 W-5b[wavy] / W-5b[underline] 逐参数配对，同一 commit 内一并处理。
@@ -548,6 +560,26 @@ def test_w5a3_recolor_then_repress_destroys_without_replacing(
         if r.request.method == "DELETE" and "/api/notes/" in r.url
         else None,
     )
+
+    # ------------------------------------------------------------------
+    # 写序：**一个**有序列表，不是两个各自独立的计数器（009 审计 F5）
+    # ------------------------------------------------------------------
+    # 上面那个 `deletes` 与下面的 `expect_response` 各自只回答「有没有发生过」，合起来
+    # 仍然**记不下先后**——一个「先建新的、再删旧的」的实现在两者上都全绿，而那是另一种
+    # 语义：它在 POST 与 DELETE 之间留出了一个窗口，窗口里两条标注同时在库，崩在那里
+    # 会留下重复数据；今天这条路（先删后建）崩在同一位置留下的是零条。本条 docstring
+    # 第 3 件事写的是「断死 DELETE→POST(400) 这个序列」，序就得真的断出来。
+    # 收 `request` 事件（不是 `response`）：请求的**发出**顺序才是调用方的写序，响应
+    # 回来的先后受服务端耗时影响，钉它等于把断言绑在时序抖动上。
+    # `/api/notes/` 上的 GET 一律不收——`loadAndRender()` 每次重绘都发一次，它们是噪声。
+    ordered_writes: List[str] = []
+
+    def _record_write(request: Any) -> None:
+        if "/api/notes/" in request.url and request.method in ("DELETE", "POST"):
+            ordered_writes.append(request.method)
+
+    page.on("request", _record_write)
+
     # 等那次注定失败的 POST，而不是 sleep：`expect_response` 等的是一个确定的事件。
     with page.expect_response(_is_notes_post) as post_info:
         page.get_by_test_id(action_testid).click()
@@ -556,6 +588,11 @@ def test_w5a3_recolor_then_repress_destroys_without_replacing(
     assert deletes == [204], (
         f"异色重按应当先发一次 DELETE 并得到 204，实际收到的 DELETE 状态序列是 {deletes}。"
         "一次都没有 ⇒ `toggleAnnotation` 的「同类型异色先删旧」那一段失效了"
+    )
+    assert ordered_writes == EXPECTED_WRITE_SEQUENCE, (
+        f"`/api/notes/` 上的写请求发出顺序是 {ordered_writes}，期望 {EXPECTED_WRITE_SEQUENCE}。"
+        "顺序反了 ⇒ `toggleAnnotation` 变成了「先建后删」，两条标注会有一段共存窗口；"
+        "多出或缺少条目 ⇒ 这条分支的写动作数量变了"
     )
     assert failed_post.status == EXPECTED_FAILED_POST_STATUS, (
         f"替代性 POST 的状态是 {failed_post.status}，不是今天的 "

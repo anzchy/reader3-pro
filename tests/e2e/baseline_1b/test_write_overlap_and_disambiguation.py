@@ -59,8 +59,16 @@
 ------------------------------------------------------------------------------
 **可失败性证据（§0 第四条纪律）**——特征化用例天然无红，靠定向破坏留档
 ------------------------------------------------------------------------------
-破坏点**一律打在用例自己的期望值/种子数据上，一行生产代码都没动**（§0：伪造的收据比没有
-收据更坏）。五次全部已还原，`git diff --stat` 空。
+D1–D5 的破坏点**一律打在用例自己的期望值/种子数据上**；D6 打的是生产代码的**行为**，但
+走的是 Playwright `page.route` 改写响应体，**`src/` 下一个字节都没落地**（本分支禁止生产
+改动，`git diff --quiet -- src/` 是硬不变式）。六次破坏全部当场还原，还原后与破坏前的备份
+**逐字节相同**（`cmp` 静默）。
+
+⚠️ **这里不能拿 `git diff --stat` 当收据，原先那句话是一张空头收据。** 本模块在 009 分支上
+是**未跟踪**的新文件，`git diff` 对它恒空——改没改过都一样空。所以「`git diff --stat` 空」
+证明不了任何东西，而一张永远开得出来的收据比不开更坏（§0 第一句）。这一处由 009 审计 F6
+报出，改成上面那句可核验的说法。**关于生产代码那一半，`git diff` 是有效的**：`src/` 是被
+跟踪的，`git diff --quiet -- src/` 在整条分支上恒为干净，那条不变式照旧成立。
 
 逐字失败输出照抄自当时的运行，未做任何删改（只删掉了与判据无关的 `Captured stdout` 段）。
 
@@ -94,6 +102,19 @@
 
 证明两条用例的位置判据都真的咬在偏移 1894 上（消息里的「期望 1894」同样是插值文本没跟着改，
 `assert 1894 == 22` 是证据）。**真实的失败形状见 D5b**，那一条是从另一端打的，消息完整。
+
+**D6** —— 009 审计 F4 那条：`page.route` 把 `annotations.js` 里 `buildSegments` 的
+`covering` 改成 `.slice(0, 1)`（每段只留第一个盖住它的标注），于是 B 的 id 只渲染在 `"se"` 上：
+
+    E   AssertionError: 逐 id 还原出的覆盖是 {'2e0e0d8a-…': 'Alpha pro', 'f31dc637-…': 'se'}，
+        期望 {'2e0e0d8a-…': 'Alpha pro', 'f31dc637-…': 'prose'}——某条标注的 id 挂在了错误的段上
+        （并集判据看不出这件事）。分段：[('Alpha ', {'2e0e0d8a-…'}), ('pro', {'2e0e0d8a-…'}),
+        ('se', {'f31dc637-…'})]
+    E   assert {'2e0e0d8a-f9...4b8228': 'se'} == {'2e0e0d8a-f9...228': 'prose'}
+
+**同一次破坏下，补进来之前的 W-8a 是全绿的**（实测跑过）：id 并集仍是 `{A, B}`，段文本拼
+起来仍是 `"Alpha prose"`，两条老判据一条都没红。这正是 F4 说的那个洞，也是
+`_coverage_by_id` 存在的唯一理由。
 
 **D5a** —— 把 W-10b 的种子 `cfi=None` 换成指向**第一处**的真实 CFI
 `epubcfi(/6/2[c1]!/4/2,/1:22,/1:44)`（该串实测可解析，`toRange().toString() == quote`）：
@@ -244,6 +265,49 @@ def _all_ids(scan: Dict[str, Any]) -> Set[str]:
     return ids
 
 
+def _coverage_by_id(scan: Dict[str, Any]) -> Dict[str, str]:
+    """**每个 id 各自**覆盖到的正文文本，按 body 文本轴的偏移区间还原。
+
+    为什么需要它（009 审计 F4）：`_all_ids` 求的是并集，`"".join(段文本)` 求的是拼接串。
+    两者合起来仍然放过一整类缺陷——**id 挂在了错误的段上**。举个当场能构造出来的例子：
+    把 `buildSegments` 的 `covering` 过滤改成只保留最后一个 id，DOM 变成
+    `[("Alpha ", {A}), ("pro", {A}), ("se", {B})]`：id 并集还是 `{A, B}`，拼接串还是
+    `"Alpha prose"`，两条老判据全绿——而 B 实际只高亮到了 `"se"`，用户看到的是错的。
+
+    还原方式与**分段形态无关**：只按「哪些区间挂着这个 id」求覆盖，不关心它被切成几段。
+    所以本函数不违反模块 docstring 第 1 条那句「W-8a 不作分段声明」——那条禁的是
+    「恰好三段」「重叠段挂两个 id」这类**切法**声明，而覆盖区间在切与不切两种渲染下同解。
+
+    覆盖必须是**一段连续区间**：同一条标注的 `quote` 在正文里本来就是连续的一段，中间出现
+    空洞意味着渲染漏掉了中段。所以这里对不连续当场抛，而不是悄悄把两截拼起来——拼起来会
+    伪造出一个「看着对」的文本。
+    """
+    body = scan["text"]
+    spans: Dict[str, List[Tuple[int, int]]] = {}
+    for mark in scan["marks"]:
+        if mark["ids"] is None:
+            raise AssertionError(
+                f"`data-annotation-ids` 不是合法 JSON：{mark['raw']!r}。"
+                "`applySegments` / `render()` 改过这个属性的写法？"
+            )
+        for annotation_id in mark["ids"]:
+            spans.setdefault(annotation_id, []).append((mark["start"], mark["end"]))
+
+    out: Dict[str, str] = {}
+    for annotation_id, pieces in spans.items():
+        pieces.sort()
+        for (prev_start, prev_end), (next_start, next_end) in zip(pieces, pieces[1:]):
+            if next_start != prev_end:
+                raise AssertionError(
+                    f"id {annotation_id!r} 覆盖到的区间不连续：{pieces}——"
+                    f"[{prev_end}, {next_start}) 这一段没被它盖住，"
+                    f"那里的正文是 {body[prev_end:next_start]!r}。"
+                    "同一条标注的 quote 在正文里是连续的，出现空洞就是渲染漏了中段"
+                )
+        out[annotation_id] = body[pieces[0][0] : pieces[-1][1]]
+    return out
+
+
 def _sole_mark(scan: Dict[str, Any], quote: str) -> Dict[str, Any]:
     """章内恰好一个 `<mark>`、且它的文本恰好是 `quote` 时返回它，否则抛。
 
@@ -339,7 +403,9 @@ def test_w8a_two_overlapping_annotations_both_persist_and_render(
     不是本条要钉的性质；想断分段去 `test_w8b_*`，那里的 `cfi=None` 是构造保证的。
 
     自检：一个「第二次创建时把第一条覆盖掉」的实现在条数与并集上都红；一个「落库了但渲染
-    时丢一条」的实现只在并集上红——两条判据抓的不是同一件事。
+    时丢一条」的实现只在并集上红；一个「两条 id 都渲染出来了、但 B 只盖住 `"se"`」的实现
+    **只在逐 id 覆盖那条上红**（`_coverage_by_id`，009 审计 F4 补的第三条）——三条判据抓的
+    不是同一件事。
     """
     assert read_notes(e2e_books_dir, BOOK_ID) == [], "隔离 fixture 没生效：起点不是空的"
 
@@ -384,6 +450,19 @@ def test_w8a_two_overlapping_annotations_both_persist_and_render(
     assert OVERLAP_UNION_TEXT in covered, (
         f"全部 `<mark>` 的文本拼起来是 {covered!r}，没有覆盖到两条标注的并集 "
         f"{OVERLAP_UNION_TEXT!r}"
+    )
+
+    # 上面两条只看**并集**（id 的并、文本的拼接），它们放过「id 挂错段」这一整类缺陷：
+    # B 的 id 只渲染在 `"se"` 上时，并集与拼接串都还是对的。所以再按 id **逐条**还原覆盖，
+    # 断 A 盖住 `"Alpha pro"`、B 盖住 `"prose"`（009 审计 F4）。
+    coverage = _coverage_by_id(scan)
+    assert coverage == {
+        record_a["id"]: OVERLAP_A_QUOTE,
+        record_b["id"]: OVERLAP_B_QUOTE,
+    }, (
+        f"逐 id 还原出的覆盖是 {coverage}，期望 "
+        f"{{{record_a['id']!r}: {OVERLAP_A_QUOTE!r}, {record_b['id']!r}: {OVERLAP_B_QUOTE!r}}}"
+        f"——某条标注的 id 挂在了错误的段上（并集判据看不出这件事）。分段：{_segments(scan)}"
     )
 
     # 终态再断一次条数（§0 第四条纪律：`wait_for_notes` 可能读到中间态），

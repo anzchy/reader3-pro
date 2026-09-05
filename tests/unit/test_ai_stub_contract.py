@@ -56,6 +56,9 @@ assert STUB_GATE_TIMEOUT < RENDER_WAIT_TIMEOUT_S < CASE_TIMEOUT_S
 # 用一个更短的超时只改「等多久」，不改「超时后怎么收尾」——后者才是被测的契约。
 SHORT_GATE_TIMEOUT_S = 0.5
 
+#: 「零真实出网」的下半条：桩只许在回环上监听。写成常量是为了让下面两处引用同一个字面量。
+LOOPBACK = "127.0.0.1"
+
 
 @pytest.fixture
 def gated_stub() -> Iterator[OllamaStub]:
@@ -74,9 +77,33 @@ def _read_ndjson_lines(resp: requests.Response) -> List[dict]:
     return out
 
 
+def test_the_stub_listens_on_the_loopback_interface_only(gated_stub: OllamaStub) -> None:
+    """「零真实出网」的下半条：判据是 socket **实际绑定**的地址，不是拼出来的字符串。
+
+    2026-09-05 审计（MEDIUM）：原来的判据是 `stub.base_url.startswith("http://127.0.0.1:")`，
+    而 `base_url` 返回的是 `f"http://{_HOST}:{port}"`、bind 用的也是同一个 `_HOST`。同一个
+    常量既当被测对象又当参照物：把 `_HOST` 改掉两边一起变（那样确实会红），但**在 bind 那行
+    写一个与 `_HOST` 不同的字面量**（`ThreadingHTTPServer(("0.0.0.0", 0), …)`）——桩就监听在
+    所有网卡上了，而 `base_url` 仍然一字不差地说自己在 127.0.0.1，原断言全绿。
+
+    所以这里问的是运行中的 server 自己：`server_address[0]`。两条断言各管一头——
+    第一条管「绑对了没有」，第二条管「说的和绑的是不是同一个地方」（`base_url` 是写进
+    沙箱 `ai_settings.json` 的那个值，被测服务照它去连；两者不一致时桩会收不到请求，
+    而失败形态是一次不知所云的 provider 报错）。
+    """
+    stub = gated_stub
+    assert stub.bound_host == LOOPBACK, (
+        f"桩实际绑定在 {stub.bound_host!r}，不是 {LOOPBACK!r}——它在回环以外的网卡上可达了"
+    )
+    assert stub.base_url == f"http://{LOOPBACK}:{stub.port}", (
+        f"桩对外宣告的 base_url（{stub.base_url!r}）与它实际绑定的 "
+        f"{stub.bound_host}:{stub.port} 不是同一个地址"
+    )
+
+
 def test_gate_timeout_ends_the_body_cleanly_without_the_last_delta(gated_stub: OllamaStub) -> None:
     stub = gated_stub
-    assert stub.base_url.startswith("http://127.0.0.1:"), f"桩必须只在回环地址上监听：{stub.base_url}"
+    assert stub.bound_host == LOOPBACK, f"桩必须只在回环地址上监听：{stub.bound_host}"
 
     # 全程不调用 gate.set()。
     with requests.post(

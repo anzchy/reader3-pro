@@ -233,17 +233,42 @@ def test_s6_single_testid_and_two_allowed_discriminators_are_compliant(mod, sel)
 # --------------------------------------------------------------------------- S7
 
 
+#: `main()` 的扫描摘要。两个数都要，因为「扫了 25 个文件」与「看了 57 处选择器」
+#: 各自会被不同的失效形态打到零：前者被坏掉的 ROOT，后者被「选择器提取正则不再匹配」。
+SCAN_SUMMARY_RE = re.compile(r"扫描 (?P<files>\d+) 个文件，(?P<checked>\d+) 处选择器。")
+
+
 def test_s7_real_repo_e2e_corpus_still_passes(mod, capsys):
     """S7：棘轮 —— 不打任何桩，用真实 ROOT 扫真实的 `tests/e2e/`。
 
-    今天那里是 `conftest.py` 与 `test_harness_smoke.py`，后者两处选择器
-    （`:36` 的 `[data-testid="rd-viewport"] iframe`、`:37` 的 `body`）
-    都已带 `ALLOW_INLINE` 并写明理由，所以本条第一天就是绿的。
-    它是 S5 / S12 / S15 / S17 那些打了 ROOT 桩的用例的真实路径对照。
+    它是 S5 / S12 / S15 / S17 那些打了 ROOT 桩的用例的真实路径对照：那些用例证明
+    `main()` 在**自造的**语料上判得对，只有这一条证明它在**真语料**上跑通。
+
+    **为什么不接受「暂无用例」（2026-09-05 审计 · HIGH）。** 原判据是
+    `("…0 处违规。" in out) or ("暂无用例" in out)`，也就是说：`ROOT` 指错、`SCAN_GLOBS`
+    写坏、`tests/e2e/` 整个消失——任何让扫描面塌成空集的原因，都能让一条「证明真实用例树
+    通过 lint」的用例绿着通过。空集通过的不是 lint，是虚无。「暂无用例」那条分支自有
+    S15 在自造的空目录上钉着，本条不必也不该替它兜。
+
+    所以判据改成：摘要必须在，两个数都必须为正，且以「0 处违规」收尾。
+    数值只断**下界为正**，不断具体条数——写死 25/57 的话，红的会是「新增了一个 e2e 文件」
+    这个动作本身，而修法与被改的东西无关（同 `E2E_BOOKS` 的取值理由）。
     """
     code, out = run_main(mod, capsys)
     assert code == 0, out
-    assert ("选择器 lint 通过：0 处违规。" in out) or ("暂无用例" in out), out
+
+    m = SCAN_SUMMARY_RE.search(out)
+    assert m is not None, (
+        "真实 ROOT 下没有打印扫描摘要——说明 main() 走的是 files == 0 那条「暂无用例」分支："
+        f"tests/e2e/ 扫不到任何文件（ROOT 指错？SCAN_GLOBS 写坏？）。输出：{out!r}"
+    )
+    files, checked = int(m.group("files")), int(m.group("checked"))
+    assert files > 0, f"扫描到 0 个文件，本条证明不了任何事：{out!r}"
+    assert checked > 0, (
+        f"扫了 {files} 个文件却一处选择器都没看见——选择器提取（LOCATOR_CALL_RE / "
+        f"DOLLAR_CALL_RE）多半已经匹配不上真实用例的写法了，零违规是空转来的：{out!r}"
+    )
+    assert "选择器 lint 通过：0 处违规。" in out, out
 
 
 # --------------------------------------------------------------------------- S8

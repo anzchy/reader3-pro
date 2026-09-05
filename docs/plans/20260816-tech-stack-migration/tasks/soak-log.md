@@ -18,6 +18,19 @@
 
 ## `suite_hash` 的取法
 
+**下面这段是配方的「文档」，不是被执行的代码。** 2026-09-05 之前 `scripts/soak_run.py` 会用正则
+把这段围栏块抠出来交给 `bash -c` 跑——那等于「谁能改这份 Markdown，谁就能让 soak runner 执行
+任意命令」，审计（gpt-5.6-sol #21）判 High。现在脚本**解析并校验**这段块：拆成 token，比对固定
+的管道形状与**有序的八个路径**，任何一处对不上就抛 `HashRecipeError` 拒跑（而不是执行它）；
+校验通过后由脚本自己以**参数数组**调 `git ls-files -s -- <paths>` 与 `git hash-object --stdin`，
+全程不经 shell。所以：
+
+* 改这段块**仍然**会改变脚本的行为——但只有两种结果：与 `HASH_COVERED_PATHS` 一致（照常算），
+  或者拒跑。**没有第三种**，插进来的命令不会被执行。
+* 八个路径在代码里也有一份（`soak_run.py` 的 `HASH_COVERED_PATHS`）。那是**第二把钥匙**，
+  不是第二个定义处：两边不一致时脚本拒跑，`tests/unit/test_soak_log_contract.py` 也会红。
+* 想改覆盖面，两处一起改，并在下面的变更史里记一条。
+
 ```bash
 # baseline_1b 组用例 + harness 配置 + fixtures 的内容哈希，前 12 位
 { git ls-files -s tests/e2e/baseline_1b tests/e2e/conftest.py tests/e2e/helpers.py \
@@ -26,7 +39,9 @@
   | git hash-object --stdin; } | cut -c1-12
 ```
 
-当前 `suite_hash` 值：`91de0e171b5c`（2026-09-04 Wave 6 收口实测输出，非誊抄；**Wave 7 收口后重算，值不变**——见下方变更史第一条）。
+当前 `suite_hash` 值：`91de0e171b5c`（2026-09-04 Wave 6 收口实测输出，非誊抄；**Wave 7 收口后重算，值不变**）。
+**2026-09-05 起这个值是「暂时的」**：覆盖面内两个文件已被审计修复改动，只是还没进索引，一 `git add` 就变——
+见下方变更史第一条，新值待冻结时现算。
 
 **这个值处于 pre-freeze，不是冻结值。** G2 尚未开始。`baseline_1b` 的 22 个用例编号**今天全部落地**，
 收集到 **65 条**（WI-3 的 harness 自测 9 条 ＋ WI-4 的创建路径 3 条 ＋ WI-5 的笔记创建/编辑 2 条
@@ -52,6 +67,19 @@
 
 值的变更史（每次改都要写清作废原因，不要只覆盖数字）：
 
+- **（待重算）← 2026-09-05 审计修复波。值**会**变，新值现在还不能写死。**
+  - **为什么会变**：覆盖面内的两个路径被审计修复动了——`tests/conftest.py`（marker 表达式守卫
+    重写）与 `tests/fixtures/ai_stub.py`（新增 `bound_host` 属性）。两处都是修复，不是给 soak
+    放水；但它们在八个路径里，套件内容变了，`suite_hash` 就该跟着变。
+  - **为什么现在还是 `91de0e171b5c`**：`git ls-files -s` 读的是**索引**，这两个文件此刻还没
+    `git add`。所以「当前值没变」是假象，不是稳定——**任何人一 `git add`，值就动**。这正是上面
+    「取值前必须先 `git add`」那条说的坑，这次是它第四次咬人。
+  - **新值 = 待定，必须在冻结时现算，不许誊抄。** 本条写下时这两个文件仍在被并行修改，
+    此刻算出来的任何 12 位都会在下一次编辑后作废。冻结时（G2 落第一行账之前）跑一次上面
+    那段配方，把实测值补在这里。
+  - **这次改动是免费的，因为 G2 还没开始**：上表 **零数据行**，没有任何计数会被这次变更清零。
+    §7 的「`suite_hash` 变了 ⇒ 清零」清的是已有的绿行，而现在一行都没有。**同一处改动放到
+    G2 开始之后做，代价是三次连绿全部作废**——所以覆盖面内的修改要么现在做完，要么等下一轮。
 - **`91de0e171b5c`（不变）← Wave 7（WI-17）收口。这是变更史上第一条「值没变」的记录，它本身就是证据。**
   - **为什么该不变**：本波产出全在覆盖面之外——验收目录四个（`acceptance_4b1` / `_p3` / `_4a4` / `_2a`，共 17 条 skip 用例）、`scripts/lint_e2e_groups.py` / `soak_run.py` / `e2e_group_probe.py`、`tests/fixtures/deg_assertions.py`（只进验收模块的 import 闭包，不进 baseline 的）、四个 unit 模块。覆盖面内那八个路径一个都没被碰。**`baseline_1b` 一条没加、harness 一个字没动，哈希就该纹丝不动**；它要是变了，说明有人往安全网里塞了东西。
   - **分组守卫落地**：`EXPECTED_BASELINE_ITEMS` 61 → **65**（欠账 #2）、`EXPECTED_ACCEPTANCE_ITEMS` 由 `EXPECTED_ACCEPTANCE_PER_DIR` **派生**得 17（欠账 #14）、`EXPECTED_UNGROUPED_ITEMS` **7**，派生总数 **89** ＝ 实测收集数。三分划分律（每条 item 恰好一个组标记，否则其模块须在白名单里）＋ 条数轴 ＋ skip 轴（`ast.walk` 全模块扫 skip 构造）三条轴独立成立。

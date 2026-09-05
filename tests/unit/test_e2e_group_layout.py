@@ -32,8 +32,6 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
-import pytest
-
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 GROUPS_LINT_PATH = REPO_ROOT / "scripts" / "lint_e2e_groups.py"
 E2E_DIR = REPO_ROOT / "tests" / "e2e"
@@ -51,16 +49,40 @@ GROUP_MARKERS = [
 # 然后安静地通过」，所以「非零」还不够——必须不是 5，也不是「无人 deselect」的 0。
 NO_TESTS_COLLECTED = 5
 
+#: 每个收集子进程的墙钟上限（秒）。`--collect-only` 是秒级动作；没有上限时，
+#: `tests/e2e/conftest.py` 里一个阻塞的 import（轮询一个永不就绪的端口）会让 unit lane
+#: **永远挂着**——既不红也不绿，比任何一种失败都难诊断。超时按失败处理，并把已捕获的
+#: 输出一并带出来，否则「它卡在哪」一点线索都没有。
+COLLECT_TIMEOUT_S = 300
+
+
+def _run_pytest(argv: list[str]) -> subprocess.CompletedProcess:
+    """跑一个有界的只读 pytest 子进程；超时即失败，并附上已捕获的输出。"""
+    try:
+        return subprocess.run(
+            argv,
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=COLLECT_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired as exc:
+        captured = "".join(
+            s.decode("utf-8", "replace") if isinstance(s, bytes) else (s or "")
+            for s in (exc.stdout, exc.stderr)
+        )
+        raise AssertionError(
+            f"收集子进程超过 {COLLECT_TIMEOUT_S}s 未结束，已终止：{argv}\n"
+            "收集期挂死（阻塞的 import、等一个永不就绪的服务）会让这条 lane 既不红也不绿。"
+            f"\n已捕获的输出：\n{captured}"
+        ) from exc
+
 
 def _collect_e2e(*extra_args: str) -> subprocess.CompletedProcess:
     """在仓库根跑一次只读收集，返回退出码与合并后的输出。"""
-    proc = subprocess.run(
-        [sys.executable, "-m", "pytest", "tests/e2e", "--collect-only", "-q", *extra_args],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
+    return _run_pytest(
+        [sys.executable, "-m", "pytest", "tests/e2e", "--collect-only", "-q", *extra_args]
     )
-    return proc
 
 
 def _output(proc: subprocess.CompletedProcess) -> str:
@@ -86,12 +108,17 @@ def _load_groups_lint() -> ModuleType:
     # 取模块对象解析注解；没登记就拿到 None，随即 AttributeError: 'NoneType' has no attribute
     # '__dict__'。这行不是可省的样板——删掉它，这个 helper 会在加载期直接炸。
     sys.modules[spec.name] = module
+    loaded = False
     try:
         spec.loader.exec_module(module)
-    except BaseException:
+        loaded = True
+    finally:
         # 加载失败就不要把半成品留在 sys.modules 里，否则重复调用会拿到坏模块。
-        sys.modules.pop(spec.name, None)
-        raise
+        # 用 `try/finally` 而不是 `except BaseException:`：后者要按 BLE001 写明「为什么
+        # 连 KeyboardInterrupt / SystemExit 也要接住」的理由，而这里根本不需要**捕获**
+        # 任何异常——只需要「无论怎么离开这个块都把登记撤掉」，那正是 finally 的语义。
+        if not loaded:
+            sys.modules.pop(spec.name, None)
     return module
 
 
@@ -117,24 +144,63 @@ def test_typo_marker_selector_fails_collection_instead_of_selecting_zero() -> No
     )
 
 
-@pytest.mark.parametrize("marker", GROUP_MARKERS)
-def test_registered_group_marker_is_accepted_by_strict_markers(marker: str) -> None:
-    """对照支：五个已注册的组 marker 都不得被 `--strict-markers` 拒绝。
+def test_all_registered_group_markers_are_accepted_in_one_collection(tmp_path: Path) -> None:
+    """对照支：五个已注册的组 marker 都不得被拒绝——**一次**收集查完五个。
 
     它在「只注册了拼错的那个」「五个里漏注册一个」时红。
     「收集条数 > 0」那一半移交 WI-17——组目录在 WI-1 结束时还是空的。
+
+    **为什么不 parametrize。** 逐 marker 参数化会起五次 pytest 冷启动（本文件从三次
+    变八次），而五次跑的是同一件事。一个合成探针模块把五个 marker 各挂一条用例，一次
+    收集就同时压到两条判据：
+
+    - `--strict-markers` 校验**装饰器上**的 marker（漏注册的那个在这里被拒），
+    - `tests/conftest.py` 的 `pytest_configure` 校验 **`-m` 表达式里**的 marker
+      （拼错的那个在这里被拒）——两条各覆盖一半，缺一不可。
+
+    被测模块写在 `tmp_path` 下（不在仓库里，不进任何 lane），用 `-c pyproject.toml`
+    显式指定配置文件，好让仓库的 `addopts` / `markers` 生效。
     """
-    proc = _collect_e2e("-m", marker)
+    probe = tmp_path / "test_group_marker_probe.py"
+    probe.write_text(
+        "import pytest\n\n\n"
+        + "\n\n".join(
+            f"@pytest.mark.{m}\ndef test_{m}():\n    assert True" for m in GROUP_MARKERS
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    proc = _run_pytest(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-c",
+            str(REPO_ROOT / "pyproject.toml"),
+            "--collect-only",
+            "-q",
+            "-m",
+            " or ".join(GROUP_MARKERS),
+            str(probe),
+        ]
+    )
     out = _output(proc)
 
     assert "not found in `markers` configuration option" not in out, (
-        f"已注册的组 marker `{marker}` 被 --strict-markers 拒绝了，说明它没进 "
+        "某个组 marker 被 --strict-markers 拒绝了，说明它没进 "
         f"[tool.pytest.ini_options].markers。输出：\n{out}"
     )
-    assert proc.returncode in (0, NO_TESTS_COLLECTED), (
-        f"`-m {marker}` 的退出码是 {proc.returncode}，既不是「收到了」也不是"
-        f"「组目录还空着」。输出：\n{out}"
+    assert "unknown marker(s) in -m expression" not in out, (
+        f"某个组 marker 在 `-m` 表达式里被判为未注册。输出：\n{out}"
     )
+    assert proc.returncode == 0, (
+        f"五个组 marker 的合成探针收集退出码 {proc.returncode}。输出：\n{out}"
+    )
+    for marker in GROUP_MARKERS:
+        assert f"test_{marker}" in out, (
+            f"`-m` 的合取式没有选中 `{marker}` 那一条——它要么没注册，要么没被 marker 选中。"
+            f"输出：\n{out}"
+        )
 
 
 def test_group_subdirs_do_not_break_bare_conftest_imports() -> None:
@@ -177,14 +243,21 @@ def test_group_subdirs_do_not_break_bare_conftest_imports() -> None:
     # 白名单模块在**同一次收集**里贡献的 item 数。常量从唯一定义处 import，不写字面量。
     # 另外两段（EXPECTED_BASELINE_ITEMS / EXPECTED_ACCEPTANCE_ITEMS）由 WI-17 的划分律
     # 用例承担：那 61 + 14 条用例文件在 WI-1 阶段一条都还没写。
-    per_module: dict[str, int] = {name: 0 for name in groups.UNGROUPED_E2E_MODULES}
+    # 白名单登记的是**仓库相对路径**（basename 授权等于给「同名文件挪进任意子目录」
+    # 预开的门，见 scripts/lint_e2e_groups.py 的常量注释），所以这里也按路径归并。
+    per_module: dict[str, int] = {
+        Path(name).as_posix(): 0 for name in groups.UNGROUPED_E2E_MODULES
+    }
+    assert all("/" in name for name in per_module), (
+        f"UNGROUPED_E2E_MODULES 里有条目不是仓库相对路径：{sorted(per_module)}"
+    )
     for line in out.splitlines():
         head = line.split("::", 1)[0].strip()
         if "::" not in line or not head.startswith("tests/e2e/"):
             continue
-        name = Path(head).name
-        if name in per_module:
-            per_module[name] += 1
+        rel = Path(head).as_posix()
+        if rel in per_module:
+            per_module[rel] += 1
 
     assert sum(per_module.values()) == groups.EXPECTED_UNGROUPED_ITEMS, (
         f"根目录白名单模块贡献了 {sum(per_module.values())} 条，期望 "
@@ -210,7 +283,7 @@ def test_mistyped_marker_decorator_is_rejected_by_strict_markers(tmp_path: Path)
         "import pytest\n\n\n@pytest.mark.baseline_1b_typo\ndef test_probe():\n    assert True\n",
         encoding="utf-8",
     )
-    proc = subprocess.run(
+    proc = _run_pytest(
         [
             sys.executable,
             "-m",
@@ -220,12 +293,9 @@ def test_mistyped_marker_decorator_is_rejected_by_strict_markers(tmp_path: Path)
             "--collect-only",
             "-q",
             str(probe),
-        ],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
+        ]
     )
-    out = proc.stdout + proc.stderr
+    out = _output(proc)
 
     assert proc.returncode != 0, (
         "装饰器上拼错的 marker 被静默接受了——那条用例会不属于任何组，"

@@ -52,7 +52,9 @@ K-3b、K-3b′、K-3c。
   （`openNoteEditor`）：`transform: translate(0, 0)`、`x = rect.right + 12`（放不下时翻到左侧
   `rect.left - 320 - 12`）、`y = rect.top`，**没有 `-50%` 的居中变换**。它的 X 判据是「间距
   ≈ 12」而不是「居中」，所以不能复用 `X_TOL = 2`；`GAP_TOL = 6` 覆盖 12px 间距的取整与边界
-  翻转。三条几何用例的常量**不要合并成一个**。
+  翻转。**断的是「该在的那一侧」，不是「两侧之一」**：哪一侧由 `_editor_fits_right()` 从视口
+  几何算出（与生产的翻转条件同一个式子），再对那一侧的间距单独取等；写成析取式会放过
+  「右优先 → 左优先」的策略反转（S6 实测）。三条几何用例的常量**不要合并成一个**。
 
 **禁止事项**：`toolbarHalfWidth = 200`、`clamp(…, 60, …)`、`editorWidth = 320` 这些生产常数
 **不得进入输出断言**（change-tax 反模式：重构一改常数，几十条断言跟着改）。它们只出现在下面
@@ -275,12 +277,24 @@ def _require_toolbar_band(page: Page, sel: Dict[str, float], label: str) -> None
         )
 
 
+def _editor_fits_right(page: Page, sel: Dict[str, float]) -> bool:
+    """生产在这个视口 ＋ 这个选区下**应当**选右侧吗？
+
+    判据逐字对应 `openNoteEditor` 的翻转条件 `if (x + editorWidth > innerWidth - 20)`
+    （`x = rect.right + 12`），只是写成了它的否定式。K-3c 的侧别断言与本模块的前置条件
+    带都从这一个函数取值：两处若各写一份，「该选哪侧」与「哪侧放得下」会各自漂移。
+    """
+    vp = page.viewport_size
+    assert vp is not None
+    return sel["right"] + EDITOR_GAP_PX + _EDITOR_WIDTH <= float(vp["width"]) - _VIEWPORT_EDGE
+
+
 def _require_editor_band(page: Page, sel: Dict[str, float], label: str) -> None:
     """前置条件：编辑器至少有一侧放得下，且纵向不触发 `openNoteEditor` 的下移 / clamp。"""
     vp = page.viewport_size
     assert vp is not None
     w, h = float(vp["width"]), float(vp["height"])
-    fits_right = sel["right"] + EDITOR_GAP_PX + _EDITOR_WIDTH <= w - _VIEWPORT_EDGE
+    fits_right = _editor_fits_right(page, sel)
     fits_left = sel["left"] - EDITOR_GAP_PX - _EDITOR_WIDTH >= _VIEWPORT_EDGE
     if not (fits_right or fits_left):
         pytest.fail(
@@ -511,8 +525,10 @@ def test_k3c_note_editor_opens_beside_the_selection(
     """K-3c（S1，L2）：`rd-note-editor` 贴在选区**右侧** `EDITOR_GAP_PX`（放不下时翻到左侧）、顶边对齐。
 
     `openNoteEditor` 与 `openToolbarAt` 是**两套定位代码**，改任一套只会打断对应的一条——这正是
-    它们各一条用例的理由。X 判据是「间距 ≈ 12」（二选一成立），不是「居中」，所以容差是
-    `GAP_TOL` 而不是 `X_TOL`（模块 docstring）。选区矩形在点按钮**之前**取：编辑器按点击时刻的
+    它们各一条用例的理由。X 判据是「间距 ≈ 12」而不是「居中」，所以容差是 `GAP_TOL` 而不是
+    `X_TOL`（模块 docstring）；且是**先算该选哪侧、再只断那一侧**，不是「两侧任一成立即可」的
+    析取式——析取式对「右优先被改成左优先」这条策略反转是盲的（`_editor_fits_right` 旁的注释）。
+    选区矩形在点按钮**之前**取：编辑器按点击时刻的
     `currentRange` 定位，而 `noteTextarea.focus()` 之后 iframe 的程序化选区实测仍在
     （`test_write_note_editor.py` W-4 的实测），两者同解，先取只是让因果顺序在代码里可读。
     """
@@ -526,10 +542,23 @@ def test_k3c_note_editor_opens_beside_the_selection(
 
     right_gap = editor["x"] - sel["right"]
     left_gap = sel["left"] - (editor["x"] + editor["width"])
-    assert abs(right_gap - EDITOR_GAP_PX) <= GAP_TOL or abs(left_gap - EDITOR_GAP_PX) <= GAP_TOL, (
-        f"编辑器既不贴在选区右侧（间距 {right_gap:+.2f}px）也不贴在左侧（间距 {left_gap:+.2f}px），"
-        f"期望其一 ≈ {EDITOR_GAP_PX} ± {GAP_TOL}（编辑器 {editor}，选区 {sel}）。"
+
+    # 先从视口几何算出生产**应当**选哪一侧，再只断那一侧。写成
+    # `abs(right_gap - 12) <= GAP_TOL or abs(left_gap - 12) <= GAP_TOL` 的析取式是失效的：
+    # 右侧明明放得下时它照样接受落在左侧的编辑器，于是「右优先、放不下才翻左」这条策略被
+    # 反转（`openNoteEditor` 改成 `let x = rect.left - editorWidth - 12` 起手）也一样绿。
+    # 析取式唯一能拦的只剩「两侧都不贴」，而那是比策略反转弱得多的一件事。
+    fits_right = _editor_fits_right(page, sel)
+    expected_side = "右侧" if fits_right else "左侧"
+    gap = right_gap if fits_right else left_gap
+    other_gap = left_gap if fits_right else right_gap
+    assert abs(gap - EDITOR_GAP_PX) <= GAP_TOL, (
+        f"编辑器应贴在选区**{expected_side}**（本选区在 {page.viewport_size} 视口下"
+        f"{'右侧放得下' if fits_right else '右侧放不下，须翻到左侧'}），"
+        f"实测该侧间距 {gap:+.2f}px，期望 ≈ {EDITOR_GAP_PX} ± {GAP_TOL}"
+        f"（另一侧间距 {other_gap:+.2f}px；编辑器 {editor}，选区 {sel}）。"
         "openNoteEditor 的 x = rect.right + 12 / 翻左分支被改了？"
+        "另一侧间距若恰好 ≈ 12，说明右优先的回退策略被反转了"
     )
     dy = editor["y"] - sel["top"]
     assert abs(dy) <= GAP_TOL, (
@@ -557,8 +586,22 @@ SABOTAGE_LOG = """
 | S4 | `annotations.js` `openToolbarAt` 的 `style.left = Math.round(x)px` → 固定 `"640px"` | K-3b（X） / K-3b′（X） | K-3a ×3 / K-3c | K-3b：`工具条中心 x 与选区中心 x 相差 +260.77px，超出 X_TOL = 2.0`；K-3b′：`工具条中心 x 移动了 +0.00px，选区中心 x 移动了 +355.79px，差 -355.79px > X_TOL = 2.0` |
 | S5 | `annotations.js` `let x = rect.right + 12;` → `+ 60`（两处：`openNoteEditor` 与 `openNoteEditorWithExisting`） | **仅 K-3c** | 其余 5 条 | `编辑器既不贴在选区右侧（间距 +59.72px）也不贴在左侧（间距 -411.83px），期望其一 ≈ 12.0 ± 6.0` |
 
+**S6（2026-09-05 追加，打的是 K-3c 的 X 判据本身）**：`page.route` 把 `annotations.js` 里两处
+`let x = rect.right + 12;` 改写成 `let x = rect.left - editorWidth - 12;`（`openNoteEditor` 与
+`openNoteEditorWithExisting`，命中数核对为 2；`src/` 未动），即把「右优先、放不下才翻左」的
+回退策略**整个反转**成「左优先」。实测同一份几何下：
+
+* 旧的析取式 `abs(right_gap-12) <= GAP_TOL or abs(left_gap-12) <= GAP_TOL` —— **绿**
+  （`right_gap = -364.28`、`left_gap = +12.17`，第二项成立）；
+* 现在的写法 —— 红，逐字输出：`AssertionError: 编辑器应贴在选区**右侧**（本选区在
+  {'width': 1280, 'height': 720} 视口下右侧放得下），实测该侧间距 -364.28px，期望 ≈ 12.0 ± 6.0
+  （另一侧间距 +12.17px；编辑器 {'x': 31, 'y': 180, …}，选区 {'left': 363.17, 'right': 395.28, …}）`。
+
+析取式能拦的只剩「两侧都不贴」；策略反转它一声不响，而 4B.2 的浮层重写正是最可能顺手把
+「先试右侧」写成「先试左侧」的地方。
+
 每条用例各自被哪一枪咬住：K-3a[toolbar] ← S1 / S2；K-3a[note-editor] ← S1；K-3a[tooltip] ← S1；
-K-3b ← S3（Y）/ S4（X）；K-3b′ ← S4；K-3c ← S3（Y）/ S5（X）。S3 与 S4 合起来把 K-3b 的两轴
+K-3b ← S3（Y）/ S4（X）；K-3b′ ← S4；K-3c ← S3（Y）/ S5（X 间距）/ S6（X 侧别）。S3 与 S4 合起来把 K-3b 的两轴
 分别打红，证明两轴断的不是同一件事；S3 上 K-3b 红而 K-3b′ 绿、S4 上两条同红，证明差分用例既
 不是绝对用例的子集也不是它的替代。
 """

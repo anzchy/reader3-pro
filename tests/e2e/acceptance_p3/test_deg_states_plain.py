@@ -102,26 +102,53 @@ def pickle_server(e2e_books_dir: Path, tmp_path: Path) -> Iterator[str]:
 def test_deg_s1_stale_notes_banner_says_paused_not_deleted(
     page: Page, live_server: str, e2e_books_dir: Path
 ) -> None:
-    """DEG-S1（S3 / L2）：指纹不匹配 ⇒ 顶部横幅文案含「暂停套用」与「未删除」；一条不少；正文零 `<mark>`；面板逐条角标；摘录含 quote。"""
+    """DEG-S1（S3 / L2）：指纹不匹配 ⇒ 顶部横幅文案含「暂停套用」与「未删除」；`GET /api/notes` 交出的**就是盘上那批**（id ＋ 逐字段）；正文零 `<mark>`；面板逐条角标；摘录含 quote。
+
+    「一条不少」这个说法 2026-09-05 被审计判为不够：原判据只比条数，于是交出**另一批**同样
+    多的标注也算通过。现在比的是身份——`judge_deg_s1` 收 `served_records`，按 id 配对后逐字段
+    对（`S1_SERVED_IDENTITY_FIELDS`）。
+    """
     run_deg_s1(page, live_server, e2e_books_dir, BOOK_ID, DEG_TESTIDS)
 
 
 def test_deg_s2_stale_index_shows_fifth_state_and_search_banner(
     page: Page, live_server: str, e2e_books_dir: Path
 ) -> None:
-    """DEG-S2（S3 / L2）：chroma 指纹不匹配 ⇒ 书卡第五态（不冒充「未索引」）＋ 搜索面板「索引已过期」提示条 ＋ 恰好一个重建按钮。"""
+    """DEG-S2（S3 / L2）：chroma 指纹不匹配 ⇒ 书卡第五态的**文案是「索引已过期」** ＋ 搜索面板同名提示条 ＋ **提示条内部**恰好一个重建按钮。
+
+    两处 2026-09-05 审计后收紧，判据都在 `deg_assertions` 里（本文件仍只有那一次调用）：
+
+    * 第五态原来只要求「非空且不含『未索引』」——一本 stale 书被渲染成「已索引」正好从这个
+      缝里过去，而那是 DEG-S2 要消灭的头号形状。现在要求 `DEG_S2_STALE_STATUS_PHRASE`
+      真的出现在书卡文案里；`lib-status-stale` 这个 testid 只证明「槽位在」，证明不了
+      「槽位里填的是第五态的话」——前端计划 WI-3 点名的 `|| STATUS_META.not_indexed`
+      正是往这个槽位里填别的态。
+    * 重建按钮原来是**全页**计数，页面上任何别处（书卡上的、批量索引面板里的）有一个就满足；
+      现在在 `lib-degrade-s2` 横幅内部数。作用域是断言的一部分。
+    """
     run_deg_s2(page, live_server, e2e_books_dir, BOOK_ID, DEG_TESTIDS)
 
 
 def test_deg_s3_pickle_fallback_warns_on_both_pages(
     page: Page, live_server: str, pickle_server: str, e2e_books_dir: Path
 ) -> None:
-    """DEG-S3（S3 / L2）：对照服务无告警条；`READER3_ALLOW_PICKLE=1` 的服务上书库与阅读器都有、文案同一份、清单可展开折叠。"""
+    """DEG-S3（S3 / L2）：对照服务无告警条；`READER3_ALLOW_PICKLE=1` 的服务上书库与阅读器都有、文案同一份、清单可展开折叠，且**列的就是那批只有 pkl 的书**。
+
+    清单原来只比条数——列出**别的**书、只要数量撞上就通过。现在每一项必须带
+    `data-book-id`（ADR-0014 闭合清单里的判别位，不新增 testid），驱动把这批 id 收齐，
+    判据与 `pkl_only_book_ids(books_dir)` 比**集合**，多一本少一本都点名。
+    """
     run_deg_s3(page, live_server, pickle_server, e2e_books_dir, BOOK_ID, DEG_TESTIDS)
 
 
 def test_deg_s4_legacy_book_card_shows_storage_format_badge(
     page: Page, live_server: str, e2e_books_dir: Path
 ) -> None:
-    """DEG-S4（S3 / L2）：一本只有 pkl 的书 ⇒ 书卡角标含 `pkl`；新格式书没有角标或角标不含 `pkl`。"""
+    """DEG-S4（S3 / L2）：一本只有 pkl 的书 ⇒ 书卡角标含 `pkl`；**每本新格式书的书卡各恰好 1 张**，其角标要么不存在、要么不含 `pkl`。
+
+    「各恰好 1 张」不是凑数：后半句是**否定断言**，缺卡时它空真——一个把新格式书整批漏渲染
+    的书库页，`fresh_badge_texts` 是空列表，旧判据全绿。所以先证明卡在（`fresh_cards_seen`
+    每本 == 1），再证明它没戴 pkl 角标。2026-09-05 审计由两批独立找出同一处，修在共享驱动
+    `run_deg_s4` / `judge_deg_s4` 里，两组同时生效。
+    """
     run_deg_s4(page, live_server, e2e_books_dir, BOOK_ID, list(E2E_BOOK_IDS), DEG_TESTIDS)

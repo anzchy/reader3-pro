@@ -19,9 +19,14 @@ acceptance 目录不相交。(a) 破了就是「假绿」——套件变了而�
 from __future__ import annotations
 
 import ast
+import importlib.util
 import re
+import sys
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Set, Tuple
+from types import ModuleType
+from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TASKS_DIR = REPO_ROOT / "docs" / "plans" / "20260816-tech-stack-migration" / "tasks"
@@ -138,6 +143,78 @@ def covered_paths(block: str) -> List[str]:
     paths = [t for t in tokens if not t.startswith("-")]
     assert paths, "`git ls-files -s` 后面没有解析出任何路径。"
     return paths
+
+
+# --------------------------------------------------------------------------
+# `suite_hash` 配方的**逐字形状**（2026-09-05 审计 #16/#77 补）
+#
+# 上面两条只断了覆盖面的两条集合关系（罩住 import 闭包、与 acceptance 目录不相交）。集合关系
+# 对**命令本身**是盲的：把 `git hash-object --stdin` 换成 `sha256sum`、把 `cut -c1-12` 改成
+# `-c1-16`、在块里多插一行命令，两条集合关系照样全绿，而 `suite_hash` 已经不是同一个函数了——
+# 冻结值与之后重算的值不可比，「同一套用例的第 N 次绿」这句话失去意义。
+# 下面三组把配方的每一段都钉死：八条路径（顺序敏感）、管道的每一个 token、以及
+# **运行器对不合形状的配方必须拒绝执行**（`scripts/soak_run.py` 不再把这个块交给 `bash -c`）。
+# --------------------------------------------------------------------------
+SOAK_RUN_PATH = REPO_ROOT / "scripts" / "soak_run.py"
+
+#: 八条覆盖路径，**顺序敏感**，与台账表头那条命令逐字同序。
+EXPECTED_HASH_PATHS: List[str] = [
+    "tests/e2e/baseline_1b",
+    "tests/e2e/conftest.py",
+    "tests/e2e/helpers.py",
+    "tests/e2e/test_harness_smoke.py",
+    "tests/fixtures/epub_corpus.py",
+    "tests/fixtures/epub_zip.py",
+    "tests/fixtures/ai_stub.py",
+    "tests/conftest.py",
+]
+
+#: 归一化之后的完整 token 流。`{ … ; }` 的花括号也在内：去掉它们，`cut` 只会作用在管道的
+#: 最后一段上，值就变了。
+EXPECTED_HASH_TOKENS: List[str] = [
+    "{",
+    "git",
+    "ls-files",
+    "-s",
+    *EXPECTED_HASH_PATHS,
+    "|",
+    "git",
+    "hash-object",
+    "--stdin",
+    ";",
+    "}",
+    "|",
+    "cut",
+    "-c1-12",
+]
+
+
+def normalized_hash_tokens(block: str) -> List[str]:
+    """把 fenced 块归一化成 token 流：去注释、接续行，`{` `}` `|` `;` 各自成 token。
+
+    **本文件自己实现一遍，不调 `soak_run.parse_hash_recipe`**：这里断的是「文档里写的是什么」，
+    拿被测脚本的解析器去读文档，等于让实现给自己判卷——解析器把 `--stdin` 读成 `--stdin;`
+    也一样能自洽。负例那几条才用运行器，断的是「运行器拒不拒」。
+    """
+    body = "\n".join(ln for ln in block.splitlines() if not ln.strip().startswith("#"))
+    body = body.replace("\\\n", " ")
+    for sym in ("{", "}", "|", ";"):
+        body = body.replace(sym, f" {sym} ")
+    return body.split()
+
+
+def _soak_run() -> ModuleType:
+    """按路径加载 `scripts/soak_run.py`（`scripts/` 不是包）。"""
+    assert SOAK_RUN_PATH.is_file(), f"{SOAK_RUN_PATH} 不存在"
+    name = "soak_run_for_log_contract"
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, SOAK_RUN_PATH)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def _is_covered(rel: str, covered: Iterable[str]) -> bool:
@@ -298,6 +375,103 @@ def test_hash_command_is_disjoint_from_the_four_acceptance_groups():
     assert not leaked, (
         "以下 acceptance 组目录落进了 `suite_hash` 的覆盖范围——它们尚未激活，"
         "改动它们不应清零 soak 计数：\n  " + "\n  ".join(leaked)
+    )
+
+
+def test_hash_command_covers_exactly_the_eight_documented_paths_in_order():
+    """八条路径，逐字、同序、不多不少。
+
+    列表等值比较而不是集合比较：少一条 ＝ 那个文件改了哈希不变（假绿），多一条 ＝ 一个与
+    baseline 无关的文件把计数清零（误清零）。两侧误差各有代价，所以两侧都断。
+    """
+    actual = covered_paths(hash_command_block(read_soak_log()))
+    assert actual == EXPECTED_HASH_PATHS, (
+        "台账里 `git ls-files -s` 的路径清单与本文件记录的八条不一致。\n"
+        f"期望：{EXPECTED_HASH_PATHS}\n实际：{actual}\n"
+        "覆盖面要改，这里、台账、`scripts/soak_run.py` 的 HASH_COVERED_PATHS 三处一起改——"
+        "改覆盖面是一次应当留下多处签名的动作。"
+    )
+
+
+def test_hash_command_is_the_documented_pipeline_token_for_token():
+    """`{ git ls-files -s <八条> | git hash-object --stdin; } | cut -c1-12`，一个 token 都不许差。
+
+    为什么连 `cut -c1-12` 都要断：台账里所有历史值都是 12 位，`test_recorded_suite_hash_has_legal_shape`
+    也按 12 位断形状。悄悄改成 `-c1-16`，表头那条「复制出来跑一遍，输出应等于表头记的值」的
+    人工复核会当场对不上，而没有任何一条用例说得出为什么。
+    """
+    actual = normalized_hash_tokens(hash_command_block(read_soak_log()))
+    assert actual == EXPECTED_HASH_TOKENS, (
+        "台账里的哈希命令不再是那条定死的管道。\n"
+        f"期望：{' '.join(EXPECTED_HASH_TOKENS)}\n实际：{' '.join(actual)}"
+    )
+
+
+def _mutate(old: str, new: str) -> Callable[[str], str]:
+    """把改写**限定在那个 fenced 块内**，块外的散文原样保留。
+
+    直接对全文 `replace(..., 1)` 是不行的：`git ls-files -s`、`git hash-object --stdin`
+    这些字符串在台账正文里也出现（讲配方为什么这么定的那几段），全文替换会先命中散文，
+    块纹丝不动，负例于是什么都没测到——2026-09-05 加解释性段落时这个陷阱真的触发过。
+    """
+
+    def apply(text: str) -> str:
+        block = hash_command_block(text)
+        assert block in text, "hash_command_block 返回的不是台账的逐字子串，本 helper 的前提失效"
+        assert old in block, f"待改写的片段不在哈希命令块里，本负例的前提已失效：{old!r}"
+        return text.replace(block, block.replace(old, new, 1), 1)
+
+    return apply
+
+
+@pytest.mark.parametrize(
+    "case_id,mutate",
+    [
+        ("extra-path", _mutate("tests/conftest.py \\", "tests/conftest.py tests/e2e/acceptance_2a \\")),
+        ("dropped-path", _mutate("tests/e2e/helpers.py ", "")),
+        ("reordered-paths", _mutate("tests/e2e/conftest.py tests/e2e/helpers.py", "tests/e2e/helpers.py tests/e2e/conftest.py")),
+        ("hash-tool-swapped", _mutate("git hash-object --stdin", "sha256sum")),
+        ("truncation-widened", _mutate("cut -c1-12", "cut -c1-16")),
+        ("ls-files-unstaged", _mutate("git ls-files -s", "git ls-files")),
+        ("extra-command-injected", _mutate("{ git ls-files -s", "touch /tmp/soak-pwned; { git ls-files -s")),
+        ("braces-dropped", _mutate("{ git ls-files -s", "git ls-files -s")),
+    ],
+    ids=lambda v: v if isinstance(v, str) else "",
+)
+def test_the_runner_refuses_a_recipe_that_is_not_that_pipeline(case_id: str, mutate: Callable[[str], str]):
+    """改过形状的配方，`scripts/soak_run.py` 必须**拒绝**——而不是照着执行再看输出像不像哈希。
+
+    这八条是同一件事的八个面：台账是一份人人可编辑的 Markdown，旧实现把那个块原样交给
+    `bash -c`，校验只看输出末 12 位是不是十六进制。于是 `extra-command-injected` 这一条
+    （在块里插一行命令）在旧实现下**既会执行那行命令、又会返回一个完全合法的哈希**，
+    台账上一点痕迹都没有。其余七条则是「值悄悄换了定义」：换工具、换截断长度、换路径集合、
+    去掉 `-s`（改读工作区而非索引）、去掉花括号（`cut` 只作用在最后一段）。
+
+    本条只断「拒绝」，不断具体消息文本——消息会改，拒绝不能不发生。
+    """
+    soak = _soak_run()
+    original = read_soak_log()
+    tampered = mutate(original)
+    # 前提：改写必须落在**那个 fenced 块里**。台账正文里同样的字符串出现过很多次，
+    # 改中了一处散文而块原封不动的话，下面的 `raises` 会以「解析器有别的毛病」的形式假绿。
+    assert hash_command_block(tampered) != hash_command_block(original), (
+        f"{case_id}: 改写没有落在哈希命令块里，本负例什么都没测到"
+    )
+    with pytest.raises(soak.HashRecipeError):
+        soak.parse_hash_recipe(tampered)
+
+
+def test_the_runner_accepts_the_real_ledger_recipe():
+    """对称的另一半：真台账必须解析得出配方，且路径与本文件记录的八条一致。
+
+    没有它，上面那组负例可以由一个「永远抛异常」的解析器全绿通过。
+    """
+    soak = _soak_run()
+    recipe = soak.parse_hash_recipe(read_soak_log())
+    assert list(recipe.paths) == EXPECTED_HASH_PATHS, f"运行器解析出的路径与文档不一致：{recipe.paths}"
+    assert recipe.truncate == 12, f"截断长度不是 12：{recipe.truncate}"
+    assert list(soak.HASH_COVERED_PATHS) == EXPECTED_HASH_PATHS, (
+        f"`soak_run.HASH_COVERED_PATHS` 与台账/本文件的八条不一致：{soak.HASH_COVERED_PATHS}"
     )
 
 

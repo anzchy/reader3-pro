@@ -20,6 +20,14 @@ Mock boundary **none**：真 `notes_service`、真 `tmp_path`，不 mock 文件�
 **什么重构会让它红**：helper 改成写裸数组、漏写 `schema_version`、或 012 改了 notes 的
 on-disk schema 而没同步 helper。**改任何一条 e2e 用例都不会让它红** —— 这正是它该有的
 耦合面。
+
+------------------------------------------------------------------------------
+**2026-09-05 审计（D1）之后，本文件多守一条与 notes 无关的 helper 契约**：
+`helpers.mark_id_union` 的「`data-annotation-ids` 是字符串数组」。它同样是纯 Python
+（输入是一份 `scan` 字典），同样不值得为它买一次 chromium 冷启动，而 `tests/e2e/` 下
+每加一条 item 都要动 `scripts/lint_e2e_groups.py` 的条数常量——所以它落在 unit lane，
+落在这个已经按路径加载了 `helpers.py` 的文件里，而不是新开一个只有两条用例的模块。
+两组用例在文件里以横线分节，加载 helper 的那段是共用的。
 """
 
 from __future__ import annotations
@@ -28,7 +36,7 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
-from typing import List
+from typing import Any, Dict, List, Tuple
 
 import pytest
 from hypothesis import HealthCheck, given, settings
@@ -117,6 +125,154 @@ def test_seed_notes_writes_the_production_object_shape_not_a_bare_array(tmp_path
     assert raw["schema_version"] == NOTES_SCHEMA_VERSION
     assert raw["book_id"] == BOOK_ID
     assert isinstance(raw["annotations"], list) and len(raw["annotations"]) == 1
+
+
+def _record_forms(book_id: str) -> st.SearchStrategy[Tuple[Annotation, str]]:
+    """(标注, 交给 `seed_notes` 时的**形态**)。三种形态，一条 e2e 里都真的用过。
+
+    e2e 侧的调用点**绝大多数传的是 dict 字面量**（`test_read_paths.py` /
+    `test_write_note_editor.py` / `deg_assertions.py` …），而 2026-09-05 之前这个文件
+    只生成 `Annotation` 实例——于是 `seed_notes` 里那条 `isinstance(item, Mapping)` 的
+    转换分支、以及 `data.setdefault("book_id", book_id)` 这一句，**在 unit lane 上一次
+    都没跑过**（审计 D4）。三种形态混在同一个列表里生成，是因为调用点也是混着写的。
+    """
+    return st.tuples(
+        _annotations(book_id),
+        st.sampled_from(["instance", "dict", "dict_without_book_id"]),
+    )
+
+
+def _as_seed_item(annotation: Annotation, form: str) -> Any:
+    if form == "instance":
+        return annotation
+    data = annotation.to_dict()
+    if form == "dict_without_book_id":
+        del data["book_id"]
+    return data
+
+
+@settings(max_examples=60, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@given(pairs=st.lists(_record_forms(BOOK_ID), min_size=1, max_size=6))
+def test_seed_notes_round_trips_dicts_and_instances_mixed_in_one_list(
+    tmp_path_factory: pytest.TempPathFactory, pairs: List[Tuple[Annotation, str]]
+) -> None:
+    """S6：三种形态混排写进去，生产读取器读回来的必须是**同一批标注**，顺序不变。
+
+    期望值取自生成器手上的那个 `Annotation`（`ann.to_dict()`），**不是**把
+    `seed_notes` 的 `setdefault` 逻辑在这里抄一遍——抄一遍会让「helper 不再补
+    `book_id`」这类缺陷两边同时发生、互相抵消。缺 `book_id` 的那一种因此断的是一句
+    实话：**它必须被补成 `seed_notes` 的那本书**，而不是 `""`（`Annotation.__post_init__`
+    会拒）也不是别本书。
+    """
+    books_dir = tmp_path_factory.mktemp("books")
+    (books_dir / BOOK_ID).mkdir()
+
+    items = [_as_seed_item(ann, form) for ann, form in pairs]
+    # 调用方手上的 dict 不该被 helper 就地改（`seed_notes` 是 `dict(item)` 的副本）。
+    # 快照要在调用之前取：之后取就成了同一个对象的两个名字。
+    before = [dict(i) if isinstance(i, dict) else i for i in items]
+
+    helpers.seed_notes(books_dir, BOOK_ID, items)
+
+    loaded = load_annotations(str(books_dir), BOOK_ID)
+    assert [a.to_dict() for a in loaded] == [ann.to_dict() for ann, _ in pairs]
+    assert helpers.read_notes(books_dir, BOOK_ID) == [ann.to_dict() for ann, _ in pairs]
+    assert all(a.book_id == BOOK_ID for a in loaded), (
+        f"有条目的 book_id 不是 {BOOK_ID!r}：{[a.book_id for a in loaded]}"
+    )
+    assert items == before, (
+        "seed_notes 就地改了调用方传进来的 dict（`book_id` 应当补在副本上）。"
+        "e2e 侧常把同一份 dict 字面量在一条用例里用两次，就地改会让第二次看到的不是原件。"
+    )
+
+
+def test_seed_notes_fills_book_id_for_a_dict_record_that_omits_it(tmp_path: Path) -> None:
+    """上面那条性质里「缺 `book_id`」那一支的定值例子，红的时候诊断是零成本的。
+
+    e2e 侧的 dict 字面量几乎都不写 `book_id`（R-3 / R-6 / DEG-S1 的预置都是这样）。
+    helper 若停止补这个字段，`Annotation.from_dict` 会拿到 `""`，`__post_init__` 当场
+    `ValueError: book_id is required`——那时红的是 30 余条 e2e，而不是这里。
+    """
+    books_dir = tmp_path / "books"
+    (books_dir / BOOK_ID).mkdir(parents=True)
+
+    helpers.seed_notes(
+        books_dir,
+        BOOK_ID,
+        [
+            {"id": "no-book-id", "chapter_index": 0, "quote": "Alpha prose", "type": "marker", "color": "yellow"},
+            {"id": "has-book-id", "book_id": BOOK_ID, "chapter_index": 1, "quote": "Beta prose", "type": "wavy"},
+        ],
+    )
+
+    loaded = load_annotations(str(books_dir), BOOK_ID)
+    assert [a.id for a in loaded] == ["no-book-id", "has-book-id"]
+    assert [a.book_id for a in loaded] == [BOOK_ID, BOOK_ID]
+    assert [a.quote for a in loaded] == ["Alpha prose", "Beta prose"]
+
+
+def test_seed_notes_refuses_anything_that_is_neither_annotation_nor_mapping(tmp_path: Path) -> None:
+    """第三条分支：既不是 `Annotation` 也不是 `Mapping` 时**抛**，不静默跳过。
+
+    静默跳过的表现是「预置了 3 条，页面上只有 2 条」——而用例会把它读成生产端的渲染缺陷。
+    """
+    books_dir = tmp_path / "books"
+    (books_dir / BOOK_ID).mkdir(parents=True)
+
+    with pytest.raises(TypeError, match="seed_notes"):
+        helpers.seed_notes(books_dir, BOOK_ID, [("id", "not-a-mapping")])
+
+
+# ---------------------------------------------------------------------------
+# `helpers.mark_id_union`：`data-annotation-ids` 的形状契约（2026-09-05 审计 D1）
+# ---------------------------------------------------------------------------
+#
+# 为什么和上面的 notes 往返同住一个文件：理由写在模块 docstring 末节。
+
+
+def _scan(*raw_ids: Any) -> Dict[str, Any]:
+    """`scan_marks()` 返回值里 `mark_id_union` 唯一会读的那一项。
+
+    只造 `ids`：多造几个键会让这几条用例假装自己也在测 `scan_marks` 的其他视图，
+    而它们一个都没断。
+    """
+    return {"ids": list(raw_ids)}
+
+
+def test_mark_id_union_unions_the_arrays_across_marks() -> None:
+    assert helpers.mark_id_union(_scan('["a1", "a2"]', '["a2", "a3"]')) == {"a1", "a2", "a3"}
+    assert helpers.mark_id_union(_scan("[]")) == set()
+
+
+def test_mark_id_union_rejects_a_json_object_keyed_by_the_expected_ids() -> None:
+    """D1 的那颗子弹：**对象**而不是数组时必须红。
+
+    2026-09-05 之前的写法是 `union |= set(json.loads(raw))`，而 `set()` 对字典取的是
+    **键**——实测 `set({"a1": 0, "a2": 0})` 就是 `{"a1", "a2"}`。于是一个把
+    `data-annotation-ids` 写成对象的生产实现，会让每一条「并集等于这几个 id」的读路径
+    判据照常绿：判据测的东西（契约是数组）与它实际能分辨的东西已经不是一回事。
+    契约来自 `annotations.js` 的 `JSON.stringify(ids)`，`ids` 是 `Array<string>`。
+    """
+    served = '{"a1": 0, "a2": 0}'
+    with pytest.raises(AssertionError, match="数组") as exc:
+        helpers.mark_id_union(_scan(served))
+    assert served in str(exc.value), "失败消息必须点名实际服务到 DOM 上的那一串"
+
+
+def test_mark_id_union_rejects_non_string_elements() -> None:
+    """数组里混进非字符串同样要红：`{"a1", 3}` 与任何 id 集合比对都只会红得莫名其妙。"""
+    served = '["a1", 3]'
+    with pytest.raises(AssertionError, match="非字符串") as exc:
+        helpers.mark_id_union(_scan(served))
+    assert served in str(exc.value)
+
+
+def test_mark_id_union_rejects_a_mark_without_the_attribute_or_with_broken_json() -> None:
+    """两条既有守卫（属性缺失 / 不是合法 JSON）也各钉一条，免得下次重写时悄悄丢掉。"""
+    with pytest.raises(AssertionError, match="data-annotation-ids"):
+        helpers.mark_id_union(_scan(None))
+    with pytest.raises(AssertionError, match="合法 JSON"):
+        helpers.mark_id_union(_scan("[a1"))
 
 
 def test_read_notes_reports_absent_file_as_empty_not_as_an_error(tmp_path: Path) -> None:

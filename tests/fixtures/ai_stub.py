@@ -205,6 +205,20 @@ class OllamaStub:
         return int(self._server.server_address[1])
 
     @property
+    def bound_host(self) -> str:
+        """运行中的 server **实际**绑定到的地址。
+
+        存在的理由是「不让常量给自己判卷」：`base_url` 与 bind 都读同一个 `_HOST`，所以
+        「桩只在回环上监听」这句话如果只对着 `base_url` 断言，等于什么都没断——bind 那行
+        换成一个不同的字面量（`("0.0.0.0", 0)`）就能让桩在所有网卡上可达，而 `base_url`
+        照旧宣称 127.0.0.1。判据必须来自 socket 自己。钉在
+        `tests/unit/test_ai_stub_contract.py`。
+        """
+        if self._server is None:
+            raise RuntimeError("桩尚未启动")
+        return str(self._server.server_address[0])
+
+    @property
     def base_url(self) -> str:
         """给 `ai_settings.json` 的 `providers.ollama.base_url` 用：不带 `/v1`，不带尾斜杠。"""
         return f"http://{_HOST}:{self.port}"

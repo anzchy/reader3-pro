@@ -32,8 +32,9 @@
 
 **为什么第一条不用 `@pytest.mark.parametrize`。** 参数化会把它收成 7 个 item，而矩阵
 §WI-11 明写「七条断言，**一个用例**」，条数表也据此把 WI-11 记为 2 个 item——
-`scripts/lint_e2e_groups.py` 的 `EXPECTED_BASELINE_ITEMS = 61` 是按那张表算出来的（该常量
-的「实测 == 61」断言是 WI-17 的欠账，见任务书 §0.6 跨波欠账第 2 行）。参数化本要换的是
+`baseline_1b` 的期望条数只在 `scripts/lint_e2e_groups.py` 的 `EXPECTED_BASELINE_ITEMS`
+定义一次（Wave 6 收口后的实测值，变更史写在那个文件头；这里**不复述数字**，抄一份就是
+第二个定义处，而两份必然漂移）。参数化本要换的是
 「失败消息一眼看出少了哪个」，这里改用**一次收齐全部异常再报**拿到同样的东西，且比参数化
 更强：七个一起丢时参数化报七条红，本条一次把七个都列出来。
 
@@ -66,6 +67,21 @@
 
 D3 与 D4 是一对：只做 D4 的话，一份「工具条从来就可见」的实现也能让它绿；加上 D3，两侧
 各钉一端，中间那次迁移才被夹住。
+
+**D6（2026-09-05 追加，这一枪打的是判据本身而不是期望值）**：经 `page.route` 把
+`/read/smoke_data/0` 的响应体里 `id="note-editor-text" data-testid="rd-note-editor-input"`
+改写成只剩 `data-testid=...`（`src/` 未动，改写命中数核对为 1）。实测——
+
+* 页内 `document.getElementById('note-editor-text')` 返回 **`None`**，即 `AnnotationUI` 的
+  `this.noteTextarea` 拿到 null，笔记编辑器整条取值链断掉；
+* **旧判据（只按 testid 定位）七个 testid 仍各 `count() == 1`，全绿**；
+* 新判据逐字失败输出：`AssertionError: 契约 K1 的宿主元素在 /read/smoke_data/0 上不满足
+  「testid 与 id 各恰好一个且同属一个节点」：` ／ `  - [id] #note-editor-text（annotations.js
+  取 getElementById('note-editor-text') → this.noteTextarea）：count() == 0，getElementById
+  会返回 null`。
+
+这一枪坐实了模块 docstring 开头那句自述（「任何人改模板删掉那七个 id 之一时它变红」）在
+旧写法下**并不成立**：4B.2 的外壳重写只要保留 testid、丢掉 id，本模块原样全绿。
 
 D5 的失败输出里 `'cfi': None` 顺带复现了任务书 §0.6 跨波欠账第 6 行记录的生产缺陷——
 `epub-renderer.js` 存进 `currentContents` 的是 epub.js 的 view 而不是 `Contents`，
@@ -105,10 +121,11 @@ pytestmark = pytest.mark.baseline_1b
 
 #: 契约 K1 的七个宿主，`(testid, annotations.js 里的 getElementById 实参, 赋给哪个字段)`。
 #:
-#: 三列都是**字面量**，一个都不从模板或 JS 里派生（任务书 §0 第五条纪律）。后两列不参与
-#: 定位，只进失败消息：一条「rd-note-editor-input 不在 DOM 上」对读者的价值，远不如
-#: 「rd-note-editor-input（`annotations.js` 取 `getElementById("note-editor-text")` →
-#: `this.noteTextarea`）不在 DOM 上」——后者直接告诉他改模板会打断哪一条取值链。
+#: 三列都是**字面量**，一个都不从模板或 JS 里派生（任务书 §0 第五条纪律）。前两列**都参与
+#: 定位**（见用例里的三重判据），第三列只进失败消息：一条「rd-note-editor-input 不在 DOM 上」
+#: 对读者的价值，远不如「rd-note-editor-input（`annotations.js` 取
+#: `getElementById("note-editor-text")` → `this.noteTextarea`）不在 DOM 上」——后者直接告诉他
+#: 改模板会打断哪一条取值链。
 #:
 #: testid 名字取自 ADR-0014（`anno-color-row` 与 `note-tooltip` 两个宿主的 testid 是那批
 #: 补上的，`id=` 一个没动，因为生产端走的是 `getElementById`）；`id` 那一列取自契约 K1
@@ -149,6 +166,20 @@ def test_k1a_seven_annotation_host_elements_are_present(
     另有专门的护栏（`tests/e2e/test_testid_dom_uniqueness.py::test_reader_bounded_testids_each_resolve_to_exactly_one_node`）
     ——那一条对 `count() == 0` 是盲的（零个不构成重复），本条正好补上它看不见的那一侧。
 
+    **为什么每个宿主要断三次（testid ／ id ／ 两者同一节点）。** 本条的契约原文是「`annotations.js`
+    构造函数里那七次 `getElementById` 拿得到东西」，而 `getElementById` 认的是 **`id`**，不是
+    `data-testid`。只按 testid 定位时，一次「把 `id="note-editor-text"` 删掉、`data-testid` 原样
+    留着」的模板改动**不会红**——七个 testid 照旧各命中一个节点，而七次 `getElementById` 全部
+    返回 `null`，`init()` 第一行静默 return。这正是本模块自称要拦的那件事（模块 docstring：
+    「任何人改模板删掉那七个 id 之一时它变红」），却恰好是旧写法的盲区（定向破坏 D6 实测：
+    旧写法对着一个被剥掉 id 的模板**全绿**）。三次分别是：
+
+      1. `data-testid` 恰好命中一个节点——用例侧的定位口径（ADR-0014）；
+      2. `#id` 恰好命中一个节点——生产侧 `getElementById` 的取值口径；
+      3. 带该 testid 的那个节点，`id` 属性**逐字**等于 `_HOSTS` 记的 `dom_id`——否则两个口径
+         各自成立却落在**两个不同的节点**上（把 testid 挪到别的元素、或另起一个同 id 的空 div），
+         而那时生产拿到的仍不是浮层本身。
+
     自检：这条**单独**确实接近存在性断言，不孤立成立。下一条
     `test_k1a_selection_opens_toolbar_proving_init_ran` 是它的行为证据，两条必须同在；
     缺了行为证据，本条只证明了「模板里有七个字符串」。
@@ -164,20 +195,40 @@ def test_k1a_seven_annotation_host_elements_are_present(
     # 好几个宿主，逐个 assert 只会让人修一个再红一次，来回七轮。
     anomalies = []
     for testid, dom_id, field in _HOSTS:
-        count = page.get_by_test_id(testid).count()
-        if count == 1:
-            continue
-        why = "元素不在 DOM 上" if count == 0 else "同一个 testid 命中多个节点，strict 模式必抛"
-        anomalies.append(
-            f"  - {testid}（annotations.js 取 getElementById({dom_id!r}) → {field}）："
-            f"count() == {count}，{why}"
-        )
+        chain = f"annotations.js 取 getElementById({dom_id!r}) → {field}"
+        by_testid = page.get_by_test_id(testid)
+        # lint-e2e-selectors: allow —— 本条的契约原文是「生产那七次 getElementById 拿得到东西」，
+        # id 是**被断言的对象本身**，不是定位手段；ADR-0014 管的是「用什么定位元素」。
+        # 换成 data-testid 定位正是本条 2026-09-05 审计要修的那个洞（定向破坏 D6）。
+        by_id = page.locator(f"#{dom_id}")  # lint-e2e-selectors: allow
+        n_testid, n_id = by_testid.count(), by_id.count()
+
+        if n_testid != 1:
+            why = "元素不在 DOM 上" if n_testid == 0 else "同一个 testid 命中多个节点，strict 模式必抛"
+            anomalies.append(f"  - [testid] {testid}（{chain}）：count() == {n_testid}，{why}")
+        if n_id != 1:
+            why = (
+                "getElementById 会返回 null"
+                if n_id == 0
+                else "同一个 id 出现在多个节点上，getElementById 只取文档序第一个"
+            )
+            anomalies.append(f"  - [id] #{dom_id}（{chain}）：count() == {n_id}，{why}")
+        if n_testid == 1 and n_id == 1:
+            actual_id = by_testid.get_attribute("id")  # lint-e2e-selectors: allow
+            if actual_id != dom_id:
+                anomalies.append(
+                    f"  - [错位] {testid}（{chain}）：带该 testid 的节点 id 是 {actual_id!r}，"
+                    f"不是 {dom_id!r} —— testid 与 id 落在了两个不同的节点上，"
+                    "用例定位到的和生产取到的不是同一个元素"
+                )
 
     assert not anomalies, (
-        f"契约 K1 的宿主元素在 /read/{BOOK_ID}/0 上不是恰好一个：\n"
+        f"契约 K1 的宿主元素在 /read/{BOOK_ID}/0 上不满足「testid 与 id 各恰好一个且同属一个节点」：\n"
         + "\n".join(anomalies)
         + "\n缺一个就会让 AnnotationUI 的构造函数拿到 null；若缺的是 annotation-toolbar，"
         "`init()` 第一行直接静默 return，标注功能整体失灵而页面照常渲染。"
+        "\n注意 `getElementById` 认的是 id 而不是 data-testid：只删 id、留着 testid 的改法"
+        "对纯 testid 判据是隐形的，这就是本条同时按两种口径定位的理由。"
     )
 
 

@@ -51,7 +51,7 @@ PUT 改的是**内容**，条数从头到尾不变，等条数会立刻带着**�
 | # | 破坏点 | 失败输出（节选，逐字抄自 pytest） | 它证明了哪一条判据不是摆设 |
 |---|---|---|---|
 | A | `annotations.js` `showTooltip()` 删掉 `this.tooltip.textContent = text;`（浮层照样加 `is-visible`，只是空的） | W-4 红：`AssertionError: Locator expected to have text 'first note body' / Actual value: / - unexpected value ""`；W-7 绿 | tooltip 断的是**内容**。`to_be_visible()` 在这个破坏下仍然绿——可见性不构成通过条件 |
-| B | `notes-panel.js` 把 `noteEl.textContent = noteText` 改成 `""` | W-4 **越过**了第 178 行的 tooltip 判据，红在第 188 行：`Locator expected to contain text 'first note body' / Actual value: Alpha prose`；W-7 同样红在面板那句 | 两条读回渠道**互不覆盖**。tooltip 全对，面板照样能坏——只断一条就会放过这半边 |
+| B | `notes-panel.js` 把 `noteEl.textContent = noteText` 改成 `""` | W-4 **越过**了 tooltip 那条判据（`expect(tooltip).to_have_text(W4_NOTE_TEXT)`），红在面板那条上（`expect(item).to_contain_text(W4_NOTE_TEXT)`）：`Locator expected to contain text 'first note body' / Actual value: Alpha prose`；W-7 同样红在面板那句 | 两条读回渠道**互不覆盖**。tooltip 全对，面板照样能坏——只断一条就会放过这半边 |
 | C | `annotations.js` `saveNote()` 首行插 `this.editingNoteId = null;`（把 PUT 逼回 POST） | W-7 红：`8.0s 内 wi5-w7-target-note 的 note_text 没有变成 'new body'`；**W-4 绿**（1 passed） | `editingNoteId` 那一支是真的被走到的，且 W-4 覆盖不到它——两条不是同一条链 |
 | D1 | `notes_service.update_annotation` 改成「删了重建」：新 `uuid` ＋ 新 `created_at`，同章其余条目原样保留，**条数不变** | W-7 红：`8.0s 后 id='wi5-w7-target-note' 这一条**已经不在 notes.json 里了**…现存的 id：['e7b5b206-…', 'wi5-w7-bystander-marker']` | 「`id` 不变」。注意条数与旁观条在这个破坏下**全对**——只断这两项的矩阵会全绿 |
 | D2 | 同上函数，保留 `id`，只把 `created_at` 重置成 `now()` | W-7 红：`目标条的 created_at 变了：'2026-01-01T00:00:00+00:00' → '2026-09-02T16:36:26.521089+00:00'` | 「`created_at` 不变」。这是「删了重建」在**保住 id 之后**唯一还藏不住的地方 |

@@ -12,10 +12,23 @@ r"""WI-8 —— W-9a / W-9b：CJK 书上重复 W-1 与 W-7，卡 quote / prefix 
 **两边数的不是同一个东西**：JS 的 `String.prototype.slice` 数的是 UTF-16 code unit，
 Python 的 `len()` 与切片数的是码点。BMP 之内两者恰好一致，所以
 `smoke_data`（`Alpha prose` / `Beta prose`）那本书**永远分辨不出**这两种口径——W-1 与 W-7
-在字节口径的实现下照样全绿。一旦语料含 emoji 或罕用汉字（BMP 外，UTF-16 要两个 code
-unit），两者就分家；而 `build_cjk` 的三句里有日文假名（`喫茶店で本を読んでいた`）与韩文
-（`커피를 마시며 기다렸다`），正是最容易在编码环节被切错的一段——UTF-8 下每个字符 3 字节，
-按字节截断会在字符中间下刀。
+在字节口径的实现下照样全绿。而 `build_cjk` 的三句里有日文假名（`喫茶店で本を読んでいた`）
+与韩文（`커피를 마시며 기다렸다`），正是最容易在编码环节被切错的一段——UTF-8 下每个字符
+3 字节，按字节截断会在字符中间下刀。
+
+⚠️ **但 CJK 语料只劈得开「字节 vs 非字节」这一刀，劈不开 code unit 与码点**（009 审计 F1）。
+`咖啡館裡` 的三个口径是 **12 / 4 / 4**：UTF-16 code unit 数与码点数**相等**。所以上面那句
+「两边数的不是同一个东西」在本模块的前半段里一次都没被证伪过——一个把 `slice` 换成码点
+切分的实现，在整本 CJK 书上都是绿的。真正分得开的只有**星平面**（BMP 外）字符：1 码点 =
+2 code unit = 4 UTF-8 字节。W-9a 因此在第 2 章注入一段含 `𠮷`（U+20BB7）与 `🍵`（U+1F375）
+的文本，把这一刀补上；实测结论有两条，都推翻了本模块早先的说法：
+
+* **`position` 是 UTF-16 code unit 偏移，不是码点偏移**（实测 60，码点口径会是 40）；
+* **`slice(s - 50, s)` 的 50 与服务端 `prefix[-50:]` 的 50 不是同一个 50**：前者数 code
+  unit，后者数码点。实测落盘 prefix 是 50 code unit / **35 码点**，服务端那一刀因此
+  **根本没落下**。
+
+细节与全部字面量见 `ASTRAL_*` 常量上方那一段。
 
 所以本模块把 W-1 与 W-7 各在 CJK 书上重跑一遍，判据改成**逐码点**的：`quote` 的字符数、
 `prefix`/`suffix` 的逐字内容、`<mark>` 覆盖文本的逐码点相等。它与 W-1 / W-7 失败的原因
@@ -46,13 +59,15 @@ W-9b 走 PUT（更新），判据在 `note_text` 的往返上——笔记正文�
 `models/annotations.py` 的 `Annotation.__post_init__` 都是被测对象，不是被改对象）。
 
 ------------------------------------------------------------------------------
-**可失败性证据（§0 第四条纪律，定向破坏实录，2026-09-03，十处全部已还原）**
+**可失败性证据（§0 第四条纪律，定向破坏实录；D1–D10 为 2026-09-03，D11 为 2026-09-05 补，全部已还原）**
 ------------------------------------------------------------------------------
 
 本模块两条都是**特征化用例**——被测行为上线数月，红不可得，`tdd-guardian` 的红收据在
 这里必然记成 green 并判 `SEPARATION-BROKEN`，成因是「实现早于规格」。§0 第四条纪律因此
 明令**不得靠破坏生产代码伪造红**，替代证据是定向破坏**用例自己的期望值**，逐条打靶，
-每处留档三样：破坏点、逐字失败输出、还原核验。下表十行的失败输出全部逐字抄自 pytest。
+每处留档三样：破坏点、逐字失败输出、还原核验。下表的失败输出全部逐字抄自 pytest。
+**D11 是唯一一处改了生产代码行为的**，但它走 Playwright `page.route` 改写**响应体**，
+落盘的 `src/` 一字未动——本分支禁止生产改动，`git diff --quiet -- src/` 是硬不变式。
 
 | # | 破坏点（改的都是本文件的期望值，`src/` 一行未动） | 失败输出（逐字） | 它证明了哪一条判据不是摆设 |
 |---|---|---|---|
@@ -65,6 +80,7 @@ W-9b 走 PUT（更新），判据在 `note_text` 的往返上——笔记正文�
 | D7 | `CJK_CH0_SUFFIX` 去掉全角句号（`"等了很久。\n"` → `"等了很久\n"`） | `AssertionError: 落库的 suffix 是 '等了很久。\n'，不是期望的 '等了很久\n'。suffix 取 slice(e, e + 50)（保头），全角句号在这一侧；少一个字说明切分口径变了` | 「suffix 逐字相等」，**且全角标点确实穿过了整条通路**。少一个字符就红 |
 | D8 | 「刷新后 `<mark>` 逐码点」那两行的期望改成 `CJK_CH0_QUOTE[:-1]`（少末字「裡」） | `AssertionError: Locator expected to have text '咖啡館'` / `Actual value: 咖啡館裡` | DOM 侧的逐字往返。多吃/少吃一个字符都落在这里 |
 | D9 | W-9b 的 `wait_for_note_text(..., W9B_NEW_BODY)` → `W9B_NEW_BODY[:-3]`（少 `한글。`） | `AssertionError: 8.0s 内 wi8-w9b-target-note 的 note_text 没有变成 '新的筆記內容，含日文かな與'，当前是 {…'note_text': '新的筆記內容，含日文かな與한글。'…}` | 笔记正文**落盘**侧的逐码点往返（한글 与全角句号都在判据之内） |
+| D11 | **不是改期望值**：`page.route` 把 `annotations.js` 的 `createAnnotation` 换成**码点**算术（`Array.from(idx.text)` 切 quote/prefix/suffix，`position` 改成码点偏移） | `AssertionError: 落库的 position 是 40，不是今天的 60（UTF-16 code unit 口径）…` / `assert 40 == 60` | 星平面那一段的**口径**判据。**同一次破坏下，补它之前的 W-9a 是全绿的**——`咖啡館裡` 的 code unit 数与码点数都是 4，整本 CJK 书分辨不出这两种实现（009 审计 F1） |
 | D10 | W-9b 的 `expect(tooltip).to_have_text(W9B_NEW_BODY)` → `W9B_NEW_BODY[:-3]` | `AssertionError: Locator expected to have text '新的筆記內容，含日文かな與'` / `Actual value: 新的筆記內容，含日文かな與한글。` | 笔记正文**读回**侧（tooltip 那条渠道）的逐码点往返 |
 
 **为什么 D9 / D10 只改期望值、不改 `W9B_NEW_BODY` 本身。** 那个常量既是**输入**（填进
@@ -92,6 +108,7 @@ textarea）又是**期望**（读回来比对）——改它两侧同步变，�
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Tuple
 
 import pytest
 from playwright.sync_api import Page, expect
@@ -106,6 +123,7 @@ from helpers import (  # type: ignore[import-not-found]
     seed_notes,
     select_in_frame,
     wait_for_note_text,
+    wait_for_notes,
 )
 
 pytestmark = pytest.mark.baseline_1b
@@ -148,7 +166,8 @@ CJK_CH0_PREFIX = "他在"
 #: 而它们本来也不断 suffix。
 #:
 #: 按实测值钉死，**不是**放宽成 `startswith`：`"等了很久。\n"` 与 `"等了很久。"` 一样是
-#: 逐字判据，少一个全角句号照样红（见 docstring 的 D3）。改成 `rstrip()` 或前缀匹配才是
+#: 逐字判据，少一个全角句号照样红（见 docstring 的 D7 —— 那一处正是把本常量末尾的全角
+#: 句号去掉，用例当场红）。改成 `rstrip()` 或前缀匹配才是
 #: 放宽——那会让「suffix 末尾多吃/少吃字符」这一整类切分缺陷从判据里消失。
 CJK_CH0_SUFFIX = "等了很久。\n"
 
@@ -182,6 +201,113 @@ W9B_OLD_BODY = "旧的笔记内容"
 W9B_NEW_BODY = "新的筆記內容，含日文かな與한글。"
 
 
+# ---------------------------------------------------------------------------
+# 星平面（BMP 之外）坐标：把「JS 数 UTF-16 code unit / Python 数码点」真正劈开
+# ---------------------------------------------------------------------------
+#
+# **为什么必须补这一段（009 审计 F1）。** 本模块原先只有 `咖啡館裡` 一段语料，而它的
+# 三个口径是 **12 / 4 / 4**——UTF-8 字节 12、UTF-16 code unit 4、码点 4。**后两者相等。**
+# 于是模块 docstring 里那句「JS 的 slice 数 code unit、Python 的 len 数码点，两者分家」
+# 在整个模块里**一次都没有被测到**：BMP 之内它们恒等，任何把 `slice` 换成码点切分的实现
+# 都照样全绿。原先 `len(quote)` 那条断言的失败消息还写着「三者互不相等」，那句话对
+# `咖啡館裡` 是**错的**（4 == 4）。真正能分家的只有星平面字符：每个占 **2 个** UTF-16
+# code unit、**1 个**码点。
+#
+# 语料从哪来：CJK 书的三句都太短（11 / 15 / 13 字符），凑不出 50 code unit 的上下文窗口，
+# 而 `tests/fixtures/**` 本波不归本模块改。所以本条在**第 2 章**（韩文那句，W-9b 用的是
+# 第 1 章，互不打扰）的 body 开头**注入一个 `<p>`**，注入的文本全部写成下面这些字面量。
+# 注入不是伪造：`buildTextIndex` 读的就是活的 DOM，`createAnnotation` 在注入后的轴上算出
+# 来的 `position` / `prefix` / `suffix` 与真语料上算出来的走的是同一段代码。
+#
+# 代价写在明处：注入的段落**活不过 `page.reload()`**，所以星平面这一段只断**写路径**
+# （落盘的 quote/position/prefix/suffix）与**刷新前**的那一次渲染，不做刷新往返。刷新往返
+# 由上面 BMP 那一半（`assert_roundtrip`）覆盖，两半各管一件事。
+
+#: 第 2 章的到位探针。也进 `CORPUS_CHECKS`——星平面那一段要逐字断整条文本轴。
+CJK_CH2_ANCHOR = "커피를 마시며 기다렸다."
+
+#: U+20BB7（罕用汉字「𠮷」）与 U+1F375（🍵）都在星平面：**1 个码点 = 2 个 UTF-16 code
+#: unit = 4 个 UTF-8 字节**。挑这两个而不是随便一个 emoji，是因为它们一个是汉字一个是符号，
+#: 覆盖了「罕用汉字」与「emoji」两类真实输入，而且都与本书的咖啡/茶主题对得上。
+ASTRAL_HAN = "\U00020BB7"
+ASTRAL_EMOJI = "\U0001F375"
+
+#: 选区。三个口径 **11 / 5 / 3**（UTF-8 字节 / UTF-16 code unit / 码点），**两两不等**
+#: ——这正是 `咖啡館裡` 做不到的事。混一个 BMP 汉字「茶」进去，是为了让「实现按固定倍数
+#: 换算」（比如「码点数 = code unit 数 ÷ 2」）也当场错。
+ASTRAL_QUOTE = ASTRAL_HAN + ASTRAL_EMOJI + "茶"
+
+#: quote 之前的引文：20 个星平面汉字（40 code unit / 20 码点）＋ 20 个 BMP 汉字
+#: （20 code unit / 20 码点）＝ **60 code unit / 40 码点**。
+#: 60 > 50，所以 `slice(s - 50, s)` 这一刀**真的落在这段里**，而不是「整段都在」。
+ASTRAL_LEAD = ASTRAL_HAN * 20 + "文" * 20
+
+#: quote 之后的引文，对称构造：20 个 emoji ＋ 20 个 BMP 汉字 ＝ 60 code unit / 40 码点。
+ASTRAL_TRAIL = ASTRAL_EMOJI * 20 + "字" * 20
+
+#: 注入进第 2 章 body 开头的整段文本。
+ASTRAL_PARAGRAPH = ASTRAL_LEAD + ASTRAL_QUOTE + ASTRAL_TRAIL
+
+#: `position` 就是 `idx.text.slice` 的起点 `s`。**实测 60，也就是 UTF-16 code unit 口径**
+#: ——同一个位置的**码点**偏移是 40。这条是本模块最要紧的一个特征化结论：
+#: 模块 docstring 早先把 `position` 说成「码点口径」，那句话在 BMP 语料上无法证伪，
+#: 一到星平面就是错的。今天的行为是 code unit，这里按今天的行为钉死。
+#: 哪天有人把 `createAnnotation` 改成码点口径，本条当场红在 60 != 40 上——**那是正确的红**。
+ASTRAL_POSITION_UTF16 = 60
+ASTRAL_POSITION_CODEPOINTS = 40
+
+#: `slice(s - 50, s)` 切的是 **50 个 code unit**：从 60 往回数 50 个 code unit，落在星平面
+#: 汉字串的第 10 个 code unit 上（10 是偶数 ⇒ 正好在字符边界，不劈开代理对），于是留下
+#: **15 个**星平面汉字 ＋ 20 个 BMP 汉字 = **35 码点 / 50 code unit**。
+#:
+#: 服务端 `Annotation.__post_init__` 的 `if len(self.prefix) > 50: self.prefix[-50:]`
+#: 数的是**码点**：35 > 50 为假，**那一刀根本没落下**。所以落盘 prefix 的码点数是 35 而不是
+#: 50——「两处 50 是同一个 50」这个想当然的读法，在星平面上是错的，这两个常量把它钉死。
+ASTRAL_PREFIX = ASTRAL_HAN * 15 + "文" * 20
+ASTRAL_PREFIX_CODEPOINTS = 35
+ASTRAL_PREFIX_UTF16_UNITS = 50
+
+#: `slice(e, e + 50)` 同理，保头：20 个 emoji（40 code unit）＋ 10 个 BMP 汉字 =
+#: **30 码点 / 50 code unit**。同样没触发服务端的 `[:50]`。
+ASTRAL_SUFFIX = ASTRAL_EMOJI * 20 + "字" * 10
+ASTRAL_SUFFIX_CODEPOINTS = 30
+ASTRAL_SUFFIX_UTF16_UNITS = 50
+
+#: ⚠️ **一个明确的欠账，写在这里免得被当成已覆盖**：上面两刀都**恰好落在字符边界上**
+#: （回退 50 个 code unit 时下标是偶数）。把引文的长度挪动一个 code unit，那一刀就会
+#: **劈开一个代理对**，`slice` 会切出一个孤代理；孤代理编不成 UTF-8，`JSON.stringify` →
+#: 服务端 `json` → `notes.json` 落盘这条链上会发生什么，本模块**没有测**，也不敢在
+#: `baseline_1b` 里随手试——它可能是一个真缺陷（服务端 500），而本分支禁止改生产代码。
+#: 要覆盖它得单开一条，且先决定「今天的行为」是不是可接受的行为。
+
+_ASTRAL_INJECT_JS = r"""
+(body, text) => {
+  const doc = body.ownerDocument;
+  const p = doc.createElement("p");
+  p.textContent = text;
+  body.insertBefore(p, body.firstChild);
+  // 回读整条文本轴：`buildTextIndex` 用的就是这个 TreeWalker 口径，
+  // 注入到底落在轴的哪个位置，由调用方逐字断，而不是由这里「大概应该对」。
+  const walker = doc.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+  let axis = "";
+  while (walker.nextNode()) axis += walker.currentNode.data;
+  return axis;
+}
+"""
+
+
+def _counts(text: str) -> Tuple[int, int, int]:
+    """`(UTF-8 字节数, UTF-16 code unit 数, 码点数)`——三种口径一次量齐。
+
+    失败消息里把三个数一起打出来，是本模块唯一能让「切错口径」这类缺陷一眼可读的形式。
+    """
+    return (
+        len(text.encode("utf-8")),
+        len(text.encode("utf-16-le")) // 2,
+        len(text),
+    )
+
+
 #: 语料绊线（喂给 `helpers.assert_corpus_unchanged`）。**这不是判据，是诊断**。
 #:
 #: `build_cjk` 的三句写在 `tests/fixtures/epub_corpus.py`，本模块把其中两句抄成了
@@ -202,6 +328,13 @@ CORPUS_CHECKS = (
         CJK_SENTENCES[1],
         CJK_CH1_ANCHOR,
         f"语料第二句变了：{CJK_SENTENCES[1]!r} != {CJK_CH1_ANCHOR!r}。",
+    ),
+    (
+        CJK_SENTENCES[2],
+        CJK_CH2_ANCHOR,
+        f"语料第三句变了：{CJK_SENTENCES[2]!r} != {CJK_CH2_ANCHOR!r}。"
+        "W-9a 的星平面那一段把注入段落之后的文本轴逐字断成 "
+        "`ASTRAL_PARAGRAPH + CJK_CH2_ANCHOR + chr(10)`，这一句改了那条断言要一起改。",
     ),
 )
 
@@ -239,6 +372,13 @@ def test_w9a_cjk_marker_keeps_quote_prefix_suffix_on_codepoint_boundaries(
         f"{CJK_CH0_QUOTE!r} 的 UTF-8 字节数与字符数相同，选它测不出「字节 vs 码点」——"
         "换一段真正的多字节文本"
     )
+    # 上面那条只劈开「字节 vs 码点」。把 BMP 语料的三个口径全量到手，钉死后两个**相等**：
+    # 这不是一条会红的判据，是一条**说明**——它当场写出「本段语料分辨不了 code unit 与
+    # 码点」这件事，从而说明为什么本条后半段非补星平面不可（009 审计 F1）。
+    assert _counts(CJK_CH0_QUOTE) == (12, 4, 4), (
+        f"{CJK_CH0_QUOTE!r} 的三个口径实测是 {_counts(CJK_CH0_QUOTE)}，不是记录在案的 (12, 4, 4)。"
+        "语料换过了？换之前先确认新语料在 BMP 之内——本条的整段注释建立在「后两者相等」上"
+    )
 
     frame = open_reader(page, live_server, BOOK_ID_CJK, 0, CJK_CH0_ANCHOR)
 
@@ -261,15 +401,17 @@ def test_w9a_cjk_marker_keeps_quote_prefix_suffix_on_codepoint_boundaries(
     )
     assert len(quote) == CJK_CH0_QUOTE_CHARS, (
         f"落库 quote 的字符数是 {len(quote)}，不是期望的 {CJK_CH0_QUOTE_CHARS}。"
-        f"len() 数的是码点：UTF-8 字节数 {len(quote.encode('utf-8'))}、"
-        f"UTF-16 code unit 数 {len(quote.encode('utf-16-le')) // 2}，三者在 CJK 上互不相等，"
-        "这条断言只有取码点口径才成立"
+        f"len() 数的是码点；本段的三个口径（UTF-8 字节 / UTF-16 code unit / 码点）实测是 "
+        f"{_counts(quote)}——**字节数**与另外两个分家，而 code unit 与码点在 BMP 之内恒等，"
+        "这一条只分辨得出「字节 vs 非字节」。code unit 与码点的分家由本条后半段的星平面语料断"
     )
 
     # --- 判据 2：position 也是码点偏移 ---------------------------------------
     assert record["position"] == CJK_CH0_POSITION, (
         f"落库的 position 是 {record['position']}，不是期望的 {CJK_CH0_POSITION}。"
-        "它是 `idx.text.slice` 的起点 s：码点口径下 `他在` 是 2，字节口径下会是 6"
+        "它是 `idx.text.slice` 的起点 s：`他在` 在 UTF-16 code unit 与码点两种口径下同为 2"
+        "（都在 BMP 内），字节口径下会是 6。**这一条只排除得掉字节口径**——code unit 与码点"
+        "的分家由本条后半段的星平面语料断（`ASTRAL_POSITION_UTF16`）"
     )
 
     # --- 判据 3 / 4：prefix、suffix 都非空且逐字正确 --------------------------
@@ -303,6 +445,111 @@ def test_w9a_cjk_marker_keeps_quote_prefix_suffix_on_codepoint_boundaries(
         f"刷新后 `<mark>` 覆盖的文本逐码点不等于选中的 {CJK_CH0_QUOTE!r}："
         f"{list(mark.text_content() or '')}"
     )
+
+    # ======================================================================
+    # 判据 6–9：星平面语料。上面全部判据在 BMP 之内，测不出 code unit ≠ 码点
+    # ======================================================================
+    # 见 `ASTRAL_*` 常量上方那一大段：`咖啡館裡` 的 code unit 数与码点数都是 4，
+    # 所以「JS slice 数 code unit / Python len 数码点」这条模块级论断在上半段一次都
+    # 没被证伪过。下面这一段是本模块唯一劈得开这两者的地方（009 审计 F1）。
+    assert len(set(_counts(ASTRAL_QUOTE))) == 3, (
+        f"{ASTRAL_QUOTE!r} 的三个口径是 {_counts(ASTRAL_QUOTE)}，其中有两个相等——"
+        "这样的语料分辨不出三种口径中的某一对，本段的全部判据都会退化。"
+        "选区必须同时含星平面字符（1 码点 = 2 code unit = 4 字节）与 BMP 字符"
+    )
+    assert _counts(ASTRAL_QUOTE) == (11, 5, 3), (
+        f"{ASTRAL_QUOTE!r} 的三个口径实测 {_counts(ASTRAL_QUOTE)}，不是记录在案的 (11, 5, 3)。"
+        "常量被改过了？下面 position / prefix / suffix 三个字面量都是按这个构造算出来的"
+    )
+
+    frame = open_reader(page, live_server, BOOK_ID_CJK, 2, CJK_CH2_ANCHOR)
+    axis = frame.locator("body").evaluate(  # lint-e2e-selectors: allow —— iframe 内是用户那本书自己的 XHTML，不是我们的模板
+        _ASTRAL_INJECT_JS, ASTRAL_PARAGRAPH
+    )
+    assert axis == ASTRAL_PARAGRAPH + CJK_CH2_ANCHOR + "\n", (
+        "注入后的章内文本轴不是 `注入段落 + 第三句 + 换行`，实测 "
+        f"{axis!r}。轴一旦不是这个形状，下面的 position / prefix / suffix 三个字面量就全部失准"
+    )
+
+    select_in_frame(frame, ASTRAL_QUOTE)
+    page.get_by_test_id("rd-anno-type-marker").click()
+
+    landed = wait_for_notes(e2e_books_dir, BOOK_ID_CJK, 2)
+    astral_records = [r for r in landed if r["quote"] == ASTRAL_QUOTE]
+    assert len(astral_records) == 1, (
+        f"落库里 quote == {ASTRAL_QUOTE!r} 的不是恰好一条，而是 {len(astral_records)} 条："
+        f"{landed}"
+    )
+    astral_record = astral_records[0]
+
+    # --- 判据 6：星平面 quote 逐码点往返 --------------------------------------
+    assert list(astral_record["quote"]) == list(ASTRAL_QUOTE), (
+        f"落库的星平面 quote 逐码点不等于选中的那一段：{list(astral_record['quote'])} != "
+        f"{list(ASTRAL_QUOTE)}。代理对被劈开时，这里会出现孤代理"
+    )
+    assert _counts(astral_record["quote"]) == (11, 5, 3), (
+        f"落库的星平面 quote 三个口径是 {_counts(astral_record['quote'])}，不是 (11, 5, 3)"
+    )
+
+    # --- 判据 7：position 是 **UTF-16 code unit** 偏移，不是码点偏移 -----------
+    # 这一条是本模块最要紧的特征化结论，它推翻了 docstring 早先「position 是码点口径」的说法
+    # ——那句话在 BMP 语料上无法证伪。今天的行为是 code unit（60），码点口径会是 40。
+    assert ASTRAL_POSITION_UTF16 != ASTRAL_POSITION_CODEPOINTS, (
+        "两个期望值相等 ⇒ 这段引文根本分不开两种口径，判据 7 退化成空转"
+    )
+    assert astral_record["position"] == ASTRAL_POSITION_UTF16, (
+        f"落库的 position 是 {astral_record['position']}，不是今天的 "
+        f"{ASTRAL_POSITION_UTF16}（UTF-16 code unit 口径）。"
+        f"若它变成 {ASTRAL_POSITION_CODEPOINTS}，说明 `createAnnotation` 的偏移改成了**码点**"
+        "口径——那是一次行为变更，本条要随之改判，不是把断言放宽"
+    )
+
+    # --- 判据 8 / 9：50 那一刀切的是 code unit，服务端的 50 数的是码点 ---------
+    # 两处 50 不是同一个 50。JS `slice(s - 50, s)` 回退 50 个 code unit，落盘时
+    # `Annotation.__post_init__` 的 `len(prefix) > 50` 数的是码点（35 / 30，都不超）——
+    # 于是服务端那一刀**根本没落下**。BMP 语料上这两个 50 恒等，永远看不出来。
+    astral_prefix, astral_suffix = astral_record["prefix"], astral_record["suffix"]
+    assert astral_prefix == ASTRAL_PREFIX, (
+        f"落库的星平面 prefix 是 {astral_prefix!r}，不是期望的 {ASTRAL_PREFIX!r}"
+    )
+    assert astral_suffix == ASTRAL_SUFFIX, (
+        f"落库的星平面 suffix 是 {astral_suffix!r}，不是期望的 {ASTRAL_SUFFIX!r}"
+    )
+    assert (len(astral_prefix), _counts(astral_prefix)[1]) == (
+        ASTRAL_PREFIX_CODEPOINTS,
+        ASTRAL_PREFIX_UTF16_UNITS,
+    ), (
+        f"落库 prefix 的 (码点数, code unit 数) 是 "
+        f"({len(astral_prefix)}, {_counts(astral_prefix)[1]})，不是今天的 "
+        f"({ASTRAL_PREFIX_CODEPOINTS}, {ASTRAL_PREFIX_UTF16_UNITS})。"
+        "码点数变成 50 ⇒ 上游那一刀改成按码点回退了；code unit 数不再是 50 ⇒ 切的位置变了"
+    )
+    assert (len(astral_suffix), _counts(astral_suffix)[1]) == (
+        ASTRAL_SUFFIX_CODEPOINTS,
+        ASTRAL_SUFFIX_UTF16_UNITS,
+    ), (
+        f"落库 suffix 的 (码点数, code unit 数) 是 "
+        f"({len(astral_suffix)}, {_counts(astral_suffix)[1]})，不是今天的 "
+        f"({ASTRAL_SUFFIX_CODEPOINTS}, {ASTRAL_SUFFIX_UTF16_UNITS})"
+    )
+
+    # --- 星平面这一半**不断渲染**，以及为什么（实测，不是省略） -----------------
+    #
+    # 首版本条在这里断过「刷新前的那一次重绘也画得出 `<mark>`」，实测**画不出**。原因
+    # 查清了，且与星平面无关：注入的 `<p>` 只在浏览器 DOM 里，`book.pkl` 里没有这段文字。
+    # 服务端 `GET /api/notes/{book}/{chapter}` 会先跑 `_refresh_orphaned_annotations`
+    # ——在章节正文里找不到 quote 的标注被判为 **orphaned** 并从返回值里滤掉。实测
+    # `GET /api/notes/cjk_data/2` 返回 `count: 0`（落盘那条 `chapter_index` 确实是 2），
+    # 于是 `loadAndRender()` 拿到空列表，一个 `<mark>` 都不画。**这是正确的服务端行为**：
+    # 一段书里根本不存在的引文，本来就该判成孤儿。
+    #
+    # 所以星平面这一半的覆盖面写在明处：**只覆盖写路径**（`createAnnotation` 的
+    # slice 口径 → POST → 落盘）。渲染与刷新往返由本条前半段的 BMP 语料 ＋
+    # `assert_roundtrip` 覆盖，两半各管一件事，谁都不假装管了对方那件事。
+    #
+    # 下面这条不是「省略」，是把上面那段解释变成一条**会红的**判据：孤儿过滤一旦改掉，
+    # 这里立刻红，读到的人会被带到这段注释上，而不是对着一句没人验证过的解释发呆。
+    expect(frame.get_by_test_id("rd-anno-span")).to_have_count(0)
 
 
 def test_w9b_cjk_note_body_survives_edit_and_reload(

@@ -34,6 +34,7 @@ from conftest import (  # type: ignore[import-not-found]
 from helpers import (  # type: ignore[import-not-found]
     open_reader,
     read_notes,
+    seed_notes,
     select_in_frame,
     viewport_rect_of_selection,
     wait_for_notes,
@@ -209,14 +210,107 @@ def test_notes_isolation_gives_every_round_the_same_initial_state(
     )
 
 
-def test_the_next_case_starts_from_an_empty_notes_file(e2e_books_dir: Path) -> None:
-    """紧跟在上一条之后：上一条留下了一条标注，这条看到的必须是空的。
+class _LifecycleRequest:
+    """`notes_isolation` 会用到的 `request` 的**全部**表面：两个名字，一个都不多。
 
-    上一条用例内部的复位是它**自己**调的，所以它证明不了 fixture 的 teardown 存在。
-    这条证明。它按文件内定义顺序紧跟其后（pytest 按定义顺序收集），单独跑时会平凡地
-    绿——它的价值只在整文件运行里，这一点不隐瞒。
+    造一个假 request 而不是拿真的：真的那个 request 属于**本条用例**，它身上的
+    `fixturenames` 与 `getfixturevalue` 描述的是本条用例的依赖图，不是被测那次
+    setup/teardown 的输入。两件事混在一起，本条用例就变成了「pytest 会不会跑 fixture」
+    的用例，而那不是它要证明的东西。
     """
-    assert read_notes(e2e_books_dir, BOOK_ID) == []
+
+    def __init__(self, books_dir: Path) -> None:
+        self.fixturenames = ("e2e_books_dir",)
+        self._books_dir = books_dir
+
+    def getfixturevalue(self, name: str) -> Path:
+        assert name == "e2e_books_dir", (
+            f"被测 fixture 问 request 要了 {name!r}——它今天只该要 e2e_books_dir。"
+            "依赖变了的话，这个替身要跟着变，不能让它默默返回一个错的东西。"
+        )
+        return self._books_dir
+
+
+def _notes_isolation_generator_function() -> Any:
+    """从 `conftest` 里把 `notes_isolation` 的**原函数**取出来（pytest 9 的包装剥掉）。
+
+    每次调用都重新从模块属性上读，而不是在 import 时绑一次：**定向破坏要打的就是这里**
+    ——把 `conftest.notes_isolation` 换成一个删掉 teardown 的同形函数，本条用例必须红。
+    绑死在 import 时，注入就打不进来，「证明它会红」这一步也就做不成。
+    """
+    import conftest  # type: ignore[import-not-found]
+
+    fixture = conftest.notes_isolation
+    unwrap = getattr(fixture, "_get_wrapped_function", None)  # pytest ≥ 8.4
+    if unwrap is not None:
+        return unwrap()
+    wrapped = getattr(fixture, "__pytest_wrapped__", None)  # pytest ≤ 8.3
+    if wrapped is not None:
+        return wrapped.obj
+    return fixture
+
+
+def _seed_one_note(books_dir: Path) -> None:
+    """往 `notes.json` 里放一条，形态与真实写路径落下的一样（走生产写入口）。"""
+    seed_notes(
+        books_dir,
+        BOOK_ID,
+        [{"id": "lifecycle-probe", "chapter_index": 0, "quote": "Alpha prose", "type": "marker", "color": "yellow"}],
+    )
+
+
+def test_notes_isolation_resets_on_setup_and_again_on_teardown(e2e_books_dir: Path) -> None:
+    """`notes_isolation` 的**生命周期**，setup 与 teardown 各自被单独证明。
+
+    **为什么不能再写成「下一条用例看到的是空的」**（2026-09-05 审计 D3）。旧写法是一条
+    紧跟在上一条后面的 `assert read_notes(...) == []`，而 autouse 的 `notes_isolation`
+    会在**它自己**运行前先跑一次 setup 复位——于是把 fixture 的 `finally` 整段删掉，那条
+    断言照样绿。它写着「证明 teardown 存在」，实际证明的是「setup 存在」。
+
+    这条把 fixture 当**被测对象**：手工驱动它的生成器，在 setup 之后、teardown 之前把
+    `notes.json` 弄脏，脏是**设置阶段之后**才发生的，所以只有 teardown 能清掉它。
+
+    两段各断一次，因为两次复位挡的不是同一件事（conftest 里那段 docstring 的原话）：
+    只做前置，最后一条用例的残留会留在 tmp 里误导事后排查；只做后置，一条中途崩掉的
+    用例会把脏状态漏给下一条。
+
+    自检（2026-09-05 实测）：把 fixture 的 `try/finally` 换成裸 `yield`（teardown 删掉），
+    本条在最后两句上红；换回来即绿。setup 那一半同理——删掉 `_reset_notes(books_dir)`
+    这一句，第一段的断言红。
+    """
+    fixture_fn = _notes_isolation_generator_function()
+
+    # --- setup ---------------------------------------------------------------
+    # 进入之前先弄脏：setup 若不复位，下面第一句就红。
+    _seed_one_note(e2e_books_dir)
+    assert read_notes(e2e_books_dir, BOOK_ID) != [], "预置没写进去，本条用例失去可失败性"
+
+    lifecycle = fixture_fn(_LifecycleRequest(e2e_books_dir))
+    gate = next(lifecycle)
+
+    assert read_notes(e2e_books_dir, BOOK_ID) == [], (
+        "setup 没有复位：用例开始时盘上还留着上一条用例的标注"
+    )
+    assert gate is not None and hasattr(gate, "reset"), (
+        f"fixture 产出的不是复位闸（拿到 {gate!r}）——`notes_isolation.reset()` 是"
+        "「一条用例内部跨轮次复位」的唯一入口，上一条用例正靠它"
+    )
+
+    # --- teardown ------------------------------------------------------------
+    # 这一次弄脏发生在 setup **之后**，所以能清掉它的只有 teardown。
+    _seed_one_note(e2e_books_dir)
+    assert read_notes(e2e_books_dir, BOOK_ID) != [], "预置没写进去，teardown 那一半失去可失败性"
+
+    with pytest.raises(StopIteration):
+        next(lifecycle)
+
+    assert read_notes(e2e_books_dir, BOOK_ID) == [], (
+        "teardown 没有复位：一条用例留下的标注会漏给下一条，而污染的表现是 flaky"
+    )
+    assert not (e2e_books_dir / BOOK_ID / "notes.json").exists(), (
+        "teardown 把 notes.json 留成了空壳。缺省态是**文件不存在**——那是 "
+        "`load_annotations` 唯一会返回 [] 的合法状态（见 conftest 的 `_reset_notes`）"
+    )
 
 
 _REFERENCE_RECT_JS = """

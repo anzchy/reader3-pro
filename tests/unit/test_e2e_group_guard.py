@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import ast
 import importlib.util
+import os
 import re
 import subprocess
 import sys
@@ -96,6 +97,32 @@ EXCLUDED_IMPORT_PREFIXES = ("pytest", "playwright", "typing", "pathlib", "datacl
 SUMMARY_TOKEN_RE = re.compile(
     r"(\d+) (passed|failed|errors?|skipped|deselected|xfailed|xpassed)"
 )
+
+#: 每个子进程的墙钟上限（秒）。`--collect-only` / `--setup-plan` 都是秒级动作；
+#: 没有上限时，一个阻塞的 import 会让 unit lane 永远挂着而不是红。
+SUBPROCESS_TIMEOUT_S = 300
+
+# --------------------------------------------------------------------------
+# 三段条数的**独立字面量**（不从被测脚本 import）
+#
+# 本文件是 `scripts/lint_e2e_groups.py` 的独立 oracle。把期望值写成
+# `g.EXPECTED_BASELINE_ITEMS` 的形式，断言就退化成 `x == x`：删掉三条 baseline 用例、
+# 把常量从 65 改成 62，守卫与它的守卫**同时**变绿，而门槛已经低了三条。
+# 这里的数字与守卫脚本各写一份，两份必须相等——这才是欠账 #2「实测 == 常量」的完整形态。
+#
+# 改这里的数字**必须**同时改 `scripts/lint_e2e_groups.py` 并在两处写明理由；
+# 只改一处会红，那正是它存在的意义。
+# --------------------------------------------------------------------------
+CANONICAL_BASELINE_ITEMS = 65
+CANONICAL_ACCEPTANCE_PER_DIR: Dict[str, int] = {
+    "acceptance_4b1": 8,
+    "acceptance_p3": 4,
+    "acceptance_4a4": 4,
+    "acceptance_2a": 1,
+}
+CANONICAL_ACCEPTANCE_ITEMS = 17
+CANONICAL_UNGROUPED_ITEMS = 7
+CANONICAL_E2E_ITEMS = 89
 
 
 # --------------------------------------------------------------------------
@@ -241,13 +268,26 @@ def test_real_tree_collection_is_a_partition_and_counts_match() -> None:
     items = _real_items()
     assert items, "tests/e2e 一条都没收到——零用例是失败，不是通过（policy-core 第 1 条）"
 
-    whitelist: Set[str] = set(g.UNGROUPED_E2E_MODULES)
+    whitelist: Set[str] = {Path(m).as_posix() for m in g.UNGROUPED_E2E_MODULES}
+
+    # (0) 白名单必须按**路径**登记，不是 basename。按 basename 授权时，把
+    #     `tests/e2e/test_harness_smoke.py` 挪进任意一个没人管的子目录，三段条数一条不差、
+    #     划分律照旧成立，而那个目录从此免检。
+    not_paths = sorted(m for m in whitelist if "/" not in m)
+    assert not not_paths, (
+        f"UNGROUPED_E2E_MODULES 里这些条目只是文件名而不是仓库相对路径：{not_paths}——"
+        "basename 授权等于给「同名文件挪进任意子目录」预开的门"
+    )
+    assert whitelist == {
+        f"{E2E_REL}/test_harness_smoke.py",
+        f"{E2E_REL}/test_testid_dom_uniqueness.py",
+    }, f"白名单的内容变了：{sorted(whitelist)}（加项要写理由，且它必须真的贡献 item）"
 
     # (1) 划分：恰好一个组 marker，或模块在白名单里。双 marker 也红。
     strays = [
         f"{getattr(it, 'nodeid')}  markers={sorted(_group_markers_of(it))}"
         for it in items
-        if not (len(_group_markers_of(it)) == 1 or Path(_module_of(it)).name in whitelist)
+        if not (len(_group_markers_of(it)) == 1 or _module_of(it) in whitelist)
     ]
     assert not strays, (
         "以下 item 既不恰好带一个组 marker、其模块又不在 UNGROUPED_E2E_MODULES 里——"
@@ -257,7 +297,7 @@ def test_real_tree_collection_is_a_partition_and_counts_match() -> None:
     assert not doubles, f"以下 item 同时带多个组 marker（两道门槛都会误报）：{doubles}"
 
     # (2) 白名单不得空转。
-    contributed = {Path(_module_of(it)).name for it in items if not _group_markers_of(it)}
+    contributed = {_module_of(it) for it in items if not _group_markers_of(it)}
     dangling = sorted(whitelist - contributed)
     assert not dangling, (
         f"白名单里的模块在这次收集里一条 item 都没贡献（悬空 = 给下一个模块预开的门）：{dangling}"
@@ -282,6 +322,51 @@ def test_real_tree_collection_is_a_partition_and_counts_match() -> None:
 
     # 守卫自己的划分函数对真树给零违规——它与上面的独立 oracle 必须同解。
     assert g.partition_violations(items, ungrouped_modules=whitelist) == []
+
+
+# --------------------------------------------------------------------------
+# Case 2b：三段条数钉在**本文件的字面量**上（property / S4 / L1）
+# --------------------------------------------------------------------------
+def test_canonical_counts_are_pinned_independently_of_the_guard_constants() -> None:
+    """65 / 8+4+4+1 / 7 / 89 四段，实测与**本文件的字面量**相等，且守卫常量与之相等。
+
+    点名的失败模式：上一条把期望值写成 `g.EXPECTED_*`，于是「删三条 baseline 用例 ＋
+    把常量改成 62」这套动作让守卫、守卫的守卫、soak 分母**三者同时**变绿——断言退化成
+    `x == x`，条数轴整个失去信号。本条是那条断言缺的另一半：数字在这里**再写一遍**，
+    两份必须对得上。只改一处就红，正是要的行为。
+    """
+    g = _guard()
+    items = _real_items()
+
+    # (1) 实测 == 本文件的字面量。
+    n_baseline = sum(1 for it in items if "baseline_1b" in _markers_of(it))
+    per_dir = {
+        d: sum(1 for it in items if _module_of(it).startswith(f"{E2E_REL}/{d}/"))
+        for d in ACCEPTANCE_DIRS
+    }
+    n_acceptance = sum(1 for it in items if _group_markers_of(it) & set(ACCEPTANCE_DIRS))
+    n_ungrouped = sum(1 for it in items if not _group_markers_of(it))
+
+    assert n_baseline == CANONICAL_BASELINE_ITEMS, (
+        f"baseline_1b 实测 {n_baseline} 条，本文件钉的是 {CANONICAL_BASELINE_ITEMS} 条"
+    )
+    assert per_dir == CANONICAL_ACCEPTANCE_PER_DIR, (
+        f"四个 acceptance 目录实测 {per_dir}，本文件钉的是 {CANONICAL_ACCEPTANCE_PER_DIR}"
+    )
+    assert n_acceptance == CANONICAL_ACCEPTANCE_ITEMS == sum(CANONICAL_ACCEPTANCE_PER_DIR.values())
+    assert n_ungrouped == CANONICAL_UNGROUPED_ITEMS, (
+        f"白名单模块实测贡献 {n_ungrouped} 条，本文件钉的是 {CANONICAL_UNGROUPED_ITEMS} 条"
+    )
+    assert len(items) == CANONICAL_E2E_ITEMS == (
+        CANONICAL_BASELINE_ITEMS + CANONICAL_ACCEPTANCE_ITEMS + CANONICAL_UNGROUPED_ITEMS
+    ), f"tests/e2e 全量实测 {len(items)} 条，本文件钉的是 {CANONICAL_E2E_ITEMS} 条"
+
+    # (2) 守卫脚本的常量 == 本文件的字面量。两份口径必须同步演进。
+    assert int(g.EXPECTED_BASELINE_ITEMS) == CANONICAL_BASELINE_ITEMS
+    assert dict(g.EXPECTED_ACCEPTANCE_PER_DIR) == CANONICAL_ACCEPTANCE_PER_DIR
+    assert int(g.EXPECTED_ACCEPTANCE_ITEMS) == CANONICAL_ACCEPTANCE_ITEMS
+    assert int(g.EXPECTED_UNGROUPED_ITEMS) == CANONICAL_UNGROUPED_ITEMS
+    assert int(g.EXPECTED_E2E_ITEMS) == CANONICAL_E2E_ITEMS
 
 
 # --------------------------------------------------------------------------
@@ -325,7 +410,8 @@ BASE_EXPECTED = dict(
     expected_baseline=2,
     expected_per_dir={d: 1 for d in ACCEPTANCE_DIRS},
     expected_ungrouped=1,
-    ungrouped_modules={"test_harness_smoke.py"},
+    # 白名单是**路径**，不是 basename：见 `_m_whitelisted_module_moved_into_subdir`。
+    ungrouped_modules={f"{E2E_REL}/test_harness_smoke.py"},
 )
 
 
@@ -410,6 +496,92 @@ def _m_unregistered_root_module(spec: Dict[str, str]) -> None:
     spec[f"{E2E_REL}/test_nobody_owns_me.py"] = "def test_orphan():\n    assert True\n"
 
 
+# --- 2026-09-05 追加的六个变异（gpt-5.6-sol 审计的 D7 组）-------------------------
+#
+# 六个都满足同一条判据：**在打补丁前的守卫上全绿**，而每一个都足以把某道门槛掏空。
+# 它们不是「更多同类样本」，是六个各自独立的绕过路径。
+
+
+def _m_skip_in_root_conftest(spec: Dict[str, str]) -> None:
+    """域 R 漏了 `tests/conftest.py`：一条 autouse fixture 能把 65 条 baseline 全摘掉。
+
+    根 conftest 对 `tests/e2e` 下的每一条用例都生效，却不在旧的三条硬编码路径里。
+    收集条数一条不少（skip 发生在运行期），静态 skip 轴一声不响。
+    """
+    spec["tests/conftest.py"] = (
+        "import pytest\n\n\n@pytest.fixture(autouse=True)\ndef _ci_guard():\n"
+        "    pytest.skip('CI 上先关掉，回头再说')\n"
+    )
+
+
+def _m_skip_in_transitively_imported_fixture_module(spec: Dict[str, str]) -> None:
+    """域 R 漏了 import 闭包：`helpers.py` 引的语料模块里那句 skip 同样在可达链上。"""
+    spec["tests/fixtures/corpus_stub.py"] = (
+        "import pytest\n\n\ndef make_book(kind):\n"
+        "    if kind == 'huge':\n        pytest.skip('语料太大，先跳过')\n    return kind\n"
+    )
+    spec[f"{E2E_REL}/helpers.py"] = (
+        "from corpus_stub import make_book  # type: ignore[import-not-found]\n\n\n"
+        "def shared_helper():\n    return make_book('small')\n"
+    )
+
+
+def _m_skip_via_direct_import_in_baseline(spec: Dict[str, str]) -> None:
+    """`from pytest import skip` —— 与 `pytest.skip(...)` 语义等价，AST 里却没有 `pytest` 这个名字。"""
+    spec[f"{E2E_REL}/baseline_1b/test_b.py"] = (
+        "import pytest\nfrom pytest import skip\n\n"
+        "pytestmark = pytest.mark.baseline_1b\n\n"
+        "def test_b0():\n    if not _ready():\n        skip('server flaky today')\n    assert True\n\n\n"
+        "def _ready():\n    return True\n\n\n"
+        "def test_b1():\n    assert True\n"
+    )
+
+
+def _m_skip_via_module_alias_in_conftest(spec: Dict[str, str]) -> None:
+    """`import pytest as pt` 之后 `pt.skip(...)`——§8 G2 那句护栏的别名写法。"""
+    spec[f"{E2E_REL}/conftest.py"] = (
+        "import pytest as pt\n\n\n@pt.fixture(scope='session')\ndef live_server():\n"
+        "    try:\n        proc = object()\n    except Exception as e:\n"
+        "        pt.skip(f'e2e server unavailable: {e}')\n    yield proc\n"
+    )
+
+
+def _m_skip_marker_via_module_alias_in_baseline(spec: Dict[str, str]) -> None:
+    """`import pytest as p` 之后 `@p.mark.skip(...)`——别名形态的 marker 构造。"""
+    spec[f"{E2E_REL}/baseline_1b/test_b.py"] = (
+        "import pytest as p\n\npytestmark = p.mark.baseline_1b\n\n"
+        "@p.mark.skip(reason='暂时不稳')\ndef test_b0():\n    assert True\n\n\n"
+        "def test_b1():\n    assert True\n"
+    )
+
+
+def _m_whitelisted_module_moved_into_subdir(spec: Dict[str, str]) -> None:
+    """白名单模块整体挪进一个没人管的子目录：basename 授权时三段条数**一条不差**。"""
+    body = spec.pop(f"{E2E_REL}/test_harness_smoke.py")
+    spec[f"{E2E_REL}/legacy/test_harness_smoke.py"] = body
+
+
+def _m_pytestmark_reassigned_after_skip(spec: Dict[str, str]) -> None:
+    """模块级 `pytestmark` 被二次赋值覆盖：静态检查仍看见那处合规的 skip 赋值，item 却真的活着。"""
+    spec[f"{E2E_REL}/acceptance_p3/test_acceptance_p3.py"] = (
+        "import pytest\n\n"
+        "pytestmark = [pytest.mark.acceptance_p3, "
+        "pytest.mark.skip(reason='激活阶段 P3；到期动作：删本行')]\n\n"
+        "# 调试时加的，忘了删——最后一次绑定胜出，上面那行 skip 从此不生效。\n"
+        "pytestmark = [pytest.mark.acceptance_p3]\n\n"
+        "def test_acceptance_p3_0():\n    assert True\n"
+    )
+
+
+def _m_reason_names_a_longer_phase_token(spec: Dict[str, str]) -> None:
+    """reason 写的是 `4B.10`：substring 包含判据下它冒充 `4B.1` 登记成功。"""
+    spec[f"{E2E_REL}/acceptance_4b1/test_acceptance_4b1.py"] = (
+        "import pytest\n\npytestmark = [pytest.mark.acceptance_4b1, "
+        "pytest.mark.skip(reason='激活阶段 4B.10；到期动作：删本行')]\n\n"
+        "def test_acceptance_4b1_0():\n    assert True\n"
+    )
+
+
 MUTANTS: List[Tuple[str, Mutation, Tuple[str, ...]]] = [
     ("one-fewer", _m_one_fewer, ("acceptance_p3",)),
     ("one-more", _m_one_more, ("acceptance_p3",)),
@@ -424,6 +596,35 @@ MUTANTS: List[Tuple[str, Mutation, Tuple[str, ...]]] = [
     ("function-level-skip", _m_function_level_skip, ("test_acceptance_p3.py", "pytestmark")),
     ("collect-ignore", _m_collect_ignore, ("deg_helpers_2a.py", "collect_ignore")),
     ("unregistered-root-module", _m_unregistered_root_module, ("test_nobody_owns_me.py",)),
+    # --- 2026-09-05 追加（审计 D7）---------------------------------------------
+    ("skip-in-root-conftest", _m_skip_in_root_conftest, ("tests/conftest.py:", "skip")),
+    (
+        "skip-in-transitively-imported-fixture",
+        _m_skip_in_transitively_imported_fixture_module,
+        ("corpus_stub.py:", "skip"),
+    ),
+    ("skip-via-direct-import", _m_skip_via_direct_import_in_baseline, ("test_b.py:", "skip")),
+    ("skip-via-module-alias", _m_skip_via_module_alias_in_conftest, ("conftest.py:", "skip")),
+    (
+        "skip-marker-via-module-alias",
+        _m_skip_marker_via_module_alias_in_baseline,
+        ("test_b.py", "skip"),
+    ),
+    (
+        "whitelisted-module-moved-into-subdir",
+        _m_whitelisted_module_moved_into_subdir,
+        ("legacy/test_harness_smoke.py",),
+    ),
+    (
+        "pytestmark-reassigned-after-skip",
+        _m_pytestmark_reassigned_after_skip,
+        ("test_acceptance_p3.py", "skip"),
+    ),
+    (
+        "reason-names-a-longer-phase-token",
+        _m_reason_names_a_longer_phase_token,
+        ("test_acceptance_4b1.py", "4B.1"),
+    ),
 ]
 
 
@@ -433,6 +634,69 @@ def test_guard_is_green_on_a_legal_synthetic_tree(tmp_path: Path) -> None:
     _write_tree(tmp_path, _base_spec())
     violations = g.check_tree(tmp_path, **BASE_EXPECTED)
     assert violations == [], "合法的合成树被守卫判红：\n  " + "\n  ".join(violations)
+
+
+def test_guard_accepts_the_alias_spelling_of_a_legal_module_level_skip(tmp_path: Path) -> None:
+    """别名解析必须是**双向**的：`from pytest import mark` 写出来的合法 skip 不得被判红。
+
+    只在「禁止」那一侧解析别名，会让守卫在合法的别名写法上误报——而误报的最省事修法
+    （把别名解析删掉）恰好把 `_m_skip_via_direct_import` / `_m_skip_via_module_alias`
+    那两条路重新打开。这条是那个修法的闸门。
+    """
+    g = _guard()
+    spec = _base_spec()
+    spec[f"{E2E_REL}/acceptance_p3/test_acceptance_p3.py"] = (
+        "from pytest import mark\n\n"
+        "pytestmark = [mark.acceptance_p3, mark.skip(reason='激活阶段 P3；到期动作：删本行')]\n\n"
+        "def test_acceptance_p3_0():\n    assert True\n"
+    )
+    _write_tree(tmp_path, spec)
+    violations = g.check_tree(tmp_path, **BASE_EXPECTED)
+    assert violations == [], "别名写法的合法 acceptance 模块被判红：\n  " + "\n  ".join(violations)
+
+
+def test_collection_subprocess_times_out_instead_of_hanging_forever(tmp_path: Path) -> None:
+    """收集子进程必须有墙钟上限，超时翻译成 `CollectionError`。
+
+    点名的失败模式：`tests/e2e/conftest.py` 里一个阻塞的 import（轮询一个永不就绪的
+    端口、等一个没起来的服务）。没有 timeout 时 `subprocess.run` 永不返回，分组闸既不
+    红也不绿——CI 上是一个没有输出、没有退出码的作业，比任何一种失败都难诊断。
+    """
+    g = _guard()
+    spec = _base_spec()
+    spec[f"{E2E_REL}/conftest.py"] = "import time\n\ntime.sleep(600)\n"
+    _write_tree(tmp_path, spec)
+
+    with pytest.raises(g.CollectionError) as excinfo:
+        g.collect_items(tmp_path, timeout=3.0)
+    msg = str(excinfo.value)
+    assert "超时" in msg or "timeout" in msg.lower(), (
+        f"收集确实没能完成，但异常没说是超时，读的人会去查退出码：{msg}"
+    )
+
+
+def test_main_collects_the_tree_exactly_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`main()` 的一次运行只允许一次 `--collect-only`（文件头「收集只跑一次」的成本模型）。
+
+    点名的失败模式：`main()` 自己收一次打摘要，再调 `check_tree()` 让它**又**收一次。
+    两次冷启动在真树上是双倍 import 成本，在变异树上是每棵树两次——「一次收集」这条
+    设计写在守卫脚本的文件头里，却没有任何东西执行它。
+    """
+    g = _guard()
+    _write_tree(tmp_path, _base_spec())
+
+    real = g.collect_items
+    calls: List[Path] = []
+
+    def counting(root, *args, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append(Path(root))
+        return real(root, *args, **kwargs)
+
+    monkeypatch.setattr(g, "collect_items", counting)
+    g.main([str(tmp_path)])
+    assert len(calls) == 1, (
+        f"`main()` 对同一棵树跑了 {len(calls)} 次 `--collect-only`（期望 1 次）：{calls}"
+    )
 
 
 @pytest.mark.parametrize("name,mutate,tokens", MUTANTS, ids=[m[0] for m in MUTANTS])
@@ -571,9 +835,12 @@ def test_every_acceptance_module_skips_only_via_module_level_pytestmark_with_pha
 def test_positive_selection_of_acceptance_groups_yields_exactly_the_skipped_count() -> None:
     """`-m "acceptance_4b1 or …"` ⇒ 退出码 0、skipped == EXPECTED_ACCEPTANCE_ITEMS、passed == failed == errors == 0。
 
-    `errors == 0` 是核心：一条 skip 用例里的 NameError / 不存在的 import / 写错的 fixture 名，
-    只有到期解开那天才第一次暴露——本条让它今天就暴露。skip 的判定发生在收集之后、用例体之前，
-    不起服务、不起浏览器。
+    `errors == 0` 在这里只覆盖**收集期**的失败：模块级 import 错、语法错、marker 拼错。
+    它**不**覆盖 fixture 名写错和用例体里的 `NameError`——模块级 skip 在
+    `pytest_runtest_setup` 里 tryfirst 生效，早于 fixture 装配、更早于用例体，所以这一路
+    永远走不到那里。那半句由下一条
+    `test_acceptance_wiring_resolves_without_the_module_level_skip` 承担（摘掉 skip 后跑
+    `--setup-plan`），本条只证「它们确实全被 skip 了」。不起服务、不起浏览器。
     """
     g = _guard()
     proc = subprocess.run(
@@ -592,6 +859,7 @@ def test_positive_selection_of_acceptance_groups_yields_exactly_the_skipped_coun
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
+        timeout=SUBPROCESS_TIMEOUT_S,
     )
     out = proc.stdout + proc.stderr
     counts = _parse_summary_tokens(out)
@@ -602,6 +870,114 @@ def test_positive_selection_of_acceptance_groups_yields_exactly_the_skipped_coun
     assert counts["skipped"] == g.EXPECTED_ACCEPTANCE_ITEMS, (
         f"skipped == {counts['skipped']}，期望 EXPECTED_ACCEPTANCE_ITEMS == {g.EXPECTED_ACCEPTANCE_ITEMS}：\n{out}"
     )
+    assert counts["skipped"] == CANONICAL_ACCEPTANCE_ITEMS, (
+        f"skipped == {counts['skipped']}，本文件独立钉的是 {CANONICAL_ACCEPTANCE_ITEMS}：\n{out}"
+    )
+
+
+# --------------------------------------------------------------------------
+# Case 5b：摘掉模块级 skip 之后，acceptance 的 fixture 接线真的解析得开
+#          （guard / S3 / L1；2026-09-05 审计 D7 追加）
+# --------------------------------------------------------------------------
+#: 临时探针插件，写进 `tmp_path`、经 `PYTHONPATH` 以 `-p` 加载，不入仓、不进任何 lane。
+#: 用 raw 字符串：里面的 `\t` 要原样落到生成的文件里，由它自己的 f-string 求值。
+_ACCEPTANCE_WIRING_PLUGIN = r'''
+"""临时探针：摘掉模块级 skip，并在收集完成时逐 item 汇报 fixture 名的解析结果。
+
+**为什么必须摘 skip。** `_pytest.skipping.pytest_runtest_setup` 是 tryfirst，模块级
+`pytest.mark.skip` 在那里就把 item 结掉了——早于 `_pytest.python.pytest_runtest_setup`
+装配 fixture，更早于用例体。所以「-m 正选四个组、断 errors == 0」那一路**永远**走不到
+「fixture 名写错了」和「用例体里有 NameError」，它证明的只是模块 import 得进来。
+
+**为什么配 `--setup-plan` 而不是真跑。** setup-plan 会解析整条 fixture 闭包（名字解析
+不开就是 `fixture '…' not found` 的 ERROR），但不执行任何 fixture 函数体、不执行用例体：
+不起服务、不起浏览器，成本仍是毫秒级。
+"""
+
+PREFIX = "ACCEPTANCE_WIRING"
+#: `request` 不是真 fixture，永远不出现在 `name2fixturedefs` 里。
+PSEUDO_FIXTURES = {"request"}
+
+
+def pytest_collection_modifyitems(session, config, items):
+    for item in items:
+        for node in item.listchain():
+            node.own_markers = [m for m in node.own_markers if m.name not in ("skip", "skipif")]
+
+
+def pytest_collection_finish(session):
+    for item in session.items:
+        info = getattr(item, "_fixtureinfo", None)
+        if info is None:
+            print(f"{PREFIX}\t{item.nodeid}\tNO_FIXTUREINFO")
+            continue
+        missing = sorted(
+            n
+            for n in info.names_closure
+            if n not in info.name2fixturedefs and n not in PSEUDO_FIXTURES
+        )
+        print(f"{PREFIX}\t{item.nodeid}\t{','.join(missing)}")
+'''
+
+
+def test_acceptance_wiring_resolves_without_the_module_level_skip(tmp_path: Path) -> None:
+    """摘掉模块级 skip 后 `--setup-plan`：每条 acceptance item 的 fixture 闭包都解析得开。
+
+    点名的失败模式：一条未激活用例的签名里写着 `def test_x(page, live_serve)`（少个 r）。
+    今天它被 skip，明天解开那行 skip 时才第一次以 `fixture 'live_serve' not found` 炸出来
+    ——而那一天正是「阶段到期、要它跑起来」的那天。本条把那个信号提前到今天，且全程
+    不执行任何 fixture 函数体、不起服务、不起浏览器。
+
+    覆盖面本身也是断言的一部分：探针逐 item 打一行，行数必须等于 acceptance 总条数，
+    否则「一条都没检查也叫全绿」。
+    """
+    plugin_dir = tmp_path / "wiring_probe"
+    plugin_dir.mkdir()
+    (plugin_dir / "acceptance_wiring_probe.py").write_text(
+        _ACCEPTANCE_WIRING_PLUGIN, encoding="utf-8"
+    )
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join(
+        p for p in (str(plugin_dir), env.get("PYTHONPATH", "")) if p
+    )
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            E2E_REL,
+            "-m",
+            " or ".join(ACCEPTANCE_DIRS),
+            "--setup-plan",
+            "-q",
+            "--no-header",
+            "-p",
+            "no:cacheprovider",
+            "-p",
+            "acceptance_wiring_probe",
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=SUBPROCESS_TIMEOUT_S,
+    )
+    out = proc.stdout + proc.stderr
+
+    reported = [ln.split("\t", 2) for ln in out.splitlines() if ln.startswith("ACCEPTANCE_WIRING\t")]
+    assert len(reported) == CANONICAL_ACCEPTANCE_ITEMS, (
+        f"探针只逐 item 汇报了 {len(reported)} 条，期望 {CANONICAL_ACCEPTANCE_ITEMS} 条——"
+        f"覆盖面不全时「零个未解析」毫无意义：\n{out}"
+    )
+    unresolved = [f"{nodeid}: {names}" for _, nodeid, names in reported if names.strip()]
+    assert not unresolved, (
+        "以下 acceptance item 的 fixture 名在收集期就解析不开（解开 skip 那天才炸的东西，今天炸）：\n  "
+        + "\n  ".join(unresolved)
+    )
+    assert proc.returncode == 0, (
+        f"摘掉 skip 后 `--setup-plan` 退出码 {proc.returncode}——fixture 闭包没装配起来：\n{out}"
+    )
+    assert "ERROR" not in out, f"`--setup-plan` 报了 error（fixture 名解析不开就是这个形态）：\n{out}"
 
 
 # --------------------------------------------------------------------------
@@ -639,6 +1015,64 @@ def _cross_module_calls(path: Path) -> Dict[str, str]:
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
             called.add(node.func.id)
     return {n: m for n, m in imported.items() if n in called}
+
+
+def _invoked_names(path: Path) -> Set[str]:
+    """本文件里**真的被调用**的名字集合（AST，不是文本搜索）。
+
+    收三类：
+
+    1. `f(...)` —— `ast.Call` 的 func 是 `ast.Name`；
+    2. `mod.f(...)` —— func 是 `ast.Attribute` 且它的基名是本模块 `import X [as mod]`
+       绑定的模块别名（限定基名，避免把 `dict.pop`、`Path.read_text` 之类的方法名
+       误当成共享函数）；
+    3. `@pytest.mark.parametrize(..., [(f, args), …])` 里作为**值**出现、随后由被装饰
+       函数以形参名调用（`runner(...)`）的名字——这是本仓库真实的调用形态，直接要求
+       `f(...)` 字面出现会把它误判成「没人调用」。
+
+    **为什么不能用文本搜索。** 原实现是 `re.search(rf"\\b{name}\\b", 全部 unit 源码)`，
+    于是一行 `from deg_assertions import run_deg_s1`、一句注释、甚至一段 docstring 里
+    提到函数名，都足以「证明」它被跑过。而这条断言要证的恰恰是「在 skip 解开之前，
+    有人真的执行过这段共享断言主体」——import 不执行任何东西。
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+
+    module_aliases: Set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                module_aliases.add(a.asname or a.name.split(".")[0])
+
+    invoked: Set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if isinstance(func, ast.Name):
+            invoked.add(func.id)
+        elif isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
+            if func.value.id in module_aliases:
+                invoked.add(func.attr)
+
+    # (3) parametrize 间接调用。
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        argnames = {a.arg for a in node.args.args} | {a.arg for a in node.args.kwonlyargs}
+        called_params = {
+            c.func.id
+            for c in ast.walk(node)
+            if isinstance(c, ast.Call) and isinstance(c.func, ast.Name) and c.func.id in argnames
+        }
+        if not called_params:
+            continue
+        for dec in node.decorator_list:
+            if not (isinstance(dec, ast.Call) and _dotted(dec.func).endswith("parametrize")):
+                continue
+            for sub in ast.walk(dec):
+                if isinstance(sub, ast.Name) and isinstance(sub.ctx, ast.Load):
+                    invoked.add(sub.id)
+    return invoked
 
 
 def _testid_table_keys(path: Path) -> Set[str]:
@@ -701,11 +1135,19 @@ def test_p3_and_4a4_share_the_same_assertion_body_function_set() -> None:
     )
     assert p3_keys, "映射表是空的"
 
-    # (5) 每个共享函数都有 e2e 之外的消费者：至少被 tests/unit 下某个文件点名（否则它在解 skip 之前是死代码）。
-    unit_sources = "\n".join(p.read_text(encoding="utf-8") for p in sorted(UNIT_DIR.glob("*.py")) if p != Path(__file__))
-    unreferenced = sorted(f for f in P if not re.search(rf"\b{re.escape(f)}\b", unit_sources))
-    assert not unreferenced, (
-        f"这些共享函数没有任何 tests/unit 下的用例点名它们，在 skip 解开之前没人跑过：{unreferenced}"
+    # (5) 每个共享函数都有 e2e 之外的**执行**：至少被 tests/unit 下某个文件真的调用
+    #     （否则它在解 skip 之前是死代码）。判据是 AST 里的调用表达式，不是文本出现——
+    #     一行 import、一句注释、一段 docstring 都不算「跑过」。
+    this_file = Path(__file__).resolve()
+    invoked_in_unit: Set[str] = set()
+    for p in sorted(UNIT_DIR.glob("*.py")):
+        if p.resolve() == this_file:
+            continue
+        invoked_in_unit |= _invoked_names(p)
+    uninvoked = sorted(f for f in P if f not in invoked_in_unit)
+    assert not uninvoked, (
+        "这些共享函数在 tests/unit 下没有任何**调用**（只被 import / 只在注释里出现不算），"
+        f"在 skip 解开之前没人跑过它们：{uninvoked}"
     )
 
 
@@ -772,4 +1214,43 @@ SABOTAGE_LOG = """
 结论：条数轴、skip 轴、划分律 ＋ 白名单不空转三条轴各自被单独打红过，失败消息都点到了
 文件/目录与期望值。三次破坏全部还原并逐字节核验，真实树 `git status --short` 只剩本次
 WI-17 的预期文件，`git diff --quiet -- src/` 通过。
+"""
+
+
+# --------------------------------------------------------------------------
+# 审计 D7 的红收据（2026-09-05）
+#
+# 上面那三次破坏证明的是「守卫对它已经看得见的三类破坏会红」。本轮审计问的是另一个
+# 问题：**哪些破坏它当时看不见**。做法是把 `scripts/lint_e2e_groups.py` 的**修改前**
+# 版本（`git show HEAD:scripts/lint_e2e_groups.py`）加载进来，对下面八个新变异树逐个
+# 跑 `check_tree()`，记录它当时的判定。八个**全部返回空违规列表**——即八条都是零成本、
+# 零信号的绕过路径，不是「同类样本更多几个」。修补后八个全红。
+#
+# `src/` 一字未动；变异树全部建在 `tmp_path` 上。
+# --------------------------------------------------------------------------
+AUDIT_D7_BYPASS_LOG = """
+变异名                                     修改前判定   掏空的是什么
+-----------------------------------------  ----------  ------------------------------------
+skip-in-root-conftest                      GREEN       域 R 漏了 tests/conftest.py：一条
+                                                       autouse fixture 里的 pytest.skip()
+                                                       摘掉全部 65 条 baseline，收集数不变
+skip-in-transitively-imported-fixture      GREEN       域 R 漏了 import 闭包：helpers.py 引
+                                                       的语料模块里的 skip 同样在可达链上
+skip-via-direct-import                     GREEN       `from pytest import skip` —— 判据只认
+                                                       全限定 `pytest.` 拼写
+skip-via-module-alias                      GREEN       `import pytest as pt; pt.skip(...)`
+                                                       —— 同上，§8 G2 那句护栏的别名写法
+skip-marker-via-module-alias               GREEN       `import pytest as p; @p.mark.skip`
+whitelisted-module-moved-into-subdir       GREEN       白名单按 basename 授权：把白名单模块
+                                                       挪进 tests/e2e/legacy/，三段条数一条
+                                                       不差、划分律照旧成立，该目录从此免检
+pytestmark-reassigned-after-skip           GREEN       静态检查只证「有一处合规的 skip 赋值」
+                                                       ——第二次赋值覆盖掉它之后，四条 DEG
+                                                       用例真的活了过来
+reason-names-a-longer-phase-token          GREEN       阶段 token 用 substring 包含判定：
+                                                       reason 写 `4B.10` 就冒充了 `4B.1`
+
+另两条（无变异树，形态是 API 缺失 / 计数）：
+  collect_items() 当时没有 timeout 形参 —— 收集期挂死时守卫既不红也不绿，永远挂着；
+  main() 对同一棵树收集 2 次 —— 与文件头「收集只跑一次」的成本模型直接矛盾。
 """
