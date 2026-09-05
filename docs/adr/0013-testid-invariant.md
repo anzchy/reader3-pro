@@ -2,7 +2,7 @@
 
 | 字段 | 值 |
 |---|---|
-| Status | Accepted |
+| Status | Accepted——但 Decision Outcome 里「`[data-testid="…"][data-*="…"]` 复合形态适用于哪些元素」这一个子命题已由 [ADR-0014](0014-bounded-testid-enumeration.md) 取代（2026-08-31）：有界集合改为逐个枚举唯一字面量，复合形态只留给无界 id。本文其余部分全部继续有效，正文按规则不改。 |
 | Decision date | 2026-08-17（`git log -S'testid' -- plan-tech-stack-migration.md` 最早命中 `5d43c80`；`testid` 契约随两份计划合并进入现文件，两条 lint 的落地在 007，commit `308a9b3`，2026-08-23） |
 | Recorded date | 2026-08-25 |
 | Record type | Prospective |

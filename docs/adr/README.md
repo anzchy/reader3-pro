@@ -19,7 +19,8 @@
 | [0010](0010-test-and-ci-topology.md) | 测试与 CI 拓扑 | Accepted | Retrospective | Full | 门禁在本地 tdd-guardian，GitHub CI 只在发版触发 |
 | [0011](0011-api-v1-freeze.md) | API v1 冻结 | Accepted | Prospective | Full | `routes.snapshot` 是唯一清单；Phase 2 不改形状，Phase 3 只许新增 |
 | [0012](0012-security-boundaries.md) | 三条安全边界 | Accepted | Retrospective | Full | 受限 unpickler 无回退；路径只在拼路径前挡一次；凭据文件走 `mkstemp` |
-| [0013](0013-testid-invariant.md) | `data-testid` 是新旧 UI 间唯一不变量 | Accepted | Prospective | Full | 先原型后模板；E2E 只许 testid/ARIA；三条 lint 守它 |
+| [0013](0013-testid-invariant.md) | `data-testid` 是新旧 UI 间唯一不变量 | Accepted（复合选择器适用范围一节由 [0014](0014-bounded-testid-enumeration.md) 取代） | Prospective | Full | 先原型后模板；E2E 只许 testid/ARIA；三条 lint 守它 |
+| [0014](0014-bounded-testid-enumeration.md) | 有界元素集合逐个枚举唯一 testid | Accepted | Prospective | None | 删 `data-modal`/`data-sheet`；复合选择器只留给无界 id |
 
 「合规」是 **Current compliance**：Full＝代码今天就这样；Partial＝部分落地，缺口在该文的 Migration Strategy；None＝尚未实现（Proposed 才会出现）。
 

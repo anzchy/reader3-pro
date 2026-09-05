@@ -35,18 +35,6 @@ uv run reader3-server
 READER3_LIBRARY_UI=classic uv run reader3-server
 ```
 
-### Dependency Management
-```bash
-# Install dependencies
-uv sync
-
-# Add a new dependency
-uv add <package-name>
-
-# Update dependencies
-uv lock --upgrade
-```
-
 ### AI Assistant Setup
 ```bash
 # Copy example config. chmod is not optional: cp inherits the umask (usually 0644)
@@ -60,14 +48,6 @@ chmod 600 config/ai_settings.json
 ```
 
 **Supported providers**: `anthropic`, `openai`, `gemini`, `openrouter`, `ollama`
-
-**Key API endpoints**:
-- `GET/PUT /api/settings` - Global settings
-- `POST /api/ai/question/{book_uuid}?stream=true` - Q&A streaming (SSE)
-- `GET/POST/DELETE /api/ai/conversations/{book_uuid}` - Conversation management
-- `GET /api/notes/{book_id}` - List annotations for a book
-- `GET/POST /api/notes/{book_id}/{chapter_index}` - Fetch/create annotations for a chapter
-- `PUT/DELETE /api/notes/{book_id}/{chapter_index}/{note_id}` - Update/delete an annotation
 
 ## Architecture
 
@@ -112,37 +92,8 @@ Layer 4: Web Server (web/server.py)
 
 ### Key Data Structures
 
-```python
-# Core book model (reader3.py)
-@dataclass
-class Book:
-    metadata: BookMetadata
-    spine: List[ChapterContent]    # Linear reading order
-    toc: List[TOCEntry]            # Hierarchical navigation
-
-@dataclass
-class ChapterContent:
-    id: str          # EPUB internal ID
-    href: str        # Filename (e.g., 'part01.html')
-    title: str       # Title from filename
-    content: str     # Cleaned HTML
-    text: str        # Plain text for search/LLM
-    order: int       # Spine index for navigation
-
-# Annotation model (models/annotations.py)
-@dataclass
-class Annotation:
-    id: str                        # UUID
-    book_id: str                   # Book folder name
-    chapter_index: int             # Spine index
-    type: AnnotationType           # "marker" | "wavy" | "underline" | "note"
-    color: Optional[MarkerColor]   # "yellow" | "green" | "pink" | "blue" (marker/underline/wavy)
-    quote: str                     # Selected text
-    prefix: str                    # Context before (max 50 chars)
-    suffix: str                    # Context after (max 50 chars)
-    note_text: Optional[str]       # User's note content
-    cfi: Optional[str]             # epub.js CFI anchor (optional)
-```
+`Book` / `ChapterContent` in `src/reader3_app/reader3.py`; `Annotation` in
+`src/reader3_app/models/annotations.py`. Read them there — they are the definition site.
 
 ### Book Identity System
 
@@ -154,24 +105,13 @@ Why two identifiers, and the rule that an unreadable `ai_meta.json` degrades to 
 
 ## Frontend Development
 
-Templates in `src/reader3_app/web/templates/`:
-- `library.html` - Modern 3-pane library UI (left: collections, center: book grid, right: search/chat)
-- `library_classic.html` - Legacy grid view
-- `reader.html` - Full-screen paginated reading interface with TOC sidebar, annotations, and panels
+Templates live in `src/reader3_app/web/templates/`, static assets in
+`src/reader3_app/web/static/` — `ls` them rather than trusting a list here.
 
-Static assets in `src/reader3_app/web/static/`:
-- `library.js` / `library.css` - Library UI logic and styles
-- `library-search.js` - Cross-book search functionality
-- `js/epub-renderer.js` - epub.js integration (iframe rendering, progress, navigation)
-- `js/pagination.js` - Legacy CSS column pagination (not loaded by reader.html)
-- `js/annotations.js` - Text selection, highlighting, and notes toolbar
-- `js/notes-panel.js` - Notes panel with chapter grouping
-- `js/toolbar.js` - Right-side vertical toolbar
-- `js/toc-panel.js` - Table of contents panel
-- `css/reader.css` - Full-screen reader styles
-- `css/annotations.css` - Annotation styling (marker, underline, wavy)
-
-JavaScript uses vanilla ES6+ (no frameworks). CSS is plain CSS (no preprocessors).
+Two things `ls` won't tell you:
+- `js/pagination.js` is **legacy** CSS-column pagination and is **not loaded by `reader.html`**.
+  Don't edit it expecting the reader to change — `js/epub-renderer.js` is the live renderer.
+- JavaScript is vanilla ES6+ (no frameworks). CSS is plain CSS (no preprocessors).
 
 ## Constitution Principles (Summary)
 
@@ -193,86 +133,14 @@ Reader3 Pro follows 7 core principles. This list is the authority — the former
 **The spec-kit framework is no longer used.** `.specify/` and the `/speckit.*` commands were
 removed on 2026-08-16. Do not attempt to invoke them.
 
-### Where documents live
+Planning docs live under `docs/plans/{date}-{topic}/`; long-lived decisions live in `docs/adr/`
+(read the Accepted ADRs before touching a data model, a public interface, or anything crossing
+modules). `specs/` holds only frozen `_archive/` — **never implement from it**.
 
-| Directory | Contents | Lifecycle |
-|---|---|---|
-| `docs/plans/{date}-{topic}/` | One self-contained body of planning work: plans, specs, contracts, review records, per-branch task lists | Living until the work ships |
-| `docs/plans/*.md` | Standalone plans that aren't part of a larger effort | Living |
-| `docs/adr/` | Architecture decision records — the **why** behind long-lived constraints, one file per decision ([index](docs/adr/README.md), admission rule in [ADR-0000](docs/adr/0000-use-adrs.md)) | **Survives** the archival of `docs/plans/`; never edited after Accepted, only superseded |
-| `specs/_archive/` | Historical spec-kit records for shipped features | **Frozen. Code is authoritative. Never implement from here.** |
-| `designs/` | Design references and executable prototypes | Living |
-
-**ADRs are not plans.** A plan compares options and tracks execution; an ADR records the outcome that must outlive the plan. When an ADR becomes the sole definition site of a rule, the plan section it came from keeps its heading and becomes a one-line link (「搬，不抄」). Read the Accepted ADRs before touching a data model, a public interface, or anything that crosses modules; to go against one, write a superseding ADR first.
-
-**A planning effort is one folder.** Everything a plan needs to be read and executed —
-the plan itself, its design spec, its interface contracts, its review record, and its work
-items — lives together under one dated folder. Don't scatter these across `docs/`, `specs/`,
-and `docs/contracts/`; a reader who opens the folder should need nothing outside it except
-the code and `designs/`.
-
-**Two folders may split one effort, but never one fact.** When an effort is large enough to
-split (as the 007–015 work is), each folder carries a 「权威范围」 table naming the facts it
-defines. The tables must not overlap, and every other mention of a fact links to its one
-definition instead of restating it — restating is how the two copies drift apart.
-
-There are two active efforts today, and they are two halves of one program:
-
-| Folder | Half | Branches |
-|---|---|---|
-| [`docs/plans/20260816-tech-stack-migration/`](docs/plans/20260816-tech-stack-migration/README.md) | Backend layering, storage format, test net + CI, **branch numbering** | 007, 008, 009, 011, 012, 015 (CLI) |
-| [`docs/plans/20260817-frontend-ui-refactor/`](docs/plans/20260817-frontend-ui-refactor/README.md) | Design system, degradation states, `annotations.js` split, frontend TDD matrix | 010, 013, 014, 015 (PWA) |
-
-**Which branch to open next** is a third fact, owned by neither folder:
-[`docs/plans/20260824-frontend-backend-plan-progress.md`](docs/plans/20260824-frontend-backend-plan-progress.md)
-is the progress dashboard and **the sole definition site for the execution order**. The two plan
-folders define *dependencies* (who waits on whom); that file defines *sequence* (who goes first) —
-the dependency graph permits several legal orders and they do not cost the same. Its status column
-mirrors the milestone table below; when they disagree, the table below wins.
-
-Start at either `README.md`. Each folder holds **exactly one plan document** —
-`plan-tech-stack-migration.md` and `plan-frontend-ui-refactor.md` respectively. (The migration
-folder used to carry a second plan, `plan-ui-migration-sequencing.md`; it was merged into
-`plan-tech-stack-migration.md` on 2026-08-17 with its section numbers preserved, and deleted.)
-The frontend folder has **no `tasks/` directory** — its work items are `### WI-N:` headings
-inside `plan-frontend-ui-refactor.md` so that `/tdd-guardian:workflow` can consume them directly.
-
-`specs/` now contains only `_archive/`. It holds 171 unchecked `- [ ]` items that all describe
-already-shipped or abandoned work. See [`specs/_archive/README.md`](specs/_archive/README.md)
-before reading anything in there — `003-add-book-notes` in particular describes an annotation
-system that was never built that way (the shipped one came from `006-hot-fix`).
-
-### Branch naming
-
-`{number}-{short-name}`. **Numbers are allocated in one place only**: §9 of
-[`plan-tech-stack-migration.md`](docs/plans/20260816-tech-stack-migration/plan-tech-stack-migration.md).
-Do not invent a new number without updating that table.
-
-| Milestone | Branch | Plan folder | Status |
-|---|---|---|---|
-| M0 — Phase 0 contracts + hygiene | `007-hygiene-and-contracts` | migration | ✅ Merged (PR #18) |
-| M1 — tests + CI + API freeze | `008-test-safety-net` | migration | ✅ Merged (PR #19) |
-| M1b — Playwright E2E | `009-e2e-annotations` | migration | Tasks drafted |
-| MD — design degradation states | `010-design-degradation-states` | **frontend** | WI-1 – WI-8 |
-| M2 — backend refactor | `011-backend-refactor` | migration | Allocated |
-| M3 — storage migration | `012-storage-format` | migration | Allocated |
-| M4a — TS shell + settings + library | `013-ts-frontend-shell` | **frontend** | WI-9 – WI-13 |
-| M4b — TS reader | `014-ts-frontend-reader` | **frontend** | WI-14 – WI-19 |
-| M5 — launch + PWA | `015-launch-experience` | migration (CLI) ＋ **frontend** (PWA) | Allocated / WI-20 |
-
-"✅ Merged" means the branch is on `master` and its phase is closed; the merge facts (PR, merge
-commit, CI run) are defined in that branch's task file, not here. "🔨 Done on branch, not merged"
-means every exit gate in that branch's task file is met and the work is committed, but nothing is
-on `master` yet — downstream branches must still base off it, not off `master`. "Allocated" means
-the number is reserved but no branch exists yet. "Tasks drafted" means
-`docs/plans/20260816-tech-stack-migration/tasks/{branch}.md` exists. "WI-n – WI-m" means the
-work items live in `docs/plans/20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md` §4;
-frontend branches have no task files.
-
-### Shipped features (implemented; see code, not specs)
-
-Keyword + semantic search · multi-provider AI with RAG · 3-pane library with collections and bulk
-indexing · Dedao-style UI · full-screen paginated reader with annotations.
+**Before opening a branch, allocating a branch number, editing anything under `docs/plans/`, or
+deciding what to work on next, load the `plan-and-branch-map` skill** — it carries the
+authoritative milestone table, the branch-numbering rule, and the 「权威范围」 split between the
+two active plan folders.
 
 ## Data Flow
 

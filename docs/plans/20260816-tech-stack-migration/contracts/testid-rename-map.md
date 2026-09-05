@@ -8,7 +8,8 @@
 
 改名已落地于 `designs/reader-pro-next/`（`app.jsx` / `components.jsx` / `reader.jsx` / `settings.jsx`）。
 生产模板 `src/reader3_app/web/templates/*.html` 与生成 DOM 侧的回贴**也已完成**（2026-08-23，随 007 于
-2026-08-24 合入 `master`）：模板侧现有 126 个唯一 testid，反向新造为 0，两条 lint 违规数归零。迁移计划
+2026-08-24 合入 `master`）：模板侧现有 **138** 个唯一 testid（2026-08-23 回贴时为 126，2026-08-31 落地
+[ADR-0014](../../../adr/0014-bounded-testid-enumeration.md) 后 +12），反向新造 2 个（见 §8.1），两条 lint 违规数归零。迁移计划
 §7 Phase 0 的「testid 在原型与模板两侧一致」一条**已满足**。
 
 ---
@@ -31,9 +32,15 @@
 落在 **23 个字面量 ＋ 1 个 `testId` prop（`reader-search-panel`）**。
 也就是说 24 这个数字一直是对的，134 这个数字才是漏的——两处口径原本就不一致，本次改名把它对齐到 138。
 
-改名后实测：**唯一 testid 名 221 个，不合规 0 个。**
-221 > 138 是因为 15 个共享 chrome 一名裂成三名（+30），以及表达式站点改成静态映射表后
-每个枚举值都成了一个独立的字面量（如 `rd-pref-theme-auto` … `rd-pref-theme-night` 五个）。
+改名后实测：**唯一 testid 名 279 个，不合规 0 个**（2026-08-23 首次改名后为 221，
+2026-08-31 落地 [ADR-0014](../../../adr/0014-bounded-testid-enumeration.md) 后 +58）。
+
+279 > 138 有两个来源：10 个共享 chrome 一名裂成三名（+20，见 §3）；表达式站点改成静态映射表后
+每个枚举值各成一个字面量（如 `rd-pref-theme-auto` … `rd-pref-theme-night` 五个）。
+
+221 → 279 这 +58 全部来自 ADR-0014，逐项对得上：`SHARED_TESTIDS` 撤掉 5 键 × 3 档 = **−15**；
+`MODAL_TESTIDS` 按 14 个弹层 × 5 槽位新增 **+70**；`RD_SHEET_TESTIDS` 把共享的 `rd-sheet-close` /
+`rd-sheet-resizer` 拆成 4 个 `-close` ＋ 1 个 `-resizer`，**−2 +5**。合计 221 − 15 + 70 − 2 + 5 = **279**。
 
 ---
 
@@ -108,8 +115,8 @@
 
 | 旧名 | 新名 | |
 |---|---|---|
-| `sheet-resizer` | `rd-sheet-resizer` |  |
-| `sheet-close` | `rd-sheet-close` |  |
+| `sheet-resizer` | `rd-ai-panel-resizer` | ⚠️ 2026-08-31 改，原为 `rd-sheet-resizer` |
+| `sheet-close` | `rd-{toc,notes,search,ai}-panel-close` | ⚠️ 2026-08-31 拆，原为共享的 `rd-sheet-close` |
 | `toc-filter` | `rd-toc-filter` |  |
 | `notes-review` | `rd-notes-review` |  |
 | `notes-export` | `rd-notes-export` |  |
@@ -182,13 +189,20 @@
 
 ---
 
-## 3. 跨页共享 chrome（15 条 → 45 个新名）
+## 3. 跨页共享 chrome（10 条 → 30 个新名）
 
 `TopBar` / `Modal` / `ConfirmModal` / `LiveRegion` 这四个组件在书库、阅读器、设置三页各渲染一次，
 而命名方案只有 `lib-` / `rd-` / `set-` 三个前缀，**没有「共享」这一档**。
 
 裁决（2026-08-23）：**按宿主页前缀**。组件内部不写死 testid，调用点传 `page` prop，
 组件从 `components.jsx` 的静态表 `SHARED_TESTIDS` 里取。canonical 正则不动。
+
+> **范围收窄（2026-08-31）：本节只管 `TopBar` 与 `LiveRegion`。** `Modal` / `ConfirmModal` 原先也走
+> 这条「按宿主页前缀」的路子（下表末尾曾有 `modal` / `modal-close` / `modal-cancel` / `modal-primary` /
+> `confirm-body` 五行，共 15 个名字），[ADR-0014](../../../adr/0014-bounded-testid-enumeration.md) 判定
+> 弹层是编译期可枚举的有界集合，不该按页共享一个名字：这 5 个键已从 `SHARED_TESTIDS` 删除，改由
+> `MODAL_TESTIDS` 按弹层给出 14 × 5 = 70 个独立字面量，prop 也由 `page` ＋ `name` 收敛为单个 `modal`。
+> 新名的唯一定义处是那张表本身，本文不重述。
 表里全是字符串字面量，命名 lint 扫得到、仓库里 grep 得到——正是规格 §4 规则 5 说的「改静态映射表」。
 
 `-` 表示该组件在那一页不渲染这个元素（例如「Back to Library」只在设置页有）。
@@ -205,11 +219,6 @@
 | `mobile-insights` | `lib-topbar-mobile-insights` | — | — |
 | `add-books` | `lib-topbar-add-books` | — | — |
 | `back-to-library` | — | — | `set-topbar-back-to-library` |
-| `modal` | `lib-modal` | `rd-modal` | `set-modal` |
-| `modal-close` | `lib-modal-close` | `rd-modal-close` | `set-modal-close` |
-| `modal-cancel` | `lib-modal-cancel` | `rd-modal-cancel` | `set-modal-cancel` |
-| `modal-primary` | `lib-modal-primary` | `rd-modal-primary` | `set-modal-primary` |
-| `confirm-body` | `lib-confirm-body` | `rd-confirm-body` | `set-confirm-body` |
 
 ---
 
@@ -308,17 +317,18 @@ E2E 定位写作 `[data-testid="lib-book-card"][data-book-id="…"]`——
 ## 8. 回贴到现有实现
 
 前七节讲的是**原型这一侧**的名字。0.5 的验收要求「testid 在原型与模板两侧一致」，所以这一节
-记录另一侧：221 个原型名里哪些回贴到了现有的 Jinja 模板与生成 DOM 的 JS，哪些贴不上、为什么。
+记录另一侧：279 个原型名里哪些回贴到了现有的 Jinja 模板与生成 DOM 的 JS，哪些贴不上、为什么。
 
 ### 8.1 覆盖清单
 
-表里数的是**唯一名字**，不是属性个数——`data-modal` / `data-sheet` 那几组同名元素各占一个名字
-（见 §8.2）。属性个数：library.html 63、reader.html 67、settings.html 6。
+表里数的是**唯一名字**。2026-08-31 之前唯一名 < 属性个数，因为 `data-modal` / `data-sheet` 那几组
+同名元素各占一个名字；[ADR-0014](../../../adr/0014-bounded-testid-enumeration.md) 落地后模板里已无重名，
+**两个数字相等**：library.html 63 / 63、reader.html 69 / 69、settings.html 6 / 6。
 
 | 文件 | 回贴的 testid 数 | 性质 |
 |---|---:|---|
-| `web/templates/library.html` | 54 | 静态标记 |
-| `web/templates/reader.html` | 66 | 静态标记 |
+| `web/templates/library.html` | 63 | 静态标记 |
+| `web/templates/reader.html` | 69 | 静态标记 |
 | `web/templates/settings.html` | 6 | 静态标记 |
 | `web/static/settings.js` | 9 | 生成 DOM（provider 卡片模板串） |
 | `web/static/library.js` | 5 | 生成 DOM（索引状态药丸 ＋ 分组行） |
@@ -328,10 +338,12 @@ E2E 定位写作 `[data-testid="lib-book-card"][data-book-id="…"]`——
 | `web/static/ai.js` | 2 | 生成 DOM（会话历史行 ＋ 引用） |
 | `web/static/js/annotations.js` | 1 | 生成 DOM（`<mark>`） |
 | `web/static/js/notes-panel.js` | 2 | 生成 DOM（空态 ＋ 笔记条目） |
-| **合计（去重）** | **152 / 221** | — |
+| **合计（去重）** | **164 / 279** | — |
 
-**反向为 0**：现有实现里出现的 152 个 testid，全部是原型里已有的名字，没有一个是就地发明的。
-这条比「152/221」更重要——它是「两侧一致」的实质含义。剩下的 69 个见 §8.3。
+**反向为 2**：现有实现里出现的 164 个 testid，其中 162 个是原型里已有的名字。两个例外是
+`rd-anno-colors` 与 `rd-note-tooltip`——ADR-0014 一并补的两个标注元素（009 E2E 的第二个卡点），
+原型里没有对应元素，所以是模板独有。除这两个之外没有一个是就地发明的；这条比「164/279」更重要，
+它是「两侧一致」的实质含义。剩下的 117 个见 §8.3。
 
 生成 DOM 里的 testid 同样只写字面量。有界枚举照 §5.1 落成静态映射表，identifier 含 `TESTID`：
 `library.js` 的 `LIB_BOOK_STATUS_TESTID`、`library-chat.js` 的 `LIB_CHAT_MSG_TESTID`，两者与
@@ -339,18 +351,11 @@ E2E 定位写作 `[data-testid="lib-book-card"][data-book-id="…"]`——
 
 ### 8.2 判别位：`data-modal` / `data-sheet` / `data-file-href`
 
-原型任一时刻只挂一个 Modal、一个 Sheet；现有模板把四个 `<dialog>` 和四个抽屉**常驻 DOM**。
-于是 `lib-modal-primary`、`rd-sheet-close` 这类名字在旧模板里会命中多个元素，Playwright 的
-strict 模式会直接报错。做法与 §5.2 无界 id 那一行同构——testid 保持字面量，判别位另开
-一个 `data-*`：
-
-| 判别位 | 用在哪 | 取值 | E2E 写法 |
-|---|---|---|---|
-| `data-modal` | `Modal` / `ConfirmModal` 的外框、关闭、取消、主按钮、confirm 正文 | `create-collection`、`add-books`、`note-editor`… | `[data-testid="lib-modal-primary"][data-modal="create-collection"]` |
-| `data-sheet` | `Sheet` 的 resizer 与关闭按钮 | `rd-toc-panel`、`rd-search-panel`… 即 Sheet 自己的 testid | `[data-testid="rd-sheet-close"][data-sheet="rd-ai-panel"]` |
-
-两个判别位在**原型与模板两侧都加**，E2E 的选择器在迁移前后一字不变。它们不违反设计规格
-§4 规则 2：`data-*` 属性选择器既不是 class、不是 `nth-child`、也不是层级结构选择器。
+> **`data-modal` / `data-sheet` 已删除（2026-08-31）。** 本节原先把弹层与面板判定为「与无界 id 同构」，
+> 用共享字面量 ＋ 判别位处理；那个判定是错的——它们是编译期可枚举的有界集合，属于设计规格 §4 规则 5
+> 的**有界**那一行，每个成员应各有唯一字面量。唯一定义处现为
+> [ADR-0014](../../../adr/0014-bounded-testid-enumeration.md)，它同时把复合形态收紧为一张闭合的
+> 无界属性清单。本节只保留下面 `data-file-href` 这一条仍然有效的判别位登记。
 
 一处**名字对齐**：原型原来写 `data-anno-id`，生产的 `annotations.js` 一直用
 `data-annotation-id`。改原型（1 处）而不是改生产代码。
@@ -361,14 +366,19 @@ strict 模式会直接报错。做法与 §5.2 无界 id 那一行同构——te
 的 E2E 写 `[data-testid="rd-toc-row"][data-file-href="…"]`（选择器 lint 放行，它只要求每一段都是
 `data-*` 且至少有一个 `data-testid`）。
 
-### 8.3 贴不上的 69 个：原型有、旧 UI 没有
+### 8.3 贴不上的 117 个：原型有、旧 UI 没有
 
 绝大多数是**新设计新增的元素**，不是漏贴。旧 UI 里根本没有这个东西，凭空造一个只为承接 testid，
 既是白做也会误导 E2E。它们由 013 / 014 建出来时一并带上名字。按页分：
 
 - **三页共有的 chrome（旧 UI 没有）**：`{lib,rd,set}-topbar-*`、`{lib,rd,set}-theme-toggle`、
   `rd-header`、`rd-brand`、`set-brand`、`rd-live-region`、`set-live-region`、
-  `{lib,rd,set}-confirm-body`、`{rd,set}-modal*`。书库的 `lib-live-region` 已有，另两页没有。
+  书库的 `lib-live-region` 已有，另两页没有。
+- **弹层（52 个，ADR-0014 之后的净增量）**：`MODAL_TESTIDS` 的 70 个名字里，只有 18 个在模板里有对应
+  元素（library.html 13 ＋ reader.html 的 `rd-note-editor` 三件套 ＋ 两个 `-body`）。其余 52 个是旧 UI
+  根本没有的弹层——书库的 rename / delete / clean collection，阅读器的 clear-conversation /
+  delete-note / notes-review，设置页的 reindex / conversations / cache——以及既有弹层里旧 UI 没有的
+  `-body` / `-cancel` 槽位。它们由 013 / 014 建出弹层时一并带上名字。
 - **书库**：`lib-add-dropzone`、`lib-add-choose-files`（旧「添加书籍」弹层不是拖拽上传）、
   `lib-collection-rename-input`（旧 UI 没有重命名）、`lib-filter-empty`、`lib-insights-collapsed`、
   `lib-insights-expand`、`lib-index-retry`、`lib-panel-index-remaining`、
@@ -391,6 +401,12 @@ strict 模式会直接报错。做法与 §5.2 无界 id 那一行同构——te
 还有两个**枚举缺项**：`rd-pref-theme-auto`（旧 UI 只有白/黄/护眼/夜间四档，没有跟随系统）；
 `lib-book-status-*` 少了 loading / unknown 两态（原型没有对应元素），故 `library.js` 在这两态下
 `removeAttribute("data-testid")`，而不是造名字。
+
+⚠️ 2026-09-01：生产侧的这组名字已不叫 `lib-book-status-*`，而是按 view 拆成
+`lib-book-{grid,row}-status-*` 八个（`library.js:7-33`）。原型不需要跟着拆——`app.jsx:166`
+是三元式，同一时刻只有一种视图在树上；生产模板两种视图同时在 DOM 里。分叉的完整理由写在
+`library.js` 表上方的注释里，裁决依据是 ADR-0014 的「有界归 testid、无界归判别位」。
+上一段说的 loading / unknown 缺项对新的八个名字同样成立。
 
 `rd-notes-jump` / `rd-notes-delete` 也在缺失名单里：旧笔记条目整块可点，没有拆出跳转与删除两个
 按钮。这条与上表同类。

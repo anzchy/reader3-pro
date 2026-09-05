@@ -194,7 +194,7 @@ function LibraryScreen(props) {
       </div>
 
       {dialog && dialog.kind === "create" && (
-        <Modal page="lib" name="create-collection" title="New collection" primaryLabel="Create" onClose={() => setDialog(null)} onPrimary={() => {
+        <Modal modal="create-collection" title="New collection" primaryLabel="Create" onClose={() => setDialog(null)} onPrimary={() => {
           setCollections((current) => current.concat([{ id: "c" + (current.length + 1), name: "Untitled collection", book_ids: [], stale: 0 }]));
           setDialog(null);
           setAnnounce("Collection created");
@@ -206,7 +206,7 @@ function LibraryScreen(props) {
       )}
 
       {dialog && dialog.kind === "rename" && (
-        <Modal page="lib" name="rename-collection" title={"Rename “" + dialog.collection.name + "”"} primaryLabel="Save" onClose={() => setDialog(null)} onPrimary={() => {
+        <Modal modal="rename-collection" title={"Rename “" + dialog.collection.name + "”"} primaryLabel="Save" onClose={() => setDialog(null)} onPrimary={() => {
           setDialog(null);
           setAnnounce("Collection renamed");
         }}>
@@ -217,7 +217,7 @@ function LibraryScreen(props) {
       )}
 
       {dialog && dialog.kind === "delete" && (
-        <ConfirmModal page="lib" name="delete-collection"
+        <ConfirmModal modal="delete-collection"
           title={"Delete “" + dialog.collection.name + "”?"}
           body="The collection is removed. The books inside it stay in your library."
           confirmLabel="Delete collection"
@@ -232,7 +232,7 @@ function LibraryScreen(props) {
       )}
 
       {dialog && dialog.kind === "clean" && (
-        <ConfirmModal page="lib" name="clean-collection"
+        <ConfirmModal modal="clean-collection"
           title="Remove missing books?"
           body={dialog.collection.stale + " book(s) in this collection no longer exist on disk. Removing them only updates the collection."}
           confirmLabel="Remove missing"
@@ -248,7 +248,7 @@ function LibraryScreen(props) {
       )}
 
       {dialog && dialog.kind === "addTo" && (
-        <Modal page="lib" name="add-to-collection" title={"Add " + selectedIds.length + " books to collection"} primaryLabel="Add" onClose={() => setDialog(null)} onPrimary={() => {
+        <Modal modal="add-to-collection" title={"Add " + selectedIds.length + " books to collection"} primaryLabel="Add" onClose={() => setDialog(null)} onPrimary={() => {
           setDialog(null);
           setAnnounce("Books added to collection");
         }}>
@@ -261,7 +261,7 @@ function LibraryScreen(props) {
       )}
 
       {dialog && dialog.kind === "errors" && (
-        <Modal page="lib" name="index-errors" title="Index errors" onClose={() => setDialog(null)}>
+        <Modal modal="index-errors" title="Index errors" onClose={() => setDialog(null)}>
           <div data-testid="lib-index-errors">
             {A.indexErrors.map((error) => (
               <article className="error-row" key={error.book_id}>
@@ -343,7 +343,7 @@ function App() {
       </div>
 
       {addOpen && (
-        <Modal page="lib" name="add-books" title="Add books" primaryLabel="Process 0 files" onClose={() => setAddOpen(false)} onPrimary={() => setAddOpen(false)}>
+        <Modal modal="add-books" title="Add books" primaryLabel="Process 0 files" onClose={() => setAddOpen(false)} onPrimary={() => setAddOpen(false)}>
           <div className="dropzone" data-testid="lib-add-dropzone">
             <p className="empty-title" style={{fontSize: "15px"}}>Drop EPUB files here</p>
             <p className="empty-copy">or</p>

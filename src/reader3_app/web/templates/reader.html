@@ -1597,7 +1597,7 @@
 
     <!-- Annotation Toolbar -->
     <div id="annotation-toolbar" role="toolbar" aria-hidden="true" data-testid="rd-anno-toolbar">
-        <div class="anno-color-row" id="anno-color-row" aria-label="Marker colors">
+        <div class="anno-color-row" id="anno-color-row" data-testid="rd-anno-colors" aria-label="Marker colors">
             <button type="button" class="anno-color" data-color="yellow" aria-label="yellow" data-testid="rd-anno-color-yellow"></button>
             <button type="button" class="anno-color" data-color="green" aria-label="green" data-testid="rd-anno-color-green"></button>
             <button type="button" class="anno-color" data-color="pink" aria-label="pink" data-testid="rd-anno-color-pink"></button>
@@ -1615,14 +1615,14 @@
     </div>
 
     <!-- Note Editor -->
-    <div id="note-editor" role="dialog" aria-hidden="true" data-testid="rd-modal" data-modal="note-editor">
+    <div id="note-editor" role="dialog" aria-hidden="true" data-testid="rd-note-editor">
         <textarea id="note-editor-text" data-testid="rd-note-editor-input" placeholder="Write your thoughts..."></textarea>
         <div class="note-editor-actions">
-            <button type="button" id="note-editor-cancel" data-testid="rd-modal-cancel" data-modal="note-editor">Cancel</button>
-            <button type="button" id="note-editor-save" data-testid="rd-modal-primary" data-modal="note-editor">Save</button>
+            <button type="button" id="note-editor-cancel" data-testid="rd-note-editor-cancel">Cancel</button>
+            <button type="button" id="note-editor-save" data-testid="rd-note-editor-primary">Save</button>
         </div>
     </div>
-    <div id="note-tooltip" aria-hidden="true"></div>
+    <div id="note-tooltip" data-testid="rd-note-tooltip" aria-hidden="true"></div>
 
     <!-- Search Drawer -->
     <div id="reader-search-drawer" aria-hidden="true" data-testid="rd-search-panel">
@@ -1630,7 +1630,7 @@
             <div class="drawer-search-row">
                 <input type="text" id="reader-search-input" data-testid="rd-search-input" placeholder="Search..." autocomplete="off" />
                 <button type="button" class="drawer-btn" id="reader-search-clear" title="Clear">Clear</button>
-                <button type="button" class="drawer-btn drawer-cancel" id="reader-search-close" data-testid="rd-sheet-close" data-sheet="rd-search-panel">Close</button>
+                <button type="button" class="drawer-btn drawer-cancel" id="reader-search-close" data-testid="rd-search-panel-close">Close</button>
             </div>
             <div class="drawer-options">
                 <label class="drawer-case">
@@ -1657,7 +1657,7 @@
 
     <!-- AI Panel -->
     <div id="reader-ai-panel" aria-hidden="true" data-testid="rd-ai-panel">
-        <div class="ai-resize-handle" id="ai-resize-handle" data-testid="rd-sheet-resizer" data-sheet="rd-ai-panel" title="Drag to resize"></div>
+        <div class="ai-resize-handle" id="ai-resize-handle" data-testid="rd-ai-panel-resizer" title="Drag to resize"></div>
         <div class="ai-header">
             <div>
                 <div class="ai-title">AI Reading Assistant</div>
@@ -1672,7 +1672,7 @@
                 <button type="button" class="ai-btn" id="reader-ai-export" data-testid="rd-ai-export">Export</button>
                 <button type="button" class="ai-btn" id="reader-ai-new-chat" data-testid="rd-ai-new">New chat</button>
                 <button type="button" class="ai-btn" id="reader-ai-clear" data-testid="rd-ai-clear">Clear</button>
-                <button type="button" class="ai-btn" id="reader-ai-close" data-testid="rd-sheet-close" data-sheet="rd-ai-panel">Close</button>
+                <button type="button" class="ai-btn" id="reader-ai-close" data-testid="rd-ai-panel-close">Close</button>
             </div>
         </div>
         <div class="ai-body">

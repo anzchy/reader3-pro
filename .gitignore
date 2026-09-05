@@ -40,6 +40,8 @@ wheels/
 # one timestamped pair per workflow run; keep config.json, drop the run logs
 .claude/tdd-guardian/plan-*.md
 .claude/tdd-guardian/tests-*.md
+.claude/tdd-guardian/attack-*.md
+.claude/tdd-guardian/red-*.txt
 
 # pytest / coverage artifacts
 .pytest_cache/

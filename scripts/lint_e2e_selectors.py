@@ -11,11 +11,13 @@
 允许的选择器字符串形态，只有一种：
 
     [data-testid="…"]                          单个 testid
-    [data-testid="…"][data-book-id="…"]        testid ＋ 另一个 data-* 携带 id
+    [data-testid="…"][data-book-id="…"]        testid ＋ 一个闭合清单里的判别位
 
-第二种来自设计规格 §4 规则 5 的无界取值约定：书、集合、笔记、会话的 id 不能枚举成 testid，
-所以同类元素共用一个字面量 testid，id 由另一个 data-* 属性携带。它不是层级结构选择器
-——重设计改不动 data-* 属性。
+第二种的**适用范围**由 docs/adr/0014-bounded-testid-enumeration.md 定义（它取代了 ADR-0013
+里的对应子命题）：判别位只能是 ALLOWED_DISCRIMINATORS 那八个携带用户数据 id 的属性
+——取值无界、编译期枚举不出来，才配用复合形态。取值有界的同类元素（弹层、面板）一律
+各有自己唯一的 testid 字面量，data-modal / data-sheet 已从契约里删除。
+复合形态不是层级结构选择器——重设计改不动 data-* 属性。
 
 ARIA 定位走 Playwright 的 get_by_role / get_by_label / get_by_text 等 API，不经过选择器字符串，
 本 lint 不拦。get_by_test_id 同理。
@@ -44,21 +46,46 @@ SCAN_GLOBS = (
 )
 
 # 取这些调用的第一个字符串实参。覆盖 Playwright 的 Python 与 JS 两套 API 名。
+# `(?:[fFrRbBuU]{1,2})?` 是 2026-09-03（009 WI-5）补的：此前引号前不许有前缀，于是
+# `.locator(f'[data-testid=…][data-note-id="{x}"]')` 这一整类**一处都没被扫到**。
+# 带判别位的复合选择器（ADR-0014）天然要插值，也就天然全是 f-string——漏掉这个前缀
+# 等于把这条 lint 最该管的那一类整体放行。补上后扫描面从 14 处升到 20 处。
 LOCATOR_CALL_RE = re.compile(
     r"""\.(?:locator|frame_locator|frameLocator
         |query_selector_all|query_selector|querySelectorAll|querySelector
         |wait_for_selector|waitForSelector|is_visible|isVisible|click|fill|type|hover
         |press|check|uncheck|select_option|selectOption|text_content|textContent
         |get_attribute|getAttribute|inner_text|innerText|count)\s*\(\s*
-        (?P<q>['"])(?P<sel>.*?)(?P=q)""",
+        (?:[fFrRbBuU]{1,2})?(?P<q>['"])(?P<sel>.*?)(?P=q)""",
     re.VERBOSE,
 )
-DOLLAR_CALL_RE = re.compile(r"\.\$\$?\s*\(\s*(?P<q>['\"])(?P<sel>.*?)(?P=q)")
+DOLLAR_CALL_RE = re.compile(
+    r"\.\$\$?\s*\(\s*(?:[fFrRbBuU]{1,2})?(?P<q>['\"])(?P<sel>.*?)(?P=q)"
+)
 NTH_RE = re.compile(r"\.nth\s*\(")
 
 # 允许的整串形态：一个或多个 [data-*="…"]，且其中至少有一个是 data-testid。
 ATTR_RE = re.compile(r'\[\s*(data-[a-z0-9-]+)\s*=\s*"[^"]*"\s*\]')
 ALLOW_INLINE = "# lint-e2e-selectors: allow"
+
+ADR_0014 = "docs/adr/0014-bounded-testid-enumeration.md"
+
+# 可以当判别位的属性，闭合清单，唯一定义处。取自 ADR-0014 §Decision Outcome：
+# 只有取值**无界**（来自用户数据、编译期枚举不出来）的 id 才配用复合形态。
+# 要加第九项：先改 ADR，再改这里，并在注释里说明为何该取值集合无法枚举。
+ALLOWED_DISCRIMINATORS = {
+    "data-book-id",
+    "data-collection-id",
+    "data-note-id",
+    "data-annotation-id",
+    "data-conversation-id",
+    "data-provider",
+    "data-section",
+    # data-file-href 全仓当前只有 1 处使用（ADR-0014 §Neutral），仍然保留：
+    # 它是清单里最像「没人用，删了吧」的一项，而删掉它并不会让判据变清楚，
+    # 只会让下一处文件路径定位重新变成一次要翻 ADR 的争论。
+    "data-file-href",
+}
 
 
 def line_of(text: str, index: int) -> int:
@@ -79,6 +106,18 @@ def selector_ok(sel: str) -> str | None:
     attrs = ATTR_RE.findall(stripped)
     if "data-testid" not in attrs:
         return "没有 data-testid，只有 " + ", ".join(attrs)
+    # 顺序有意为之：先判「有没有 data-testid」，再判「判别位准不准」。反过来会对一条
+    # 压根没有 testid 的选择器报「判别位不在闭合清单内」，把人指向错的地方。
+    # 在调用期读模块全局，不捕获进默认参数 —— 闭合清单只有一个定义处。
+    allowed = ALLOWED_DISCRIMINATORS
+    for attr in attrs:
+        if attr == "data-testid":
+            continue
+        if attr not in allowed:
+            return (
+                f"判别位 {attr} 不在闭合清单内 —— 见 {ADR_0014}；"
+                "新增需改 lint 的 ALLOWED_DISCRIMINATORS 并说明为何该取值集合无法枚举。"
+            )
     return None
 
 

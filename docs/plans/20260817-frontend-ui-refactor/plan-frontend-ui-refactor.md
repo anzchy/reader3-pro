@@ -1009,7 +1009,9 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 
 **前置 WI**：WI-9、WI-11。
 
-**做什么**：**零行为变更**的结构拆分，唯一的例外是 K6（见 WI-15）。
+**做什么**：**零行为变更**的结构拆分，例外**恰好两条**：K6（见 WI-15）与改色语义（见下）。
+
+**例外二——改色保 id（2026-09-01 裁定）**：今天没有「改色」这个操作。色板点击只调 `setSelectedColor` 换掉「下一次要用的颜色」；随后重按 marker 走 `toggleMarkerAnnotation`，旧标注**保留**、另加一条新色的，两条并存；重按 wavy / underline 走 `toggleAnnotation`，**先删后建**，`id` 变了。三条路径没有一条是用户以为的「把这条标注改成绿色」。本 WI 把它做成一个真操作：**颜色变、`id` 不变、不产生第二条**。落点在 `commands.ts`（`toggleMarkerAnnotation` / `toggleAnnotation` 是同一个写入链的两个入口）与 `overlays.ts`（`setSelectedColor` 需要知道当前是否已选中某条标注）。用例侧的两条断言（现状 `W-5a` / 变更后 `W-5b`）定义在 [009 任务书](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md) §3，本文不复述。
 
 | 模块 | 迁入符号 | 约行数 | 承载契约 |
 |---|---|---:|---|
@@ -1043,10 +1045,13 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 
 1. `static/js/annotations.js` 不再存在，八个模块文件全部存在。
 2. 四条 `dependency-cruiser` 规则全部启用且通过；人为加一条反向 import 后该命令非零退出（规则确实生效）。
-3. `baseline-1b` 全部用例零改动通过。
+3. `baseline-1b` 全部用例零改动通过，**唯一例外是 W-5a**（见第 6 条）。这条例外必须是**具名的、事先写下的**——「拆分时顺手发现某条 baseline 不对了就改掉它」正是零行为变更门槛要防的事，只有事先点名的那一条不算。
 4. iframe 边界三重断言 A/B/C 全部通过（定义见 `spec-frontend-design.md` §6.0）。
 5. 八个模块的导出符号并集等于原 `annotations.js` 的对外符号集合，无遗漏无新增（K6 的兜底删除除外）。
-6. `anchoring.ts` 的五个函数全部有单测，**按两类分别要求**（此前写「五个都做无 DOM 纯函数单测」，实测不成立——五个里只有两个是纯的）：
+6. `acceptance-4b1` 组的 **W-5b** 解开 skip 并绿：改色后 `notes.json` 里该条标注的 `id` 与改色前相同，且该段文字上的标注条数仍为 1。**并且先证明 W-5a 转红**——它特征化的正是本 WI 换掉的旧行为，它若还绿着，说明改色根本没做，W-5b 的绿另有来源。顺序是：跑一次拿到 W-5a 的红，再把它从 `baseline-1b` 删除（不是 skip——被替换掉的特征化没有第二次用途）。
+
+   ⚠️ **K-1a / K-6a 不走这条路，别照抄**：它们断言的是 4B.1 之后依然成立的东西（七个宿主元素齐备、`chapter_index` 等于 URL 里那个数），4B.1 落地后仍是绿的，一条都不用动。W-5a 是本计划里**唯一**一条会被自己的行为变更打红的 baseline 用例。
+7. `anchoring.ts` 的五个函数全部有单测，**按两类分别要求**（此前写「五个都做无 DOM 纯函数单测」，实测不成立——五个里只有两个是纯的）：
 
    | 类别 | 函数 | 签名证据 | 测试要求 |
    |---|---|---|---|
@@ -1054,7 +1059,7 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
    | DOM 适配器 | `buildTextIndex` `offsetFromNode` `rangeFromCfi` | `:54` `buildTextIndex(container)`、`:79` `offsetFromNode(nodes, targetNode, nodeOffset)`、`:242` `rangeFromCfi(cfi, contents, doc)`——收发 DOM 节点 / Range / epub.js contents | 在 DOM 环境下测，允许依赖 DOM，**不许**依赖网络 |
 
    拆模块时应尽量把适配器里的纯逻辑挤进第一类，但**不得**为了凑「无 DOM」而给三个适配器套一层假接口——那是把契约做成了测试的形状。
-7. **`commands.ts` 不许触碰 DOM，用 lint 断言而非文档断言。** 此前这里写「PR 描述里列出所有触碰 DOM 的位置（文档级验收）」——那不是验收，是自陈；写了照样能合，也没人会在第二次改动时重读。改成 ESLint `overrides` 里对该文件单开一条：
+8. **`commands.ts` 不许触碰 DOM，用 lint 断言而非文档断言。** 此前这里写「PR 描述里列出所有触碰 DOM 的位置（文档级验收）」——那不是验收，是自陈；写了照样能合，也没人会在第二次改动时重读。改成 ESLint `overrides` 里对该文件单开一条：
 
    ```jsonc
    // .eslintrc.* — overrides 数组中
@@ -1090,7 +1095,7 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 - **K3**：`offsetRect()` 随 `overlays.ts` 一起移动，并加注释说明它返回的是**视口坐标**。
 - **K4**：六个事件名改成常量。
 - **K5**：`window.Reader3Epub` 写成显式接口，9 个成员里 **7 个纳入**（`rendition`、`getContents()`、`getContentRoot()`、`getFrameElement()`、`onContentsReady(cb)`、`applyThemeSettings()`、`displaySectionIndex(i)`），2 个标 `@deprecated`（`getContentDocument()`、`book`），在 WI-16 结束时删除。⚠️ **`search.js` 也是 K5 的消费方**，消费 `getContentRoot` 与 `onContentsReady`，不是只有 `annotations.js`。
-- **K6**：删掉 `location.pathname` 兜底并改为抛错。这是 WI-14 **唯一有意的行为变更**。
+- **K6**：删掉 `location.pathname` 兜底并改为抛错。这是 WI-14 两条有意的行为变更之一（另一条是改色保 id，定义在 WI-14）。
 
 六个契约里四个现在是**静默失败**的。
 
@@ -1129,13 +1134,13 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 
 **K3 硬约束（覆盖层挂载点）**：只允许两种挂载——`<body>` 直接子元素（生产现状，零改动即合规），或 `<dialog>` ＋ `showModal()` 进 top layer。挂在 `.reader-shell` 里不是禁止，但**每次都要证明**。`.page-flow` 已经带着 `will-change: transform`，就是那个反面教材。
 
-**涉及 testid**：`rd-toolbar`、`rd-toolbar-toc`、`rd-toolbar-notes`、`rd-toolbar-search`、`rd-toolbar-ai`、`rd-toolbar-settings`、`rd-header-back`、`rd-panel-toc`、`rd-panel-notes`、`rd-panel-search`、`rd-panel-ai`、`rd-anno-toolbar`、`rd-anno-copy`、`rd-anno-note`、`rd-anno-ask`、`rd-anno-delete`、`rd-anno-color-yellow` / `-green` / `-pink` / `-blue`、`rd-note-editor`、`rd-note-tooltip`、`rd-degrade-s1`、`rd-page-prev`、`rd-page-next`。
+**涉及 testid**：`rd-toolbar`、`rd-toolbar-toc`、`rd-toolbar-notes`、`rd-toolbar-search`、`rd-toolbar-ai`、`rd-toolbar-settings`、`rd-header-back`、`rd-toc-panel`、`rd-notes-panel`、`rd-search-panel`、`rd-ai-panel`、`rd-anno-toolbar`、`rd-anno-copy`、`rd-anno-note`、`rd-anno-ask`、`rd-anno-delete`、`rd-anno-color-yellow` / `-green` / `-pink` / `-blue`、`rd-note-editor`、`rd-note-tooltip`、`rd-degrade-s1`、`rd-page-prev`、`rd-page-next`。
 
 **涉及降级状态**：DEG-S1（重做形态）。
 
 **验收标准**：
 
-1. TOC 或 Notes 面板打开状态下点 `rd-toolbar-search`：搜索面板在超时前打开，且原面板关闭（`rd-panel-toc` 不可见）。
+1. TOC 或 Notes 面板打开状态下点 `rd-toolbar-search`：搜索面板在超时前打开，且原面板关闭（`rd-toc-panel` 不可见）。
 2. 任意时刻可见的面板数 ≤1（对四个面板 testid 逐一取可见性求和）。
 3. 面板打开后 `document.activeElement` 在该面板子树内；按 Esc 后面板关闭且 `document.activeElement` 回到触发它的工具栏按钮。
 4. 面板打开后连按 N＋1 次 Tab，`document.activeElement` 始终在该面板子树内；`N` 取该面板内可聚焦元素个数（见 §5.0 占位符表），不写死常数。
@@ -1517,7 +1522,7 @@ E2E 侧：**不要写 Node Playwright Test 的 `webServer` 语法**，用 pytest
 
 | 用例 ID | 归属 WI | 断言目标 | 预期结果 |
 |---|---|---|---|
-| FP-01 | WI-16 | `rd-panel-toc` / `-notes` / `-search` / `-ai` | 任意时刻四者可见数 ≤1（逐个取可见性求和） |
+| FP-01 | WI-16 | `rd-toc-panel` / `rd-notes-panel` / `rd-search-panel` / `rd-ai-panel` | 任意时刻四者可见数 ≤1（逐个取可见性求和） |
 | FP-02 | WI-16 | `rd-toolbar-search`（TOC 已打开） | 搜索面板在超时前打开、TOC 关闭。**这是 D6 的回归用例**，现状会超时 |
 | FP-03 | WI-16 | `rd-toolbar-notes`（AI 已打开） | 同上，四个面板两两组合各跑一次（12 条参数化） |
 | FP-04 | WI-16 | 分层 Escape | 标注工具栏 ＋ 笔记编辑器同时打开时按 Esc：先关编辑器，工具栏仍在；再按 Esc 关工具栏；再按 Esc 关面板 |
@@ -1808,6 +1813,8 @@ TOTAL                                3558   3208    1082     9%
 
 ## 6. 从 Codex 评审继承的未决项
 
+> **本节现在有两个来源。** 6.0 是 Codex 评审（2026-08），6.1 是 009 分支做 E2E 特征化时**实测撞出来**的生产缺陷（2026-09）。两者性质相同——**别处发现、本计划兑付**，所以放在一起。
+
 `review-codex.md` 的台账留在技术栈迁移文件夹（一次评审的记录不拆开），其中五条属于前端范围，在此继承：
 
 | # | 严重度 | 问题 | 本计划的落点 |
@@ -1819,6 +1826,26 @@ TOTAL                                3558   3208    1082     9%
 | **#19** | HIGH | 4A.2 先迁 settings、4A.3 才建共享模块，会被迫先写临时代码再重构 | **已处置**：4A 顺序改为 `4A.0 → 4A.1 → 4A.3 → 4A.2 → 4A.4`，对应 WI-9 → WI-10 → WI-11 → WI-12 → WI-13，共享模块在设置页之前 |
 
 评审原文里的裸 `S1`–`S5` 与已删除的 `tasks/014` 路径按当时原样保留，不追改。
+
+### 6.1 从 009 E2E 特征化继承的生产缺陷（2026-09-04）
+
+`009-e2e-annotations` 在写 baseline 特征化用例时实测撞出五条，**定义处是
+[`tasks/009-e2e-annotations.md`](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md)
+的跨波欠账表**（本表只做指针与落点，不复述现象——一个事实一个定义处）。
+
+009 是**安全网分支，不改行为**（该文件 §0.5），所以这五条一条都没在那边修。它们的兑付方是本计划。
+
+| 009 欠账 | 严重度 | 一句话 | 本计划的落点 |
+|---|---|---|---|
+| **#22** | HIGH（用户可见） | 字号 / 段落间距的第一次点击对正文**毫无效果**：`applySettings()` 跑在 `saveSettings()` 之前，而 `buildContentCss()` 回读 `localStorage`，于是注进 iframe 的永远是上一档的值 | **WI-18**。两行的改法（调换顺序，或让 `applyThemeSettings` 收参数而不是回读 storage）。**注意与 #10 的 legacy key 迁移是同一段代码**，一起做。<br>⚠️ 已决定**不等本计划**：009 合并后单开一条小分支先修（见[进度盘](../20260824-frontend-backend-plan-progress.md)），本行届时改为「已由该分支兑付，WI-18 只需复核」 |
+| **#21** | MEDIUM | 主题四态（白/黄/护眼/夜间）是**死表面**：四个 `rd-pref-theme-*` 上全仓没有任何监听器，CSS 自带 `cursor: not-allowed`，注释写着 `UI only for v1`。与 `rd-page-prev` / `rd-page-next`（欠账 #11）完全同型 | **WI-18**。要么接上电，要么连同 testid 一起删——留着裸 testid 会让后来的用例作者以为背后有行为。<br>接上电的那天 `R-6a` 的 `theme-four-states` 守卫**会红，那是正确的红**，改法写在该用例的 docstring 里 |
+| **#23** | MEDIUM | 多选模式没有视觉反馈：`library.js` 往 `<body>` 加的类是 `select-mode`，样式表写的是 `.selection-mode`，**两个名字对不上**，复选框只在 `.book-card:hover` 时才露出来 | **WI-13**（4A.4 书库页切片）。改一个类名即可，但**哪个名字是设计想要的**属本计划裁定 |
+| **#15** | LOW（测试脆性） | 字号 / 间距四个 ± 按钮没有 testid。可访问名是按钮**文本** `−`(U+2212) 与 `+`（accname 里 contents 先于 title），**不是**中文 `title`；且四个按钮两两重名，必须靠容器 testid 限定作用域才不触发 strict mode | **WI-18**，按 [ADR-0014](../../adr/0014-bounded-testid-enumeration.md) 补四个 testid。兑付后 `R-6a` 改用 `get_by_test_id` |
+| **#24** | LOW（测试脆性） | 阅读器左栏「回书架」链接没有 testid，只有 `title="Back to Library"`。与 #15 同一脆弱类 | **WI-16**（4B.2 阅读器外壳重写），补 testid 时顺带 |
+
+**这五条对本计划的净影响**：#22 / #21 落 WI-18，#23 落 WI-13，#24 落 WI-16，#15 落 WI-18；
+没有一条需要新开工作项，也没有一条改变既有验收门槛——它们是**已有工作项的补充验收条件**。
+
 
 ---
 

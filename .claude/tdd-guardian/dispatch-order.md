@@ -127,3 +127,20 @@ fixture 的方式结清；`tasks/009-e2e-annotations.md` 已改写为「已结�
 
 收口时的套件状态：`tests/unit tests/contract` **654 passed**，`ruff check` 全绿，
 所有被变异过的文件已按 `*_FIXED` 备份逐一 md5 核对还原，`__pycache__` 已清。
+
+## 方法论修正（2026-09-01）：矩阵 §0.5「默认取精确值」作废
+
+`tests-20260831-131500.md` §0.5 要求凡「正则捞一把再断言」的用例都先钉住**精确**条数，
+只开十处下界白名单。照此写出来的九条计数断言（`C_attr == 37`、`total == 146`、
+`cblocks == 5`、`rblocks == 7`、`ctotal == 109`、`rtotal == 28`、`tags == 13`，以及
+形式是下界、效果是绊线的 `T11_FILE_FLOOR = 30`（实到 35）与 `reader.html: 60`（实到 69））
+会被**与它们所守不变式无关**的前端改动打红。原因是它们同时在干两件事，而只有第一件是永久的：
+反空转，与批次内的越界闸门「WI-N 改不动这个数」——后者落地即到期。
+
+**新判据、治法优先级（关系断言 ＞ 删除 ＞ 下界）、以及九条各自的落地与变异证明，
+定义点在 `tests/unit/test_prototype_testid_tables.py` 与
+`tests/unit/test_template_testid_uniqueness.py` 的模块注释**——那两处受版本管理，
+`.claude/tdd-guardian/tests-*.md` 是 gitignore 的，不能当定义点。下一轮写矩阵前先读它们。
+
+顺带纠正一条：`T11_ROOTS` 的全局 `>= 30` 有盲区——任意一棵范围树整个走空，另外三棵仍能凑够
+全局下限。已改为**每棵树各自 `>= 1`**，变异证明（`tests/e2e` → `docs/adr`）见该文件。

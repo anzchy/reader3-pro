@@ -1365,10 +1365,10 @@
     </div>
 
     <!-- Add Books Modal -->
-    <dialog class="modal" id="add-books-modal" data-testid="lib-modal" data-modal="add-books" aria-label="Add books">
+    <dialog class="modal" id="add-books-modal" data-testid="lib-modal-add-books" aria-label="Add books">
         <div class="modal-header">
             <div class="modal-title">Add books</div>
-            <button type="button" class="icon-btn" id="add-books-close" data-testid="lib-modal-close" data-modal="add-books" aria-label="Close">✕</button>
+            <button type="button" class="icon-btn" id="add-books-close" data-testid="lib-modal-add-books-close" aria-label="Close">✕</button>
         </div>
         <div class="modal-body">
             <p>Process EPUBs into <code>books/*_data/</code> using:</p>
@@ -1376,29 +1376,29 @@
             <p>Then refresh this page.</p>
         </div>
         <div class="modal-actions">
-            <button type="button" class="toolbar-btn toolbar-btn--primary" id="add-books-ok" data-testid="lib-modal-primary" data-modal="add-books">OK</button>
+            <button type="button" class="toolbar-btn toolbar-btn--primary" id="add-books-ok" data-testid="lib-modal-add-books-primary">OK</button>
         </div>
     </dialog>
 
     <!-- Index Errors Modal -->
-    <dialog class="modal" id="index-errors-modal" data-testid="lib-modal" data-modal="index-errors" aria-label="Indexing errors">
+    <dialog class="modal" id="index-errors-modal" data-testid="lib-modal-index-errors" aria-label="Indexing errors">
         <div class="modal-header">
             <div class="modal-title">Indexing completed with errors</div>
-            <button type="button" class="icon-btn" id="index-errors-close" data-testid="lib-modal-close" data-modal="index-errors" aria-label="Close">✕</button>
+            <button type="button" class="icon-btn" id="index-errors-close" data-testid="lib-modal-index-errors-close" aria-label="Close">✕</button>
         </div>
         <div class="modal-body">
             <div class="error-summary" id="index-errors-summary" data-testid="lib-index-errors"></div>
         </div>
         <div class="modal-actions">
-            <button type="button" class="toolbar-btn toolbar-btn--primary" id="index-errors-ok" data-testid="lib-modal-primary" data-modal="index-errors">OK</button>
+            <button type="button" class="toolbar-btn toolbar-btn--primary" id="index-errors-ok" data-testid="lib-modal-index-errors-primary">OK</button>
         </div>
     </dialog>
 
     <!-- Create Collection Modal -->
-    <dialog class="modal" id="create-collection-modal" data-testid="lib-modal" data-modal="create-collection" aria-label="Create collection">
+    <dialog class="modal" id="create-collection-modal" data-testid="lib-modal-create-collection" aria-label="Create collection">
         <div class="modal-header">
             <div class="modal-title">Create collection</div>
-            <button type="button" class="icon-btn" id="create-collection-close" data-testid="lib-modal-close" data-modal="create-collection" aria-label="Close">✕</button>
+            <button type="button" class="icon-btn" id="create-collection-close" data-testid="lib-modal-create-collection-close" aria-label="Close">✕</button>
         </div>
         <div class="modal-body">
             <label class="form-field">
@@ -1408,23 +1408,23 @@
             <div class="form-error" id="create-collection-error" hidden></div>
         </div>
         <div class="modal-actions">
-            <button type="button" class="toolbar-btn" id="create-collection-cancel" data-testid="lib-modal-cancel" data-modal="create-collection">Cancel</button>
-            <button type="button" class="toolbar-btn toolbar-btn--primary" id="create-collection-submit" data-testid="lib-modal-primary" data-modal="create-collection">Create</button>
+            <button type="button" class="toolbar-btn" id="create-collection-cancel" data-testid="lib-modal-create-collection-cancel">Cancel</button>
+            <button type="button" class="toolbar-btn toolbar-btn--primary" id="create-collection-submit" data-testid="lib-modal-create-collection-primary">Create</button>
         </div>
     </dialog>
 
     <!-- Add to Collection Modal -->
-    <dialog class="modal" id="add-to-collection-modal" data-testid="lib-modal" data-modal="add-to-collection" aria-label="Add selected books to collection">
+    <dialog class="modal" id="add-to-collection-modal" data-testid="lib-modal-add-to-collection" aria-label="Add selected books to collection">
         <div class="modal-header">
             <div class="modal-title">Add to collection</div>
-            <button type="button" class="icon-btn" id="add-to-collection-close" data-testid="lib-modal-close" data-modal="add-to-collection" aria-label="Close">✕</button>
+            <button type="button" class="icon-btn" id="add-to-collection-close" data-testid="lib-modal-add-to-collection-close" aria-label="Close">✕</button>
         </div>
         <div class="modal-body">
             <div class="form-error" id="add-to-collection-error" hidden></div>
             <div class="collections-picker" id="collections-picker" data-testid="lib-add-to-collection-select"></div>
         </div>
         <div class="modal-actions">
-            <button type="button" class="toolbar-btn" id="add-to-collection-cancel" data-testid="lib-modal-cancel" data-modal="add-to-collection">Cancel</button>
+            <button type="button" class="toolbar-btn" id="add-to-collection-cancel" data-testid="lib-modal-add-to-collection-cancel">Cancel</button>
         </div>
     </dialog>
 
