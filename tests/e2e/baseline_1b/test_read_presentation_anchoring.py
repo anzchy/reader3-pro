@@ -99,9 +99,12 @@ skip 形态，与欠账 #6 的修复同期解开。本模块只留**文本侧（
 欠账 #11 的 `rd-page-prev` / `rd-page-next` 完全相同（有 testid、有样式、永久不起作用）。
 
 -------------------------------------------------------------------------------
-⚠️ **实测订正三：字号 / 间距的改动落到 iframe 上要慢一拍（生产缺陷，未修）**
+✅ **实测订正三：字号 / 间距曾经「慢一拍」（生产缺陷，2026-09-06 已修）**
 -------------------------------------------------------------------------------
-`reader.html` 的字号 / 间距处理器是：
+**这一节记的是已经修掉的历史。**下面那张实测表是修复前的形态，留着是因为它是 R-6a
+「一档 == 一步」这个构造的由来；照它去理解今天的代码会走错。
+
+修复前 `reader.html` 的字号 / 间距处理器是：
 
     fontSize--;
     applySettings();   // → Reader3Epub.applyThemeSettings() → ensureContentStyles()
@@ -118,12 +121,19 @@ skip 形态，与欠账 #6 的修复同期解开。本模块只留**文本侧（
     增大间距 #2     lineHeight 30.6px
 
 字号同形：第一次点「减小字号」外层读数 17→16，iframe 仍是 17px；第二次点才变成 16px。
-**这是生产缺陷（用户点一下没反应），不是本模块的构造问题**，§0.5 明令只记录不修。
+这是欠账 #22，§0.5 明令 009 上只记录不修；**分支 `016` 兑付**（2026-09-06）。
 
-它对本模块有一个具体后果：**「一档」的参数必须是两步（`−` 再 `+`），不能只点一步。**
-只点一步时 iframe 的呈现根本不变，`stimulus_moves=True` 那条守卫会红——而它红得有道理，
-因为那一步确实什么都没施加到被测的那一层上。两步之后 iframe 停在「差一档」的位置
-（字号 16px / 间距 1.8），是一次**真实发生过**的重排。
+**修法不是调换那两行。** 病根是渲染器**自己回读 localStorage**，那两行的先后只是它
+暴露出来的第一个后果；第二个后果是边界校验只写在 `reader.html` 里，越界值只被外层挡住
+（面板显示 17、正文渲染 99px）。实测过：只调换顺序能解决前者、解决不了后者；而把校验过
+的值经 `applyThemeSettings({fontSize, lineHeight})` 传进去之后，两个后果一起消失，顺序
+怎么摆都绿。所以生产侧改的是**传值**，没有动那两行——顺序若改了反而是一处测不出来的改动。
+第二个后果由本模块的 **R-6c** 钉住。
+
+它对本模块的后果：**「一档」的参数从两步收回一步。**修复前只点一步时 iframe 纹丝不动，
+`stimulus_moves=True` 会红，所以当时构造成 `−` 再 `+`（两步之后 iframe 停在「差一档」的
+位置，是一次真实发生过的重排）。修好之后 `−` 再 `+` 会**回到原值、净变化为零**，那条守卫
+反而要红——于是同步收成一步。**这两件事必须同一个提交里做**，任何一半单独落地都是红的。
 
 -------------------------------------------------------------------------------
 **加载期的双重重绘（欠账 #16）：为什么 `open_ch0` 要等网络静默**
@@ -157,15 +167,25 @@ skip 形态，与欠账 #6 的修复同期解开。本模块只留**文本侧（
 同理 `R6A_ID` / `R6A_CREATED_AT` 也写死，失败消息里于是是人认得出的名字，而不是两串 uuid。
 
 -------------------------------------------------------------------------------
-**可失败性证据（§0 第四条纪律，定向破坏实录，2026-09-04，改动全部已还原）**
+**可失败性证据（§0 第四条纪律，定向破坏实录）**
 -------------------------------------------------------------------------------
-本条是特征化用例——被测行为上线数月，**红不可得**。S1 打在生产代码上（改完当场还原），
-S2 打在用例自己的期望值上。两次都实跑，下面是**逐字**转录的输出。
+本条是特征化用例——被测行为上线数月，**红不可得**。所以失败能力只能靠定向破坏作证。
+
+**S1 已于 2026-09-06 用 `page.route` 重做（审计发现 #51）。** 原先那一发是**直接改
+`ensureContentStyles` 的生产代码、跑完再还原**——那种证据的强度低于响应体改写：还原
+这一步没有任何东西替你核对，而「改完忘了还原」与「改完还原错了」在事后都不可见。重做
+的形态是拦 `**/static/js/epub-renderer.js`，`route.fetch()` 取原始响应体、在
+`const doc = contents.document;` 之后注入拆 `<mark>` 的一行、再 `route.fulfill()`
+发回去；注入前先断言锚点在响应体里**恰好命中一次**，锚点被改名时破坏会大声失败而不是
+静默变成一发空枪。全程 `src/` 一行未动（`git diff --quiet -- src/` rc=0）。
+**结论与 2026-09-04 那一发逐字相同**，下面的输出转录自重做的这一次。
+
+S2 打在用例自己的期望值上（那一类只证明「写错的断言会红」，强度本就低一档，据实标注）。
 
 | # | 破坏点 | 结果 | 它证明了什么 |
 |---|---|---|---|
 | S0 | `ensureContentStyles` 首行加 `doc.body.innerHTML = doc.body.innerHTML;`（简报字面建议的那一发） | **三条全绿——这一发打不动本条** | 见下方「S0 为什么是绿的」。它不是本条的可失败性证据，是一条关于 `<mark>` 的真实性质 |
-| S1 | `ensureContentStyles` 首行改成把 iframe 里所有 `<mark>` 就地拆掉（保留文字、删掉标记），即「`applyThemeSettings` 重建了内容却没重绘标注」 | **font-size / paragraph-spacing 红，theme 绿** | Law 的判据真的咬住「重排之后 `<mark>` 还在不在」；**同时证明 theme 这条参数今天没有刺激**——同一发子弹打不动它 |
+| S1 | **`page.route` 改写 `epub-renderer.js` 响应体**：在 `ensureContentStyles` 拿到 `doc` 之后注入一行，把 iframe 里所有 `<mark>` 就地拆掉（保留文字、删掉标记），即「`applyThemeSettings` 重建了内容却没重绘标注」 | **font-size / paragraph-spacing 红，theme 绿** | Law 的判据真的咬住「重排之后 `<mark>` 还在不在」；**同时证明 theme 这条参数今天没有刺激**——同一发子弹打不动它 |
 | S2 | `R6A_EXPECTED_MARK_TEXT` 由 `"Alpha prose"` 改成 `"Alpha pros"` | **三条全红** | 三个参数各自的断言都不空转，包括没有刺激的 theme 那条（它至少证明自己在读真的 DOM，而不是在比两个常量） |
 
 **S0 为什么是绿的（一条值得记下来的性质）**：`innerHTML` 的往返是**序列化再解析**，
@@ -174,25 +194,26 @@ S2 打在用例自己的期望值上。两次都实跑，下面是**逐字**转�
 的。真正会丢标注的重建是从原始内容重新渲染。S1 因此改成直接拆掉 `<mark>`，那才是
 「重建内容却没重绘标注」的可观测等价物。
 
-**S1 逐字输出**（`theme-four-states` 同一轮 passed）::
+**S1 逐字输出**（2026-09-06 重做，`theme-four-states` 同一轮 passed）::
 
     E           AssertionError: 施加「字号 −（减小一档）」之后，iframe 里的 `rd-anno-span` 由 1 个变成 0 个。
     E                 表现层变更把标注整个抹掉了——`applyThemeSettings` 重建了 iframe 内容却没有重绘标注？
     E                 参数：字号 ±（相对当前值，不依赖具体档位数）
     E           assert 0 == 1
     E            +  where 0 = count()
-    E            +    where count = <Locator frame=<Frame name= url='http://127.0.0.1:63484/read/smoke_data/0'> selector='[data-testid="rd-viewport"] iframe >> internal:control=enter-frame >> internal:testid=[data-testid="rd-anno-span"s]'>.count
+    E            +    where count = <Locator frame=<Frame name= url='http://127.0.0.1:60695/read/smoke_data/0'> selector='[data-testid="rd-viewport"] iframe >> internal:control=enter-frame >> internal:testid=[data-testid="rd-anno-span"s]'>.count
     E           AssertionError: 施加「段落间距 −（减小一档）」之后，iframe 里的 `rd-anno-span` 由 1 个变成 0 个。
     E                 表现层变更把标注整个抹掉了——`applyThemeSettings` 重建了 iframe 内容却没有重绘标注？
     E                 参数：段落间距 ±（相对当前值，不依赖具体档位数）
     E           assert 0 == 1
     E            +  where 0 = count()
-    E            +    where count = <Locator frame=<Frame name= url='http://127.0.0.1:63484/read/smoke_data/0'> selector='[data-testid="rd-viewport"] iframe >> internal:control=enter-frame >> internal:testid=[data-testid="rd-anno-span"s]'>.count
-    2 failed, 1 passed in 3.45s
+    E            +    where count = <Locator frame=<Frame name= url='http://127.0.0.1:60695/read/smoke_data/0'> selector='[data-testid="rd-viewport"] iframe >> internal:control=enter-frame >> internal:testid=[data-testid="rd-anno-span"s]'>.count
+    2 failed, 1 passed in 4.46s
 
 注意两条都红在**第一步**（`−`）而不是第二步：拆 `<mark>` 是在 `ensureContentStyles` 里做的，
 它每次点击都跑，与「实测订正三」那个慢一拍的缺陷无关——慢一拍的是**样式值**，不是这次调用
-本身发不发生。
+本身发不发生。（重做的这一轮录于 2026-09-06，#22 修好之后，所以刺激已是一步；
+2026-09-04 那一轮是两步构造，结论相同。）
 
 **S2 逐字输出**::
 
@@ -339,7 +360,6 @@ R6A_CHANGES: Tuple[PresentationChange, ...] = (
         label="字号 ±（相对当前值，不依赖具体档位数）",
         steps=(
             ("字号 −（减小一档）", _click_stepper(SIZE_CONTAINER, DECREASE_BUTTON_NAME)),
-            ("字号 +（放大一档）", _click_stepper(SIZE_CONTAINER, INCREASE_BUTTON_NAME)),
         ),
         stimulus_props=("fontSize",),
         stimulus_moves=True,
@@ -353,10 +373,6 @@ R6A_CHANGES: Tuple[PresentationChange, ...] = (
             (
                 "段落间距 −（减小一档）",
                 _click_stepper(LEADING_CONTAINER, DECREASE_BUTTON_NAME),
-            ),
-            (
-                "段落间距 +（增大一档）",
-                _click_stepper(LEADING_CONTAINER, INCREASE_BUTTON_NAME),
             ),
         ),
         stimulus_props=("lineHeight",),
@@ -397,8 +413,10 @@ def test_r6a_presentation_change_keeps_the_annotation_on_the_same_text(
       3. 前置守卫（每个参数一次，不是每步一次）：这组步骤在 iframe 上引起的呈现变化，
          与 `change.stimulus_moves` 声明的一致。它防的是参数静默空转——主题四态今天就是
          空转的，而空转的参数会让 (1)(2) 变成对着一张没动过的页面做的两句恒真。
-         **每个参数一次**是因为字号 / 间距有「慢一拍」的生产缺陷（模块 docstring 实测
-         订正三）：第一步落到 iframe 上的是**旧值**，逐步断会红在一个与锚定无关的地方。
+         **每个参数一次**原本是为了绕开「慢一拍」那个缺陷（实测订正三）。缺陷已于
+         2026-09-06 修掉、字号 / 间距也随之收成一步，这条理由对它们已经失效；留着是
+         为主题那条——它有四步，而四步里**任何一步都不该动**，逐步断与终态断在
+         `stimulus_moves=False` 上完全等价，逐步断只是多跑三次 `content_style`。
     """
     seed_notes(
         e2e_books_dir,
@@ -472,4 +490,80 @@ def test_r6a_presentation_change_keeps_the_annotation_on_the_same_text(
         "      不是删掉本守卫（守卫一删，这条参数就退回静默空转，见模块 docstring 订正二）。\n"
         "    ——若是字号 / 间距这条转为「没变」：表现层通道断了，此时上面那两条 Law 断言\n"
         "      正在对着一张没动过的页面空转，它们的绿不作数。"
+    )
+
+
+# ---------------------------------------------------------------------------
+# R-6c
+# ---------------------------------------------------------------------------
+
+#: 一个越界到不可能被误读成「正常档位」的值。`reader.html` 的 `MIN_FONT_SIZE=14` /
+#: `MAX_FONT_SIZE=24`、`MIN_LINE_HEIGHT=1.5` / `MAX_LINE_HEIGHT=2.5` 都会拒绝它，
+#: 于是外层必然回落到默认值——两侧读同一个源时，iframe 也必然是默认值。
+R6C_OUT_OF_BOUNDS = '{"fontSize": 99, "lineHeight": 9}'
+R6C_STORAGE_KEY = "reader3-font-settings"
+R6C_DEFAULT_FONT_SIZE = "17px"
+R6C_DEFAULT_LINE_HEIGHT = "32.3px"  # 1.9 × 17px
+
+
+def test_r6c_iframe_presentation_agrees_with_the_panel(
+    page: Page, live_server: str
+) -> None:
+    """R-6c（#22 兑付时新发现，2026-09-06 实测确认）：**面板读数与 iframe 呈现必须同源。**
+
+    这是 #22 的**第二个入口**，换顺序修不掉它。#22 的病根不是那两行的先后，是
+    `epub-renderer.js` 的 `getFontSettings()` **自己回读 `localStorage` 原始值**，
+    而边界校验只写在 `reader.html` 的 `loadSettings()` 里。两个读者、一份数据、
+    只有一个做校验，于是校验不过的值只会被其中一个挡住。
+
+    实测（2026-09-06，把 `reader3-font-settings` 写成越界值再加载）：
+
+        外层面板读数        17        ← `loadSettings()` 拒绝 99，回落默认
+        外层 CSS 变量       17px      ← 同上
+        iframe 实际渲染     99px      ← `getFontSettings()` 直接吃了 99
+        iframe 行高         891px
+
+    用户看到的是一页 99px 的正文，而设置面板告诉他字号是 17——**面板在说谎**，
+    并且此时点「−」会从 17 走到 16，正文纹丝不动。今天要触发它得手改
+    `localStorage`，但**升级路径天然会触发**：任何一次调窄 `MIN/MAX` 的发版，
+    存量用户的旧值就会当场落进这个缝里。
+
+    判据写成**两侧相等**而不是「iframe 等于 99」：钉住的是「同源」这个性质，
+    将来无论默认值改成多少、校验规则怎么变，只要两个读者再次分家就会红。
+    """
+    page.goto(f"{live_server}/library")
+    page.evaluate(
+        "([key, raw]) => window.localStorage.setItem(key, raw)",
+        [R6C_STORAGE_KEY, R6C_OUT_OF_BOUNDS],
+    )
+
+    frame = open_ch0(page, live_server)
+    open_font_popover(page)
+
+    outer = page.evaluate(
+        "() => {const s = getComputedStyle(document.documentElement);"
+        " return {fontSize: s.getPropertyValue('--reader-font-size').trim(),"
+        " lineHeight: s.getPropertyValue('--reader-line-height').trim()};}"
+    )
+    inner = content_style(frame, ("fontSize", "lineHeight"))
+
+    assert outer["fontSize"] == R6C_DEFAULT_FONT_SIZE, (
+        f"前置绊线：外层 `--reader-font-size` 是 {outer['fontSize']!r}，"
+        f"期望 {R6C_DEFAULT_FONT_SIZE!r}。\n"
+        "    外层没有把越界值挡回默认，本条下面的「两侧相等」就不再是在比较\n"
+        "    「校验过的」和「没校验的」，整条用例失去意义（越界值被两边同时接受时\n"
+        "    它会恒真）。先查 `reader.html` 的 `loadSettings()` 与 MIN/MAX 常量。"
+    )
+    assert inner["fontSize"] == outer["fontSize"], (
+        f"面板与 iframe 分家了：外层 `--reader-font-size`={outer['fontSize']!r}，"
+        f"iframe body 实际 `font-size`={inner['fontSize']!r}。\n"
+        f"    写进 `{R6C_STORAGE_KEY}` 的是越界值 {R6C_OUT_OF_BOUNDS}。\n"
+        "    说明 `epub-renderer.js` 又在自己回读 localStorage 原始值，而不是用\n"
+        "    `applyThemeSettings(settings)` 传进去的、已经过边界校验的那一份。\n"
+        "    这是欠账 #22 的第二个入口——调换 save/apply 的顺序修不掉它。"
+    )
+    assert inner["lineHeight"] == R6C_DEFAULT_LINE_HEIGHT, (
+        f"iframe 行高是 {inner['lineHeight']!r}，期望 {R6C_DEFAULT_LINE_HEIGHT!r}"
+        f"（默认 1.9 × {R6C_DEFAULT_FONT_SIZE}）。\n"
+        "    行距与字号走的是同一条 `getFontSettings()`，两者要一起被修好。"
     )

@@ -98,7 +98,7 @@ baseline 全部 skipped、push gate 全绿。「扫顶层」是这类检查最�
 `test_testid_dom_uniqueness.py`——那是 ADR-0014 的运行期唯一性护栏，与 009 无关。
 把总数焊死，等于把那个套件的条数写进 009 的门槛：它将来加一个 parametrize 值，红的
 会是 009 的用例，而修法（改总数）与被改的东西毫无关系。派生式只钉三件事：baseline
-恰好 66、acceptance 恰好 17、其余 item 的模块必须在白名单里。
+恰好 67、acceptance 恰好 17、其余 item 的模块必须在白名单里。
 
 **常量的变更史**（改数字必须写理由，不要只覆盖）：
 
@@ -113,6 +113,13 @@ baseline 全部 skipped、push gate 全绿。「扫顶层」是这类检查最�
   `tests/e2e/baseline_1b/test_library_nav_and_collections.py::test_x2d_...`，**恰好一条 item**
   ——选中与取消在同一条里做往返，不拆参数化。理由与可失败性证据（S5／S5b／S5c）写在该模块的
   docstring 里。
+- `EXPECTED_BASELINE_ITEMS` 66 → **67**（2026-09-06，欠账 #22 兑付，分支 `016`）。修 #22 时
+  实测出它的**第二个入口**：`epub-renderer.js` 的 `getFontSettings()` 自己回读 localStorage
+  原始值，而边界校验只在 `reader.html` 的 `loadSettings()` 里——写个越界值进去，面板显示 17、
+  正文渲染 99px。调换 save/apply 的顺序修不掉它，所以补了一条判据钉「面板与 iframe 同源」：
+  `test_read_presentation_anchoring.py::test_r6c_...`，**恰好一条 item**，不做参数化。
+  同一天 R-6a 的字号 / 间距两项刺激从两步收回一步（#22 一修，两步就回到原值、净变化为零），
+  那是改 `steps` 的内容，**不改条数**。
 - `EXPECTED_ACCEPTANCE_ITEMS` 14 → **17**（同日，欠账 #14）：R-6 拆 a/b 后 R-6b 三条落进
   `acceptance_4b1`（Wave 4），该目录由 5 变 8。改成按目录定义再求和，是让「哪个目录少了一条」
   在失败消息里直接可读。
@@ -145,7 +152,7 @@ BASELINE_MARKER = "baseline_1b"
 ACCEPTANCE_MARKERS = GROUP_MARKERS[1:]
 
 # `tests/e2e/baseline_1b/` 下的期望 item 数。**实测值**（变更史见文件头）。
-EXPECTED_BASELINE_ITEMS = 66
+EXPECTED_BASELINE_ITEMS = 67
 
 # 四个 acceptance 目录各自的期望 item 数。合计由此派生，不另写字面量。
 #   acceptance_4b1：R-6b ×3（Wave 4）＋ K-1b ＋ K-6b ＋ W-5b ×3（{marker, wavy, underline}，

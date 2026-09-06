@@ -513,8 +513,11 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 | M4a | Phase 4A 底座 + settings + library | `013-ts-frontend-shell` | **B**（WI-9 – WI-13） |
 | M4b | Phase 4B 阅读器 | `014-ts-frontend-reader` | **B**（WI-14 – WI-19） |
 | M5 | Phase 5 launch + PWA | `015-launch-experience` | A（`reader3 launch`）＋ **B**（PWA，WI-20） |
+| M1b-债 | 欠账 #22 字号/间距慢一拍（合入 009 后、冻结 G2 前的一条独立小分支） | `016-settings-apply-order` | A（兑付记在 [`tasks/009` 欠账表 #22](./tasks/009-e2e-annotations.md)，不另开 task 文件） |
 
 M1b 与 MD 可与 M1/M2 交错推进；M4a 可与 M2/M3 交错推进；**M3 与 M4b 严格串行**。
+
+`016` 不是新里程碑，是 M1b 的欠账兑付：它必须排在 **009 合入之后、G2 冻结之前**，因为修好 #22 会让 `baseline_1b` 的 R-6a 转红、`suite_hash` 再变一次——顺序理由见 [进度盘](../20260824-frontend-backend-plan-progress.md)。
 
 **后端分支**的任务清单放在本文件夹的 `tasks/{分支名}.md`，不写进本文。今天存在三个：
 [`007-hygiene-and-contracts.md`](./tasks/007-hygiene-and-contracts.md)、
