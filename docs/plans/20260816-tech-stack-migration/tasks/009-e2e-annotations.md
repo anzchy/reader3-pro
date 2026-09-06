@@ -1,5 +1,6 @@
 # 009-e2e-annotations —— 任务
 
+- **状态**: **✅ 已合入 `master`（2026-09-05，PR #20），G1 达成、Phase 4A 解锁。**见下面的「合入记录」。**G2 仍未起跑**——那是另一道门，见 §8。
 - **对应阶段**: Phase 1b（Playwright E2E）起写，后续阶段逐组激活
 - **进入条件**: Phase 0 的 0.3（`--port` + `/api/health`）与 0.5（`data-testid` 全量补齐）完成。见 `docs/plans/20260816-tech-stack-migration/plan-tech-stack-migration.md` §6
 - **退出条件**: **两道门，分开记，见 §8**——**G1 用例完成门**（`baseline-1b` 写完并绿、其余组以 skip 形态写完并 review）与 **G2 基线稳定门**（零 flaky ＋ 台账开张 ＋ `suite_hash` 冻结）。**不再要求「主 CI 绿灯」**——CI 已统一为仅发版触发，改基说明见迁移计划 §7 的 soak 小节。其余组各自在所属阶段的出口生效，见 §0.5
@@ -7,6 +8,39 @@
 - **契约**: K1–K6 见 `docs/plans/20260817-frontend-ui-refactor/contracts/annotation-host-contracts.md`；降级状态 DEG-S1–DEG-S5 见 `docs/plans/20260817-frontend-ui-refactor/spec-frontend-design.md` §6.4
 
 > **引用规则**：用**符号名**与 **testid** 定位，不写代码行号。
+
+### ✅ 合入记录（本文是这条事实的唯一定义处）
+
+**009 已于 2026-09-05 合入 `master`，G1 达成，Phase 4A（013）解锁。** 别处提到「009 是否在主干上」
+一律链回这一节，不要重述数字。
+
+| 事实 | 值 | 复核命令 |
+|---|---|---|
+| PR | [#20](https://github.com/anzchy/reader3-pro/pull/20)，39 commits / 77 files / +23791 −364 | `gh pr view 20` |
+| 合并 commit | `b0b4a3a`（`Merge pull request #20 from anzchy/009-e2e-annotations`） | `git show --no-patch --format='%h %p %s' master` |
+| 分支领先量 | **0** —— 分支上的东西一件不落全在主干 | `git rev-list --count master..009-e2e-annotations` |
+| 合入前门禁 | 本地 tdd-guardian 三条 lane 在 `f227878` 全绿：unit **1043 passed**、e2e **73 passed + 17 skipped**（57.5s）、packaging **1 passed**；覆盖率门禁 PASS（lines 79.94% ≥ 70、branches 67.70% ≥ 52） | `.claude/tdd-guardian/state.json` |
+| 三个 lint | `lint_e2e_groups` / `lint_e2e_selectors` / `lint_testid_naming` 全部 rc=0；三分律 66 + 17 + 7 = 90 | `uv run python scripts/lint_e2e_groups.py` |
+| `suite_hash` | `e7e0f9626df5`，**合入前后一致**（合并没有改动覆盖面里的任何文件） | 取法见 `soak-log.md` 表头 |
+
+> **PR 页面上没有绿灯，这是设计如此，不是坏了。** 与 008 同规矩：`tests.yml` / `lint.yml`
+> 只在发版与 `workflow_dispatch` 时触发，都不设 required check；日常门禁在本地 tdd-guardian，
+> 上表「合入前门禁」就是这次合入的实际凭据。
+>
+> **G1 的三条判据逐条落实**（§8 的原文）：`baseline_1b` 在本地 e2e lane 绿并由
+> `soak_run.py`（不带 `--append`）演示出一次可记账的绿（`66 passed, 24 deselected`、
+> `verdict: green（可记账：是）`）；选择器 lint 零 class/结构选择器；其余各组以 skip 形态写完
+> **并通过 review**——review 那一句的实际议程是 2026-09-05 审计在验收组挑出的三条 High
+> （#53 / #54 / #56），已在合入前修毕并各自做了反事实对照，记录在
+> `.cc-suite/audits/audit-20260905-010655-findings.md` 的 Wave 4 一节。
+>
+> **合入不等于 G2。** `suite_hash` 仍是 pre-freeze，`soak-log.md` 零数据行。起跑 G2 的顺序被
+> §8 与欠账 #22 定死：**先修 #22，再冻结起跑**——R-6a 的两步刺激在「字号/间距慢一拍」修好后
+> 会转红，必须改 `baseline_1b` 里的文件，哈希还要再变一次。
+>
+> 分支 `009-e2e-annotations` 合入后**保留未删**（001–008 同样都还在远端）。
+
+---
 
 > **008 留给本分支的一个必做动作 —— ✅ 2026-08-31 已结清（`36a6ac2`）**：
 > `.claude/tdd-guardian/config.json` 里 `e2e` lane 的 `gateOn` 曾是**空的**——008 打开本地
