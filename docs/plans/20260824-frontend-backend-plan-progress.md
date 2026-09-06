@@ -40,6 +40,7 @@
 | **1** | `008-test-safety-net` | Phase 1a | 后端 | **✅** 2026-08-26 合入（PR #19） | [tasks/008](20260816-tech-stack-migration/tasks/008-test-safety-net.md) |
 | **1.5** | *(009 harness spike)* | — | — | **✅** 2026-08-26 完成（`36a6ac2` 落在 `master`，lint 收尾 `7ed87e1`） | 本文 §2 的 P-2 |
 | **2** | `009-e2e-annotations` | Phase 1b | 后端 | **✅ 已合入 `master`**（2026-09-05，PR #20，合并 commit `b0b4a3a`），**G1 达成 → Phase 4A 解锁**。`baseline_1b` **66 条**全绿，验收三组 **17 条** skip 形态就位，`tests/e2e` 全量 **90 条**（73 passed + 17 skipped，约 58s）。三条 lint rc=0；unit + contract **1043 条**绿；覆盖率 lines 79.94% / branches 67.70%。`src/` 净改动 3 文件 +69/−35，**已全部有测试钉住**（#60 由 X-2d 收口，见 tasks/009 合入记录）。**G2 未起跑**（`suite_hash` `e7e0f9626df5` 仍 pre-freeze，台账零行；顺序是先修 #22 再冻结） | [tasks/009](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
+| **2.5** | `016-settings-apply-order` | M1b 欠账兑付 | 后端 | **🚧** 2026-09-06：欠账 **#22** 已修（`applyThemeSettings` 收参数，不再回读 localStorage），并顺带修掉同一病根的第二个入口（越界值只被外层挡住：面板 17px / 正文 99px）。`baseline_1b` **67 条**、`tests/e2e` **91 条**、三条 lint rc=0；`suite_hash` `e7e0f9626df5` → **`8f39737ca0c6`**。**这是 G2 冻结前的最后一次覆盖面变更** | [tasks/009 欠账 #22](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
 | **3** | `011-backend-refactor` | Phase 2a+2b | 后端 | **⬛** 计划未写（故意，见[迁移计划 §9](20260816-tech-stack-migration/plan-tech-stack-migration.md)） | — |
 | **⟂** | `010-design-degradation-states` | Track D | **前端** | **⬜** WI-1 – WI-8 已定义 | [前端计划 §4](20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) |
 | **4** | `012-storage-format` | Phase 3 | 后端 | **⬛** 计划未写 | — |

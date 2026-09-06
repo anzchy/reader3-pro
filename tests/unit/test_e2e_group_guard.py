@@ -107,13 +107,15 @@ SUBPROCESS_TIMEOUT_S = 300
 #
 # 本文件是 `scripts/lint_e2e_groups.py` 的独立 oracle。把期望值写成
 # `g.EXPECTED_BASELINE_ITEMS` 的形式，断言就退化成 `x == x`：删掉三条 baseline 用例、
-# 把常量从 66 改成 63，守卫与它的守卫**同时**变绿，而门槛已经低了三条。
+# 把常量从 67 改成 64，守卫与它的守卫**同时**变绿，而门槛已经低了三条。
 # 这里的数字与守卫脚本各写一份，两份必须相等——这才是欠账 #2「实测 == 常量」的完整形态。
 #
 # 改这里的数字**必须**同时改 `scripts/lint_e2e_groups.py` 并在两处写明理由；
 # 只改一处会红，那正是它存在的意义。
 # --------------------------------------------------------------------------
-CANONICAL_BASELINE_ITEMS = 66
+# 66 → 67：2026-09-06 欠账 #22 兑付新增 R-6c（理由写在 `scripts/lint_e2e_groups.py`
+# 的「常量的变更史」里，本文件不复述——两处只需数字相等）。
+CANONICAL_BASELINE_ITEMS = 67
 CANONICAL_ACCEPTANCE_PER_DIR: Dict[str, int] = {
     "acceptance_4b1": 8,
     "acceptance_p3": 4,
@@ -122,7 +124,7 @@ CANONICAL_ACCEPTANCE_PER_DIR: Dict[str, int] = {
 }
 CANONICAL_ACCEPTANCE_ITEMS = 17
 CANONICAL_UNGROUPED_ITEMS = 7
-CANONICAL_E2E_ITEMS = 90
+CANONICAL_E2E_ITEMS = 91
 
 
 # --------------------------------------------------------------------------

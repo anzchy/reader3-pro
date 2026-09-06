@@ -1884,7 +1884,20 @@
             }));
         }
 
-        // Apply settings to CSS
+        // Apply settings to CSS.
+        //
+        // ⚠️ 承重的是**把值传下去**，不是这里的调用顺序（欠账 #22，2026-09-06 修）。
+        // 从前渲染器自己回读 localStorage：
+        //   applySettings() → Reader3Epub.applyThemeSettings() → ensureContentStyles()
+        //                   → buildContentCss() → getFontSettings() ← localStorage
+        // 于是同一份数据有两个读者，而边界校验只写在本文件的 loadSettings() 里。两个
+        // 后果：(1) 本函数跑在 saveSettings() 之前时，注进 iframe 的是上一档的值——
+        // 用户点第一下正文毫无反应；(2) 越界值只被外层挡住——面板显示 17、正文渲染 99。
+        // 现在把校验过的值显式交给渲染器，两个后果一并消失，调用顺序也不再有影响。
+        //
+        // 实测过：只调换 save/apply 的顺序能解决 (1)，解决不了 (2)；而传了值之后顺序
+        // 怎么摆 R-6a 都绿——所以这里**没有**再去调换顺序，那会是一处测不出来的改动。
+        // 由 baseline_1b 的 R-6a（点一次就得动）与 R-6c（面板与 iframe 必须同源）钉住。
         function applySettings() {
             document.documentElement.style.setProperty('--reader-font-size', fontSize + 'px');
             document.documentElement.style.setProperty('--reader-line-height', lineHeight.toString());
@@ -1901,7 +1914,9 @@
 
             // Notify renderer to apply theme updates
             if (window.Reader3Epub && window.Reader3Epub.applyThemeSettings) {
-                window.Reader3Epub.applyThemeSettings();
+                // 显式把**校验过的**值交给渲染器，别让它自己回读 localStorage：
+                // 边界校验只在本文件的 loadSettings() 里，见 R-6c。
+                window.Reader3Epub.applyThemeSettings({ fontSize, lineHeight });
             } else if (window.Pagination && window.Pagination.recalculate) {
                 setTimeout(() => {
                     window.Pagination.recalculate();

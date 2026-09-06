@@ -60,8 +60,16 @@
   let currentContents = null;
   const contentsCallbacks = [];
 
+  // 宿主页（reader.html）一旦通过 applyThemeSettings(settings) 说过话，就以它为准。
+  // 边界校验（MIN/MAX_FONT_SIZE、MIN/MAX_LINE_HEIGHT）只写在宿主页的 loadSettings()
+  // 里；渲染器再去回读一遍 localStorage 原始值，等于给同一份数据开了第二个不做校验的
+  // 读者，越界值会只被其中一个挡住——面板显示 17、正文渲染 99（欠账 #22 的第二个入口，
+  // 2026-09-06 实测）。localStorage 只作为**首屏**的来源保留，那时宿主页还没说话。
+  let hostFontSettings = null;
+
   function getFontSettings() {
     const defaults = { fontSize: 17, lineHeight: 1.9 };
+    if (hostFontSettings) return hostFontSettings;
     const saved = window.localStorage?.getItem("reader3-font-settings");
     if (!saved) return defaults;
     try {
@@ -377,7 +385,16 @@
         if (currentContents) cb(currentContents);
       }
     },
-    applyThemeSettings: () => {
+    applyThemeSettings: (settings) => {
+      // 参数可选：不给就沿用上一次宿主页给过的值（首屏之前是 localStorage）。
+      // 给了就必须是两个有限数，否则宁可不动——半份设置比旧的整份更糟。
+      if (settings) {
+        const fontSize = Number(settings.fontSize);
+        const lineHeight = Number(settings.lineHeight);
+        if (Number.isFinite(fontSize) && Number.isFinite(lineHeight)) {
+          hostFontSettings = { fontSize, lineHeight };
+        }
+      }
       if (currentContents) ensureContentStyles(currentContents);
     },
     displaySectionIndex,
