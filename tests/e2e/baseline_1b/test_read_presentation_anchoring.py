@@ -167,15 +167,25 @@ skip 形态，与欠账 #6 的修复同期解开。本模块只留**文本侧（
 同理 `R6A_ID` / `R6A_CREATED_AT` 也写死，失败消息里于是是人认得出的名字，而不是两串 uuid。
 
 -------------------------------------------------------------------------------
-**可失败性证据（§0 第四条纪律，定向破坏实录，2026-09-04，改动全部已还原）**
+**可失败性证据（§0 第四条纪律，定向破坏实录）**
 -------------------------------------------------------------------------------
-本条是特征化用例——被测行为上线数月，**红不可得**。S1 打在生产代码上（改完当场还原），
-S2 打在用例自己的期望值上。两次都实跑，下面是**逐字**转录的输出。
+本条是特征化用例——被测行为上线数月，**红不可得**。所以失败能力只能靠定向破坏作证。
+
+**S1 已于 2026-09-06 用 `page.route` 重做（审计发现 #51）。** 原先那一发是**直接改
+`ensureContentStyles` 的生产代码、跑完再还原**——那种证据的强度低于响应体改写：还原
+这一步没有任何东西替你核对，而「改完忘了还原」与「改完还原错了」在事后都不可见。重做
+的形态是拦 `**/static/js/epub-renderer.js`，`route.fetch()` 取原始响应体、在
+`const doc = contents.document;` 之后注入拆 `<mark>` 的一行、再 `route.fulfill()`
+发回去；注入前先断言锚点在响应体里**恰好命中一次**，锚点被改名时破坏会大声失败而不是
+静默变成一发空枪。全程 `src/` 一行未动（`git diff --quiet -- src/` rc=0）。
+**结论与 2026-09-04 那一发逐字相同**，下面的输出转录自重做的这一次。
+
+S2 打在用例自己的期望值上（那一类只证明「写错的断言会红」，强度本就低一档，据实标注）。
 
 | # | 破坏点 | 结果 | 它证明了什么 |
 |---|---|---|---|
 | S0 | `ensureContentStyles` 首行加 `doc.body.innerHTML = doc.body.innerHTML;`（简报字面建议的那一发） | **三条全绿——这一发打不动本条** | 见下方「S0 为什么是绿的」。它不是本条的可失败性证据，是一条关于 `<mark>` 的真实性质 |
-| S1 | `ensureContentStyles` 首行改成把 iframe 里所有 `<mark>` 就地拆掉（保留文字、删掉标记），即「`applyThemeSettings` 重建了内容却没重绘标注」 | **font-size / paragraph-spacing 红，theme 绿** | Law 的判据真的咬住「重排之后 `<mark>` 还在不在」；**同时证明 theme 这条参数今天没有刺激**——同一发子弹打不动它 |
+| S1 | **`page.route` 改写 `epub-renderer.js` 响应体**：在 `ensureContentStyles` 拿到 `doc` 之后注入一行，把 iframe 里所有 `<mark>` 就地拆掉（保留文字、删掉标记），即「`applyThemeSettings` 重建了内容却没重绘标注」 | **font-size / paragraph-spacing 红，theme 绿** | Law 的判据真的咬住「重排之后 `<mark>` 还在不在」；**同时证明 theme 这条参数今天没有刺激**——同一发子弹打不动它 |
 | S2 | `R6A_EXPECTED_MARK_TEXT` 由 `"Alpha prose"` 改成 `"Alpha pros"` | **三条全红** | 三个参数各自的断言都不空转，包括没有刺激的 theme 那条（它至少证明自己在读真的 DOM，而不是在比两个常量） |
 
 **S0 为什么是绿的（一条值得记下来的性质）**：`innerHTML` 的往返是**序列化再解析**，
@@ -184,25 +194,26 @@ S2 打在用例自己的期望值上。两次都实跑，下面是**逐字**转�
 的。真正会丢标注的重建是从原始内容重新渲染。S1 因此改成直接拆掉 `<mark>`，那才是
 「重建内容却没重绘标注」的可观测等价物。
 
-**S1 逐字输出**（`theme-four-states` 同一轮 passed）::
+**S1 逐字输出**（2026-09-06 重做，`theme-four-states` 同一轮 passed）::
 
     E           AssertionError: 施加「字号 −（减小一档）」之后，iframe 里的 `rd-anno-span` 由 1 个变成 0 个。
     E                 表现层变更把标注整个抹掉了——`applyThemeSettings` 重建了 iframe 内容却没有重绘标注？
     E                 参数：字号 ±（相对当前值，不依赖具体档位数）
     E           assert 0 == 1
     E            +  where 0 = count()
-    E            +    where count = <Locator frame=<Frame name= url='http://127.0.0.1:63484/read/smoke_data/0'> selector='[data-testid="rd-viewport"] iframe >> internal:control=enter-frame >> internal:testid=[data-testid="rd-anno-span"s]'>.count
+    E            +    where count = <Locator frame=<Frame name= url='http://127.0.0.1:60695/read/smoke_data/0'> selector='[data-testid="rd-viewport"] iframe >> internal:control=enter-frame >> internal:testid=[data-testid="rd-anno-span"s]'>.count
     E           AssertionError: 施加「段落间距 −（减小一档）」之后，iframe 里的 `rd-anno-span` 由 1 个变成 0 个。
     E                 表现层变更把标注整个抹掉了——`applyThemeSettings` 重建了 iframe 内容却没有重绘标注？
     E                 参数：段落间距 ±（相对当前值，不依赖具体档位数）
     E           assert 0 == 1
     E            +  where 0 = count()
-    E            +    where count = <Locator frame=<Frame name= url='http://127.0.0.1:63484/read/smoke_data/0'> selector='[data-testid="rd-viewport"] iframe >> internal:control=enter-frame >> internal:testid=[data-testid="rd-anno-span"s]'>.count
-    2 failed, 1 passed in 3.45s
+    E            +    where count = <Locator frame=<Frame name= url='http://127.0.0.1:60695/read/smoke_data/0'> selector='[data-testid="rd-viewport"] iframe >> internal:control=enter-frame >> internal:testid=[data-testid="rd-anno-span"s]'>.count
+    2 failed, 1 passed in 4.46s
 
 注意两条都红在**第一步**（`−`）而不是第二步：拆 `<mark>` 是在 `ensureContentStyles` 里做的，
 它每次点击都跑，与「实测订正三」那个慢一拍的缺陷无关——慢一拍的是**样式值**，不是这次调用
-本身发不发生。（那段输出录于 2026-09-04，缺陷修复之前；两步刺激是当时的构造。）
+本身发不发生。（重做的这一轮录于 2026-09-06，#22 修好之后，所以刺激已是一步；
+2026-09-04 那一轮是两步构造，结论相同。）
 
 **S2 逐字输出**::
 
