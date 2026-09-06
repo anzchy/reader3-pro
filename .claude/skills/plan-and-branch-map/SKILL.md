@@ -73,6 +73,7 @@ Do not invent a new number without updating that table.
 | M0 — Phase 0 contracts + hygiene | `007-hygiene-and-contracts` | migration | ✅ Merged (PR #18) |
 | M1 — tests + CI + API freeze | `008-test-safety-net` | migration | ✅ Merged (PR #19) |
 | M1b — Playwright E2E | `009-e2e-annotations` | migration | ✅ Merged (PR #20) |
+| M1b-债 — settings apply order | `016-settings-apply-order` | migration | ✅ Merged (PR #21) |
 | MD — design degradation states | `010-design-degradation-states` | **frontend** | WI-1 – WI-8 |
 | M2 — backend refactor | `011-backend-refactor` | migration | Allocated |
 | M3 — storage migration | `012-storage-format` | migration | Allocated |
@@ -86,6 +87,16 @@ means every exit gate in that branch's task file is met and the work is committe
 on `master` yet — downstream branches must still base off it, not off `master`. "🚧 In progress"
 means the branch exists and carries commits, but its exit gates are not all met — this state was
 missing until 2026-09-01, which is how 009 kept reading as "Tasks drafted" with six commits on it.
+M1b's two gates are both met: **G1** on 2026-09-05 (unlocks Phase 4A / 013) and **G2** on
+2026-09-06 — `suite_hash` is now **frozen** at `2747100dadf6` and the soak ledger is counting.
+Two consequences you need before touching anything: **Phase 3 / 012 is still blocked** (it needs
+≥10 runs *and* ≥5 working days; earliest unlock 2026-09-11), and **any byte changed under
+`tests/e2e/baseline_1b/**`, `tests/e2e/conftest.py`, `helpers.py`, `test_harness_smoke.py`, or the
+four `tests/fixtures/` files resets that count to zero** — docstrings included. Progress and the
+frozen value are defined only in
+[`tasks/soak-log.md`](docs/plans/20260816-tech-stack-migration/tasks/soak-log.md); do not restate
+them elsewhere.
+
 "Allocated" means the number is reserved but no branch exists yet. "Tasks drafted" means
 `docs/plans/20260816-tech-stack-migration/tasks/{branch}.md` exists. "WI-n – WI-m" means the
 work items live in `docs/plans/20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md` §4;

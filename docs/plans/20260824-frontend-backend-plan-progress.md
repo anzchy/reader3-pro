@@ -39,8 +39,8 @@
 | **0** | `007-hygiene-and-contracts` | Phase 0 | 后端 | **✅** 2026-08-24 合入（PR #18） | [tasks/007](20260816-tech-stack-migration/tasks/007-hygiene-and-contracts.md) |
 | **1** | `008-test-safety-net` | Phase 1a | 后端 | **✅** 2026-08-26 合入（PR #19） | [tasks/008](20260816-tech-stack-migration/tasks/008-test-safety-net.md) |
 | **1.5** | *(009 harness spike)* | — | — | **✅** 2026-08-26 完成（`36a6ac2` 落在 `master`，lint 收尾 `7ed87e1`） | 本文 §2 的 P-2 |
-| **2** | `009-e2e-annotations` | Phase 1b | 后端 | **✅ 已合入 `master`**（2026-09-05，PR #20，合并 commit `b0b4a3a`），**G1 达成 → Phase 4A 解锁**。`baseline_1b` **66 条**全绿，验收三组 **17 条** skip 形态就位，`tests/e2e` 全量 **90 条**（73 passed + 17 skipped，约 58s）。三条 lint rc=0；unit + contract **1043 条**绿；覆盖率 lines 79.94% / branches 67.70%。`src/` 净改动 3 文件 +69/−35，**已全部有测试钉住**（#60 由 X-2d 收口，见 tasks/009 合入记录）。**G2 未起跑**（`suite_hash` `e7e0f9626df5` 仍 pre-freeze，台账零行；顺序是先修 #22 再冻结） | [tasks/009](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
-| **2.5** | `016-settings-apply-order` | M1b 欠账兑付 | 后端 | **🚧** 2026-09-06：欠账 **#22** 已修（`applyThemeSettings` 收参数，不再回读 localStorage），并顺带修掉同一病根的第二个入口（越界值只被外层挡住：面板 17px / 正文 99px）。`baseline_1b` **67 条**、`tests/e2e` **91 条**、三条 lint rc=0；`suite_hash` `e7e0f9626df5` → **`8f39737ca0c6`**。**这是 G2 冻结前的最后一次覆盖面变更** | [tasks/009 欠账 #22](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
+| **2** | `009-e2e-annotations` | Phase 1b | 后端 | **✅ 已合入 `master`**（2026-09-05，PR #20，合并 commit `b0b4a3a`），**G1 达成 → Phase 4A 解锁**。`baseline_1b` **66 条**全绿，验收三组 **17 条** skip 形态就位，`tests/e2e` 全量 **90 条**（73 passed + 17 skipped，约 58s）。三条 lint rc=0；unit + contract **1043 条**绿；覆盖率 lines 79.94% / branches 67.70%。`src/` 净改动 3 文件 +69/−35，**已全部有测试钉住**（#60 由 X-2d 收口，见 tasks/009 合入记录）。**G2 已于 2026-09-06 达成**（连绿三次，`suite_hash` 冻结在 `2747100dadf6`，台账首行落账；「先修 #22 再冻结」的顺序照办） | [tasks/009](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
+| **2.5** | `016-settings-apply-order` | M1b 欠账兑付 | 后端 | **✅ 已合入 `master`**（2026-09-06，PR #21，合并 commit `770e5ca`）。欠账 **#22** 已修（`applyThemeSettings` 收参数，渲染器不再回读 localStorage），并修掉同一病根的第二个入口（越界值只被外层挡住：面板 17px / 正文 **99px**、行高 **891px**）；审计 **#51** 的可失败性证据改用 `page.route` 重做，`src/` 一行未动。`baseline_1b` **67 条**、`tests/e2e` **91 条**、三条 lint rc=0；`suite_hash` `e7e0f9626df5` → `8f39737ca0c6` → **`2747100dadf6`**。**这是 G2 冻结前的最后一次覆盖面变更，冻结值即此** | [tasks/009 欠账 #22](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
 | **3** | `011-backend-refactor` | Phase 2a+2b | 后端 | **⬛** 计划未写（故意，见[迁移计划 §9](20260816-tech-stack-migration/plan-tech-stack-migration.md)） | — |
 | **⟂** | `010-design-degradation-states` | Track D | **前端** | **⬜** WI-1 – WI-8 已定义 | [前端计划 §4](20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) |
 | **4** | `012-storage-format` | Phase 3 | 后端 | **⬛** 计划未写 | — |
@@ -52,16 +52,24 @@
 
 ### 现在该做什么
 
-> **009 的用例工作到此为止，G1 已达成。下一步是两件可以并行的事，都不是"再写用例"。**
+> **✅ 2026-09-06：G1、G2 两道门都过了，009 与 016 都在 `master` 上。下一步是 011。**
 >
-> **一、决定要不要现在起跑 G2。** 起跑动作是：连续 3 次 `baseline_1b` 全量绿、往台账写第一行、
-> `suite_hash` 由此**冻结**。冻结之后再动 `baseline_1b` / `conftest.py` / `helpers.py` / 那几个
-> fixture，计数按迁移计划 §7 从零重来。所以这不是一个技术动作，是一次背书——**Phase 3 要的
-> ≥10 次 / ≥5 个工作日从第一行的日期开始数，日历时间买不回来，起跑早比起跑晚划算，前提是你
-> 确实不打算再改这套用例了。**
+> **每天要做的一件事：往 soak 台账追一行。** `uv run python scripts/soak_run.py --append`，
+> 约 57 秒。Phase 3 要 ≥10 次 **且** ≥5 个工作日，今天 3 次、跨度 0。**次数好补，跨度补不回来**
+> ——最早解锁 **2026-09-11**。**别忘了跑**：忘一天不清零，但会把解锁日往后推一天。
 >
-> **⚠️ 上一句的括号原写「已知会碰它的只有欠账 #22 那条小分支（改的是 `src/`，不碰用例）」，这是错的，
-> 2026-09-04 当天订正。** #22 **一定会碰用例**，而且碰的正是 `baseline_1b` 里的文件：R-6a 为绕开
+> **冻结生效中，代价从今天起是实的。** `suite_hash` 冻结在 `2747100dadf6`。再动
+> `baseline_1b/**` / `tests/e2e/conftest.py` / `helpers.py` / `test_harness_smoke.py` /
+> 那四个 fixture 里的**任何一个字节**（连 docstring 都算，#51 那次就是现成例子），
+> 台账全部作废、从零重数。**011 / 013 随便改，那些不在覆盖面里**——这正是 P-3 采纳 C 方案
+> （soak 与 011 同期跑）能成立的原因。
+>
+> <details><summary>起跑之前的那场权衡（已兑现，留档）</summary>
+>
+> 起跑前这里写过一句「起跑早比起跑晚划算，前提是你确实不打算再改这套用例了」，括号里补的是
+> 「已知会碰它的只有欠账 #22 那条小分支（改的是 `src/`，不碰用例）」。
+>
+> **⚠️ 那个括号是错的，2026-09-04 当天订正。** #22 **一定会碰用例**，而且碰的正是 `baseline_1b` 里的文件：R-6a 为绕开
 > 这个「慢一拍」缺陷，把「一档」的刺激构造成了**两步**（`−` 再 `+`），两步之后 iframe 停在「差一档」
 > 的位置，`stimulus_moves=True` 因此成立。缺陷一修，两步就回到原值、`moved` 变 False、**那条守卫转红**
 > ——这是模块 docstring「实测订正三」与本文 2026-09-04 那条决策行早就写明的「正确的红」，我此前把它
@@ -71,9 +79,13 @@
 > **所以顺序是被这条事实定死的：先修 #22，再冻结起跑。** 反过来做，等于先花 ≥5 个工作日攒计数，
 > 再用一次两行的修复把它清零。
 >
-> **二、把 009 合入，然后按 §2 的顺序进 011**（soak 与 011 同期跑，这正是 P-3 采纳 C 方案的理由）。
-> 合入之后先插欠账 #22 的小分支（下面那条 2026-09-04 裁定）。**G1 同时解锁了 013（Phase 4A）**——
-> 它要的是 G1 不是 soak，可与 011 / 012 交错。
+> **这条顺序 2026-09-06 全部照办**：009 合入（PR #20）→ 016 修 #22 与 #51（PR #21）→ 连绿三次
+> → 首行落账、冻结。#22 的真修法与「两行修复」的预估不同（渲染器回读 localStorage，不是
+> `applySettings` 的调用顺序），但顺序的结论不变，因为它照样要改 `baseline_1b` 里的文件。
+>
+> </details>
+>
+> **G1 同时解锁了 013（Phase 4A）**——它要的是 G1 不是 soak，可与 011 / 012 交错。
 >
 > **Wave 7 已于 2026-09-04 收口，八波编排结束**：验收组 17 条 skip 用例（4b1 8 / p3 4 / 4a4 4 /
 > 2a 1）、`lint_e2e_groups.py` 分组守卫、`soak_run.py`、共用 DEG 断言体。常量全部由预估改实测并
@@ -110,8 +122,9 @@
 > **全部写路径** W-1…W-10、核心路径 K-1a/K-2/K-6a、**全部读路径** R-1…R-6a、书架往返与集合
 > X-2a/b/c，以及 Wave 3.5 的 helper 上收（`reader_frame` / `pathname_is` / `scan_marks` /
 > `mark_id_union`，兑付欠账 #13）。R-6b 的三条以 skip 形态落在 `acceptance_4b1`，等欠账 #6。
-> `suite_hash` 现为 `b509a1235914`，处于 **pre-freeze**——**G2 的 soak 计数尚未开始，首行
-> 落账之前台账不构成对 G2 的任何宣称。**
+> `suite_hash` 当时为 `b509a1235914`，处于 pre-freeze。（**这是 Wave 4 当天的快照，不是现值**：
+> 此后经 Wave 5–7 与两次冻结前修复，已于 2026-09-06 冻结在 `2747100dadf6`。
+> 现值与变更史的唯一定义处是 [`soak-log.md`](20260816-tech-stack-migration/tasks/soak-log.md) 表头。）
 >
 > **Wave 4 实测订正了欠账 #15，也记下三处生产行为。** 字号 / 间距 ± 按钮的可访问名是按钮
 > **文本** `−`（U+2212）与 `+`，不是中文 `title`（accname 里 contents 先于 title），且四个按钮
