@@ -67,7 +67,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures"
@@ -84,6 +84,41 @@ DEFAULT_SIZES = (1, 5, 10, 20)
 #: `search_service._normalize_with_map` 的重复计算只有在「同一批书被反复搜」时
 #: 才现形。搜一次的计数是「必要开销」，搜三次减搜一次才是「浪费」。
 LIBRARY_SEARCH_ROUNDS = 3
+
+#: TestClient 的 base_url。**不是可有可无的默认值。**
+#:
+#: `server.py` 自己那道 Host 白名单（`DEFAULT_ALLOWED_HOSTS`，见那里的 docstring）
+#: 只放行 127.0.0.1 / localhost / [::1]，而 `TestClient` 默认发的 Host 是
+#: `testserver`。裸 `TestClient(app)` 于是每一个请求都拿 400 "Invalid host header"
+#: ——**而且是安静地拿**：`client.get()` 不抛，指标照常算出来，四号五号计数器全 0，
+#: 三号 RSS 量的是「400 响应」的内存。011 开工时五个 worker 全在这个状态。
+#:
+#: 修法刻意不是 `READER3_ALLOWED_HOSTS=testserver`：那会让基准量到一份用户不会跑的
+#: 配置。127.0.0.1 就是用户真正敲的那个 host，走的是默认白名单本身。
+BENCH_BASE_URL = "http://127.0.0.1"
+
+
+def bench_client(app: Any) -> Any:
+    """本脚本里构造 TestClient 的**唯一**入口。见 `BENCH_BASE_URL`。"""
+    from fastapi.testclient import TestClient
+
+    return TestClient(app, base_url=BENCH_BASE_URL)
+
+
+def expect_ok(response: Any, what: str) -> Any:
+    """非 2xx 当场炸，而不是让它变成一个好看的 0。
+
+    没有这道检查，仪器坏掉的表现形式是「所有数都很漂亮地等于 0」——那读起来像
+    「这条路径没开销」，不像「这条路径没跑」。四号指标的验收之所以写「计数不为零」，
+    就是被这件事咬过；这里把同一条要求推广到其余每一个请求，免得下一个坏法又只在
+    某一项上露头。
+    """
+    if not (200 <= response.status_code < 300):
+        raise RuntimeError(
+            f"{what} -> HTTP {response.status_code}，基准量到的不是被测路径：\n"
+            f"{response.text[:400]}"
+        )
+    return response
 
 #: 父进程 `mkdtemp` 的前缀，以及它在自己造的目录里落下的所有权标记。
 #: 两个一起构成 `resolve_books_dir` 的白名单判据 —— 见那个函数的 docstring。
@@ -261,13 +296,15 @@ def worker_cold_start(args: argparse.Namespace) -> None:
     from reader3_app.web import server
 
     t1 = time.perf_counter()
-    from fastapi.testclient import TestClient
+    # 这一处 import 是**被测量的对象**（`import_testclient_ms`），不能挪进
+    # `bench_client()` —— 那样它就落在计时窗口外，冷启动会凭空少掉一块。
+    from fastapi.testclient import TestClient  # noqa: F401 - 计时用，见上
 
     t2 = time.perf_counter()
-    client = TestClient(server.app)
+    client = bench_client(server.app)
     with client:  # 上下文管理器才会跑 startup 事件（book_uuid_resolver.scan()）
         t3 = time.perf_counter()
-        response = client.get("/")
+        response = expect_ok(client.get("/"), "cold_start 首页")
         t4 = time.perf_counter()
 
     emit(
@@ -297,14 +334,12 @@ def worker_ttfb(args: argparse.Namespace) -> None:
     worker_syspath()
     os.environ["READER3_BOOKS_DIR"] = args.books_dir
 
-    from fastapi.testclient import TestClient
-
     from reader3_app.web import server
 
-    client = TestClient(server.app)
+    client = bench_client(server.app)
     with client:
         t0 = time.perf_counter()
-        response = client.get("/")
+        response = expect_ok(client.get("/"), "ttfb 首页")
         t1 = time.perf_counter()
         body_len = len(response.content)
 
@@ -332,12 +367,10 @@ def worker_query(args: argparse.Namespace) -> None:
     worker_syspath()
     os.environ["READER3_BOOKS_DIR"] = args.books_dir
 
-    from fastapi.testclient import TestClient
-
     from reader3_app.web import server
 
     out: Dict[str, Any] = {}
-    client = TestClient(server.app)
+    client = bench_client(server.app)
     with client:
 
         def timed(path: str, params: Dict[str, Any]) -> float:
@@ -386,18 +419,26 @@ def worker_rss(args: argparse.Namespace) -> None:
     os.environ["READER3_BOOKS_DIR"] = args.books_dir
 
     baseline = rss_bytes()
-    from fastapi.testclient import TestClient
+    # 同样是被测量的对象：`after_import_bytes` 要含 TestClient 的常驻内存。靠
+    # `bench_client()` 里那次惰性 import 的话，这块内存会记到「首页」头上。
+    from fastapi.testclient import TestClient  # noqa: F401 - 计量用，见上
 
     from reader3_app.web import server
 
     after_import = rss_bytes()
-    client = TestClient(server.app)
+    client = bench_client(server.app)
     with client:
-        client.get("/")
+        expect_ok(client.get("/"), "rss 首页")
         after_library_page = rss_bytes()
-        client.get("/api/search/library", params={"q": "tide", "mode": "keyword"})
+        expect_ok(
+            client.get("/api/search/library", params={"q": "tide", "mode": "keyword"}),
+            "rss 全库搜索",
+        )
         after_library_search = rss_bytes()
-        client.get("/api/search/huge_data", params={"q": "HUGENEEDLE", "mode": "keyword"})
+        expect_ok(
+            client.get("/api/search/huge_data", params={"q": "HUGENEEDLE", "mode": "keyword"}),
+            "rss 大部头搜索",
+        )
         after_huge_search = rss_bytes()
 
     emit(
@@ -416,19 +457,79 @@ def worker_rss(args: argparse.Namespace) -> None:
 # --------------------------------------------------------------------------- #
 
 
-def _install_unpickle_counters() -> Dict[str, List[int]]:
-    """给三处 loader 各自的 `_Reader3Unpickler` 装计数，外加 `pickle.load` 兜底。
+#: `unpickle_total` 里**不参与**「各处 loader 归属合计」的键。
+#:
+#: `pickle_load_fallback` 数的是绕过 allow-list 的裸 `pickle.load`，和 loader 无关；
+#: `safe_pickle_total` 是同一批反序列化的另一种数法（见下），加进合计就是把每次
+#: unpickle 数两遍。两个都留在明细里，因为它们各自回答一个别的问题。
+UNATTRIBUTED_COUNT_KEYS = frozenset({"pickle_load_fallback", "safe_pickle_total"})
+
+
+def _install_unpickle_counters() -> Tuple[Dict[str, List[int]], Dict[str, str]]:
+    """给每处 loader 各自的 `load_book_file` 模块级绑定装计数，外加两个兜底。
 
     **数的是真正的 unpickle 次数，不是 `load_book_cached()` 的调用次数。** 后者含
     缓存命中，而 A5 要合并三处 loader 想省的是前者。包装在这里做，不改 `src/`：
     为了好测去改被测代码，测到的就不是生产行为了。
+
+    ## 探针为什么换了地方
+
+    原来插的是 `mod._Reader3Unpickler`，每处 loader 一个同名的私有 unpickler 类。
+    那三个符号在收敛到 `safe_pickle.py` 时没了（今天只剩一个公开的
+    `Reader3Unpickler`），于是这个函数在 011 开工时是 `AttributeError` 直接跑不起来
+    ——探针挂在一个不存在的符号上，比数错更糟：整项指标不产出。
+
+    WI-0 收敛之后、011 之前，每处 loader 各自 `from .safe_pickle import load_book_file`，也就是各有一个
+    **自己的模块级绑定**。包每个模块的那一份，per-loader 归属就原样保住了，而且用的
+    正是 WI-0 那道守卫盯着的同一条接缝。
+
+    ## 011 之后探针又挪了一次（WI-5）
+
+    WI-1/WI-2/WI-3 把两处 `load_book_cached` 并进了 `book_store.py`：真正调
+    `load_book_file` 的现在只有它一个，`web.server` 与 `search_service` 侧只剩转发，
+    那两份模块级绑定也就随之删掉了。于是这里做了两件事：
+
+    1. **`book_store` 进 `mods`** —— 不加它，读盘的那一处就没人数，per-loader 归属会
+       整体掉成 0，而盘一次没少读。
+    2. **模块没有 `load_book_file` 属性时报 None，不抛 `AttributeError`** —— 沿用下面
+       `vector_search` 那一支的同一条口径：「没测到」和「测到了 0 次」是两件事。探针
+       挂在一个不存在的符号上正是 011 开工时整项指标不产出的那个坏法，这里不许重演。
+
+    所以 after-run 里 `web.server` / `search_service` 不出现在 `unpickle` 里、而是列进
+    `unpickle_unmeasured`，**不是**「少读了几次盘」，是绑定换了地方。
+
+    ## 为什么还多数一份 `safe_pickle_total`
+
+    per-loader 归属是「哪个模块的绑定被调用了」，这个口径会被 WI-3 自己改掉：合并
+    之后 `server` 侧变成薄封装、真正读盘的是 `book_store`，`web.server` 那一格会
+    掉到 0，而这**不**说明少读了一次盘。`safe_pickle_total` 包的是
+    `safe_pickle.safe_load`，不管谁调都算一次，是跨越这次重构仍然可比的那个数——
+    也就是「合并到底省没省反序列化」的答案。
+
+    两个数一起看还能抓到第三件事：`safe_pickle_total` 大于三处之和，意味着出现了
+    第四个不经这三个绑定的读盘点。
     """
     import pickle
 
+    import reader3_app.safe_pickle as safe_pickle
     import reader3_app.search_service as search_service
     from reader3_app.web import server
 
-    mods: Dict[str, Any] = {"web.server": server, "search_service": search_service}
+    mods: Dict[str, Any] = {
+        "web.server": server,
+        "search_service": search_service,
+    }
+    try:
+        import reader3_app.book_store as book_store
+    except ImportError:
+        # 011 §4 之前 `book_store` 不存在。这里**必须**容忍它缺席：这份脚本要能在合并
+        # 前后各跑一次，两次的数才可比；如果 import 写死，它就只能在合并之后跑，而
+        # 「合并前是多少」正是它存在的理由。缺席按 vector_search 同一条口径记
+        # `unmeasured`，不是记 0。
+        mods["book_store"] = None
+    else:
+        # 011 §4 之后它是唯一真的 unpickle 的地方，所以排第一。
+        mods = {"book_store": book_store, **mods}
     try:
         import reader3_app.vector_search as vector_search
     except ImportError:
@@ -439,19 +540,43 @@ def _install_unpickle_counters() -> Dict[str, List[int]]:
         mods["vector_search"] = vector_search
 
     counts: Dict[str, List[int]] = {}
+    #: 名字 -> 为什么没测到。空 dict 表示每一处都装上了计数。
+    unmeasured: Dict[str, str] = {}
     for name, mod in mods.items():
         if mod is None:
+            unmeasured[name] = "模块导入失败，可选依赖未装"
+            continue
+        base_loader = getattr(mod, "load_book_file", None)
+        if base_loader is None:
+            # 模块在，但没有那个模块级绑定。同上：报 None（这里就是「不建计数器 +
+            # 记一条为什么」），不是记 0，更不是 AttributeError 把整项指标干掉。
+            unmeasured[name] = "模块没有 load_book_file 绑定，读盘已转给别处"
             continue
         box = [0]
         counts[name] = box
-        base = mod._Reader3Unpickler
 
-        class Counting(base):  # type: ignore[misc, valid-type]
-            def load(self, _box: List[int] = box, _base: Any = base) -> Any:
-                _box[0] += 1
-                return _base.load(self)
+        def counting_loader(
+            *a: Any, _box: List[int] = box, _base: Any = base_loader, **kw: Any
+        ) -> Any:
+            _box[0] += 1
+            return _base(*a, **kw)
 
-        mod._Reader3Unpickler = Counting
+        mod.load_book_file = counting_loader
+
+    # `safe_load` 而不是 `load_book_file`：上面各处已经把各自模块的 `load_book_file`
+    # 换成了包装，而那些包装转手调的是**捕获下来的原函数**，不是 `safe_pickle` 上
+    # 的属性。所以包 `safe_pickle.load_book_file` 只会数到直接经模块属性走的调用，
+    # 数不到那几处——正好把要交叉验证的对象漏掉。`safe_load` 在更下面一层，各条路
+    # 最后都汇到它。
+    total_box = [0]
+    counts["safe_pickle_total"] = total_box
+    original_safe_load = safe_pickle.safe_load
+
+    def counting_safe_load(*a: Any, **kw: Any) -> Any:
+        total_box[0] += 1
+        return original_safe_load(*a, **kw)
+
+    safe_pickle.safe_load = counting_safe_load  # type: ignore[assignment]
 
     fallback = [0]
     counts["pickle_load_fallback"] = fallback
@@ -462,7 +587,7 @@ def _install_unpickle_counters() -> Dict[str, List[int]]:
         return original_load(*a, **kw)
 
     pickle.load = counting_load  # type: ignore[assignment]
-    return counts
+    return counts, unmeasured
 
 
 def _install_normalize_counter() -> Dict[str, int]:
@@ -498,10 +623,8 @@ def worker_counters(args: argparse.Namespace) -> None:
     worker_syspath()
     os.environ["READER3_BOOKS_DIR"] = args.books_dir
 
-    counts = _install_unpickle_counters()
+    counts, unmeasured = _install_unpickle_counters()
     norm = _install_normalize_counter()
-
-    from fastapi.testclient import TestClient
 
     from reader3_app.web import server
 
@@ -524,19 +647,25 @@ def worker_counters(args: argparse.Namespace) -> None:
     # load 的那一本」，排过序就不一定是同一本了。
     first_book = [p for p in os.listdir(args.books_dir) if p.endswith("_data")][0]
 
-    client = TestClient(server.app)
+    client = bench_client(server.app)
     with client:
         snapshot("00_startup")
-        client.get("/")
+        expect_ok(client.get("/"), "counters 首页")
         snapshot("01_library_page")
-        client.get(f"/read/{first_book}/0")
+        expect_ok(client.get(f"/read/{first_book}/0"), "counters 阅读页")
         snapshot("02_reader_page")
-        client.get(f"/api/search/{first_book}", params={"q": "tide", "mode": "keyword"})
+        expect_ok(
+            client.get(f"/api/search/{first_book}", params={"q": "tide", "mode": "keyword"}),
+            "counters 书内搜索",
+        )
         snapshot("03_in_book_search")
-        client.get("/")
+        expect_ok(client.get("/"), "counters 首页（第二次）")
         snapshot("04_library_page_again")
         for i in range(LIBRARY_SEARCH_ROUNDS):
-            client.get("/api/search/library", params={"q": "tide", "mode": "keyword"})
+            expect_ok(
+                client.get("/api/search/library", params={"q": "tide", "mode": "keyword"}),
+                f"counters 全库搜索 #{i + 1}",
+            )
             snapshot(f"05_library_search_{i + 1}")
 
     total = steps[-1]
@@ -545,11 +674,15 @@ def worker_counters(args: argparse.Namespace) -> None:
             "steps": steps,
             "unpickle_total": total["unpickle"],
             "unpickle_grand_total": sum(
-                v for k, v in total["unpickle"].items() if k != "pickle_load_fallback"
+                v for k, v in total["unpickle"].items()
+                if k not in UNATTRIBUTED_COUNT_KEYS
             ),
             "normalize_calls_total": total["normalize_calls"],
             "normalize_chars_total": total["normalize_chars"],
             "vector_search_instrumented": "vector_search" in counts,
+            # 「没测到」的那几处按名字列出来，别让读的人把「不在 unpickle 里」
+            # 误读成「测到了 0 次」。
+            "unpickle_unmeasured": unmeasured,
             "rss_bytes": rss_bytes(),
         }
     )
@@ -812,6 +945,7 @@ def bench_counters(repeat: int, size: int) -> Dict[str, Any]:
         "normalize_calls": series([r["normalize_calls_total"] for r in runs], "count"),
         "normalize_chars": series([r["normalize_chars_total"] for r in runs], "count"),
         "vector_search_instrumented": runs[0]["vector_search_instrumented"],
+        "unpickle_unmeasured": runs[0]["unpickle_unmeasured"],
         "steps": runs[0]["steps"],
         "_library_size": size,
         "_library_search_rounds": LIBRARY_SEARCH_ROUNDS,
@@ -999,7 +1133,11 @@ def render(report: Dict[str, Any]) -> str:
         lines.append(f"[4] 反序列化次数（一段典型序列，{c['_library_size']} 本书）")
         for name, s in sorted(c["unpickle"].items()):
             row(name, s, "count")
-        row("合计（三处 loader）", c["unpickle_grand_total"], "count")
+        for name, why in sorted(c.get("unpickle_unmeasured", {}).items()):
+            lines.append(f"  {name:<28} 未测到（{why}）")
+        # 合计只加各处 loader 的归属计数。`safe_pickle_total` 与
+        # `pickle_load_fallback` 已各自单列，见 UNATTRIBUTED_COUNT_KEYS。
+        row("合计（各处 loader 归属）", c["unpickle_grand_total"], "count")
         lines.append("")
         lines.append("[5] 归一化次数 _normalize_with_map")
         row("调用次数", c["normalize_calls"], "count")
