@@ -118,6 +118,7 @@ markers = [
     "acceptance_p3: activates at the Phase 3 exit; does NOT count toward the 1b exit bar",
     "acceptance_4a4: activates at 4A.4; does NOT count toward the 1b exit bar",
     "acceptance_2a: activates in Phase 2a; does NOT count toward the 1b exit bar",
+    "real_loopback_socket: this test really opens a loopback TCP connection; exempt from the lane-wide egress backstop",
 ]
 
 [tool.coverage.run]

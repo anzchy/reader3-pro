@@ -101,6 +101,10 @@ def test_the_stub_listens_on_the_loopback_interface_only(gated_stub: OllamaStub)
     )
 
 
+# 真的对 tests/fixtures/ai_stub.py 起的那个回环 HTTP stub 发请求（requests）。
+# ai_stub.py 在 8 条冻结 suite_hash 路径里，改不了；豁免标记是唯一的杠杆。
+# 名单锁在 tests/unit/test_egress_backstop_unit.py 的 EXPECTED_EXEMPTIONS。
+@pytest.mark.real_loopback_socket
 def test_gate_timeout_ends_the_body_cleanly_without_the_last_delta(gated_stub: OllamaStub) -> None:
     stub = gated_stub
     assert stub.bound_host == LOOPBACK, f"桩必须只在回环地址上监听：{stub.bound_host}"
@@ -141,6 +145,10 @@ def test_gate_timeout_ends_the_body_cleanly_without_the_last_delta(gated_stub: O
     assert stub.request_count == 1, f"本条只发了一次请求，桩记到 {stub.request_count} 次"
 
 
+# 真的对 tests/fixtures/ai_stub.py 起的那个回环 HTTP stub 发请求（requests）。
+# ai_stub.py 在 8 条冻结 suite_hash 路径里，改不了；豁免标记是唯一的杠杆。
+# 名单锁在 tests/unit/test_egress_backstop_unit.py 的 EXPECTED_EXEMPTIONS。
+@pytest.mark.real_loopback_socket
 def test_gate_released_before_timeout_sends_the_last_delta_and_done(gated_stub: OllamaStub) -> None:
     """对照支：gate 被 `set()` 放行时四块齐全且以 done 行收尾。
 
@@ -168,6 +176,10 @@ def test_gate_released_before_timeout_sends_the_last_delta_and_done(gated_stub: 
     assert stub.gate_timed_out is False
 
 
+# 真的对 tests/fixtures/ai_stub.py 起的那个回环 HTTP stub 发请求（requests）。
+# ai_stub.py 在 8 条冻结 suite_hash 路径里，改不了；豁免标记是唯一的杠杆。
+# 名单锁在 tests/unit/test_egress_backstop_unit.py 的 EXPECTED_EXEMPTIONS。
+@pytest.mark.real_loopback_socket
 def test_paths_other_than_api_chat_are_rejected_with_404(gated_stub: OllamaStub) -> None:
     """桩只认 `POST /api/chat`。任何别的路径 404：这是在钉「零真实出网」的另一面——
     被测服务若打了桩以外的端点（例如 `/api/version` 探活）也不会被桩静默成功。"""

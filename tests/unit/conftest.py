@@ -1,4 +1,39 @@
-"""Unit-lane fixtures for the EPUB reprocessing tests.
+"""Unit-lane fixtures.
+
+The EPUB-reprocessing fixtures below came first and still make up most of this
+file, but the lane has long since outgrown them: it now also holds the server
+patch-seam locks, the AI-stub contract tests and the lane-wide egress backstop.
+Read the fixture docstrings, not this header, for what each one covers.
+
+Three autouse fences run around **every** test in this lane. They are
+deliberately separate, because each one fails in a way the others cannot see:
+
+1. ``_never_touch_the_real_books_dir`` — detects damage to the developer's
+   library after the fact (recursive tree comparison).
+2. ``_process_epub_refuses_the_real_library`` — blocks that same damage at the
+   call site, before it happens.
+3. ``_no_real_egress`` — blocks (and records) any real TCP ``connect``.
+   The gate body is shared, not copied: it lives in ``tests/unit/egress_guard.py``
+   so that ``tests/contract/conftest.py`` and the synthetic tree
+   ``tests/unit/test_egress_backstop_subprocess.py`` drives in a child
+   interpreter all install *the same* gate. A copy would make those tests
+   evidence about the copy.
+
+What the egress fence does **not** reach (documented holes, not oversights;
+``tests/unit/test_egress_backstop_unit.py`` pins ``connect_ex`` as a red/green
+fact so that widening the gate has to be a deliberate edit):
+
+* egress at import / collection time — the fence is a function-scoped fixture
+  and is not installed yet;
+* egress inside the setup of a higher-scoped (session/module) fixture — same
+  reason;
+* child interpreters started with ``subprocess`` — the patch is per-process;
+* ``socket.socket.connect_ex``, UDP ``sendto`` and ``socket.getaddrinfo`` —
+  separate methods that never route through ``connect``.
+
+A test that genuinely needs a real loopback socket carries
+``@pytest.mark.real_loopback_socket``. That exemption list is itself locked by
+``EXPECTED_EXEMPTIONS`` in ``tests/unit/test_egress_backstop_unit.py``.
 
 Assertion levels used across this lane (defined in
 `.claude/tdd-guardian/plan-20260816T122646Z.md`; there is no policy-core file
@@ -14,10 +49,11 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Callable, Dict, Tuple
+from typing import Callable, Dict, List, Tuple
 
 import pytest
 
+import egress_guard
 from bookdir import make_seeded_book_dir
 from epub_builder import build_imageless, build_v1, build_v2, snapshot_tree
 
@@ -117,6 +153,30 @@ def _process_epub_refuses_the_real_library(repo_root: Path):
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(reader3, "process_epub", guarded)
         yield
+
+
+@pytest.fixture
+def egress_violations(request: pytest.FixtureRequest) -> List[Tuple[str, str, str]]:
+    """This test's ledger of attempted real TCP connections."""
+    return egress_guard.egress_violations(request)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_egress(request: pytest.FixtureRequest, egress_violations):
+    """The third autouse fence: no test in this lane opens a real TCP connection.
+
+    Registration is duplicated in ``tests/contract/conftest.py`` because the one
+    place that would cover both directories is ``tests/conftest.py``, a frozen
+    ``suite_hash`` path. The *body* is not duplicated — see ``egress_guard``.
+
+    ``yield from`` is load-bearing. ``next(gen); yield`` would never resume the
+    generator, so the teardown assertion inside the gate would never be
+    evaluated, and every swallowed egress would pass silently. Every case in
+    ``test_egress_backstop_unit.py`` that reads the ledger clears it in the test
+    body, so those cases cannot tell the two spellings apart; the child-process
+    case ``test_the_lane_conftest_itself_reddens_at_teardown`` is what can.
+    """
+    yield from egress_guard.no_real_egress(request, egress_violations)
 
 
 @pytest.fixture

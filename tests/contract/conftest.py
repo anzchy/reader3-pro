@@ -37,8 +37,14 @@ Three things must be replaced, and each one has a reason it cannot be skipped:
    ``tests/unit/test_direct_urlopen_call_sites.py`` pins the exact set of direct
    ``urlopen`` call sites so another one cannot appear unnoticed. Moving these
    behind ``ai/providers/_http.post_json`` is deferred work that no work item
-   owns yet. Until it lands, read this fixture as "the AI routes return a
-   sentinel", not as "the process cannot reach the network".
+   owns yet.
+
+   This fixture on its own still only means "the AI routes return a sentinel".
+   What now also holds the lane offline is a separate, unconditional fence:
+   ``_no_real_egress`` below patches ``socket.socket.connect`` for every test in
+   this lane, so a stub that silently stops matching production no longer buys a
+   real HTTP request — it buys a failing test. Read its docstring for the four
+   holes that fence does not cover.
 
 The provider stub returns ``FAKE_ANSWER``, a string that appears nowhere else in
 the codebase. Tests assert that *that exact string* comes back in the right
@@ -51,12 +57,24 @@ from __future__ import annotations
 
 import json
 import pickle
+import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterator, List, Tuple
 
 import pytest
 from fastapi.testclient import TestClient
+
+# ``tests/unit/`` is on ``sys.path`` only when ``tests/unit`` is itself being
+# collected. The lane command names both directories, so nothing here would ever
+# notice -- but ``pytest tests/contract`` alone is a documented developer
+# invocation, and without this line it dies at collection with
+# ``ModuleNotFoundError: egress_guard``, taking the whole directory with it.
+# ``tests/unit/test_egress_backstop_subprocess.py::test_the_contract_directory_still_collects_on_its_own``
+# is the receipt for this one line.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "unit"))
+
+import egress_guard  # noqa: E402  - must follow the sys.path line above
 
 from reader3_app import search_service
 from reader3_app.ai.books import BookUuidResolver
@@ -263,3 +281,35 @@ def world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[World]:
 @pytest.fixture
 def client(world: World) -> TestClient:
     return world.client
+
+
+# --------------------------------------------------------------------------
+# The lane-wide egress backstop. Body shared with tests/unit; see egress_guard.
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture
+def egress_violations(request: pytest.FixtureRequest) -> List[Tuple[str, str, str]]:
+    """This test's ledger of attempted real TCP connections."""
+    return egress_guard.egress_violations(request)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_egress(request: pytest.FixtureRequest, egress_violations):
+    """No test in this lane opens a real TCP connection.
+
+    Registered a second time here, rather than once for both directories,
+    because the only shared parent is ``tests/conftest.py`` -- a frozen
+    ``suite_hash`` path. The gate *body* is not duplicated: it lives in
+    ``tests/unit/egress_guard.py``.
+
+    ``yield from`` is load-bearing: it is what resumes the generator so the
+    gate's teardown assertion actually runs. Egress from a ``run_in_threadpool``
+    worker is swallowed by ``server.py``'s own ``except Exception`` fallback, so
+    that recorded ledger is the only surviving evidence.
+
+    Holes (same four as the unit lane): import/collection time, higher-scoped
+    fixture setup, child interpreters, and ``connect_ex`` / UDP ``sendto`` /
+    ``getaddrinfo``.
+    """
+    yield from egress_guard.no_real_egress(request, egress_violations)
