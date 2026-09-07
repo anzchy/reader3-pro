@@ -60,31 +60,45 @@
   "criticalPaths": [
     {
       "glob": "src/reader3_app/reader3.py",
-      "branch": 80
+      "thresholds": {
+        "branches": 80
+      }
     },
     {
       "glob": "src/reader3_app/notes_service.py",
-      "branch": 83
+      "thresholds": {
+        "branches": 83
+      }
     },
     {
       "glob": "src/reader3_app/collections_service.py",
-      "branch": 72
+      "thresholds": {
+        "branches": 72
+      }
     },
     {
       "glob": "src/reader3_app/ai/books.py",
-      "branch": 72
+      "thresholds": {
+        "branches": 72
+      }
     },
     {
       "glob": "src/reader3_app/ai/conversations.py",
-      "branch": 55
+      "thresholds": {
+        "branches": 55
+      }
     },
     {
       "glob": "src/reader3_app/search_service.py",
-      "branch": 56
+      "thresholds": {
+        "branches": 56
+      }
     },
     {
       "glob": "src/reader3_app/web/server.py",
-      "branch": 58
+      "thresholds": {
+        "branches": 58
+      }
     }
   ]
 }
