@@ -9,8 +9,10 @@ The bounds are read from the live ``cache_parameters()`` of the production
 functions, never copied into this file. Raising ``maxsize`` to 20 in a future
 refactor would silently invalidate the benchmark; here it turns the lane red.
 
-``web.server.load_book_cached`` is only *inspected*, never called: it closes
-over the module-level ``BOOKS_DIR``, which is the user's real library.
+``web.server.load_book_cached`` is only *inspected*, never called. After 011 §4
+it no longer closes over ``BOOKS_DIR`` -- it reads the module-level name on
+every call (``server.py:433``) -- but the reason not to call it is unchanged and
+is if anything more direct: the value it would read is the user's real library.
 """
 
 from __future__ import annotations

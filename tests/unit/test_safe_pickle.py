@@ -284,14 +284,20 @@ def test_all_four_dataclasses_are_on_the_allow_list():
 
 
 # --------------------------------------------------------------------------
-# P4 — one unpickler, three call sites
+# P4 — one unpickler, and every module that reaches it
 # --------------------------------------------------------------------------
 
 
+#: 011 §4（WI-6）：这张表从三行缩到两行，是因为**读路径合并了**，不是因为放弃了覆盖。
+#: `search_service.py` 与 `web/server.py` 曾各自 `from .safe_pickle import
+#: load_book_file` 反序列化一次；WI-2/WI-3 之后两条都改走 `book_store.py`（:54 import，
+#: :76 唯一调用点），它们不再 import safe_pickle，继续列在这里只会断言一件假事。
+#: 换进来的 `book_store.py` 是**今天进程里唯一的整本读路径**——把它漏掉，这条守卫就
+#: 恰好不看那个唯一重要的模块。`vector_search.py:11/71` 仍然真在 import 并调用它，留下。
+#: 「不许自建 Unpickler」那半边的覆盖没有随之收缩：见下面那条全树扫描。
 CALL_SITES = [
-    "src/reader3_app/search_service.py",
+    "src/reader3_app/book_store.py",
     "src/reader3_app/vector_search.py",
-    "src/reader3_app/web/server.py",
 ]
 
 
@@ -319,3 +325,34 @@ def test_call_sites_import_safe_pickle_and_define_no_unpickler(rel: str, repo_ro
         )
     ]
     assert local_unpicklers == [], f"{rel} still defines its own unpickler: {local_unpicklers}"
+
+
+def test_no_module_outside_safe_pickle_defines_its_own_unpickler(repo_root: Path):
+    """L1 / S1 —— 「不许自建 Unpickler」这条律扫**全树**，不扫一张手写名单。
+
+    011 §4（WI-6）新增。上面那张 `CALL_SITES` 从三行缩到两行时，`search_service.py`
+    与 `web/server.py` 身上的「不许自建 Unpickler」那半边覆盖会跟着掉。掉了不行：
+    这两个模块正是最可能因为「book_store 那条路太绕」而重新长出一个本地反序列化器的
+    地方。所以把它提成全树扫描——比原来的三文件版严格地强，而且**没有白名单**：
+    唯一的例外是 `safe_pickle.py` 自己，写死在下面，加第二个例外就是一个吵得起来的 diff。
+    """
+    src = repo_root / "src" / "reader3_app"
+    allowed = src / "safe_pickle.py"
+
+    offenders: list[str] = []
+    for path in sorted(src.rglob("*.py")):
+        if path == allowed:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), str(path))
+        for n in ast.walk(tree):
+            if isinstance(n, ast.ClassDef) and any(
+                (isinstance(b, ast.Attribute) and b.attr == "Unpickler")
+                or (isinstance(b, ast.Name) and b.id.endswith("Unpickler"))
+                for b in n.bases
+            ):
+                offenders.append(f"{path.relative_to(repo_root)}::{n.name}")
+
+    assert offenders == [], (
+        "safe_pickle.py 之外冒出了自建 Unpickler，allow-list 就有了第二份实现："
+        f"{offenders}"
+    )

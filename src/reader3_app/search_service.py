@@ -11,7 +11,8 @@ from enum import Enum
 from functools import lru_cache
 from typing import Optional, List, Tuple, Dict, Union
 
-from .safe_pickle import load_book_file
+from .book_store import _book_pkl_path, load_book_cached
+# 不再 import safe_pickle：反序列化只经 book_store（011 §4）。占位保留行号：本文件多处 docstring 按行号引用。
 
 logger = logging.getLogger("reader3.search")
 
@@ -224,21 +225,6 @@ def search_text(
         matches.append((start_o, end_o))
 
     return matches
-
-
-def _book_pkl_path(book_id: str, books_dir: str) -> str:
-    return os.path.join(books_dir, book_id, "book.pkl")
-
-
-@lru_cache(maxsize=10)
-def load_book_cached(book_id: str, books_dir: str) -> object:
-    """Read a book through the allow-listed unpickler, with no fallback loader.
-
-    The `pickle.load` fallback that used to sit here ran on exactly the streams
-    the restricted pass refused, which made the restriction decorative. A
-    `book.pkl` that the allow-list cannot read now raises; see `safe_pickle`.
-    """
-    return load_book_file(_book_pkl_path(book_id, books_dir))
 
 
 def list_book_ids(books_dir: str) -> List[str]:

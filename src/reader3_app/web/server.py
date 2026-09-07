@@ -10,10 +10,9 @@ from urllib.parse import parse_qs, urlsplit
 import html
 import uuid
 from pathlib import Path
-from functools import lru_cache
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Callable, Optional, cast
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.concurrency import run_in_threadpool
@@ -22,7 +21,8 @@ from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse, Res
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from ..safe_pickle import load_book_file
+# 不再 import safe_pickle：反序列化只经 book_store（011 §4）。占位保留行号：server.py:49/104 被 EXPECTED_CAPTURES 钉着。
+from .. import book_store
 from ..ai.books import BookUuidResolver
 from ..ai.conversations import (
     ConversationMessage as DiskConversationMessage,
@@ -345,20 +345,94 @@ async def _startup_scan_books() -> None:
     # Ensure stable UUID mapping exists for all processed books.
     book_uuid_resolver.scan()
 
-@lru_cache(maxsize=10)
-def load_book_cached(folder_name: str) -> Optional[Book]:
-    """
-    Loads the book from the pickle file.
-    Cached so we don't re-read the disk on every click.
-    """
-    file_path = os.path.join(BOOKS_DIR, folder_name, "book.pkl")
-    if not os.path.exists(file_path):
-        return None
+def _share_loader_cache_surface(
+    wrapper: Callable[[str], Optional[Book]]
+) -> Callable[[str], Optional[Book]]:
+    """Give ``wrapper`` the merged cache's own bound methods, then return it.
 
+    ``cache_clear`` / ``cache_info`` / ``cache_parameters`` are copied off
+    ``book_store.load_book_cached``, so they are the **one real cache's** own
+    methods rather than forwarders onto a second one. Seven test modules and
+    ``tests/contract/conftest.py`` hold at least one of the three on this name;
+    ``tests/contract/test_read_chapter_traversal.py:159`` copies ``cache_clear``
+    off it onto a spy.
+
+    A decorator, and not the equivalent bare ``_share_loader_cache_surface(
+    load_book_cached)`` statement below the ``def``, for two reasons. It leaves
+    no window in which the module-level name exists without the surface — an
+    import executed between a ``def`` and a later call statement would export a
+    callable whose ``cache_clear`` raises ``AttributeError`` — and it keeps the
+    surface visibly part of the definition instead of a line someone can move.
+
+    Both shapes are legal against the import-time-capture scan in
+    ``tests/unit/test_server_patch_seam_ownership.py`` (Check C), and most of
+    the obvious alternatives are not. ``functools.partial(
+    book_store.load_book_cached, books_dir=BOOKS_DIR)`` fails three ways: no
+    ``cache_clear``, ``BOOKS_DIR`` baked at import time (five tests rebind it),
+    and a module-level ``Assign`` naming ``load_book_cached`` that the scanner
+    records as a ``module_assign`` capture. Assigning the three attributes at
+    module level hits that last problem too. The scanner walks assignments,
+    imports, signatures and decorators — it does not descend into function
+    bodies, and the decorator expression here names nothing on its list.
+    """
+    wrapper.cache_clear = book_store.load_book_cached.cache_clear  # type: ignore[attr-defined]
+    wrapper.cache_info = book_store.load_book_cached.cache_info  # type: ignore[attr-defined]
+    wrapper.cache_parameters = book_store.load_book_cached.cache_parameters  # type: ignore[attr-defined]
+    return wrapper
+
+
+@_share_loader_cache_surface
+def load_book_cached(folder_name: str) -> Optional[Book]:
+    """The web layer's view of ``book_store.load_book_cached``: total, and never raising.
+
+    ``BOOKS_DIR`` is read **here, on every call**, not captured at import. Tests
+    rebind it with ``monkeypatch.setattr`` and ``server.py:104`` already
+    documents what happens to a component that captured it instead.
+
+    Deliberately **not** the same object as ``book_store.load_book_cached``
+    (D5-a): six tests patch this name to intercept the eleven server-side call
+    sites, three of them with a one-argument ``lambda folder: ...`` that the
+    two-argument search path would ``TypeError`` on. Two names, one cache — the
+    cache is shared through the surface above, the identity is not.
+
+    Nothing is memoized in this function. The core's ``lru_cache`` is the only
+    one on the path, so ``cache_info()``'s hit and miss columns describe every
+    call that reaches it, and a republished ``book.pkl`` is visible on the next
+    read rather than after a restart.
+
+    Two degradation paths, and the asymmetry is the point (D1-a):
+
+    * **Absence is silent.** A ``*_data`` directory with no ``book.pkl`` is the
+      state between ``mkdir`` and the atomic publish. ``library_view`` walks
+      every such directory on every homepage request, so a trace here would be
+      a per-request log flood for a condition that is not an error. The old
+      code was silent for the same reason, via an ``os.path.exists`` check
+      before the ``try``.
+    * **Everything else degrades loudly and returns ``None``.** The blind
+      ``except Exception`` is deliberate and is what the ``noqa`` records.
+      Narrowing it to ``(FileNotFoundError, UnpicklingError)`` — the two types
+      every damage fixture in the suite produces — would leave ``library_view``
+      to propagate the first ``MemoryError``, ``RecursionError`` on a deep TOC
+      or ``OSError`` (EIO, ENAMETOOLONG, ENOTDIR) out of a per-row call that
+      has no guard around it: one damaged book, and the whole library page
+      500s. ``tests/unit/test_book_store_server_wrapper.py``'s
+      ``test_the_wrapper_swallows_every_exception_class_not_just_the_two_it_has_seen``
+      owns that claim; anyone deleting this ``noqa`` has to delete that test
+      and argue for the 500.
+
+    The core raises on every one of these; deciding what the *user* sees is
+    this layer's job, because this is the layer with a status code to spend.
+    """
     try:
         # No fallback loader: see safe_pickle. A book.pkl the allow-list refuses
         # raises here, and the handler below degrades that one book to None.
-        return load_book_file(file_path)
+        # `book_store` is annotated `-> object`: it is deliberately ignorant of
+        # `reader3.Book`, which is what keeps it importable without the web
+        # layer. Re-stating the type is this layer's job, not a cast that hides
+        # a doubt — every payload it can return is a `Book` or an exception.
+        return cast(Book, book_store.load_book_cached(folder_name, BOOKS_DIR))
+    except FileNotFoundError:
+        return None
     except Exception as e:  # noqa: BLE001 - 第 2 档：坏掉的 book.pkl 只让这一本书从书库消失，其余照常；已 print 留痕（该换成 logger，见 008 报告）
         print(f"Error loading book {folder_name}: {e}")
         return None

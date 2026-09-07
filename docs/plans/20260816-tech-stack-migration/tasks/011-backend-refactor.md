@@ -151,6 +151,21 @@ AttributeError: module 'reader3_app.web.server' has no attribute '_Reader3Unpick
 - `python scripts/bench.py`（默认 20 本）跑通，反序列化计数**不为零**（为零说明探针挂在了不会被走到的地方，是另一种坏）。
 - 把结果作为 Phase 2b 的 before 基准存档。
 
+### 完成记录（2026-09-07）✅
+
+产出：[`bench/011-wi2-before.json`](../bench/011-wi2-before.json) ＋ [`bench/README.md`](../bench/README.md)（repeat=5，六项指标全产出，退出码 0）。
+
+**坏的不止一处。** 本节写的 `AttributeError` 是真的，但它只是两处独立故障里的一处：
+
+1. 探针挂在已消失的 `mod._Reader3Unpickler` 上 → 指标 4/5 不产出。**改法**：三处 loader 今天各自 `from .safe_pickle import load_book_file`，即各有一个自己的模块级绑定，包那一份即可，per-loader 归属原样保住，用的正是 WI-0 那道守卫盯着的同一条接缝。
+2. **五个 worker 的 `TestClient` 全是裸构造。** 服务端那道 Host 白名单只放行 127.0.0.1 / localhost / [::1]，而 `TestClient` 默认发 `testserver` → 每个请求 400 `Invalid host header`。指标 2 会当场炸（它自己查状态码），指标 1/3/4/5/6 **安静地量到 400 响应**。
+
+所以本节那句「好消息是**其余部分都在**」是错的：`bench.py` 从来没有真正跑通过，`011-wi2-before.json` 是零号基准，不是「又一份」。第 2 条的教训固化成了 `expect_ok()`——非 2xx 当场炸，不让仪器坏掉的表现形式是「所有数都很漂亮地等于 0」。
+
+**新增一个跨重构可比的口径 `safe_pickle_total`**（包 `safe_pickle.safe_load`，不问调用者是谁）。理由：WI-3 合并之后 `web.server` 那一格会掉下去，但那只说明绑定换了地方，不说明少读了一次盘。今天 100 = 40 + 60，两口径相等 ⇒ 没有第四个绕开这三个绑定的读盘点。
+
+基线已经把 WI-3 要修的东西显出来了 —— 第 03 步「同一本书换一处 loader 再 unpickle 一遍」，第 04 步「maxsize=10 撑不住 20 本，19 本重读」。逐步明细见 `bench/README.md`。
+
 ---
 
 ## 4. WI-3 —— `book_store.py`（Phase 2a 的主体）

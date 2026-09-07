@@ -99,6 +99,14 @@
       "thresholds": {
         "branches": 58
       }
+    },
+    {
+      "glob": "src/reader3_app/book_store.py",
+      "description": "011 §4：进程内所有 book.pkl 的唯一读取路径。0 分支，所以门槛压在语句上；分支沿用全局底线，等真的长出分支再说。",
+      "thresholds": {
+        "lines": 100,
+        "statements": 100
+      }
     }
   ]
 }
