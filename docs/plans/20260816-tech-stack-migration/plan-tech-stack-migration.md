@@ -422,9 +422,9 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 >
 > - `.github/workflows/tests.yml`（101 行）只有一个 job：`unit`（`:43`）。步骤是 ruff / mypy / `pytest tests/unit tests/contract` / 覆盖率门禁，**不起浏览器**。
 > - `.github/workflows/lint.yml`（79 行）两个 job：`contracts`（`:36`）、`wheel`（`:59`）。
-> - 全仓 workflow **没有任何一步跑 Playwright、e2e lane 或 `baseline-1b`**。`.github/` 下 `e2e` 的字面命中只有两处，都不是在跑它：`lint.yml:48–49` 的 `scripts/lint_e2e_selectors.py`（静态选择器 lint），以及 `tests.yml:19` 的一句注释——那句讲的是**本地** tdd-guardian 三条 lane 的触发时机（`.claude/tdd-guardian/config.json` 里 e2e lane 的 `gateOn: ["push"]`），不是 CI job。
+> - 全仓 workflow **没有任何一步跑 Playwright、e2e lane 或 `baseline-1b`**。`grep -rn e2e .github/workflows/` 命中 **4 行、分属两件事**，都不是在跑它：`lint.yml:20/48–49` 的 `scripts/lint_e2e_selectors.py`（静态选择器 lint，`:20` 是讲它的注释），以及 `tests.yml:19` 的一句注释——那句讲的是**本地** tdd-guardian 三条 lane 的触发时机（`.claude/tdd-guardian/config.json` 里 e2e lane 的 `gateOn: ["push"]`），不是 CI job。
 >
-> 所以如实的陈述是：**在那道发版关门检查真的建出来之前，「环境多样性」那一半没有任何补偿**——十次绿全部来自同一台开发机的同一个运行剖面。**这是一个已知缺口，不是一项已生效的控制**，读到这里的人不要把它当成已有的保护。已记入跨波欠账，编号待定（那条欠账行尚未写，不要当它已经存在）。
+> 所以如实的陈述是：**在那道发版关门检查真的建出来之前，「环境多样性」那一半没有任何补偿**——十次绿全部来自同一台开发机的同一个运行剖面。**这是一个已知缺口，不是一项已生效的控制**，读到这里的人不要把它当成已有的保护。已记入[`tasks/009` 跨波欠账 #31](./tasks/009-e2e-annotations.md)——兑付方那一栏写的是**待定**，因为先要定的不是谁来做，而是「建一个 CI e2e job」还是「显式接受这个缺口、把本段承诺从 §7 删掉」。
 
 > 数的只是 `baseline-1b`。其余组在 Phase 3 之前尚未激活（它们测的行为还不存在），把它们算进来就会让 soak 门槛永远无法达标——分组定义见 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) §0.5。
 
