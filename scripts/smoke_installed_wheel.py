@@ -26,6 +26,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import socket
 import subprocess
@@ -118,21 +119,26 @@ def build_book(py: Path, books_dir: Path, workdir: Path) -> str:
     return "smoke_data"
 
 
-def stop_and_drain(server: subprocess.Popen) -> str:
-    """先让服务退出，再读它的输出——顺序反了会永久阻塞。
+def stop_server(server: subprocess.Popen) -> None:
+    """让服务退出：先礼后兵，terminate 不走就 kill。
 
-    `stdout=PIPE` 时 `.read()` 等的是 EOF，而 EOF 要等进程退出才来。进程还活着
-    就读，会一直挂着。这条路径只在**检查失败时**才走，所以绿的时候永远暴露不出
-    问题：守卫平时看着好好的，真抓到 bug 的那一刻反而卡死，把「四个路由 500」
-    变成「CI 跑了六小时然后超时」。2026-08-24 实测撞到。
+    2026-08-24 实测撞到过一个坑，值得留着：当时服务输出在管道里，这个函数要
+    `communicate()` 才能取到输出，而 `.read()` 等的是 EOF、EOF 要等进程退出才来——
+    进程还活着就读会一直挂着。那条路径只在**检查失败时**才走，所以绿的时候永远暴露
+    不出问题：守卫平时看着好好的，真抓到 bug 的那一刻反而卡死，把「四个路由 500」
+    变成「CI 跑了六小时然后超时」。
+
+    输出改落文件（见 `main()`）之后，取输出与收进程彻底解耦了：日志随时可读，这里
+    只管收进程，不再碰进程的任何一个流。terminate→kill 的升级语义是上面那次修复的
+    另一半，与管道无关，原样保留。
     """
     server.terminate()
     try:
-        out, _ = server.communicate(timeout=10)
+        server.wait(timeout=10)
     except subprocess.TimeoutExpired:
         server.kill()
-        out, _ = server.communicate()
-    return out or ""
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            server.wait(timeout=10)
 
 
 def get(url: str, timeout: float = 10.0) -> tuple[int, str]:
@@ -154,11 +160,27 @@ def main() -> int:
 
         port = _free_port()
         base = f"http://127.0.0.1:{port}"
+        # 服务输出落文件，**不能**是 `stdout=subprocess.PIPE`：这是一条长命服务，
+        # 运行期没有人读那个管道，而管道容量有限（macOS 65536 字节）。uvicorn 的
+        # access log 写满之后 `write()` 就地阻塞——服务不是崩了，是卡在写日志上，
+        # 此后不再应答任何请求。今天这里只打四个路由、写不满缓冲区，所以从没发作，
+        # 但那正是跨波欠账 #10 在 21 条用例时的状态：套件涨到 35 条就跨过了缓冲区，
+        # 第 27 条之后全线 30 秒超时（2026-09-03 实测）。写进文件没有容量上限。
+        # 回归闸：tests/unit/test_service_subprocess_pipe_capacity.py
+        log_path = work / "server.log"
+        log_fh = log_path.open("w", encoding="utf-8")
+
+        def log_tail(limit: int = 2000) -> str:
+            """日志尾巴。失败信息只需要最后这一截，整份可能有几百 KB。"""
+            log_fh.flush()
+            text = log_path.read_text(encoding="utf-8", errors="replace")
+            return text[-limit:] if len(text) > limit else text
+
         server = subprocess.Popen(
             [str(py.parent / "reader3-server"), "--port", str(port)],
             cwd=work,
             env=_clean_env(READER3_BOOKS_DIR=str(books)),
-            stdout=subprocess.PIPE,
+            stdout=log_fh,
             stderr=subprocess.STDOUT,
             text=True,
         )
@@ -167,8 +189,7 @@ def main() -> int:
             ready = False
             while time.monotonic() < deadline:
                 if server.poll() is not None:
-                    out = stop_and_drain(server)
-                    print("服务进程提前退出：\n" + out[-2000:], file=sys.stderr)
+                    print("服务进程提前退出：\n" + log_tail(), file=sys.stderr)
                     return 1
                 try:
                     if get(f"{base}/api/health", timeout=2)[0] == 200:
@@ -181,7 +202,10 @@ def main() -> int:
                     # 成「30 秒没等到 /api/health」，把人引去查服务而不是查脚本。
                     time.sleep(0.5)
             if not ready:
-                print(f"{STARTUP_TIMEOUT_S}s 内没等到 /api/health", file=sys.stderr)
+                print(
+                    f"{STARTUP_TIMEOUT_S}s 内没等到 /api/health：\n" + log_tail(),
+                    file=sys.stderr,
+                )
                 return 1
 
             # 四个路由，三个是模板渲染（500 的重灾区），一个是探针。
@@ -203,15 +227,11 @@ def main() -> int:
                 print("装出来的 wheel 起不来或渲染不了：", file=sys.stderr)
                 for f in failures:
                     print("  - " + f, file=sys.stderr)
-                out = stop_and_drain(server)
-                print("服务端输出尾部：\n" + out[-2000:], file=sys.stderr)
+                print("服务端输出尾部：\n" + log_tail(), file=sys.stderr)
                 return 1
         finally:
-            server.terminate()
-            try:
-                server.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                server.kill()
+            stop_server(server)
+            log_fh.close()
 
     print(
         f"\n0.2 装出来能跑：{wheel.name} 装进干净 venv（依赖按最新版解析），"
