@@ -41,7 +41,7 @@
 | **1.5** | *(009 harness spike)* | — | — | **✅** 2026-08-26 完成（`36a6ac2` 落在 `master`，lint 收尾 `7ed87e1`） | 本文 §2 的 P-2 |
 | **2** | `009-e2e-annotations` | Phase 1b | 后端 | **✅ 已合入 `master`**（2026-09-05，PR #20，合并 commit `b0b4a3a`），**G1 达成 → Phase 4A 解锁**。`baseline_1b` **66 条**全绿，验收三组 **17 条** skip 形态就位，`tests/e2e` 全量 **90 条**（73 passed + 17 skipped，约 58s）。三条 lint rc=0；unit + contract **1043 条**绿；覆盖率 lines 79.94% / branches 67.70%。`src/` 净改动 3 文件 +69/−35，**已全部有测试钉住**（#60 由 X-2d 收口，见 tasks/009 合入记录）。**G2 已于 2026-09-06 达成**（连绿三次，`suite_hash` 冻结在 `2747100dadf6`，台账首行落账；「先修 #22 再冻结」的顺序照办） | [tasks/009](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
 | **2.5** | `016-settings-apply-order` | M1b 欠账兑付 | 后端 | **✅ 已合入 `master`**（2026-09-06，PR #21，合并 commit `770e5ca`）。欠账 **#22** 已修（`applyThemeSettings` 收参数，渲染器不再回读 localStorage），并修掉同一病根的第二个入口（越界值只被外层挡住：面板 17px / 正文 **99px**、行高 **891px**）；审计 **#51** 的可失败性证据改用 `page.route` 重做，`src/` 一行未动。`baseline_1b` **67 条**、`tests/e2e` **91 条**、三条 lint rc=0；`suite_hash` `e7e0f9626df5` → `8f39737ca0c6` → **`2747100dadf6`**。**这是 G2 冻结前的最后一次覆盖面变更，冻结值即此** | [tasks/009 欠账 #22](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
-| **3** | `011-backend-refactor` | Phase 2a+2b | 后端 | **⬜ 任务书已写**（2026-09-07，WI-0 – WI-9）。实测发现计划的 Phase 2a 清单**九项里三项已完成**（`ai/config.py` 原子写、CJK/Anthropic 路由启发式、CLAUDE.md 宪法修订）**、一项前提失效**（`_Reader3Unpickler` 早已收敛进 `safe_pickle`，`vector_search.py` 根本没有 loader —— 真正要合的是两个**同名不同签名**的 `load_book_cached`）。顺序：**WI-0 打桩接缝守卫必须先于任何一行路由搬家**（70 处 `monkeypatch.setattr(server, …)`，拆分后会静默失效，而 `server._call_provider` 是本进程通往 LLM 的唯一出口）→ WI-1 对齐权威文件 → WI-2 修坏掉的 `bench.py` → WI-3 `book_store.py` → WI-4 按关切拆 router。**`max_retries` 的「删或接」被 ADR-0011 削成只剩「接」**（删它 = 改响应形状 = Phase 2 窗口内非法）；**C5 裁决推迟到 012**。全部 WI **零触碰**冻结的 8 条路径，soak 计数不受影响 | [tasks/011](20260816-tech-stack-migration/tasks/011-backend-refactor.md) |
+| **3** | `011-backend-refactor` | Phase 2a+2b | 后端 | **🚧 进行中**（2026-09-07 开工，2026-09-18 复核；分支上 **5 个提交**，已 rebase 到 `master`、0 behind）。**Phase 2a，未进 2b。** **已完成 WI-0（a＋b 两层接缝守卫）／ WI-2（`bench.py`）／ WI-3（`book_store.py`）**；另有**两项计划外**：`0c1c8a2`（`criticalPaths` 的 7 条逐文件下限从来没生效过）、`0be2370`（WI-T7 长命服务管道容量闸，见 §4 决策行）。**未做：WI-1 / WI-4 / WI-5 / WI-6 / WI-7 / WI-8 / WI-9。**对照[迁移计划的 Phase 2a 清单](20260816-tech-stack-migration/plan-tech-stack-migration.md)八项：4 项完成 / 4 项待做，**而完成的 4 项里有 3 项（`ai/config.py` 原子写、CJK/Anthropic 路由启发式、CLAUDE.md 宪法修订）是 011 开工前就已完成的**——011 自己推进的 Phase 2a 项目前只有 `book_store.py` 一项，WI-0 与 WI-2 是前置工装、不在那张清单上。**剩下的重头是 WI-4 拆 router**：`src/reader3_app/web/` 下至今没有 `routers/`，`server.py` 实测 **2979 行**（计划 `:275` 写的 `~2,400 行` 已烂，涨了约 24%，而拆分门槛是每个 router < 500 行）。**⚠️ 本格此前长期停在「⬜ 任务书已写」，与实际差 5 个提交**；按 §0 的规则权威在 `plan-and-branch-map` 的里程碑表，**那边 `SKILL.md:78` 今天仍写着 `Tasks drafted`，同样过期，需要一并修**——SKILL.md 自己的 `:89` 正好记着 009 当年「六个提交还读作 Tasks drafted」是同一个毛病。实测发现计划的 Phase 2a 清单**九项里三项已完成**（`ai/config.py` 原子写、CJK/Anthropic 路由启发式、CLAUDE.md 宪法修订）**、一项前提失效**（`_Reader3Unpickler` 早已收敛进 `safe_pickle`，`vector_search.py` 根本没有 loader —— 真正要合的是两个**同名不同签名**的 `load_book_cached`）。顺序：**WI-0 打桩接缝守卫必须先于任何一行路由搬家**（70 处 `monkeypatch.setattr(server, …)`，拆分后会静默失效，而 `server._call_provider` 是本进程通往 LLM 的唯一出口）→ WI-1 对齐权威文件 → WI-2 修坏掉的 `bench.py` → WI-3 `book_store.py` → WI-4 按关切拆 router。**`max_retries` 的「删或接」被 ADR-0011 削成只剩「接」**（删它 = 改响应形状 = Phase 2 窗口内非法）；**C5 裁决推迟到 012**。全部 WI **零触碰**冻结的 8 条路径，soak 计数不受影响 | [tasks/011](20260816-tech-stack-migration/tasks/011-backend-refactor.md) |
 | **⟂** | `010-design-degradation-states` | Track D | **前端** | **⬜** WI-1 – WI-8 已定义 | [前端计划 §4](20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) |
 | **4** | `012-storage-format` | Phase 3 | 后端 | **⬛** 计划未写 | — |
 | **5** | `013-ts-frontend-shell` | Phase 4A | **前端** | **⬜** WI-9 – WI-13 已定义 | 前端计划 §4 |
@@ -52,13 +52,37 @@
 
 ### 现在该做什么
 
-> **✅ 2026-09-06：G1、G2 两道门都过了，009 与 016 都在 `master` 上。下一步是 011。**
+> **当前位置：顺位 3 / `011-backend-refactor` / Phase 2a。** 顺位 0–2.5 全部在 `master` 上；
+> 顺位 4 之后（`012` / `013` / `014` / `015`）与 ⟂ 的 `010` **一个分支都还没开**。
 >
-> **每天要做的一件事：往 soak 台账追一行。** `uv run python scripts/soak_run.py --append`，
-> 约 57 秒。Phase 3 要 ≥10 次 **且** ≥5 个工作日，今天 3 次、跨度 0。**次数好补，跨度补不回来**
-> ——最早解锁 **2026-09-11**。**别忘了跑**：忘一天不清零，但会把解锁日往后推一天。
+> **⚠️ 本节此前写死过派生值，已在 2026-09-19 整段重写。** 原文是「今天 3 次、跨度 0 ——最早解锁
+> **2026-09-11**」。那两个数与那个日期全部到期变烂，而且后者会把读到的人引向「还要再等」这个
+> 错误结论。`soak-log.md` 表头早在 `16f7c1f` 就改成了**只留算法、不留当时的那个答案**，本节
+> 当时漏改。**下面一律给命令，不给数。**
 >
-> **冻结生效中，代价从今天起是实的。** `suite_hash` 冻结在 `2747100dadf6`。再动
+> **每天要做的一件事：往 soak 台账追一行。** `uv run python scripts/soak_run.py --append`，约 57 秒。
+> 忘一天不清零，只是把日历那一半往后推。**次数好补，跨度补不回来。**
+>
+> **Phase 3 今天没有解锁，而卡住它的不是次数。** 三件事要分开看：
+>
+> 1. **次数与跨度**——判据是 ≥10 次且 ≥5 个工作日，跨度按台账首行与第十行算，唯一定义处是
+>    [迁移计划 §7](20260816-tech-stack-migration/plan-tech-stack-migration.md)。**怎么数**见
+>    [`soak-log.md`](20260816-tech-stack-migration/tasks/soak-log.md) 表头的两条命令，本文不复述、不抄结果。
+> 2. **这批数据买到了什么，没买到什么（2026-09-18 复核）**——字面判据满足了，但要知道分布：
+>    用 `grep -E '^\| 20[0-9]{2}-' …/soak-log.md | cut -c3-12 | sort | uniq -c` 数**不同日历日**。
+>    复核当天的实况是 10 行只落在 **3 个不同日历日**上，其中 6 行是五分钟内连跑出来的。
+>    §7 自己写着跨度条款的目的是「逼出时间维度的不稳定……这类问题在同一天连跑十次是照不出来的」
+>    ——**所以次数这一栏是过了，它想买的东西只买到一半**。补法是往后每天真的追一行，让不同日历日涨上去。
+> 3. **三条机制挑战闸（§7 `:501-503`，全部阻塞 Phase 3，且不计入那 10 次）：复核时 0 / 3。**
+>    干净 Linux/CI 环境 · CPU 压力下 · 随机化 pytest 收集顺序。
+>    **其中第一条今天做不了**——全仓 workflow 没有任何一步跑 Playwright，已立
+>    [跨波欠账 #31](20260816-tech-stack-migration/tasks/009-e2e-annotations.md)，兑付方**待定**，
+>    先要裁的是「建一个 CI e2e job」还是「显式接受缺口、把 §7 那句承诺删掉」。
+>    **这条裁决挡着两样东西**：机制挑战闸的第一项，以及那 10 次绿的证明力补全。
+>
+> **一句话：想让 Phase 3 动起来，该做的不是再跑十次 soak，是去做那三条闸、并裁掉 #31。**
+>
+> **冻结生效中，代价自 2026-09-06 起是实的。** `suite_hash` 冻结在 `2747100dadf6`。再动
 > `baseline_1b/**` / `tests/e2e/conftest.py` / `helpers.py` / `test_harness_smoke.py` /
 > 那四个 fixture 里的**任何一个字节**（连 docstring 都算，#51 那次就是现成例子），
 > 台账全部作废、从零重数。**011 / 013 随便改，那些不在覆盖面里**——这正是 P-3 采纳 C 方案
@@ -85,7 +109,7 @@
 >
 > </details>
 >
-> **G1 同时解锁了 013（Phase 4A）**——它要的是 G1 不是 soak，可与 011 / 012 交错。
+> **G1 同时解锁了 013（Phase 4A）**——它要的是 G1 不是 soak，可与 011 / 012 交错。**G1 于 2026-09-05 达成，至今 `013-ts-frontend-shell` 分支仍未创建、零提交**（`git branch -a | grep 013-ts-frontend-shell` 无输出）。同样零提交的还有 ⟂ 的 `010`——它是纯文档，本可在任意低能耗 session 插入。**这两条支线被解锁之后一直空着，是当前进度里最便宜的一块未动产。**
 >
 > **Wave 7 已于 2026-09-04 收口，八波编排结束**：验收组 17 条 skip 用例（4b1 8 / p3 4 / 4a4 4 /
 > 2a 1）、`lint_e2e_groups.py` 分组守卫、`soak_run.py`、共用 DEG 断言体。常量全部由预估改实测并
@@ -263,6 +287,13 @@ uv run python scripts/lint_e2e_groups.py   # rc=0 才算数；它把三条轴（
 grep -c '^| ~~\*\*Wave' docs/plans/20260816-tech-stack-migration/tasks/009-e2e-annotations.md  # 已收口的波次数（共 8 波：0–7）
 grep -c '未结清' docs/plans/20260816-tech-stack-migration/tasks/009-e2e-annotations.md          # 跨波欠账未结清行数
 
+#   011 既没有 checkbox 也没有 pytest item 数可数——**它的完成状态今天只能从 git log 反推**，
+#   因为任务书里只有 WI-2 写了「完成记录」段，WI-0 / WI-3 的代码在分支上但文档里没有对应记录。
+#   这是已知缺口（该由 WI-1 一并补上），在补上之前用下面这三条，别指望读任务书能读出进度：
+git log --oneline master..011-backend-refactor          # 分支上的提交，逐条对回 WI 号
+ls src/reader3_app/web/routers/ 2>/dev/null || echo 'routers/ 不存在 = WI-4 未开始'
+wc -l src/reader3_app/web/server.py                     # 拆分门槛是每个 router < 500 行，这是分母
+
 # 前端工作项清单
 grep -n '^### WI-' docs/plans/20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md
 
@@ -304,6 +335,11 @@ gh run list --limit 5
 | 2026-09-04 | **欠账 #8（CFI 分支零覆盖）由 WI-17 改派 011 / 014**，与欠账 #6 同一次兑付。它的前置是「#6 修完之后」，而 #6 是生产缺陷、009 全程不动 `src/`——**在 cfi 真的写得进去之前，为死代码补的用例只会锁死死代码的形状** | tasks/009 欠账 #8 |
 | 2026-09-04 | 「定向破坏只走 `page.route`，绝不原地改 `src/`」从 009 欠账 #25 上收为工程实践，消费者是 011/013/014（`f27cf5c`） | [迁移计划 §5 工程实践表](20260816-tech-stack-migration/plan-tech-stack-migration.md) |
 | 2026-09-18 | **soak 门槛三项复核裁定（R9 之后的再确认）**：① **撤回「`6/35` → 15.3%」这个数**——它拿 Wave 2 的 `live_server` 管道死锁算出「本门槛有约 1/6 概率放过同量级缺陷」，**观察单位错了**：台账 `355afedd106b` 条目原话是「修前 `6 failed, 29 passed in 187.12s`」，那是**一轮运行里 35 条用例中 6 条红**，不是 35 次运行里 6 次红；且该故障是确定性阈值（服务端一轮写 74194 字节 > macOS 管道容量 65536 字节），记录自己写着「**用例数是引爆它的量而不是它的因**」，不是每轮 17.1% 的随机失败。该概率论证作废。② **维持 ≥10 / ≥5 不改，跨度算法也不改**——Codex 建议改成「至少在 5 个不同工作日各有一次成功」，否决：它声称「成本不变」是错的（现规则按台账首行与第十行算，第十行今天落地即成立；改成它那样最少还要 5 个工作日，对一个自 09-07 起已空转 11 天的项目是实打实的日程成本），且该数值是 R9 的用户裁定项。③ **拒绝「持续 flake 记录管线」**——Codex 建议每次 push 自动落结构化 flake 记录并按最近 20 次判定，否决：它依赖**尚不存在的 CI e2e**（全仓 workflow 无任何一步跑 Playwright，见依据列 §7），且对 6–10 小时/周的单人项目过重；采纳的是它另外两层——流程闸（跑完 10 次）＋ **机制挑战闸**（§7 新增，三项阻塞 Phase 3） | [迁移计划 §7](20260816-tech-stack-migration/plan-tech-stack-migration.md)／[`soak-log.md`](20260816-tech-stack-migration/tasks/soak-log.md) |
+| 2026-09-18 | **`011` rebase 到 `master`**（`6459af7` → `1be7387`）。此前 `master` 上的三条 docs 提交没有带到分支上，而全仓**没有任何先例**——历次分支的 merge-base 显示 `master` 在它们存活期间从未前进过，所以「照旧」在这里没有可照的旧。选 rebase 不选 merge 的理由：分支当时未推、零文件重叠、且不想给一条纯文档同步留一个合并提交。**两路独立验证**：旧尖→新尖的 diff 恰好等于 `master` 那三条（10 文件 / 111 insertions）；分支自身净 patch 的 `shasum` rebase 前后一致（`99ba7061…`）。**⚠️ 前提此后失效**：`origin/011-backend-refactor` 已于 2026-09-18 20:46 被推送，再 rebase 就是 force-push，代价不同了 | 本文 §2 顺序图的 011 那一行 |
+| 2026-09-18 | **计划外 `0c1c8a2`：`criticalPaths` 的 7 条逐文件覆盖率下限从来没生效过。** `.claude/tdd-guardian/config.json` 里写的是裸 `"branch": N`，而 `coverage.js` 读的是 `thresholds.branches`——配置解析不到，7 条下限一条都没参与判定，门禁长期报绿。修后加到 8 条并做了双向验证（把某条地板抬到 99 → 当场 FAIL） | `011` 分支 `0c1c8a2` |
+| 2026-09-18 | **计划外 WI-T7：给「长命服务不得把 stdout 接进管道」建类级闸。** 起因是核查发现[欠账 #10](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) 虽标「已结清」，但结清判据是 `pytest tests/e2e` 全绿——**一条载荷相关的判据守一条载荷相关的缺陷，等于没建回归闸**；且同类缺陷在 `scripts/smoke_installed_wheel.py` 有**第二个现场**，由 `1392b1f`（2026-08-23）带进来、比 #10 建账还早，只因该脚本只打 4 个路由、写不满 65536 字节而一直没发作。闸走 AST，判据是「起 `reader3-server` 类长命服务 ＋ `stdout=PIPE`」而非「用了 PIPE」（`soak_run.py:322` 用 PIPE 但全程 `communicate` drain，必须放过）。**红收据判 `SEPARATION-BROKEN`**：绿之后主动移除了 9 行已录断言——初版把参数化钉成 `(文件, 行号)`，该设计在同一个工作项里就烂了一次，改为只钉文件。新记欠账 **#32**（本条的账）与 **#33**（`log_tail()` 无测试，未结清） | `011` 分支 `0be2370`；tasks/009 欠账 #32 / #33 |
+| 2026-09-18 | **欠账 #31 落号**：§7 承诺过的「发版关门检查跑一次 `baseline-1b` 全量」从来没建出来，逐文件复核 `.github/workflows/` 证实全仓无 Playwright / 无 e2e job。**兑付方写「待定」是刻意的**——先要裁的不是谁做，而是「建 CI e2e job」还是「显式接受缺口并从 §7 删掉该承诺」。**此裁决未做，它挡着机制挑战闸的第一项** | `master` `8fcc940`；[迁移计划 §7](20260816-tech-stack-migration/plan-tech-stack-migration.md) |
+| 2026-09-19 | **本看板整体对账**：顺位 3 由「⬜ 任务书已写」改为「🚧 进行中」并写入实测；「现在该做什么」整段重写、删掉写死的派生值（3 次 / 跨度 0 / 2026-09-11）；§3 补 011 的核对配方。**遗留一处未修**：权威侧 `SKILL.md:78` 仍写 `Tasks drafted`，按 §0 的规则应以它为准，所以本看板现在「对得比权威准」——需要同步修那一行，否则下次复核会按规则把本文改回错的 | 本文 §0 / §1 |
 
 > **来源**：2026-08-24 与 Codex（`gpt-5.6-terra`）的一次定向复核。Codex 选 C 并提出五条风险，
 > 其中三条经核对成立并已回写（见上表后两行）；两条不成立——它担心 010 的九条门槛「形式完成、
