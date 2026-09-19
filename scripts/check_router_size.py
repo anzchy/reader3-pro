@@ -72,13 +72,20 @@ class Exemption:
 
 
 #: **唯一具名例外。** 裁定与推导见 011 §5「豁免条款」，此处不重述理由全文。
-#: N = 560 的来源：不可搬走的正文实测 493 行（`api_ai_question` 433
-#: ＋ 它独占的 `_stop_stream_worker` 60），余量 67 行给 import / docstring /
-#: `APIRouter` 声明 / 路由装饰器。**只许下调，不许上调。**
+#: N 的来源：不可搬走的正文实测 493 行（`api_ai_question` 433
+#: ＋ 它独占的 `_stop_stream_worker` 60），余量给 import / docstring /
+#: `APIRouter` 声明 / 路由装饰器。**只许下调，不许上调**（这条规则本身由
+#: `tests/unit/test_router_size_gate.py` 末尾那条上界断言执行，不靠自觉）。
+#:
+#: 2026-09-19：拆分做完，chat.py **实测 547 行**，于是 N 从 560 下调到 550。
+#: 原先的 67 行余量是拆分**之前**估的，事后看多估了 54 行——这正是「先定 N
+#: 再搬家」的意义：560 不是照着结果填的。留 3 行而不是钉死在 547，是因为这条
+#: 豁免要咬的是**函数拆没拆**（`min_function_lines`），不是「谁多写了一行注释」；
+#: 而 lint 是仅发版触发的，为一行注释在发版那天转红，代价和收益不成比例。
 EXEMPTIONS = (
     Exemption(
         rel_path="src/reader3_app/web/routers/ai/chat.py",
-        max_lines=560,
+        max_lines=550,
         min_function_lines=400,
         reason=(
             "POST /api/ai/question 是一个 433 行的单函数（9 条顶层语句，"

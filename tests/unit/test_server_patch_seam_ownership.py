@@ -172,7 +172,35 @@ SCAN_NAMES: FrozenSet[str] = frozenset(set(OWNERSHIP) | {"post_stream"})
 
 #: B-ii 特征化棘轮。**不是判据**——往 frozenset 里加一个模块名就能让它变绿，A12 加不进去。
 GLOBAL_RESOLVERS: Dict[str, FrozenSet[str]] = {
-    "AI_WORKER_STOP_TIMEOUT_S": frozenset({SERVER_MODULE}),
+    # ── 2026-09-19（011 WI-4 第七步，ai 组）：以下 11 条全部**往松了走** ────────
+    # 一个共同的原因：server.py 里读这些名字的地方，全在刚搬进 `routers/ai/` 的四个
+    # 模块里（chat / summary / conversations / rag），搬过去之后改走 `_server.X`
+    # 属性访问——不是模块级 Name load，扫描器按设计看不见。
+    #
+    # 空集会掩盖「这个名字已经没人用了」，所以逐名做了一次定向破坏（把 `_server.X`
+    # 换成 `from ...server import X` 的导入期绑定），每次跑一整条 unit lane，事后
+    # 按字节还原并 cmp 校验（11/11 还原 OK）。**每一条都红了，且红的不只是静态闸**：
+    #
+    #   名字                          | 行为测试红的条数（另加 a12＋a15 两道静态闸）
+    #   AI_WORKER_STOP_TIMEOUT_S      | 1  lease Q4
+    #   _call_provider                | 3  lease Q1/Q2/Q6 ＋ 8  event_loop T2e–T2l（另 19 error）
+    #   _egress_post_stream           | 2  lease Q3/Q4（另 2 error）
+    #   _get_provider_runtime         | 5  lease Q1–Q4/Q6 ＋ 8  event_loop T2e–T2l
+    #   ai_queue                      | 1  lease Q3
+    #   book_token_stats              | 5  event_loop T2h–T2l
+    #   build_full_book_context       | 3  event_loop T2i/T2k/T2l
+    #   build_multi_chapter_context   | 3  event_loop T2j/T2k/T2l
+    #   choose_routing                | 1  lease Q1
+    #   retrieve_passages             | 5  lease Q1–Q4/Q6 ＋ 9  event_loop T2d–T2l
+    #   load_book_cached              | 8  event_loop T2e–T2l
+    #
+    # 与 WI-4 第五步的 `_http_get_json` 对照着看：那一条破坏后**只**红 a12，没有任何
+    # 行为测试跟上，所以它是「只有静态闸护着」。这 11 条不是——它们每条都有行为覆盖，
+    # 两道静态闸是第二层，不是唯一一层。
+    # ADR-0006 的两条出口（`_call_provider` / `_egress_post_stream`）另有一条活证据：
+    # `test_ai_queue_lease.py` 里 11 处 `monkeypatch.setattr(server, ...)` 这次一个字
+    # 没动，Q1–Q6 照样全绿——桩打在 server 上、代码跑在 chat.py 里，接缝就在那儿。
+    "AI_WORKER_STOP_TIMEOUT_S": frozenset(),
     "BOOKS_DIR": frozenset({SERVER_MODULE}),
     # ai/rag.py:6 模块级 import + 10、61 两处载入。search_service.py:312 与 reader3.py:709
     # 是**函数体内** import（局部绑定），按设计不算——见 A7 的对照半边。
@@ -182,20 +210,20 @@ GLOBAL_RESOLVERS: Dict[str, FrozenSet[str]] = {
     # 接缝仍然承重的证据（定向破坏，两文件同时改成导入期绑定，已 cmp 还原）：
     # test_event_loop_not_blocked.py 的 T1 / T2c / T3×2 四条，加本文件 a15。
     "BookVectorIndex": frozenset({"reader3_app.ai.rag"}),
-    "_call_provider": frozenset({SERVER_MODULE}),
-    "_egress_post_stream": frozenset({SERVER_MODULE}),
-    "_get_provider_runtime": frozenset({SERVER_MODULE}),
+    "_call_provider": frozenset(),
+    "_egress_post_stream": frozenset(),
+    "_get_provider_runtime": frozenset(),
     # 2026-09-19（011 WI-4 第五步）：降为空集。读这个名字的两处都在 /api/ollama/*，
     # 已搬进 routers/settings.py，改走属性访问。破坏证据：换成导入期绑定后
     # 只红 a12（B-i 律），**没有任何行为测试跟着红**——这条接缝在 unit lane 里
     # 没有行为覆盖，护着它的就是 a12 加 a15 两道静态闸，别把它们当可有可无的。
     "_http_get_json": frozenset(),
-    "ai_queue": frozenset({SERVER_MODULE}),
-    "book_token_stats": frozenset({SERVER_MODULE}),
+    "ai_queue": frozenset(),
+    "book_token_stats": frozenset(),
     "book_uuid_resolver": frozenset({SERVER_MODULE}),
-    "build_full_book_context": frozenset({SERVER_MODULE}),
-    "build_multi_chapter_context": frozenset({SERVER_MODULE}),
-    "choose_routing": frozenset({SERVER_MODULE}),
+    "build_full_book_context": frozenset(),
+    "build_multi_chapter_context": frozenset(),
+    "choose_routing": frozenset(),
     "get_provider_base_url": frozenset({SERVER_MODULE}),
     # ai/config.py:145 def + 194、229、241 三处载入。
     "load_ai_settings": frozenset({SERVER_MODULE, "reader3_app.ai.config"}),
@@ -207,16 +235,20 @@ GLOBAL_RESOLVERS: Dict[str, FrozenSet[str]] = {
     #   - search_service.py:14 `from .book_store import ... load_book_cached`（不再是
     #     def——它自己的那份已经搬走了）+ 270、332、494、678 四处载入。它拿到的就是
     #     book_store 那个对象，**不再**是「另一个同名函数」。
-    #   - web/server.py:385 def 一个 D5-a 薄包装 + 十一处载入。**这一个**才是与前两者
-    #     不同一的那个对象：一参签名、吞异常、返回 Optional，与核心共享缓存但不共享身份。
+    #   - web/server.py:385 仍 def 着那个 D5-a 薄包装——**这一个**才是与前两者不同一的
+    #     那个对象：一参签名、吞异常、返回 Optional，与核心共享缓存但不共享身份。
+    #     但 011 WI-4 之后它在 server.py 里的十一处载入**一处不剩**，全随路由搬进了
+    #     routers/（library 2、notes 5、reader 1、ai/chat 2、ai/summary 1），改走属性
+    #     访问，所以 server 从这个集合里掉了出去——def 是 Store 不是 Load，扫描器只数
+    #     Load。破坏证据见上表最后一行：8 条 event_loop 测试跟着红。
     # 按名字扫的扫描器分不开「同一个对象的两处 import」与「同名的两个对象」——这正是
     # B 必须拆成律（A12）+ 棘轮（A6）的原因，合并前后都成立。
     "load_book_cached": frozenset(
-        {SERVER_MODULE, "reader3_app.search_service", "reader3_app.book_store"}
+        {"reader3_app.search_service", "reader3_app.book_store"}
     ),
     # 别名的 owner 侧名字：全 src/ 没有任何模块从自己的 globals 里取 `post_stream`。
     "post_stream": frozenset(),
-    "retrieve_passages": frozenset({SERVER_MODULE}),
+    "retrieve_passages": frozenset(),
     # 2026-09-19（011 WI-4 第五步）：降为空集，理由同上（四处全在 /api/settings/*）。
     # 这条反过来有行为覆盖：破坏后除 a12 外还红了 test_settings_no_preference_loss.py
     # 的三条（单键 PUT 不得冲掉其它偏好）。

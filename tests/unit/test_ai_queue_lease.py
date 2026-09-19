@@ -40,6 +40,13 @@
 超时的处理：本仓没有 pytest-timeout。每个异步用例的**整体**都套在
 `asyncio.wait_for(..., HARD_BOUND_S)` 里，所以「实现挂住」表现为
 `asyncio.TimeoutError`，与断言变红（`AssertionError`）在输出里一眼可分。
+
+011 WI-4 之后 `api_ai_question` 搬到了 `web/routers/ai/chat.py`。这次跟着改的
+**只有三处取 handler 的地方**（两处 `await ...(...)`、一处 `inspect.getsource`）；
+上面那 11 处 `monkeypatch.setattr(server, ...)` 一个字没动。这不是省事，是判据：
+chat.py 走的是 `from .. import server as _server` 再 `_server.X`，属性在调用时才
+解析，所以打在 `server` 上的桩仍然落得到。如果哪天要把这些 setattr 的目标也改成
+`chat_router` 才能绿，那说明接缝被旁路了——别改测试，去看搬家。
 """
 
 from __future__ import annotations
@@ -65,6 +72,7 @@ from reader3_app.ai.books import BookUuidResolver
 from reader3_app.ai.queue import AIRequestQueueManager
 from reader3_app.reader3 import Book, BookMetadata, ChapterContent, TOCEntry
 from reader3_app.web import server
+from reader3_app.web.routers.ai import chat as chat_router
 
 BOOK_ID = "lease_sample_data"
 BOOK_UUID = "22222222-3333-4444-8555-666666666666"
@@ -386,7 +394,7 @@ async def _disconnect_after_first_chunk(
     request = _ControllableRequest()
     body = server.AIQuestionRequest(question="what happens here?", provider="ollama")
 
-    response = await server.api_ai_question(request, BOOK_UUID, body, stream=True)
+    response = await chat_router.api_ai_question(request, BOOK_UUID, body, stream=True)
     agen = response.body_iterator
 
     await _drive_until_first_chunk(agen)
@@ -485,7 +493,7 @@ def test_Q5_流式路径上没有散落的显式release(lease_env: LeaseEnv) -> 
     """
     import inspect
 
-    source = inspect.getsource(server.api_ai_question)
+    source = inspect.getsource(chat_router.api_ai_question)
     occurrences = source.count("ai_queue.release")
 
     assert occurrences == 1, (
@@ -549,7 +557,7 @@ async def _disconnect_while_provider_call_is_in_flight(env: LeaseEnv) -> None:
     request = _ControllableRequest()
     body = server.AIQuestionRequest(question="what happens here?", provider="anthropic")
 
-    response = await server.api_ai_question(request, BOOK_UUID, body, stream=True)
+    response = await chat_router.api_ai_question(request, BOOK_UUID, body, stream=True)
     agen = response.body_iterator
 
     first = await agen.__anext__()

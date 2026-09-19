@@ -253,6 +253,8 @@ def test_R8_仓库里的豁免只有一条且上限不超过裁定值(gate):
     )
     only = gate.EXEMPTIONS[0]
     assert only.rel_path == "src/reader3_app/web/routers/ai/chat.py"
-    assert only.max_lines <= 560, "011 §5：N 只许下调，不许上调"
+    # 上界跟着实测值往下走：拆完 chat.py 是 547 行，N 已从 560 下调到 550。
+    # 这条断言也跟着收紧——棘轮只有在每次下调后都收一次，才真的是棘轮。
+    assert only.max_lines <= 550, "011 §5：N 只许下调，不许上调"
     assert only.min_function_lines == 400
     assert only.reason.strip(), "豁免必须带理由，否则下一个人无法判断它该不该留"
