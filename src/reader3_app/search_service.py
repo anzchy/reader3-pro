@@ -6,6 +6,7 @@ import time
 import unicodedata
 import html
 import logging
+from array import array
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import lru_cache
@@ -117,16 +118,30 @@ def _is_latin_base_char(ch: str) -> bool:
         return False
 
 
-def _normalize_with_map(text: str, *, case_sensitive: bool) -> Tuple[str, List[int]]:
+def _normalize_with_map(text: str, *, case_sensitive: bool) -> Tuple[str, array]:
     """
     Returns (normalized_text, index_map), where index_map[i] is the original index
     for normalized_text[i].
 
     - Case-insensitive matching uses Unicode casefold (may expand chars), while keeping a map.
     - Diacritic stripping is applied only to Latin runs (FR-009).
+
+    The map is an ``array("I")``, not a ``list[int]`` (011 WI-9). One entry per
+    normalised character means a three-million-character book holds three
+    million entries, and a list pays for a pointer *and* a boxed int per entry;
+    the array stores the raw 32-bit offsets and measured ~9x smaller on the
+    140k-character mixed sample in tests/unit/test_normalize_index_map_container.py.
+    Consumers only ever call ``len()`` and index forward, which `array` answers
+    identically -- and `array[i]` returns a plain `int`, so the spans built from
+    it serialise exactly as before.
+
+    Note the container's one sharp edge: C guarantees `unsigned int` is only >=2
+    bytes. On a platform where `array("I").itemsize` were 2, an offset above
+    65535 would raise OverflowError here rather than wrap silently. That is
+    asserted against, not assumed; see the itemsize case in the same test file.
     """
     normalized_chars: List[str] = []
-    index_map: List[int] = []
+    index_map = array("I")
     in_latin_run = False
 
     for original_index, ch in enumerate(text):
@@ -244,7 +259,7 @@ def list_book_ids(books_dir: str) -> List[str]:
 
 def _find_spans_with_map(
     normalized_text: str,
-    index_map: List[int],
+    index_map: array,
     normalized_term: str,
     *,
     max_spans: int,
@@ -727,7 +742,9 @@ class ChapterIndex:
     chapter_title: str
     chapter_order: int
     normalized_text: str
-    index_map: List[int]
+    #: ``array("I")`` of original-text offsets, one per normalised character
+    #: (011 WI-9). Indexed and len()'d only -- never mutated, never sliced.
+    index_map: array
 
 
 @dataclass

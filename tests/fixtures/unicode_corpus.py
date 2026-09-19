@@ -116,3 +116,94 @@ ASTRAL_SAMPLES: Tuple[str, ...] = (
     MIXED_ASTRAL,
     ZWJ_SCIENTIST,
 )
+
+
+# --- WI-9: differential corpus for the index_map container change ----------
+#
+# WI-9 swaps `_normalize_with_map`'s `index_map` from `List[int]` to
+# `array("I")`. The offset semantics must not move by one character, so the
+# samples below exist to be fed through both the old and the new implementation
+# and compared element by element. They deliberately cover the three paths that
+# can drift without changing the *length* of the result -- and a length-only
+# assertion would therefore miss:
+#
+#   1. the Latin branch's casefold expansion (one input char -> many output),
+#   2. the combining mark dropped inside a Latin run,
+#   3. the combining mark KEPT outside one (kana), which is the opposite branch.
+
+#: A combining acute with no base character before it, so the very first
+#: iteration takes the `combining and not in_latin_run` branch.
+LEADING_COMBINING = "́abc"
+
+#: A Latin ligature: NFD leaves it alone (its decomposition is compatibility
+#: only) and casefold expands it 1 -> 2, so the expansion happens inside the
+#: Latin branch rather than the general one that `SHARP_S_WORD` exercises.
+LATIN_LIGATURE_WORD = "eﬀekt"
+
+#: Latin, CJK, kana-with-combining-mark and a casefold expansion in one string,
+#: so `in_latin_run` is entered and left several times within a single call.
+MIXED_SCRIPT_RUN = "café 咖啡 Straße が naïve"
+
+#: Latin run immediately followed by a combining mark that belongs to a kana
+#: base: the run flag must have been cleared by the kana before the mark
+#: arrives, or the mark is wrongly dropped.
+LATIN_THEN_KANA_COMBINING = "abcがdef"
+
+#: Pure ASCII: the boring case, which is also the one every other test uses.
+PLAIN_ASCII = "The quick brown fox jumps over the lazy dog."
+
+#: Non-Latin characters whose casefold expands to MORE THAN ONE character.
+#:
+#: Every multi-character expansion in this file until now -- `SHARP_S_WORD`,
+#: `LATIN_LIGATURE_WORD` -- goes through the *Latin* branch of
+#: `_normalize_with_map`, because `unicodedata.name('ß')` contains "LATIN". The
+#: branch at the end of that function (non-Latin bases) had only single-character
+#: samples: CJK and kana fold to themselves, so its `for out_ch in to_emit` loop
+#: turned exactly once and an off-by-one inside it was invisible. Measured: with
+#: the k-th emitted character wrongly pointed at `original_index + k` in that
+#: loop, the whole suite stayed green.
+#:
+#: Two code points with *different* expansion factors, so "the expansion is
+#: always 2" is also wrong rather than accidentally right:
+GREEK_IOTA_DIALYTIKA_TONOS = "\u0390"   #: casefolds to 3 characters
+ARMENIAN_LIGATURE_MEN_NOW = "\ufb13"    #: casefolds to 2 characters
+
+#: Each expanding character is surrounded by ordinary ones, so the test can see
+#: whether the offsets AFTER the expansion were advanced correctly -- the usual
+#: shape of this bug is every later index shifted by the expansion surplus.
+GREEK_TRIPLE_EXPANSION_RUN = f"\u03b1{GREEK_IOTA_DIALYTIKA_TONOS}\u03b2"
+ARMENIAN_DOUBLE_EXPANSION_RUN = f"\u0561{ARMENIAN_LIGATURE_MEN_NOW}\u0562"
+
+#: Both expansion factors plus CJK in one string, so the branch is entered and
+#: left repeatedly within a single call.
+NON_LATIN_EXPANSION_MIX = (
+    f"{GREEK_TRIPLE_EXPANSION_RUN} \u5496\u5561 {ARMENIAN_DOUBLE_EXPANSION_RUN}"
+)
+
+#: Samples whose (normalised text, index map) pair must be identical before and
+#: after the container change, under both `case_sensitive` settings.
+NORMALIZE_DIFFERENTIAL_SAMPLES: Tuple[str, ...] = (
+    "",
+    PLAIN_ASCII,
+    LEADING_COMBINING,
+    LATIN_LIGATURE_WORD,
+    MIXED_SCRIPT_RUN,
+    LATIN_THEN_KANA_COMBINING,
+    NFC_CAFE,
+    NFD_CAFE,
+    NFD_SENTENCE,
+    SHARP_S_WORD,
+    TURKISH_DOTTED_I_WORD,
+    TURKISH_DOTLESS_I_WORD,
+    GREEK_UPPER,
+    GREEK_MIXED,
+    KANA_COMBINING,
+    KANA_PRECOMPOSED,
+    HEART_WITH_VS,
+    ASTRAL_HAYSTACK,
+    ASTRAL_INSIDE_HAYSTACK,
+    MIXED_ASTRAL,
+    GREEK_TRIPLE_EXPANSION_RUN,
+    ARMENIAN_DOUBLE_EXPANSION_RUN,
+    NON_LATIN_EXPANSION_MIX,
+)
