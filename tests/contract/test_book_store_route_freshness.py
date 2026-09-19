@@ -159,7 +159,7 @@ def test_reading_a_chapter_and_searching_it_cost_one_unpickle(
 ) -> None:
     """L3 / S2 (W3-C12) — conservation asserted across two real production call sites.
 
-    The unit cases call the two loader names directly. `search_service.py:346`
+    The unit cases call the two loader names directly. `search_service.py:451`
     (`search_book`) is reached by no unit case, so nothing else in the suite
     proves the search route forwards the *same* `books_dir` string the reader
     route does. One route passing `BOOKS_DIR` and another passing

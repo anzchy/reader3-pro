@@ -10,7 +10,9 @@ W2-C1 is deliberately the single L1 case in this file. On its own an identity
 assertion between two module attributes would be wiring-checking, so it is
 paired with three behavioural cases: the cache surface reaching across the two
 names (W2-C2), the derived index still resting on the merged loader (W2-C3),
-and the characterization of what the merge did *not* fix (W2-C4).
+and the two layers seeing a republish together (W2-C4 — a characterization of
+the gap between them until 011 WI-8/C1 closed it, and rewritten to its opposite
+at that point, as its own closing assertion had instructed).
 
 What this file must **not** grow: a restatement of
 `tests/unit/test_fixture_synthetic_library.py::test_one_pass_over_the_library_evicts_books_it_already_loaded`
@@ -140,7 +142,8 @@ def test_load_book_index_still_builds_on_the_merged_loader(
     """L3 / S2 (W2-C3) - one unpickle feeds three derived reads, both case modes.
 
     `load_book_index` must keep reaching the loader as a module-level Name load
-    (`search_service.py:284`). Two shapes break this and both are caught here:
+    (`search_service.py:335`, in `load_book_index`'s memoized half since 011
+    WI-8 split the stat off). Two shapes break this and both are caught here:
     the index acquiring its own `load_book_file` call (the count goes to 2 or
     3), and the call site being rewritten as `book_store.load_book_cached(...)`
     — which would also turn `test_server_patch_seam_ownership.py::test_a6` red
@@ -173,27 +176,32 @@ def test_load_book_index_still_builds_on_the_merged_loader(
 
 
 # ==========================================================================
-# W2-C4 — characterization: what the merge did NOT fix
+# W2-C4 — the loader and the index it feeds are fresh together
 # ==========================================================================
 
 
-def test_the_index_cache_still_serves_stale_text_after_the_pickle_changes(
+def test_the_index_follows_the_loader_after_the_pickle_changes(
     books_dir: Path, merged_loader_cache, rewrite_book_pkl
 ):
-    """L3 / S2 (W2-C4) - characterization. Recorded, not endorsed.
+    """L3 / S2 (W2-C4) - both layers see a republish. Rewritten by WI-8/C1.
 
-    `load_book_index` (`maxsize=4`, no re-stat) is WI-8/C1's job; this test is
-    its ready-made red. 011 §4 must not be read as "the cache knows the disk
-    changed": after `book.pkl` is republished, `load_book_cached` returns the
-    new bytes while a *warm* `load_book_index` entry keeps serving the old
-    normalized text.
+    Until WI-8 this case was a characterization of the *gap* between the two
+    layers: `load_book_cached` carried `(st_mtime_ns, st_size)` in its key and
+    returned the new bytes, while a warm `load_book_index` entry — keyed on
+    nothing but `(book_id, books_dir, case_sensitive)` — kept serving the old
+    normalized text. Its closing assertion said in as many words that
+    `load_book_index` re-stating the file meant WI-8/C1 had landed and that this
+    test was then to be rewritten deliberately rather than relaxed. It has
+    landed; this is that rewrite, and it asserts the opposite of what it used to.
 
-    Both halves are asserted in one test on purpose. Split apart, the fresh
-    half would pass on a codebase where the stale half had been fixed and the
-    stale half would pass on a codebase where the loader fix had been reverted;
-    together they pin the exact divergence that exists today. WI-8 putting the
-    stat into the index's key is the intended future red — when it lands, this
-    test must be rewritten deliberately, not relaxed.
+    Both halves stay in one test, for the reason the characterization gave and
+    which survives the inversion: split apart, the loader half would pass on a
+    codebase where the index fix had been reverted and the index half would pass
+    on a codebase where the loader fix had been reverted. Together they pin that
+    the two layers move as one. What this case does *not* own is the index's own
+    invalidation matrix — same-tick size changes, both case flags, the absent
+    book — which lives in `test_search_service_index_freshness.py`; this one
+    stays the two-layer claim it was written to be.
     """
     directories = two_books(books_dir)
     search_service.load_book_index.cache_clear()
@@ -219,11 +227,11 @@ def test_the_index_cache_still_serves_stale_text_after_the_pickle_changes(
     assert new_marker in reloaded.spine[0].text
     assert old_marker not in reloaded.spine[0].text
 
-    # Half two: the derived index is not. This is the gap WI-8 owns.
-    stale = search_service.load_book_index(book_id, directory, case_sensitive=False)
-    assert stale is warm
-    assert old_marker.casefold() in stale.chapters[0].normalized_text
-    assert new_marker.casefold() not in stale.chapters[0].normalized_text, (
-        "load_book_index re-stated the file, which means WI-8/C1 landed. Rewrite "
-        "this characterization deliberately; do not delete the assertion."
+    # Half two: the derived index is fresh too. This is what WI-8 bought.
+    fresh = search_service.load_book_index(book_id, directory, case_sensitive=False)
+    assert fresh is not warm, (
+        "load_book_index returned the pre-republish entry, so the file's stat is "
+        "no longer in its key: WI-8/C1 has been reverted"
     )
+    assert new_marker.casefold() in fresh.chapters[0].normalized_text
+    assert old_marker.casefold() not in fresh.chapters[0].normalized_text

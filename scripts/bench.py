@@ -27,8 +27,8 @@ ImportError。预检故意用一个独立子进程做，因为父进程一旦 im
 
 三处 `@lru_cache`（`web.server.load_book_cached` maxsize=10、
 `search_service.load_book_cached` maxsize=10、`search_service.load_book_index`
-maxsize=4）加上 Python 自己的模块 import 缓存，意味着**同进程内的第二次永远不是
-冷启动**。可选口径有两个：
+maxsize=12，011 WI-8/C1 之前是 4）加上 Python 自己的模块 import 缓存，意味着**同
+进程内的第二次永远不是冷启动**。可选口径有两个：
 
   A. 全新进程（本脚本采用）—— 含解释器启动、import、模块级初始化，是用户按下
      `reader3-server` 到能服务第一个请求真正等的那段时间。
@@ -381,10 +381,12 @@ def worker_query(args: argparse.Namespace) -> None:
                 raise RuntimeError(f"{path} -> {r.status_code}: {r.text[:200]}")
             return elapsed
 
-        # **顺序是算过的，不是随手排的。** `load_book_index` 是 maxsize=4，谁先跑，
-        # 谁就把后面那一对的「首次」变成缓存命中，配出一个假的加速比。全库搜索会
-        # 走遍 21 本、把缓存冲成「最后访问的 4 本」，所以它必须排在最前：之后测的
-        # 小书与大部头都保证已被淘汰，三对的「首次」都是真的冷。
+        # **顺序是算过的，不是随手排的。** `load_book_index` 是 maxsize=12（011
+        # WI-8/C1 之前是 4），谁先跑，谁就把后面那一对的「首次」变成缓存命中，配出
+        # 一个假的加速比。全库搜索会走遍 21 本、把缓存冲成「最后访问的 12 本」，所以
+        # 它必须排在最前：21 > 12，之后测的小书与大部头都保证已被淘汰，三对的「首次」
+        # 都是真的冷。这条排序依赖「书库本数 > maxsize」，WI-8 把上限定在 20 以下正是
+        # 为了不让它塌掉。
         lib = {"q": "tide", "mode": "keyword"}
         out["library_first_ms"] = timed("/api/search/library", lib)
         out["library_second_ms"] = timed("/api/search/library", lib)
@@ -614,7 +616,7 @@ def worker_counters(args: argparse.Namespace) -> None:
       2. 打开其中一本的阅读页
       3. 在这本书里搜一次 —— 触发的是 `search_service` **另一份**缓存
       4. 回到书库首页
-      5. 全库搜三次，同样的词 —— 20 本 > `load_book_index` 的 maxsize=4
+      5. 全库搜三次，同样的词 —— 20 本 > `load_book_index` 的 maxsize=12
 
     只调一次的序列会让两个计数器恒等于「必要开销」，看不出任何重复。步骤 3 是为
     「同一本书被两处 loader 各 unpickle 一遍」设的，步骤 5 是为「同一份文本被反复

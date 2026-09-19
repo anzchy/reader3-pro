@@ -202,7 +202,7 @@ GLOBAL_RESOLVERS: Dict[str, FrozenSet[str]] = {
     # 没动，Q1–Q6 照样全绿——桩打在 server 上、代码跑在 chat.py 里，接缝就在那儿。
     "AI_WORKER_STOP_TIMEOUT_S": frozenset(),
     "BOOKS_DIR": frozenset({SERVER_MODULE}),
-    # ai/rag.py:6 模块级 import + 10、61 两处载入。search_service.py:312 与 reader3.py:709
+    # ai/rag.py:6 模块级 import + 10、61 两处载入。search_service.py:423 与 reader3.py:709
     # 是**函数体内** import（局部绑定），按设计不算——见 A7 的对照半边。
     # 2026-09-19（011 WI-4 第三步）：从 {server, ai.rag} 降为 {ai.rag}，同样是放松。
     # server.py 里读这个名字的三处全在 /api/index/* 与 /api/library/stats 里，
@@ -330,7 +330,7 @@ def _parse(source: str, filename: str) -> ast.Module:
 def _module_level_bindings(tree: ast.Module) -> Dict[str, List[ast.stmt]]:
     """模块级绑定：顶层 import / from-import / def / class / 赋值。
 
-    刻意**不**下潜进函数体与 class 体：前者是局部绑定（`search_service.py:312`、
+    刻意**不**下潜进函数体与 class 体：前者是局部绑定（`search_service.py:423`、
     `reader3.py:709` 就是这个形状，算成违规会让 Check B 在当前树上直接红），
     后者绑的是类属性不是模块 global。顶层的 `if` / `try` / `with` / 循环**要**下潜——
     条件式 import 依然是模块级绑定。
@@ -723,7 +723,7 @@ def test_a7_check_b_negative_control_reverse_import_vs_function_local_import() -
     assert module_global_loads(_A7_CONTROL, "<c>", names) == set(), (
         "函数体内 import 是局部绑定，模块级 patch 本来就够不着也拦不住——"
         "把它算成违规会让 Check B 在当前树上直接红"
-        "（search_service.py:312、reader3.py:709 就是这个形状）"
+        "（search_service.py:423、reader3.py:709 就是这个形状）"
     )
 
 

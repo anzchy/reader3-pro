@@ -149,17 +149,29 @@ def test_index_map_itemsize_is_wide_enough_for_a_real_books_offsets():
     longer than 65535 characters would blow up at index time. A novel chapter
     clears that easily, so the guard is a real one, not a formality: the text
     below is deliberately longer than 65536 characters.
+
+    **The width check runs before the call, and that ordering is the point**
+    (011 WI-8, follow-on fix). It used to sit after `_normalize_with_map`, where
+    it was dead code on the only platform it described: a 2-byte `unsigned int`
+    makes the call raise `OverflowError: unsigned short is greater than maximum`
+    at `append(65536)`, so the carefully worded diagnostic below could never
+    print and the reader of that traceback got no hint of the cause. Verified by
+    simulation, with `array("H")` standing in for the narrow platform. Asserting
+    the width first turns that platform into the message it was written for, and
+    every behavioural assertion afterwards is unchanged.
     """
+    assert array("I").itemsize >= 4, (
+        f"array('I') is {array('I').itemsize} bytes wide on this platform; offsets "
+        "above 65535 would raise OverflowError. Use a wider typecode."
+    )
+
     text = "a" * 70_000
     normalized, index_map = _normalize_with_map(text, case_sensitive=False)
 
     assert isinstance(index_map, array), (
         f"index_map should be array('I'), got {type(index_map).__name__}"
     )
-    assert index_map.itemsize >= 4, (
-        f"array('I') is {index_map.itemsize} bytes wide on this platform; offsets "
-        "above 65535 would raise OverflowError. Use a wider typecode."
-    )
+    assert index_map.itemsize >= 4
     assert len(normalized) == 70_000
     assert len(index_map) == 70_000
     assert index_map[65_536] == 65_536
