@@ -337,9 +337,18 @@ POST /api/ai/question/{book_uuid}   server.py:2454-2886   433 行   ← 一个�
 一并在 PR 描述里写明。
 
 ### 验收
-- `routes.snapshot` 零 diff。
+- `routes.snapshot` 零 diff。**这个文件一动就说明搬丢了或前缀写错了。**
 - 008 契约测试 + 009 `baseline_1b` 全绿。
-- `wc -l src/reader3_app/web/routers/*.py` 每个 < 500。
+- ~~`wc -l src/reader3_app/web/routers/*.py` 每个 < 500~~ —— **人肉 `wc -l` 不算兑付**。
+  改为：`scripts/check_router_size.py` 在 CI 里绿，且它曾对着拆分前的 `server.py` 见过红。
+  它同时执行上面那条豁免的**到期条件**。
+  > **接线时机是有意推后的，别当成漏了。** 脚本与它的 10 条单测已于 2026-09-19 落地
+  > （`scripts/check_router_size.py` ＋ `tests/unit/test_router_size_gate.py`），
+  > 但**还没接进 `.github/workflows/lint.yml`** —— 今天接上去，CI 就会一直红到拆分做完，
+  > 而 CI 是**仅发版触发**的，那意味着这期间任何一次发版都会因为一件正在做的事而失败。
+  > **接线放在拆分完成的那个 commit 里**，与它转绿同时发生。**这一条不兑付，本 WI 不算完。**
+- `tests/unit/test_ai_queue_lease.py` 的 Q1–Q6 在**每一步搬家之后**各跑一次，不是只在最后跑一次
+  —— 它是 SSE 运行时绑定的护栏，而那是本 WI 唯一会静默坏掉的东西。
 
 ---
 
