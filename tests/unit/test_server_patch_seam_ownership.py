@@ -209,8 +209,16 @@ GLOBAL_RESOLVERS: Dict[str, FrozenSet[str]] = {
     "post_stream": frozenset(),
     "retrieve_passages": frozenset({SERVER_MODULE}),
     "save_ai_settings": frozenset({SERVER_MODULE}),
-    "search_book": frozenset({SERVER_MODULE}),
-    "search_library": frozenset({SERVER_MODULE}),
+    # 2026-09-19（011 WI-4 第二步）：这两条从 {server} 降为空集，方向是**放松**。
+    # server.py 里唯一从自己 globals 里取这两个名字的地方，就是刚搬进
+    # `web/routers/search.py` 的那几条路由；搬过去之后它们改走 `_server.search_book(...)`
+    # 属性访问，不是模块级 Name load，所以扫描器看不见——这正是 `routers/__init__.py`
+    # 那张表要的形状。server.py 侧的 import 留着，`server.search_book` 仍是打桩接缝。
+    # 空集会掩盖「这个名字已经没人用了」，所以补一句接缝仍然承重的证据（定向破坏，
+    # 已按字节还原）：把 search.py 的 `_server.search_book` 换成导入期绑定，红三条——
+    # test_event_loop_not_blocked.py::test_T2b / test_T3，以及本文件的 a15（Check C）。
+    "search_book": frozenset(),
+    "search_library": frozenset(),
 }
 
 #: Check C 真树基线（2026-09-07 实测）。name -> [(相对路径, 行号, kind)]。
