@@ -882,237 +882,6 @@ def _annotation_matches_chapter_text(chapter_text: str, ann: Annotation) -> bool
     return quote in hay
 
 
-def _refresh_orphaned_annotations(book_id: str, book: Book, annotations: list[Annotation]) -> list[Annotation]:
-    changed = False
-    chapter_text_by_index: dict[int, str] = {}
-
-    for ann in annotations:
-        if ann.orphaned:
-            continue
-        if ann.chapter_index < 0 or ann.chapter_index >= len(book.spine):
-            ann.orphaned = True
-            changed = True
-            continue
-        if ann.chapter_index not in chapter_text_by_index:
-            chapter_text_by_index[ann.chapter_index] = book.spine[ann.chapter_index].text or ""
-        if not _annotation_matches_chapter_text(chapter_text_by_index[ann.chapter_index], ann):
-            ann.orphaned = True
-            changed = True
-
-    if changed:
-        save_note_annotations(BOOKS_DIR, book_id, annotations)
-
-    return [a for a in annotations if not a.orphaned]
-
-
-class CreateAnnotationRequest(BaseModel):
-    type: str = Field(..., description="marker|wavy|underline|note")
-    color: Optional[str] = Field(default=None, description="yellow|green|pink|blue")
-    quote: str
-    prefix: str = ""
-    suffix: str = ""
-    position: Optional[int] = None
-    cfi: Optional[str] = Field(default=None, description="epub.js CFI for precise anchor")
-    note_text: Optional[str] = None
-
-
-class UpdateAnnotationRequest(BaseModel):
-    note_text: str = Field(..., description="Updated note text")
-
-
-@app.get("/api/notes/{book_id}")
-async def api_get_book_notes(book_id: str):
-    safe_book_id = _validate_book_id(book_id)
-    book = load_book_cached(safe_book_id)
-    if not book:
-        raise HTTPException(status_code=404, detail="Book not found")
-
-    annotations = load_note_annotations(BOOKS_DIR, safe_book_id)
-    active = _refresh_orphaned_annotations(safe_book_id, book, annotations)
-
-    by_chapter: dict[int, list[Annotation]] = {}
-    for ann in active:
-        by_chapter.setdefault(ann.chapter_index, []).append(ann)
-
-    def _sort_key(a: Annotation):
-        return (a.position is None, a.position or 0, a.created_at, a.id)
-
-    annotations_by_chapter = []
-    total_count = 0
-    for chapter_index in sorted(by_chapter.keys()):
-        items = sorted(by_chapter[chapter_index], key=_sort_key)
-        chapter_title = book.spine[chapter_index].title if 0 <= chapter_index < len(book.spine) else ""
-
-        summaries = []
-        for a in items:
-            quote = a.quote if len(a.quote) <= 200 else a.quote[:197] + "..."
-            note_text = html.unescape(a.note_text) if a.note_text is not None else None
-            if note_text is not None and len(note_text) > 200:
-                note_text = note_text[:197] + "..."
-            summaries.append(
-                {
-                    "id": a.id,
-                    "type": a.type,
-                    "color": a.color,
-                    "quote": quote,
-                    "note_text": note_text,
-                    "position": a.position,
-                    "created_at": a.created_at,
-                }
-            )
-
-        annotations_by_chapter.append(
-            {
-                "chapter_index": chapter_index,
-                "chapter_title": chapter_title,
-                "count": len(items),
-                "annotations": summaries,
-            }
-        )
-        total_count += len(items)
-
-    return {
-        "schema_version": NOTES_SCHEMA_VERSION,
-        "book_id": safe_book_id,
-        "total_count": total_count,
-        "annotations_by_chapter": annotations_by_chapter,
-    }
-
-
-@app.get("/api/notes/{book_id}/{chapter_index}")
-async def api_get_chapter_notes(book_id: str, chapter_index: int):
-    safe_book_id = _validate_book_id(book_id)
-    book = load_book_cached(safe_book_id)
-    if not book:
-        raise HTTPException(status_code=404, detail="Book not found")
-    if chapter_index < 0 or chapter_index >= len(book.spine):
-        raise HTTPException(status_code=400, detail="Invalid chapter_index")
-
-    annotations = load_note_annotations(BOOKS_DIR, safe_book_id)
-    active = _refresh_orphaned_annotations(safe_book_id, book, annotations)
-    items = [a for a in active if a.chapter_index == chapter_index]
-    items.sort(key=lambda a: (a.position is None, a.position or 0, a.created_at, a.id))
-
-    out = []
-    for a in items:
-        d = a.to_dict()
-        if d.get("note_text") is not None:
-            d["note_text"] = html.unescape(str(d["note_text"]))
-        out.append(d)
-
-    return {
-        "book_id": safe_book_id,
-        "chapter_index": chapter_index,
-        "count": len(items),
-        "annotations": out,
-    }
-
-
-@app.post("/api/notes/{book_id}/{chapter_index}", status_code=201)
-async def api_create_annotation(book_id: str, chapter_index: int, payload: CreateAnnotationRequest):
-    safe_book_id = _validate_book_id(book_id)
-    book = load_book_cached(safe_book_id)
-    if not book:
-        raise HTTPException(status_code=404, detail="Book not found")
-    if chapter_index < 0 or chapter_index >= len(book.spine):
-        raise HTTPException(status_code=400, detail="Invalid chapter_index")
-
-    ann_type = str(payload.type or "").strip().lower()
-    if ann_type not in ("marker", "wavy", "underline", "note"):
-        raise HTTPException(status_code=400, detail="Invalid type")
-
-    color = payload.color
-    if not color:
-        color = "yellow"
-    if color not in ("yellow", "green", "pink", "blue"):
-        raise HTTPException(status_code=400, detail="Invalid color")
-
-    note_text = payload.note_text
-    if ann_type == "note":
-        if note_text is None or not str(note_text).strip():
-            raise HTTPException(status_code=400, detail="note_text is required for type=note")
-        note_text = html.escape(str(note_text))
-    else:
-        note_text = None
-
-    quote = str(payload.quote or "")
-    if not quote.strip():
-        raise HTTPException(status_code=400, detail="quote is required")
-
-    prefix = str(payload.prefix or "")
-    suffix = str(payload.suffix or "")
-    if len(prefix) > 50:
-        prefix = prefix[-50:]
-    if len(suffix) > 50:
-        suffix = suffix[:50]
-
-    position = payload.position
-    if position is not None:
-        try:
-            position = int(position)
-        except Exception:  # noqa: BLE001 - 第 3 档：position 解析不出来就退回 None，标注仍靠 quote/prefix/suffix 锚定；类型待收窄为 (TypeError, ValueError)
-            position = None
-    if position is not None and position < 0:
-        position = 0
-
-    cfi = str(payload.cfi).strip() if payload.cfi is not None else None
-    if not cfi:
-        cfi = None
-
-    annotation = Annotation(
-        book_id=safe_book_id,
-        chapter_index=chapter_index,
-        type=ann_type,  # type: ignore[arg-type]
-        color=color,  # type: ignore[arg-type]
-        quote=quote,
-        prefix=prefix,
-        suffix=suffix,
-        position=position,
-        cfi=cfi,
-        note_text=note_text,
-        orphaned=False,
-    )
-
-    saved = add_note_annotation(BOOKS_DIR, annotation)
-    return {"id": saved.id, "created_at": saved.created_at, "message": "Annotation created successfully"}
-
-
-@app.delete("/api/notes/{book_id}/{chapter_index}/{note_id}", status_code=204)
-async def api_delete_annotation(book_id: str, chapter_index: int, note_id: str):
-    safe_book_id = _validate_book_id(book_id)
-    book = load_book_cached(safe_book_id)
-    if not book:
-        raise HTTPException(status_code=404, detail="Book not found")
-    if chapter_index < 0 or chapter_index >= len(book.spine):
-        raise HTTPException(status_code=400, detail="Invalid chapter_index")
-
-    ok = delete_note_annotation(BOOKS_DIR, safe_book_id, note_id)
-    if not ok:
-        raise HTTPException(status_code=404, detail="Annotation not found")
-    return Response(status_code=204)
-
-
-@app.put("/api/notes/{book_id}/{chapter_index}/{note_id}")
-async def api_update_annotation(book_id: str, chapter_index: int, note_id: str, payload: UpdateAnnotationRequest):
-    safe_book_id = _validate_book_id(book_id)
-    book = load_book_cached(safe_book_id)
-    if not book:
-        raise HTTPException(status_code=404, detail="Book not found")
-    if chapter_index < 0 or chapter_index >= len(book.spine):
-        raise HTTPException(status_code=400, detail="Invalid chapter_index")
-
-    note_text = str(payload.note_text or "").strip()
-    if not note_text:
-        raise HTTPException(status_code=400, detail="note_text is required")
-
-    note_text = html.escape(note_text)
-    updated = update_note_annotation(BOOKS_DIR, safe_book_id, note_id, note_text)
-    if not updated:
-        raise HTTPException(status_code=404, detail="Annotation not found")
-
-    return {"id": updated.id, "note_text": updated.note_text, "message": "Annotation updated successfully"}
-
-
 @app.get("/api/search/library")
 async def api_search_library(
     q: str = "",
@@ -2957,6 +2726,18 @@ def resolve_port(argv: list[str], env: dict[str, str]) -> int:
         return _parse_port(raw, "READER3_PORT")
 
     return DEFAULT_PORT
+
+
+# ---------------------------------------------------------------------------
+# 按关切拆开的 router。**必须在文件末尾 include**：router 模块在导入期会
+# `from .. import server as _server` 绑定本模块对象，放在文件开头 include 会让它
+# 在本模块的名字都还没定义时就被导入。绑的是模块不是属性，所以这里只要求
+# 「server 这个对象已经在 sys.modules 里」，不要求它已经执行完。
+# 规矩与实测依据见 `routers/__init__.py` 的 docstring。
+# ---------------------------------------------------------------------------
+from .routers import notes as _notes_router  # noqa: E402
+
+app.include_router(_notes_router.router)
 
 
 def main() -> int:
