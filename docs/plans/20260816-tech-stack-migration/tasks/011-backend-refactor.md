@@ -532,16 +532,20 @@ POST /api/ai/question/{book_uuid}   server.py:2454-2886   433 行   ← 一个�
 
 | # | 门槛 | 复核方式 |
 |---|---|---|
-| 1 | 每个 `routers/*.py` < 500 行（唯一具名豁免 `ai/chat.py` ≤ 550，带到期条件） | `python3 scripts/check_router_size.py`（已接入 `lint.yml`）。**人肉 `wc -l` 不算兑付。** 注意范围：`server.py` 不再声明路由，已掉出这道闸——见 §5 完成记录「门禁口子」 |
-| 2 | `tests/contract/routes.snapshot` **零 diff** | `git diff --stat` 里不出现它 |
-| 3 | 008 三条 lane 全绿 | `/tdd-guardian:gate commit` |
-| 4 | 009 `baseline_1b` 67 项全绿，`suite_hash` 仍是 `2747100dadf6` | `uv run python scripts/soak_run.py`（不加 `--append`，本分支上的运行**不进台账**） |
-| 5 | WI-0a 注册表覆盖全部 20 个打桩名，且故意制造过期别名时**演示过它会红** | 见 §1 验收 |
-| 6 | `tests/unit/` + `tests/contract/` 全域出网兜底生效 | 见 §1 验收 |
-| 7 | `bench.py` 跑通，反序列化计数不为零，C1/C2 指标相对基准改善 | §3 存档的 before/after |
-| 8 | DEG-S5 验收用例解禁并转绿 | `pytest tests/e2e/acceptance_2a -k deg_s5` |
-| 9 | `tests/conftest.py` 未被修改 | `git diff --stat master..011-backend-refactor -- tests/conftest.py` 为空 |
+| 1 ✅ | 每个 `routers/*.py` < 500 行（唯一具名豁免 `ai/chat.py` ≤ 550，带到期条件） | `python3 scripts/check_router_size.py`（已接入 `lint.yml`）。**人肉 `wc -l` 不算兑付。** 注意范围：`server.py` 不再声明路由，已掉出这道闸——见 §5 完成记录「门禁口子」 |
+| 2 ✅ | `tests/contract/routes.snapshot` **零 diff** | `git diff --stat` 里不出现它 |
+| 3 ✅ | 008 三条 lane 全绿 | **不是 `/tdd-guardian:gate commit`** —— 原文写的是它，但 `.claude/tdd-guardian/config.json` 里只有 `unit` 的 `gateOn` 含 `commit`，`e2e` 与 `packaging` 都挂在 `push` 上，**那条命令只跑一条 lane，验不了这条门槛**。用 `/tdd-guardian:gate push`。2026-09-19 在 `53a823f` 上实测三条全绿：unit `1291 passed, 2 skipped, 50.91s`；e2e `91 collected → 74 passed, 17 skipped, 60.64s`；packaging `1 passed, 1 deselected, 26.77s`；覆盖率门禁 PASS（lines 84.67% / branches 68.29%，8 条 criticalPaths 全 PASS）。**兑付前 `e2e` / `packaging` 的上一次绿是 2026-09-06 的 `6165e1b`，落后 29 个提交、其间 `src/` 改了 17 文件 +3017/−2114** —— 这段盲区是靠 unit lane 的绿冒充三条 lane 的绿维持的 |
+| 4 ✅ | 009 `baseline_1b` 67 项全绿，`suite_hash` 仍是 `2747100dadf6` | **2026-09-19 在 `53a823f` 上随 `gate push` 的 e2e lane 重跑，67 条全绿**（`uv run pytest tests/e2e/baseline_1b --collect-only -q` 复核为 `67 tests collected`；冻结 8 路径对 `master` 零 diff，`suite_hash` 未动）。上一次绿是 `c0ec1cb`，其后 WI-5a 又改了 `routers/notes.py`，所以那次绿不够用，本次是重跑的。原复核方式： `uv run python scripts/soak_run.py`（不加 `--append`，本分支上的运行**不进台账**） |
+| 5 ✅ | WI-0a 注册表覆盖全部 20 个打桩名，且故意制造过期别名时**演示过它会红** | 见 §1 验收 |
+| 6 ✅ | `tests/unit/` + `tests/contract/` 全域出网兜底生效 | 见 §1 验收 |
+| 7 ❌ | `bench.py` 跑通，反序列化计数不为零，C1/C2 指标相对基准改善 | §3 存档的 before/after |
+| 8 ❌ | DEG-S5 验收用例解禁并转绿 | `pytest tests/e2e/acceptance_2a -k deg_s5` |
+| 9 ✅ | `tests/conftest.py` 未被修改 | `git diff --stat master..011-backend-refactor -- tests/conftest.py` 为空 |
 
+> **2026-09-19 实测：9 条中 7 条兑付，剩 #7 与 #8。** 此前看板与本文都读作「只剩 1 条（#8）」，那是错的 —— 它把一条 unit lane 的绿当成了三条 lane 的绿，#3 与 #4 当时其实都没有当前的证据。这一次是先跑再改：`gate push` 三条 lane 全绿之后才在表里打勾。**剩下两条的性质不同**：#8（DEG-S5 ＝ WI-5b）是还没做的活；#7（bench C1/C2）是 WI-8 / WI-9 未开工，`array('I')` 在 `src/` 里搜不到 —— 也就是说它连 before/after 的 after 都还不存在。
+>
+> **勾的成色不一样，记清楚**：#1 / #2 / #3 / #4 / #9 是 2026-09-19 当天实测的；**#5 与 #6 的勾沿用前序会话的证据，当天没有重测** —— 它们钉的是静态守卫（注册表与出网兜底），随 unit lane 一起跑，lane 绿即它们绿，但这是推断不是直接观测。谁要把 011 收口，这两条值得亲手再验一次。
+>
 > **门槛 4 的括号很重要。** 分支上的 soak 运行**不能**记进 `soak-log.md` —— 台账数的是 `master` 上冻结覆盖面的稳定性。分支上跑它是为了当护栏，不是为了攒次数。
 
 ---
