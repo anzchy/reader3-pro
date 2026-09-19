@@ -272,21 +272,30 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 
 **Phase 2a**
 
-- [ ] `web/server.py`（~2,400 行）拆分为 FastAPI routers 六组：
+- [ ] `web/server.py`（**2,905 行**——本行原写「~2,400 行」，写于 2026-08-16；2026-09-19 `wc -l` 实测 `master` 为 2,905。011 分支上是 2,979，多出的 74 行全部来自 `1be7387` 一个 commit，**不是拖延期间的自然增生**）拆分为 FastAPI routers 六组：
   - `routers/library.py`（library + collections + stats）
   - `routers/reader.py`（阅读页 + book.epub + 图片资源）
   - `routers/notes.py`
   - `routers/search.py`（搜索 + 语义索引）
   - `routers/ai.py`（对话 + RAG + 摘要 + 问答）
   - `routers/settings.py`
-- [ ] 新建共享 `book_store.py`：合并 `server.py` / `search_service.py` / `vector_search.py` 三处重复的 `_Reader3Unpickler` 与 `lru_cache` loader（消除同一本书 3 份内存缓存与漂移风险）。粒度接口与「为什么是三处不是四处」见附录 A 的 A5
-  - **同时解决缓存失效**：三处 `lru_cache` 的 key 都不含 mtime，重新处理一本书之后服务端仍然供旧 `Book`。Phase 0 的 P0-1 只保住了用户数据，**没有**让缓存知道盘上的东西变了；这一项在此之前无家可归，现在归 `book_store.py`
-- [ ] chromadb + sentence-transformers 移入可选依赖组 `[project.optional-dependencies] semantic`（与 README"语义依赖可选"的描述对齐）
-- [ ] 修复 `ai/config.py` 设置写入改为原子替换（`.tmp` + `os.replace`，与 notes/collections 一致）
+  - ⚠️ **2026-09-19 实测：`ai` 这一组过不了下面「每个 router < 500 行」的门槛，且不是靠搬家能解决的。**
+    `/api/ai/*` 八条路由合计 708 行，其中 `api_ai_question` **一个函数就是 433 行**（`web/server.py:2454-2886`，
+    9 条顶层语句 ＋ 6 个嵌套闭包：`event_gen` 174 / `_do` 139 / `worker_ollama` 55 / `worker_non_stream` 18 / `push` 2 /
+    `_release_lease` 2）。它独占的模块级 helper 还有 `_stop_stream_worker` 60 行（调用点只有 `:2662`、`:2670`，都在这个函数里）。
+    **433 ＋ 60 ＝ 493，再加 import 与 `APIRouter` 声明就越线**——即「把这条路由单独放一个文件、别的什么都不放」仍然不达标。
+    三条候选路线与取舍记在 [`tasks/011-backend-refactor.md`](./tasks/011-backend-refactor.md) §5，**方向待裁定**，本表不重述。
+- [x] 新建共享 `book_store.py` —— **已兑付**（`1be7387`，011 WI-3）。**本条原文的三个部分在 2026-09-07 实测时全不成立**，兑付的是订正后的范围：`_Reader3Unpickler` 早在 007/008 期间就收敛成了 `safe_pickle.Reader3Unpickler`，不存在三份重复；`vector_search.py` 直接调 `safe_pickle.load_book_file`，**根本没有 loader、不在合并范围内**。真正重复的是两个**同名不同签名**的 `load_book_cached`（`server.py` 与 `search_service.py`，各挂一个 `lru_cache(maxsize=10)`，同一本书在进程里躺两份）。推导与「同名是陷阱，不只是重复」见 [`tasks/011-backend-refactor.md`](./tasks/011-backend-refactor.md) §0.2，本表不重述
+  - [x] **同时解决缓存失效** —— 同一个 commit 兑付。key 里带上 `mtime_ns` ＋ `size`，重新处理一本书之后服务端不再供旧 `Book`
+- [ ] chromadb + sentence-transformers 移入可选依赖组 `[project.optional-dependencies] semantic`（与 README"语义依赖可选"的描述对齐）。2026-09-19 复核：**未做**，`pyproject.toml` 里没有 `[project.optional-dependencies]` 这个表，两者都还在主 `dependencies`
+  - **阶段归属订正**：本条列在 Phase 2a 下，而 [`tasks/011-backend-refactor.md`](./tasks/011-backend-refactor.md) §7 把它（WI-7）划进「收尾与 Phase 2b」。**以 §8 的退出门槛表为准**——Phase 2a 那一行只列了三项，本条不在其中，**所以它不拦 2a 关门**。两处措辞此后不再各写各的
+- [x] 修复 `ai/config.py` 设置写入改为原子替换 —— **已兑付**（`0e103ab`，008 期间，早于 011 开工）。落地写法与本条原文有一处**刻意偏离**：临时文件名走 `tempfile.mkstemp(dir=同目录)` 而不是仓库别处那种固定的 `f"{path}.tmp"`，因为这个文件装明文 API key，权限位得由 `mkstemp` 保证（理由写在 `ai/config.py:163-167`）
 - [ ] **notes 乐观并发控制**：notes 是 load→modify→save 全覆盖，`os.replace` 只保证单次写入原子，不防两个并发请求互相覆盖——自托管单用户开两个标签页即可触发。加 revision/ETag（或 per-file lock），冲突时返回 409 而非静默丢写。前端侧的冲突 UI 是设计规格 §6.4 的 **DEG-S5**
 - [ ] **`max_retries` 定性**：这个配置项能在设置页填、能存进 `ai_settings.json`、能从 `GET /api/settings` 读回、`settings.js` 也在渲染它——但**全链路没有任何 provider 消费它**。删掉它还是接通它，二选一。留在 Phase 2 而不是 Phase 0，是因为两种选法都是行为变更：接通改的是重试语义，删掉改的是设置页可见字段
-- [ ] 路由启发式修正：`estimate_tokens()` 对 CJK 按 ~1.5 字符/token 估算；Anthropic 默认上下文窗口 1M → 200k
+- [x] 路由启发式修正 —— **已兑付**（`105bbbb`，008 期间）。`ai/routing.py:38-39` 的 `_CJK_CHARS_PER_TOKEN = 1.5` / `_OTHER_CHARS_PER_TOKEN = 4.0`，以及 `:99-102` 那句 "Default DOWN" 注释与 `return 200_000`
 - [ ] 修订 `CLAUDE.md` § Constitution Principles（原 `.specify/memory/constitution.md` 已随 spec-kit 工具链于 2026-08-16 删除，CLAUDE.md 的摘要版成为唯一权威）：保留简单性原则，修订已过时的实现禁令（"除 FastAPI/BeautifulSoup 外不加抽象"已不能描述含 Chroma、5 provider、异步队列、42 路由的系统）；"测试可选"条款删除
+  - ⚠️ **2026-09-19 实测：只兑付了一半，仍然欠着。** 已兑付的部分：spec-kit 那段说明在位（`CLAUDE.md:118-119`），"测试可选"条款全文搜索 **0 命中**，确已删除。**未兑付的部分正是本条点名要改的那句**——`CLAUDE.md:122` 今天仍逐字写着「YAGNI - no abstractions beyond FastAPI/BeautifulSoup」，一字未动。`tasks/011-backend-refactor.md` §0.1 那张实测表把本条整条记成 ✅，**那一格是错的**，已同步订正
+  - 这一格现在不是纯记账问题：`CLAUDE.md:122` ＋ ADR-0008 正是「`api_ai_question` 能不能抽出一层 service」这道题的约束条件（见上面 `routers/ai.py` 那条 ⚠️）。**先裁 router 拆法，再决定要不要动这一条**——反过来做就成了为一次重构去改宪法
 
 **Phase 2b**
 
@@ -388,7 +397,7 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 | Phase 1a | Phase 0 | 测试门禁生效（**本地 tdd-guardian**，非 required check——见本节 soak 小节的改基说明）；42 路由契约测试通过；**API v1 形状冻结**；性能基准记录在案 |
 | Phase 1b | 0.3 + 0.5 | **本行的展开（G1/G2 两道门）在 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) §8，本表不重述**。**`baseline-1b` 组**在**本地 `e2e` lane** 绿灯并入 `soak-log.md` 台账（原写「主 CI（非 nightly）」，2026-08-24 随 CI 改为仅发版触发而改基，见本节 soak 小节）；**用例覆盖写路径**（四类型创建 / 改色的现状特征化 **W-5a**（W-5b 归 4B.1）/ 删除 / 笔记保存，断言为刷新后回到同一段文字）；K2–K5 与 K1/K6 的**现状特征化**条各一条正向证据；连续 3 次全量运行零 flaky；其余组**用例写完并 review**，以 skip 形态存在。⚠️ K1/K6 的新行为与 DEG-S1–DEG-S4 的横幅**不在本阶段门槛内**——它们要到 4B.1 / Phase 3 / 4A.4 才存在，写进 1b 会形成依赖环。分组见 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) §0.5 |
 | Track D | Phase 0 | DEG-S1–DEG-S5 设计完成并回写设计规格 §6.4；合同 2 剩余两项收口；loading 骨架屏补齐 |
-| Phase 2a | 1a | 每个 router < 500 行；`book_store` **三处** loader 合并（第四处已作为死代码删除，见附录 A 的 A5）；**notes 乐观并发落地**；行为不变由 1a 证明 |
+| Phase 2a | 1a | 每个 router < 500 行（⚠️ `ai` 组实测过不了，见 §6 Phase 2a 清单里那条，**方向待裁定**）；~~`book_store` **三处** loader 合并~~ → **已兑付 `1be7387`**，且实际合并的是**两个同名不同签名的 `load_book_cached`**，不是原文写的「三处 `_Reader3Unpickler`」（`vector_search.py` 没有 loader；依据见 [`tasks/011-backend-refactor.md`](./tasks/011-backend-refactor.md) §0.2）；**notes 乐观并发落地**（WI-5，未做）；行为不变由 1a 证明 |
 | Phase 2b | 2a | 跨库搜索性能相对基准可量化改善；`_normalize_with_map` 差分测试通过 |
 | Phase 3 | 2b + Track D **且 soak 门槛达标**（三路汇合，见 §9.1） | 新书完全不依赖 pickle；存量可一键迁移；**`--migrate` 原地读写，不复用摄取路径**；**DEG-S1–DEG-S4 在当时的 UI 里可见**——即 **`acceptance-p3` 组解开 skip 并绿灯**（朴素横幅形态）；真实 iframe 标注迁移 E2E 通过 |
 | Phase 4A | **1b 的 G1**（用例完成门；不必等 G2/soak） | wheel 内容测试通过；settings 与 library 切换后 `baseline-1b` **零改动**全绿；**4A.4 另需 `acceptance-4a4` 组解开 skip 并绿灯**（DEG-S1–DEG-S4 改版形态）；Classic 已删除 |
@@ -707,7 +716,16 @@ Phase 1b 从 Phase 1 中拆出并降级为「仅阻塞 Phase 4」，使 Phase 2/
 - **A5 `book_store.py` 先定接口契约再写实现**：
   `load_book(book_id) -> Book`、`load_book_metadata(book_id)`、`load_chapter(book_id, order)`、`iter_chapters(book_id)`、`chapter_count(book_id)`、`book_fingerprint(book_id) -> str`、`storage_format(book_id) -> Literal["json","pkl"]`。
   只暴露全量 `load_book()` 会让 Phase 3 的 JSONL 随机读取与 Phase 2b 的性能优化无处落脚——JSONL 将退化为「换扩展名的 pickle」。`manifest.json` 为每章记录 `offset_bytes` / `length_bytes` / hash，`chapters.jsonl` 二进制 seek 读取；书库页只读 manifest，单章阅读只读一行。
-  **合并范围为三处** `_Reader3Unpickler` / cached-loader：`server.py` 一处、`search_service.py` 一处（`load_book_cached` + `load_book_index`）、`vector_search.py` 一处（2026-08-16 复核；原文写的行号已漂移，故改用符号定位）。
+  **合并范围（2026-09-07 实测订正，此前写的「三处 `_Reader3Unpickler` / cached-loader」三个部分全不成立）**：
+  今天的答案是 **两处同名 loader ＋ 一处建在其上的 index 缓存**——
+  `server.load_book_cached(book_id)` 与 `search_service.load_book_cached(book_id, books_dir)`
+  **同名不同签名**，各挂一个 `lru_cache(maxsize=10)`，同一本书在进程里躺两份且失效时机互不相干；
+  第三处是 `search_service.load_book_index`（`maxsize=4`），它**建在** `search_service.load_book_cached` 之上，
+  不是第三份独立 loader。**`vector_search.py` 不在合并范围内**——它直接调 `safe_pickle.load_book_file`，没有 `lru_cache`。
+  **`_Reader3Unpickler` 这一半的工作早已做完**：受限 unpickler 在 007/008 期间就收敛成了 `safe_pickle.Reader3Unpickler`。
+  > 计划没写出来的那条收益：同名是**陷阱**，不只是重复。测试里 `monkeypatch.setattr(server, "load_book_cached", …)`
+  > 出现 6 次，只换掉 `server` 那一份，`search_service` 那一份纹丝不动——合并让「打了桩」与「真的被打了桩」重新变成同一件事。
+  **已于 `1be7387`（011 WI-3）兑付**，key 里带上 `mtime_ns` ＋ `size`。推导全文见 [`tasks/011-backend-refactor.md`](./tasks/011-backend-refactor.md) §0.2。
   > **原文写的是「四处」。第四处已于 2026-08-16 删除，不进 `book_store.py`。** 那是 `SearchIndex` / `BookIndex.from_book_pkl` / `SearchIndex.build_from_library`——001-search-features 的 T027/T029/T030 产物，实现了没接线，`search_library()` 后来走的是 per-book `load_book_index` 那条路，全仓库零调用方。它带两处分歧：用**裸 `pickle.load`，没有 `_Reader3Unpickler` shim**（另外三处都有），且包在 `except Exception: failed.append(book_id)` 里——一本 legacy `__main__.Book` 的 pkl 在阅读器里能开，在这个索引里会**无声消失**；同时它整段复制了 `load_book_index` 的 `BookIndex` 构造体。把它搬进 `book_store.py` 等于把一个静默失败分支洗成「现役设计」，故直接删除。
   >
   > 删除边界：只删 `SearchIndex` 类与 `BookIndex.from_book_pkl` 这个 classmethod。**`BookIndex` / `ChapterIndex` 两个 dataclass 是活的**——`load_book_index()` 构造它们，`search_book` / `search_library` / 章内定位三条路径都在用。`search_service.py` 773 → 734 行。
