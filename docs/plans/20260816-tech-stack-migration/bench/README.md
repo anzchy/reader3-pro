@@ -7,6 +7,8 @@
 |---|---|---|
 | `011-wi2-before.json` | **Phase 2b 的 before 基准**，011 WI-2 的产出。测的是合并两处 `load_book_cached` **之前**的树（HEAD = WI-0 已落地、`src/` 未动） | macOS 26.3.1 / Apple M4 / 10 cores / Python 3.10.18 / repeat=5 |
 | `011-wi5-after.json` | **同一序列的 after**，011 WI-5 的产出。测的是 WI-1…WI-4 落地之后的树（`book_store.py` 是唯一读盘点，`web.server` / `search_service` 的 `load_book_file` 绑定已删） | 同上（同机同 Python，repeat=5） |
+| `011-wi8-after.json` | **WI-9 ＋ WI-8 双双落地之后的同一序列**（HEAD `a4e5f49`）。`--repeat 5`，其余全走默认（`--size 20`、`--chars 3000000`） | 同机同 Python，repeat=5，**电池供电、load_avg 2.29** |
+| `011-wi9-isolation.json` | **只为把 WI-9 和 WI-8 拆开而跑的隔离基准**，HEAD 固定在 `b69a568`（WI-9 已落地、WI-8 未落地），`--only counters,rss,query`。没有它就只能把两个工作项的战果混记 | 同上，load_avg 2.58 |
 
 ## 读 `011-wi2-before.json` 之前先知道两件事
 
@@ -96,3 +98,47 @@ WI-3 会把两处 loader 并成一份，`web.server` 那一格因此会掉下去
 `load_book_index` 那个 maxsize=4、且命中时不重新 stat 的洞），不是 012 的，也不在 011 §4
 的范围里。
 
+
+
+## `011-wi8-after.json` ＋ 隔离基准:把 WI-9 与 WI-8 的战果拆开
+
+`011-wi5-after.json` 存档时 **WI-9 还没落地**,所以 wi5 → wi8 的差是两个工作项的和。
+`011-wi9-isolation.json` 把 HEAD 钉在 `b69a568` 又跑了一次,三点一线之后归因是确定的:
+
+| 指标 | wi5(WI-9 前) | wi9-isolation | wi8-after | **WI-9 独得** | **WI-8 独得** |
+|---|---|---|---|---|---|
+| `rss.after_library_search_bytes` | 237.0 MB | 114.0 MB | 114.9 MB | **−123.0 MB** | **＋0.8 MB** |
+| `rss.after_huge_search_bytes` | 323.3 MB | 195.4 MB | 196.2 MB | **−127.9 MB** | **＋0.8 MB** |
+| `counters.unpickle_grand_total` | 95 | 95 | 95 | 0 | **0** |
+| `counters.normalize_calls` | 549 | 549 | 541 | 0 | **−8** |
+
+**内存那两格 100% 是 WI-9 的**(`array("I")` 换掉 `list[int]`)。WI-8 把 `load_book_index`
+的上限从 4 抬到 12,代价只有 **＋0.8 MB**——多留 8 个条目,但每个条目里的 `index_map`
+已经被 WI-9 压掉了一个数量级,所以抬上限这件事在 WI-9 之后才变得便宜。**顺序颠倒过来做,
+这个 ＋0.8 MB 会是 ＋数十 MB。**
+
+**WI-8 对两个计数器几乎不动,这是设计,不是失手。** 逐步明细:
+
+```
+                         wi5 / wi9only / wi8      （unpickle 累计 / normalize_calls 累计）
+05_library_search_1      55/189   55/189   55/181
+05_library_search_2      75/369   75/369   75/361
+05_library_search_3      95/549   95/549   95/541
+```
+
+三条实测结论:
+
+1. **`unpickle_grand_total` 一次没少(95 → 95)。** `load_book_index` 体内不读盘,它只调
+   `load_book_cached`;这 95 次完全由 `load_book_cached` 的 `maxsize=10` 对 20 本书决定,
+   而**收窄后的 WI-8 按维护者裁定不动那个上限**。本文件上一节写的「缓存尺寸是 WI-8 的活
+   (它同时管 `load_book_index` 那个 maxsize=4…)」已被裁定推翻:那 75 次抖动归 C5 / 012。
+2. **省下的 8 次只在第一轮出现,第二、三轮逐格等于 wi5。** 合成书每本 8 章
+   (`tests/fixtures/synthetic_library.py:51` `chapters: int = 8`),所以 −8 正好是**一本书**
+   的章数:第 03 步书内搜索暖起来的那本,在上限 12 下活到了第一轮全库搜索。第二、三轮
+   `+180` 与 wi5 逐格相同——**这是「低于书库规模的任何上限,顺序扫命中率恒为 0%」的实测确认**,
+   也正是代码注释里那句「本上限不试图移动这道悬崖」的兑现。
+3. **计数器是唯一可信的判据。** 本次三跑的 `counters.*` `spread_pct` 全是 `0.0%`;而
+   `011-wi2-before.json` / `011-wi5-after.json` 两份基准都是**电池供电**下、`load_avg`
+   分别 6.83 / 4.17(10 核)跑出来的,`_ms` 各项 `spread_pct` 在 13%–46%。**跨存档比较
+   `_ms` 中位数是不成立的**,本次的 query 各项虽然普遍快 3%–7%(spread 已降到 0.8%–3.3%),
+   也不应记成任何工作项的战果。
