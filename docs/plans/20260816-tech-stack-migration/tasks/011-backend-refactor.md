@@ -435,13 +435,69 @@ POST /api/ai/question/{book_uuid}   server.py:2454-2886   433 行   ← 一个�
 
 ### WI-5 notes 乐观并发
 
-notes 是 load→modify→save 全覆盖，`os.replace` 只保证单次写入原子，**不防两个并发请求互相覆盖** —— 自托管单用户开两个标签页就能触发。加 revision（或 ETag），冲突时返 409 而不是静默丢写。
+**先更正本节原来写错的病因。** 这里原文写的是「`os.replace` 只保证单次写入原子，**不防两个并发请求互相覆盖**」。**这句在今天不成立**，写它的时候大概也已经不成立了：`notes_service.py:44` 的 `_book_write_lock` 早就在，两层（进程内按书取的 `threading.Lock` ＋ `notes.json.lock` 上的 `fcntl.flock`），且 `add_annotation` / `delete_annotation` / `update_annotation` 三个函数**都**把它持有在 load→modify→save 三步之外——那个 docstring 甚至逐字写着「`os.replace` cannot help — the race is between the read and the write」。文件层面的互相覆盖已经堵死了。留着错的病因不改，代价很具体：下一个人来做 WI-5，照着这句「去加个锁」，发现锁已经在，于是判定本条早就做完了——**而真正的丢写一行没动**。
+
+真正的丢写在**客户端跨请求的陈旧性**，锁管不着：B 在 T0 读到某条 note 的 A0 版本，A 在 T1 把它改成 A1，B 在 T2 提交一个基于 A0 算出来的 `note_text`，服务端照单全收，A1 被无声盖掉。这三步里没有任何两步在同一个临界区里——陈旧性在两次 HTTP 请求**之间**，不在文件里，再宽的锁也拦不住。自托管单用户开两个标签页就能触发。
+
+**结论没变，只是理由换了**：加版本号（ETag），冲突时返 409 而不是静默丢写。
 
 **验收用例已经写好了**：`tests/e2e/acceptance_2a/test_deg_s5_write_conflict.py` 里的 `test_deg_s5_concurrent_note_edit_shows_conflict_dialog_and_loses_nothing`，现在是 skip 状态。本 WI 的完成标志是**它能解禁并转绿**，不是重写它。前端侧的冲突 UI 是设计规格 §6.4 的 DEG-S5。
 
 它在 `acceptance_2a/`，不在冻结覆盖面里 —— 解禁它不重置 soak 计数（§0.3）。
 
 ⚠️ **409 是新增的响应状态码。** ADR-0011 冻的是「响应形状」与「路由存在性」，`routes.snapshot` 只收 `METHOD path`，不收状态码，所以快照零 diff。但这仍然是一次对外可见的行为变更，**独立 PR，PR 描述里显式声明**。
+
+#### 完成记录 —— WI-5 拆成 5a / 5b，**5a 已兑付，5b 未开工**
+
+分界线就是「谁来跑验收」：后端半边（5a）全部可以由 unit lane 判定，前端半边（5b）的完成
+标志是 DEG-S5 那条 Playwright 用例转绿。两者放在一个 WI 里，结果是后端做完了也不敢记账。
+
+**WI-5a（本次完成）——`ETag` 出、`If-Match` 入、冲突返 409。**
+
+| 落点 | 内容 |
+|---|---|
+| `notes_service.py` 269→424 行 | `annotations_version()`（sha256 over canonical sorted-key JSON）、`normalize_etag()`、`NotesVersionConflict`、模块私有 `_require_version()`，以及三个 `*_and_version(..., if_match=None)` 原语 |
+| `web/routers/notes.py` 263→346 行 | 两条 GET 加 `ETag` 响应头；三条写路由加可选 `If-Match`；`_conflict()` 渲染 409 体 |
+| `tests/unit/test_notes_optimistic_concurrency.py` 新增 649 行 | 20 条用例 |
+
+**三条设计裁定，连同它们的代价一起记下来**（都已写进对应的 docstring，此处只列结论）：
+
+1. **版本从内容派生，盘上零改动。** 哈希算在**逻辑内容**（`to_dict()` 的规范化 JSON）上，
+   不是 `notes.json` 的字节。差别不是修辞：012 要重排这个文件的版式，字节派生的版本号会在
+   重排那天让**每一个**在线客户端的版本失效，而一条标注都没变。`NOTES_SCHEMA_VERSION` 仍是 1，
+   文件没加任何字段 —— R10 的「迁移后字节不变」不受影响。
+2. **粒度是整本书一个版本。** 已知代价：A 在第 3 章加高亮，会让正在改第 7 章一条不相干笔记的
+   B 收到一个他没招惹的冲突框。选它的理由是 `load_annotations` / `save_annotations` 本来就
+   整本书进出 —— 书级是**写操作实际具备的粒度**，而按标注分版本也描述不了 create / delete /
+   将来的重排。**这是选择，不是疏忽**；要改成按标注分版本，前置条件是先给文件一条按标注写的路径。
+3. **同样内容重写一遍，版本不动。** 版本是内容的函数，不是写次数的计数器。网络超时后的重发
+   （拿 X 覆盖 X）不该让其他客户端的版本失效 —— 那是纯误报，而误报是用户学会无视冲突框的路径。
+   代价：一次空写在版本上不可见；可以接受，因为空写没让任何人丢东西。
+
+**两条附带判断**：POST（新建）带 `If-Match` 时**照样校验**，但 409 体里 `annotation` 为 `null`
+——服务端没有「这条标注的当前版本」可报，而静默放行会让同一个 header 在不同路由上含义不同；
+以及**409 优先于 404**，陈旧客户端去改一条已被别人删掉的笔记，得到的是 409 不是 404（404 会
+引导他「是不是 id 写错了」然后重试，409 才说出真相：这里发生过你没看见的事）。
+
+**ADR-0011 是怎么守住的**：`If-Match` 是**可选** header，不带它时三条写路由逐字节是老行为。
+所以 `tests/contract` **一行没改**仍是 180 passed，`routes.snapshot` 零 diff。
+
+**核心判据是怎么称重的**：第 19 条用例断「两个写者握同一个版本并发进来，恰好一个成功」。
+它单独立着不算证据 —— 一次顺序调用两遍的测试在「比较放在锁外」的坏实现下同样是绿的。所以
+配了两道称：第 20 条把锁外预检真的演一遍，证明同一套并发编排能抓住「两个都成功」；以及一次
+**定向破坏** —— 把 `_require_version` 从 `with _book_write_lock` 里挪到外面，第 19 条在
+`:610` 转红而第 20 条不动，破坏后按 `cmp` 校验还原。比较与写同处一把锁，这条才是真的 CAS。
+
+**门禁实测**：unit lane `1291 passed, 2 skipped, 51.07s`（此前 1271 / 47.93s，+20 条 / +3.1s，
+多出来的时间是两条并发用例各 2s 的会合窗口）；`tests/contract` 180 passed；
+`check_router_size.py` 通过（`notes.py` 346 ≤ 500）；`check_coverage_gate.py` PASS，
+`notes_service.py [branches] 100.00% >= 83%`，无 partial branch；八条冻结路径与
+`routes.snapshot` 均零 diff。红收据 `WI-5a` 为 `assertion-failure`，verdict `SEPARATION-HELD`。
+
+**WI-5b（未开工）** —— `ConflictDialog` ＋ 解禁 DEG-S5。409 体已按它的需要成形
+（`annotation.note_text` 是远端那一版，`etag` 可直接拿去重试），由第 10 条用例钉住。
+注意那条用例的 skip 理由里还留着本节刚更正掉的同一句错病因（「后写者静默覆盖前写者」），
+解禁时一并改掉；它在 `acceptance_2a/`，不在冻结覆盖面里，改它不重置 soak 计数。
 
 ### WI-6 `max_retries` —— 这道选择题已经不由我们做了
 
@@ -498,7 +554,8 @@ notes 是 load→modify→save 全覆盖，`os.replace` 只保证单次写入原
 |---|---|---|
 | **WI-0** | 打桩接缝守卫（名字归属 + 出网兜底） | 归属注册表覆盖 20 个名字；过期别名场景转红；全域 TCP 出网转红 |
 | **WI-3** | `book_store.py`：两份缓存合一 + mtime 入 key + 粒度接口 | 跨模块 `is` 同一对象；mtime 变化后读到新内容；`baseline_1b` 不红 |
-| **WI-5** | notes 乐观并发，冲突返 409 | 并发写第二个请求得 409 且**两份内容都没丢**；DEG-S5 解禁 |
+| **WI-5a** ✅ | notes 乐观并发的后端半边（`ETag` / `If-Match` / 409） | 两个写者握同一版本并发进来恰好一个成功（＋锁外预检的反向对照）；过期 `If-Match` 得 409 **且盘上一个字节没变**；不带 `If-Match` 时行为逐字节不变 |
+| **WI-5b** | `ConflictDialog` ＋ 解禁 DEG-S5 | `pytest tests/e2e/acceptance_2a -k deg_s5` 转绿（**浏览器用例，不在 unit lane 里**） |
 | **WI-9** | `_normalize_with_map` 换 `array('I')` | 新旧实现对 CJK / casefold / combining mark 三类语料的 index_map 逐字符差分 |
 
 ### 跑之前知道这两件事
