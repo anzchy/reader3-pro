@@ -185,7 +185,11 @@ GLOBAL_RESOLVERS: Dict[str, FrozenSet[str]] = {
     "_call_provider": frozenset({SERVER_MODULE}),
     "_egress_post_stream": frozenset({SERVER_MODULE}),
     "_get_provider_runtime": frozenset({SERVER_MODULE}),
-    "_http_get_json": frozenset({SERVER_MODULE}),
+    # 2026-09-19（011 WI-4 第五步）：降为空集。读这个名字的两处都在 /api/ollama/*，
+    # 已搬进 routers/settings.py，改走属性访问。破坏证据：换成导入期绑定后
+    # 只红 a12（B-i 律），**没有任何行为测试跟着红**——这条接缝在 unit lane 里
+    # 没有行为覆盖，护着它的就是 a12 加 a15 两道静态闸，别把它们当可有可无的。
+    "_http_get_json": frozenset(),
     "ai_queue": frozenset({SERVER_MODULE}),
     "book_token_stats": frozenset({SERVER_MODULE}),
     "book_uuid_resolver": frozenset({SERVER_MODULE}),
@@ -213,7 +217,10 @@ GLOBAL_RESOLVERS: Dict[str, FrozenSet[str]] = {
     # 别名的 owner 侧名字：全 src/ 没有任何模块从自己的 globals 里取 `post_stream`。
     "post_stream": frozenset(),
     "retrieve_passages": frozenset({SERVER_MODULE}),
-    "save_ai_settings": frozenset({SERVER_MODULE}),
+    # 2026-09-19（011 WI-4 第五步）：降为空集，理由同上（四处全在 /api/settings/*）。
+    # 这条反过来有行为覆盖：破坏后除 a12 外还红了 test_settings_no_preference_loss.py
+    # 的三条（单键 PUT 不得冲掉其它偏好）。
+    "save_ai_settings": frozenset(),
     # 2026-09-19（011 WI-4 第二步）：这两条从 {server} 降为空集，方向是**放松**。
     # server.py 里唯一从自己 globals 里取这两个名字的地方，就是刚搬进
     # `web/routers/search.py` 的那几条路由；搬过去之后它们改走 `_server.search_book(...)`
