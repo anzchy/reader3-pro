@@ -284,7 +284,8 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
     （1）`ai` 按裁定 A 拆成子包四个文件（`chat.py` 547 / `conversations.py` 236 / `summary.py` 213 / `rag.py` 37），
     所以「六组」在**实现文件**这一层是七个上下；（2）另有 `routers/health.py` 34 与共用模型 `web/schemas.py` 50。
     `api_ai_question` 那 433 行**一行没变**——下降的是单文件行数，不是复杂度。
-    验收尚差 `baseline_1b` 一条，见 [`tasks/011-backend-refactor.md`](./tasks/011-backend-refactor.md) §5 完成记录。
+    验收七条全兑付，含 `baseline_1b` 67 passed 且 `suite_hash` 仍为 `2747100dadf6`；
+    见 [`tasks/011-backend-refactor.md`](./tasks/011-backend-refactor.md) §5 完成记录。
   - ⚠️ **2026-09-19 实测：`ai` 这一组过不了下面「每个 router < 500 行」的门槛，且不是靠搬家能解决的。**
     `/api/ai/*` 八条路由合计 708 行，其中 `api_ai_question` **一个函数就是 433 行**（`web/server.py:2454-2886`，
     9 条顶层语句 ＋ 6 个嵌套闭包：`event_gen` 174 / `_do` 139 / `worker_ollama` 55 / `worker_non_stream` 18 / `push` 2 /

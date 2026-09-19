@@ -355,7 +355,7 @@ POST /api/ai/question/{book_uuid}   server.py:2454-2886   433 行   ← 一个�
 - `tests/unit/test_ai_queue_lease.py` 的 Q1–Q6 在**每一步搬家之后**各跑一次，不是只在最后跑一次
   —— 它是 SSE 运行时绑定的护栏，而那是本 WI 唯一会静默坏掉的东西。
 
-### 完成记录（2026-09-19）🔨 —— 搬完了，但验收还差 `baseline_1b` 一条
+### 完成记录（2026-09-19）✅ —— 七条验收全兑付
 
 七个 commit，一组一个，每步跑一次 contract ＋ unit ＋ Q1–Q6（P-3 缓解「分小步走」）：
 
@@ -377,15 +377,33 @@ POST /api/ai/question/{book_uuid}   server.py:2454-2886   433 行   ← 一个�
 |---|---|
 | `routes.snapshot` 零 diff | ✅ 七个 commit 全程未出现在 `git diff --stat` 里 |
 | 008 契约测试全绿 | ✅ `tests/contract` 180 passed / 1 skipped |
-| 009 `baseline_1b` 全绿 | ❌ **未兑付** —— 见下 |
+| 009 `baseline_1b` 全绿 | ✅ **67 passed / 24 deselected, 56.14s**（`c0ec1cb`，见下） |
 | `check_router_size.py` 在 CI 里绿 | ✅ `a61f6c7` 接进 `lint.yml` `contracts` job，12 个文件全 PASS |
 | 它曾对着拆分前的 `server.py` 见过红 | ✅ 见上文「机器执行是豁免成立的前提」那条 |
 | 豁免到期条件随脚本执行 | ✅ `min_function_lines=400`，`api_ai_question` 实测 433 |
 | Q1–Q6 每步各跑一次 | ✅ 七步各一次，最后一次 6/6 绿 |
 
-**唯一未兑付项：`baseline_1b`。** 它在 §8 门槛 4 里，也在本节验收里，**本 WI 因此不算完**。
-执行它的会话受「不得跑完整 e2e / soak / packaging lane」约束挡住，需要另行授权或人工执行：
-`uv run python scripts/soak_run.py`（**不加 `--append`**——分支上的运行不进台账，门槛 4 的括号）。
+**`baseline_1b`（§8 门槛 4，2026-09-19 由维护者本人执行）**：
+
+```
+[soak] 67/91 tests collected (24 deselected) in 0.32s
+[soak] summary: 67 passed, 24 deselected in 56.14s
+[soak] verdict: green（可记账：是）
+[soak] row: | 2026-09-19T04:11:13Z | c0ec1cb | green | 56.14 | 2747100dadf6 | chromium-1234 | darwin-25.3.0 | … |
+[soak] dry run：未写台账（加 --append 才写）
+```
+
+三件事各自要点出来：
+
+1. **`suite_hash` 仍是 `2747100dadf6`**，与 G2 冻结值逐字相等——WI-4 搬了 43 条路由、`src/` 动了
+   16 个文件，冻结的 8 条路径**一个字节没碰**，soak 计数不受影响（§0.3 的承诺兑现）。
+2. **未加 `--append`，没有写进 `soak-log.md`**，这是**对的**，不是漏了：门槛 4 的括号写明分支上的
+   运行不进台账——台账数的是 `master` 上冻结覆盖面的稳定性，分支上跑它是当护栏不是攒次数。
+3. 67 项对得上门槛 4 的「67 项全绿」，不是子集绿。
+
+这次跑之前，e2e 网上一次见绿是 `6165e1b`（2026-09-06），距此 25 个 commit，中间 `src/` 改了
+16 个文件 / +2769 / −2104。**contract lane 查的是路由存在性与响应形状，它不开浏览器**——模板挂载、
+静态资源前缀、SSE 实际串流这三处正是换家之后最可能静默坏的地方，只有这一跑能证伪。
 
 #### 这次搬家新开了一个门禁口子
 
