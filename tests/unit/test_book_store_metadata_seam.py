@@ -472,6 +472,21 @@ def mentions_of(source: str, target: str) -> int:
     return count
 
 
+def _defines_function(source: str, name: str) -> bool:
+    """这个模块的**顶层**是否定义了叫 `name` 的（异步）函数。
+
+    只看顶层：嵌套定义不是「定义点」，一个闭包里同名的局部函数不该把闸引过去。
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return False
+    return any(
+        isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name
+        for node in tree.body
+    )
+
+
 def test_no_production_call_site_uses_the_new_seam_yet(repo_root: Path):
     """L1 / S3 (W4-C7) - exhaustive AST walk over every module under src/reader3_app/.
 
@@ -482,20 +497,37 @@ def test_no_production_call_site_uses_the_new_seam_yet(repo_root: Path):
     src = repo_root / "src" / "reader3_app"
     mentioning = {}
     library_view_still_calls_the_full_loader = False
+    library_view_defined_in = None
 
     for path in sorted(src.rglob("*.py")):
         source = path.read_text(encoding="utf-8")
         count = mentions_of(source, "load_book_metadata")
         if count:
             mentioning[str(path.relative_to(repo_root))] = count
-        if path.name == "server.py":
+        # 2026-09-19（011 WI-4）：原本这里写死 `path.name == "server.py"`。
+        # `library_view` 搬到 `web/routers/library.py` 之后那个条件永远不成立，
+        # 于是这条闸会以「C5 被提前做了」的名义报红——而 C5 根本没动。
+        # 改成按**定义点**找：谁定义了 library_view 就看谁，搬家不影响判据。
+        # 调用写法从 `load_book_cached(item)` 变成 `_server.load_book_cached(item)`，
+        # 子串仍然命中，这正是 `_server.` 形状想要的效果。
+        if _defines_function(source, "library_view"):
+            assert library_view_defined_in is None, (
+                f"library_view 有两个定义点：{library_view_defined_in} 与 "
+                f"{path.relative_to(repo_root)}。这条闸只认一个。"
+            )
+            library_view_defined_in = path.relative_to(repo_root)
             library_view_still_calls_the_full_loader = "load_book_cached(item)" in source
+
+    assert library_view_defined_in is not None, (
+        "全 src/ 里没有任何模块定义 library_view。它被改名或删掉了，"
+        "这条闸就量不到东西了——量不到判红，不判跳过。"
+    )
 
     assert set(mentioning) == {"src/reader3_app/book_store.py"}, (
         f"load_book_metadata is mentioned outside its definition site: {mentioning}. "
         "C5 belongs to 012; if you are doing it now, update this test and the plan."
     )
     assert library_view_still_calls_the_full_loader, (
-        "server.library_view no longer calls load_book_cached(item). C5 belongs to "
-        "012; if you are doing it now, update this test and the plan."
+        f"{library_view_defined_in} 里的 library_view 不再调用 load_book_cached(item)。"
+        "C5 belongs to 012; if you are doing it now, update this test and the plan."
     )

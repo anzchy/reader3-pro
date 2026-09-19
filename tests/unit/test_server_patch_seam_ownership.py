@@ -176,7 +176,12 @@ GLOBAL_RESOLVERS: Dict[str, FrozenSet[str]] = {
     "BOOKS_DIR": frozenset({SERVER_MODULE}),
     # ai/rag.py:6 模块级 import + 10、61 两处载入。search_service.py:312 与 reader3.py:709
     # 是**函数体内** import（局部绑定），按设计不算——见 A7 的对照半边。
-    "BookVectorIndex": frozenset({SERVER_MODULE, "reader3_app.ai.rag"}),
+    # 2026-09-19（011 WI-4 第三步）：从 {server, ai.rag} 降为 {ai.rag}，同样是放松。
+    # server.py 里读这个名字的三处全在 /api/index/* 与 /api/library/stats 里，
+    # 已经分别搬进 routers/search.py 与 routers/library.py，改走属性访问。
+    # 接缝仍然承重的证据（定向破坏，两文件同时改成导入期绑定，已 cmp 还原）：
+    # test_event_loop_not_blocked.py 的 T1 / T2c / T3×2 四条，加本文件 a15。
+    "BookVectorIndex": frozenset({"reader3_app.ai.rag"}),
     "_call_provider": frozenset({SERVER_MODULE}),
     "_egress_post_stream": frozenset({SERVER_MODULE}),
     "_get_provider_runtime": frozenset({SERVER_MODULE}),
