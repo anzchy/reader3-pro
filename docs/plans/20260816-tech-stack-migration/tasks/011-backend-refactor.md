@@ -494,10 +494,61 @@ POST /api/ai/question/{book_uuid}   server.py:2454-2886   433 行   ← 一个�
 `notes_service.py [branches] 100.00% >= 83%`，无 partial branch；八条冻结路径与
 `routes.snapshot` 均零 diff。红收据 `WI-5a` 为 `assertion-failure`，verdict `SEPARATION-HELD`。
 
-**WI-5b（未开工）** —— `ConflictDialog` ＋ 解禁 DEG-S5。409 体已按它的需要成形
-（`annotation.note_text` 是远端那一版，`etag` 可直接拿去重试），由第 10 条用例钉住。
-注意那条用例的 skip 理由里还留着本节刚更正掉的同一句错病因（「后写者静默覆盖前写者」），
-解禁时一并改掉；它在 `acceptance_2a/`，不在冻结覆盖面里，改它不重置 soak 计数。
+**WI-5b（2026-09-20 完成，`cc6bb18`）** —— `ConflictDialog` ＋ 解禁 DEG-S5。
+
+409 体在 WI-5a 就已按它的需要成形（`annotation.note_text` 是远端那一版，`etag` 可直接拿去
+重试），由第 10 条用例钉住；本次把它接到前端。**用 vanilla JS 做在 011 里**，没有推到 014 等
+TS 外壳 —— ADR-0008 的技术栈边界不允许为一个对话框引框架，而推迟意味着这条门槛要挂到另一个
+分支上去。
+
+| 落点 | 内容 |
+|---|---|
+| `web/static/js/annotations.js` +189/−11 | 模块级 `notesEtag` ＋ `notesWriteWithResync()`（写请求带 `If-Match`，遇 409 取回服务端版本重试一次）；DELETE 循环同走；`ConflictDialog` 的装配与两个出口 |
+| `web/templates/reader.html` +26 | `<dialog role="alertdialog">`，两个出口各一，**没有第三条关闭路径** |
+| `web/static/css/annotations.css` +81 | `.conflict-dialog` 与 `::backdrop` |
+| `tests/e2e/acceptance_2a/test_deg_s5_write_conflict.py` −7 | **只删了模块级 skip 那一块**，一条断言没动 |
+
+**解禁撞上了一条没人预见的不变式，这才是本 WI 真正的成本。** `acceptance_2a` 是本仓历史上
+**第一个**被激活的 acceptance 组，而 `scripts/lint_e2e_groups.py` 的两条 skip 轴（静态 AST 轴
+与收集期生效 marker 轴）都把「未激活组以 skip 形态存在」硬编码在了**每一个** acceptance item
+上。于是删掉那 7 行的瞬间，守卫判红：lint rc=1、unit lane 4 条红（全在 `test_e2e_group_guard.py`）。
+
+**选的是加登记表，不是放宽闸。** 新增 `ACTIVATED_ACCEPTANCE_DIRS = frozenset({"acceptance_2a"})`，
+两条轴对表内目录**反向**判定：静态轴要求整组零 skip 构造，动态轴要求收集期不带任何生效 skip
+marker；表外维持原判据不变。代价是这份判据在 oracle 侧要各维一份（`test_e2e_group_guard.py:78`
+明写「不从被测脚本 import 判据」，那是设计不是冗余）。好处是它不只没削弱闸，还把闸反过来用：
+**说激活了，就得真的绿**。
+
+目录名从模块路径读（新增 `group_dir_of`），**不拿 marker 名冒充**。今天五个组的 marker 名与目录
+名同形，直接查表也对 —— 但那是巧合不是映射。一旦某组改成不同名，登记表会**静默地对谁都不生效**：
+已激活组既不被要求 passed、也不再被要求 skip，两条轴同时闭嘴，而条数轴数的是 collected，照样满分。
+
+**两条轴的牙分别称过，而且第一版没称住。** 反向判定最容易退化成 `if activated: continue`
+（＝把「已激活」读成免检开关）。第一版只补了一条走 `check_tree` 的用例，看起来是在守这件事 ——
+实测把静态轴的已激活分支整个掏空，**整份 oracle 38 passed 全绿**：那条用例断的两件事全由动态轴
+的消息独力满足了（nodeid 里本来就带模块路径），两条轴一起判时互相掩护。补法是拆开各立一条只调
+单轴的用例：
+
+- `test_static_skip_axis_alone_is_red_when_an_activated_group_keeps_a_skip` —— 掏空静态轴 ⇒ 1 failed
+- `test_effective_skip_marker_axis_flips_only_for_activated_groups` —— 掏空动态轴 ⇒ 1 failed
+
+两次定向破坏后均按 `cmp` 校验还原为字节一致。静态轴这一侧还专门配了一个「动态轴结构性看不见」
+的样本：已激活组用 `pytest.skip(..., allow_module_level=True)` 把整模块从收集期摘掉，item 压根
+不存在，动态轴无从判起 —— 那正是静态轴不可替代的理由。
+
+**一条空防守，记在这里免得日后被当成已验证的。** 对话框自己那道
+`dialog.addEventListener("cancel", e => e.preventDefault())` 今天**没有被任何用例执行到**。
+定向破坏实测：删掉它，DEG-S5 仍然 `1 passed`。原因在 `toolbar.js:148` —— 它在 `document` 上注册
+了**捕获阶段**的 keydown，笔记编辑器打开时（冲突路径故意让它开着）先 `preventDefault()` ＋
+`stopPropagation()` 把 Escape 吃掉，Escape 根本到不了 `<dialog>` 的 `cancel`。用例里那条
+「Esc 关不掉」于是为一个**与对话框自身防守无关**的理由而绿。防守保留作纵深，但谁要动
+`toolbar.js` 的 Escape 分支，得知道这条断言今天护不住它。
+
+**门禁实测**：`lint_e2e_groups.py` rc=0（派生总数 91、`acceptance_2a` 1/1）；unit lane
+`1296 passed, 2 skipped, 57.94s`（此前 1291，+5 条）；覆盖率门禁 PASS（lines 84.67% /
+branches 68.29%，9 条 criticalPaths 全 PASS）；e2e lane `75 passed, 16 skipped, 66.24s`；
+`baseline_1b` `67 passed, 54.23s`。冻结 8 路径零 diff，`suite_hash` `2747100dadf6` 未动；
+`acceptance_2a` 不在冻结覆盖面里（§0.3），soak 计数不受影响。
 
 ### WI-6 `max_retries` —— 这道选择题已经不由我们做了
 
@@ -539,9 +590,11 @@ POST /api/ai/question/{book_uuid}   server.py:2454-2886   433 行   ← 一个�
 | 5 ✅ | WI-0a 注册表覆盖全部 20 个打桩名，且故意制造过期别名时**演示过它会红** | 见 §1 验收 |
 | 6 ✅ | `tests/unit/` + `tests/contract/` 全域出网兜底生效 | 见 §1 验收 |
 | 7 ❌ | `bench.py` 跑通，反序列化计数不为零，C1/C2 指标相对基准改善 | §3 存档的 before/after |
-| 8 ❌ | DEG-S5 验收用例解禁并转绿 | `pytest tests/e2e/acceptance_2a -k deg_s5` |
+| 8 ✅ | DEG-S5 验收用例解禁并转绿 | **2026-09-20 在 `cc6bb18` 上实测兑付**：`uv run pytest tests/e2e/acceptance_2a -k deg_s5 --browser chromium` → `1 passed`；e2e lane 整体 `75 passed / 16 skipped / 66.24s`（此前 74 / 17，多出来的一条就是它）。那条用例**没有被重写**——它的 diff 实测只有 `0 7`，就是模块级 skip 那一块 |
 | 9 ✅ | `tests/conftest.py` 未被修改 | `git diff --stat master..011-backend-refactor -- tests/conftest.py` 为空 |
 
+> **2026-09-20 复测：9 条中 8 条兑付，只剩 #7。** #8 由 WI-5b 兑付（`cc6bb18`）。本次连带发现并解决了一件当初没人预见的事：`acceptance_2a` 是本仓**第一个**被激活的 acceptance 组，而 `scripts/lint_e2e_groups.py` 的两条 skip 轴把「未激活组以 skip 形态存在」硬编码在了**每一个** acceptance item 上 —— 于是「解禁」这个动作本身被守卫读成违规（lint rc=1、unit lane 4 条红）。解法是加 `ACTIVATED_ACCEPTANCE_DIRS` 登记表、两条轴对表内目录反向判定，而不是把闸放宽。详见 §6 WI-5b 的完成记录。
+>
 > **2026-09-19 实测：9 条中 7 条兑付，剩 #7 与 #8。** 此前看板与本文都读作「只剩 1 条（#8）」，那是错的 —— 它把一条 unit lane 的绿当成了三条 lane 的绿，#3 与 #4 当时其实都没有当前的证据。这一次是先跑再改：`gate push` 三条 lane 全绿之后才在表里打勾。**剩下两条的性质不同**：#8（DEG-S5 ＝ WI-5b）是还没做的活；#7（bench C1/C2）是 WI-8 / WI-9 未开工，`array('I')` 在 `src/` 里搜不到 —— 也就是说它连 before/after 的 after 都还不存在。
 >
 > **勾的成色不一样，记清楚**：#1 / #2 / #3 / #4 / #9 是 2026-09-19 当天实测的；**#5 与 #6 的勾沿用前序会话的证据，当天没有重测** —— 它们钉的是静态守卫（注册表与出网兜底），随 unit lane 一起跑，lane 绿即它们绿，但这是推断不是直接观测。谁要把 011 收口，这两条值得亲手再验一次。
@@ -559,7 +612,7 @@ POST /api/ai/question/{book_uuid}   server.py:2454-2886   433 行   ← 一个�
 | **WI-0** | 打桩接缝守卫（名字归属 + 出网兜底） | 归属注册表覆盖 20 个名字；过期别名场景转红；全域 TCP 出网转红 |
 | **WI-3** | `book_store.py`：两份缓存合一 + mtime 入 key + 粒度接口 | 跨模块 `is` 同一对象；mtime 变化后读到新内容；`baseline_1b` 不红 |
 | **WI-5a** ✅ | notes 乐观并发的后端半边（`ETag` / `If-Match` / 409） | 两个写者握同一版本并发进来恰好一个成功（＋锁外预检的反向对照）；过期 `If-Match` 得 409 **且盘上一个字节没变**；不带 `If-Match` 时行为逐字节不变 |
-| **WI-5b** | `ConflictDialog` ＋ 解禁 DEG-S5 | `pytest tests/e2e/acceptance_2a -k deg_s5` 转绿（**浏览器用例，不在 unit lane 里**） |
+| **WI-5b** ✅ | `ConflictDialog` ＋ 解禁 DEG-S5 | `pytest tests/e2e/acceptance_2a -k deg_s5` 转绿（**浏览器用例，不在 unit lane 里**）——2026-09-20 在 `cc6bb18` 上实测 `1 passed`，e2e lane 整体 75 passed / 16 skipped |
 | **WI-9** | `_normalize_with_map` 换 `array('I')` | 新旧实现对 CJK / casefold / combining mark 三类语料的 index_map 逐字符差分 |
 
 ### 跑之前知道这两件事
