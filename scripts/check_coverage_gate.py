@@ -129,8 +129,50 @@ def _check_totals(cfg: dict, totals: dict, enforcing: bool) -> list[str]:
     return failures
 
 
+#: 逐文件规则里放错位置的门槛键。`0c1c8a2`（2026-09-07）之前配置写的就是顶层
+#: `"branch": N`，那次把它们搬进了 `"thresholds"`，因为 tdd-guardian 插件的
+#: `lib/config.js` 只读 `raw.thresholds`。**顶层写法一律判配置错误，不做兼容回退**：
+#: 兼容它等于让两个评判器支持不同语法，于是「CI 拦人、本地放行」——这正是那次
+#: 提交自己写下的教训（「上游可以更好：归一化应当拒绝放错位置的门槛键」）。
+MISPLACED_RULE_KEYS = ("branch", "branches")
+
+
+def _rule_config_errors(glob: str, rule: dict) -> list[str]:
+    """规则本身写错了没有。**在量任何东西之前判，fail-closed。**"""
+    errors: list[str] = []
+    misplaced = [k for k in MISPLACED_RULE_KEYS if rule.get(k) is not None]
+    if misplaced:
+        errors.append(
+            f"criticalPaths[{glob}] 把门槛写在了顶层 {'/'.join(misplaced)} —— "
+            f"tdd-guardian 插件的 lib/config.js 只读 rule['thresholds']，顶层键它"
+            f"连看都不看。两个评判器看不到同一份门槛，结果是 CI 拦人而本地放行，"
+            f'且没有任何人被告知。改写成 "thresholds": {{"branches": N}}'
+        )
+    nested = rule.get("thresholds")
+    if nested is not None and not isinstance(nested, dict):
+        errors.append(f"criticalPaths[{glob}] 的 thresholds 不是对象：{nested!r}")
+        return errors
+    bogus = [k for k, v in (nested or {}).items() if k not in METRICS and v]
+    if bogus:
+        errors.append(
+            f"criticalPaths[{glob}] 里的未知门槛键 {', '.join(sorted(bogus))} 从未被评估"
+            f" —— 可用的键：{', '.join(sorted(METRICS))}"
+        )
+    return errors
+
+
 def _check_critical(cfg: dict, files: dict) -> list[str]:
-    """`criticalPaths` —— 两种 coverageMode 下都是绝对值，始终生效。"""
+    """`criticalPaths` —— 两种 coverageMode 下都是绝对值，始终生效。
+
+    **逐指标判，不只判分支。** 老实现只统计 `covered_branches / num_branches`，
+    所以一条只配了 `lines` / `statements` 的规则在 CI 侧等于没配——那正是模块
+    docstring 里点名的「一条永远绿的门槛」。
+
+    **「不设门槛」与「量不到」是两件事**，与 `_check_totals` 同一条纪律：没配（或配 0）
+    的指标在 `if not want` 就跳过并打印出来，所以凡是走到「量不到」那一支的指标，
+    都是有人明确要求过它拦人的。老实现把两者抹平成 `want = ... or 0`，于是
+    `book_store.py`（0 分支，刻意只压语句）被判成事故。
+    """
     rules = cfg.get("criticalPaths") or []
     if not rules:
         return []
@@ -139,28 +181,50 @@ def _check_critical(cfg: dict, files: dict) -> list[str]:
     print("\ncriticalPaths（绝对门槛，不受 coverageMode 影响）")
     for rule in rules:
         glob = rule.get("glob") or rule.get("path") or ""
-        want = rule.get("branch") or rule.get("branches") or 0
-        matched = {p: s for p, s in files.items() if fnmatch.fnmatch(p, glob)}
 
+        errors = _rule_config_errors(glob, rule)
+        if errors:
+            failures.extend(errors)
+            print(f"  FAIL  {glob:<45} 规则本身写错了 —— 见下方说明")
+            continue
+
+        matched = {p: s for p, s in files.items() if fnmatch.fnmatch(p, glob)}
         if not matched:
             # 判 FAIL 而不是 PASS：见模块 docstring。
             failures.append(f"{glob}: 匹配到 0 个文件")
             print(f"  FAIL  {glob:<45} 匹配到 0 个文件 —— 模块被删了或改名了？")
             continue
 
-        covered = sum(s["summary"].get("covered_branches", 0) for s in matched.values())
-        total = sum(s["summary"].get("num_branches", 0) for s in matched.values())
-        actual = _pct(covered, total)
-        if actual is None:
-            # 同上，且这里更严：criticalPaths 是绝对门槛，两种 mode 下都生效。
-            # 「匹配到文件但一个分支都没有」和上面「匹配到 0 个文件」是同一类事故。
-            failures.append(f"{glob}: branch 阈值 {want}% 无法判定 —— {len(matched)} 个文件里没有分支可测")
-            print(f"  FAIL  {glob:<45} {len(matched)} 个文件，但没有分支可测 —— 分支覆盖没开？")
-        elif actual + 1e-9 >= want:
-            print(f"  PASS  {glob:<45} {actual:6.2f}% >= {want}%  ({len(matched)} 个文件)")
-        else:
-            failures.append(f"{glob}: branch {actual:.2f}% < {want}%")
-            print(f"  FAIL  {glob:<45} {actual:6.2f}% <  {want}%  ({len(matched)} 个文件)")
+        thresholds = rule.get("thresholds") or {}
+        checked = 0
+        for metric, (cov_key, tot_key) in METRICS.items():
+            want = thresholds.get(metric)
+            if not want:  # 0 或缺失都视为「不设门槛」，与 _check_totals 同
+                continue
+            checked += 1
+            covered = sum(s["summary"].get(cov_key, 0) for s in matched.values())
+            total = sum(s["summary"].get(tot_key, 0) for s in matched.values())
+            actual = _pct(covered, total)
+            label = f"{glob} [{metric}]"
+            if actual is None:
+                # 设了却量不到，与 `_check_totals` 同判：门禁坏了，不是没数据。
+                failures.append(
+                    f"{glob}: {metric} 阈值 {want}% 无法判定 —— "
+                    f"{len(matched)} 个文件里 {tot_key} 为 0"
+                )
+                print(f"  FAIL  {label:<45} 设了 {want}% 却量不到（{tot_key} 为 0）")
+            elif actual + 1e-9 >= want:
+                print(f"  PASS  {label:<45} {actual:6.2f}% >= {want}%  ({len(matched)} 个文件)")
+            else:
+                failures.append(f"{glob}: {metric} {actual:.2f}% < {want}%")
+                print(f"  FAIL  {label:<45} {actual:6.2f}% <  {want}%  ({len(matched)} 个文件)")
+
+        if not checked:
+            # 一条一个门槛都不配的规则，与「匹配到 0 个文件」同类：它看起来在守，
+            # 实际什么都不判。判 FAIL 才能让配它的人立刻知道。
+            failures.append(f"{glob}: 一条门槛都没配 —— 这条规则什么都不判")
+            print(f"  FAIL  {glob:<45} 一条门槛都没配 —— 规则是空的？")
+
     return failures
 
 
