@@ -23,6 +23,49 @@
     return Math.max(min, Math.min(max, n));
   }
 
+  // ---- 011 WI-5b：notes 乐观并发的客户端半边 -----------------------------------------
+  //
+  // 版本的粒度是**整本书**的标注列表（服务端 `routers/notes.py` 的 `_etag()` 包的是
+  // `annotations_version(整份 annotations)`），不是单条、也不是单章 —— 所以这里只存一个
+  // 值，不按章、不按 id 分桶。读的时候原样记下，写的时候原样带上，**前端一次比较都不做**：
+  // compare-and-swap 在服务端的书级锁里，前端比出来的结论在请求飞出去的那一刻就已经过期。
+  //
+  // `If-Match` 一律「有就带、没有就不带」。不带它的写与乐观并发落地之前逐字节同构
+  // （ADR-0011），所以「页面还没读过任何 ETag 就先写」不会被误判成冲突。
+  let notesEtag = null;
+
+  function rememberNotesEtag(resp) {
+    const tag = resp?.headers?.get?.("ETag");
+    if (tag) notesEtag = tag;
+  }
+
+  function notesWriteHeaders(extra) {
+    const headers = Object.assign({}, extra || {});
+    if (notesEtag) headers["If-Match"] = notesEtag;
+    return headers;
+  }
+
+  /**
+   * 带版本写一次；撞 409 就吸收服务端回来的版本再写一次。
+   *
+   * 只给**建**与**删**用。这两种写没有「两版正文二选一」可言（建冲突时 409 体里的
+   * `annotation` 本来就是 `null`），它们撞 409 的原因是本书**别的**标注动了；不重试的话，
+   * 「连点两下删」的第二下会带着过期版本静默失败 —— 那是本次改动**引入**的坏法，不是它要
+   * 治的那个。**改**不走这里：正文冲突必须浮到 DEG-S5 的对话框上由用户二选一。
+   */
+  async function notesWriteWithResync(url, init) {
+    const send = () =>
+      fetch(url, Object.assign({}, init, { headers: notesWriteHeaders(init?.headers) })).catch(() => null);
+    let resp = await send();
+    if (resp && resp.status === 409) {
+      const body = await resp.json().catch(() => null);
+      if (body?.etag) notesEtag = body.etag;
+      resp = await send();
+    }
+    rememberNotesEtag(resp);
+    return resp;
+  }
+
   function showToast(message) {
     const el = document.createElement("div");
     el.textContent = String(message || "");
@@ -324,6 +367,9 @@
       }
       if (!ctx.bookId || ctx.chapterIndex == null || !this.contentEl) return;
       const resp = await fetch(`/api/notes/${encodeURIComponent(ctx.bookId)}/${encodeURIComponent(String(ctx.chapterIndex))}`);
+      // 读到的 ETag 就是随后每一次写要带的 `If-Match`。章级与书级两条读路由给的是同一个
+      // 值（整本书标注的版本），所以记在哪一次读上都一样。
+      rememberNotesEtag(resp);
       const data = await resp.json().catch(() => ({}));
       const anns = Array.isArray(data?.annotations) ? data.annotations : [];
       this.render(anns);
@@ -418,6 +464,12 @@
       this.noteSave = qs("note-editor-save");
       this.noteCancel = qs("note-editor-cancel");
       this.tooltip = qs("note-tooltip");
+      this.conflictDialog = qs("note-conflict-dialog");
+      this.conflictLocal = qs("note-conflict-local");
+      this.conflictRemote = qs("note-conflict-remote");
+      this.conflictKeepMine = qs("note-conflict-keep-mine");
+      this.conflictTakeRemote = qs("note-conflict-take-remote");
+      this.pendingConflict = null;
 
       this.currentRange = null;
       this.currentIndex = null;
@@ -490,6 +542,7 @@
 
         this.noteSave?.addEventListener("click", () => window.Reader3AnnotationUI?.saveNote?.());
         this.noteCancel?.addEventListener("click", () => window.Reader3AnnotationUI?.closeNoteEditorIfOpen?.());
+        this.setupConflictDialog();
 
         toolbarListenersBound = true;
       }
@@ -873,9 +926,12 @@
       if (!ctx.bookId || ctx.chapterIndex == null) return;
 
       for (const id of uniqueIds) {
-        await fetch(`/api/notes/${encodeURIComponent(ctx.bookId)}/${encodeURIComponent(String(ctx.chapterIndex))}/${encodeURIComponent(id)}`, {
-          method: "DELETE",
-        }).catch(() => {});
+        // 每删一条版本就前进一格，所以必须逐条吸收新版本（`notesWriteWithResync` 会做），
+        // 否则这个循环的第二圈会带着第一圈之前的版本出门。
+        await notesWriteWithResync(
+          `/api/notes/${encodeURIComponent(ctx.bookId)}/${encodeURIComponent(String(ctx.chapterIndex))}/${encodeURIComponent(id)}`,
+          { method: "DELETE" },
+        );
       }
 
       this.closeSelectionToolbarIfOpen();
@@ -907,6 +963,12 @@
 
     openNoteEditor() {
       if (!this.currentRange || !this.noteEditor) return;
+      // 编辑器已经为某条**既有**笔记开着（`onAnnotationClick` → `openNoteEditorWithExisting`）
+      // 时，再点一下「Add Note」的意思是「接着编辑那条」，不是「在同一段文字上再建一条」。
+      // 不留这个口子的话，`editingNoteId` 会被清成 null，`saveNote()` 于是走新建分支：用户
+      // 看到的是「我刚改的那条没变，旁边多了一条一模一样引文的」。新建路径不受影响 ——
+      // 从一段干净选区过来时 `editingNoteId` 本来就是 null。
+      if (this.editingNoteId && this.noteEditor.classList.contains("is-visible")) return;
       this.editingNoteId = null;
       const rect = offsetRect(this.currentRange.getBoundingClientRect(), this.frameEl);
       const editorWidth = 320; // matches CSS width
@@ -936,6 +998,108 @@
       this.noteTextarea?.focus?.();
     }
 
+    /**
+     * 装 DEG-S5 对话框的三条线：Esc、遮罩、两个出口按钮。只在 `toolbarListenersBound`
+     * 那一格里调一次。
+     */
+    setupConflictDialog() {
+      const dialog = this.conflictDialog;
+      if (!dialog) return;
+      // **零关闭路径**（设计规格 §6.4 要求 3）。模板里没有关闭按钮；这里把 Esc 也堵上 ——
+      // 注意不能照抄 `library.js` 的 `setupDialog`，它是 `preventDefault()` 之后**照样**
+      // `close()`，那是给可关闭弹层用的。遮罩点击则是「不装」就没有：原生 <dialog> 的
+      // light-dismiss 要自己写坐标判断才有，不写就关不掉。
+      dialog.addEventListener("cancel", (e) => e.preventDefault());
+      this.conflictKeepMine?.addEventListener("click", () => {
+        window.Reader3AnnotationUI?.resolveConflict?.(true);
+      });
+      this.conflictTakeRemote?.addEventListener("click", () => {
+        window.Reader3AnnotationUI?.resolveConflict?.(false);
+      });
+    }
+
+    /**
+     * 从一条 409 响应里取出「服务端当前版本 ＋ 服务端当前正文」，连同本地那版一起开对话框。
+     */
+    async openConflictFromResponse(resp, pending) {
+      const body = await resp.json().catch(() => null);
+      // 吸收服务端版本：「保留我的」要拿它做下一次 `If-Match`，不吸收的话重试必然再撞 409，
+      // 用户会陷在一个永远点不动的对话框里。
+      if (body?.etag) notesEtag = body.etag;
+      const remote = body?.annotation;
+      const remoteText = remote && remote.note_text != null ? String(remote.note_text) : "";
+      this.pendingConflict = {
+        url: pending.url,
+        noteId: pending.noteId,
+        localText: pending.localText,
+        remoteText,
+      };
+      this.showConflictDialog();
+    }
+
+    showConflictDialog() {
+      const c = this.pendingConflict;
+      if (!c) return;
+      const dialog = this.conflictDialog;
+      if (!dialog || typeof dialog.showModal !== "function") {
+        // 没有原生 <dialog> 就退到提示。本地那版仍留在 textarea 里、仍没被写出去 ——
+        // 降级可以难看，不可以替用户丢字。
+        showToast("保存冲突：这条笔记已被另一处改过，请重新保存");
+        return;
+      }
+      // 两版正文都摆出来。少摆一版，用户就是在闭着眼睛丢自己的字。
+      if (this.conflictLocal) this.conflictLocal.textContent = c.localText;
+      if (this.conflictRemote) this.conflictRemote.textContent = c.remoteText;
+      if (!dialog.open) dialog.showModal();
+      this.conflictKeepMine?.focus?.();
+    }
+
+    /**
+     * 两个出口。`keepLocal` 为真 = 「保留我的」，为假 = 「采用远端」。
+     */
+    async resolveConflict(keepLocal) {
+      const c = this.pendingConflict;
+      if (!c) return;
+
+      if (!keepLocal) {
+        // 「采用远端」：本地那版是用户**主动放弃**的，不是要再写一遍 ——
+        // 这一支一条带本地正文的写都不许发。盘上已经是远端那版，什么都不用做。
+        this.settleConflict(c, c.remoteText);
+        return;
+      }
+
+      // 「保留我的」：必须**真的**写到服务端。只关对话框、只改前端内存的实现，会在下一次
+      // 刷新时把用户的字变回远端那版 —— 那正是这条降级要消灭的静默丢写。
+      const resp = await fetch(c.url, {
+        method: "PUT",
+        headers: notesWriteHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ note_text: c.localText }),
+      }).catch(() => null);
+
+      if (resp && resp.status === 409) {
+        // 重试的这一瞬间又被人改了。换上新的两版继续问，仍然不许静默丢。
+        await this.openConflictFromResponse(resp, c);
+        return;
+      }
+      rememberNotesEtag(resp);
+      this.settleConflict(c, c.localText);
+    }
+
+    /**
+     * 收尾：关对话框、把**这一支承诺的那一版**当场放回编辑器、重绘标记。
+     *
+     * 为什么要当场写回 textarea 而不是等下一次刷新：编辑器此刻还开着，里面躺的是刚被判
+     * 出局的那一版。放着不管，用户下一次按保存就会把它又推上去 —— 而他以为自己早放弃了。
+     */
+    settleConflict(conflict, settledText) {
+      this.pendingConflict = null;
+      if (this.conflictDialog?.open) this.conflictDialog.close();
+      if (this.noteTextarea) this.noteTextarea.value = settledText;
+      this.editingNoteId = conflict.noteId;
+      this.renderer?.loadAndRender?.().catch(() => {});
+      window.dispatchEvent(new CustomEvent("reader3:annotations:updated"));
+    }
+
     async saveNote() {
       const text = String(this.noteTextarea?.value || "").trim();
       if (!text) return;
@@ -944,11 +1108,22 @@
       if (this.editingNoteId) {
         const ctx = getReaderContext();
         if (ctx.bookId && ctx.chapterIndex != null) {
-          await fetch(`/api/notes/${encodeURIComponent(ctx.bookId)}/${encodeURIComponent(String(ctx.chapterIndex))}/${encodeURIComponent(this.editingNoteId)}`, {
+          const noteId = this.editingNoteId;
+          const url = `/api/notes/${encodeURIComponent(ctx.bookId)}/${encodeURIComponent(String(ctx.chapterIndex))}/${encodeURIComponent(noteId)}`;
+          const resp = await fetch(url, {
             method: "PUT",
-            headers: { "Content-Type": "application/json" },
+            headers: notesWriteHeaders({ "Content-Type": "application/json" }),
             body: JSON.stringify({ note_text: text }),
-          }).catch(() => {});
+          }).catch(() => null);
+
+          // DEG-S5：我手上的版本过期了 ⇒ 服务端拒绝，两版正文摆出来让用户二选一。
+          // 这一支**刻意**不往下走 —— 不清 `editingNoteId`、不关编辑器：本地那版还躺在
+          // textarea 里没被写出去，清掉它就是静默丢写。
+          if (resp && resp.status === 409) {
+            await this.openConflictFromResponse(resp, { url, noteId, localText: text });
+            return;
+          }
+          rememberNotesEtag(resp);
 
           this.editingNoteId = null;
           this.closeNoteEditorIfOpen();
@@ -1016,11 +1191,14 @@
       };
       console.log('[Annotations] createAnnotation: sending payload:', payload);
 
-      const resp = await fetch(`/api/notes/${encodeURIComponent(ctx.bookId)}/${encodeURIComponent(String(ctx.chapterIndex))}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      }).catch((err) => { console.error('[Annotations] createAnnotation fetch error:', err); });
+      const resp = await notesWriteWithResync(
+        `/api/notes/${encodeURIComponent(ctx.bookId)}/${encodeURIComponent(String(ctx.chapterIndex))}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        },
+      );
       console.log('[Annotations] createAnnotation: response:', resp);
 
       this.closeSelectionToolbarIfOpen();
