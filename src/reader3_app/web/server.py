@@ -503,36 +503,17 @@ def _annotation_matches_chapter_text(chapter_text: str, ann: Annotation) -> bool
 
 
 
-class AIMessage(BaseModel):
-    id: str
-    role: str
-    content: str
-    timestamp: str
-    conversation_id: Optional[str] = None
-    metadata: Optional[dict] = None
 
 
-class AISummaryRequest(BaseModel):
-    provider: str
-    model: Optional[str] = None
-    max_tokens: int = 2000
-
-
-class AIQuestionRequest(BaseModel):
-    question: str
-    provider: str
-    model: Optional[str] = None
-    conversation_history: list[AIMessage] = Field(default_factory=list)
-    rag_k: int = 5
-    max_tokens: int = 1000
-
-
-class AIRagRequest(BaseModel):
-    book_uuid: str
-    query: str
-    k: int = 5
-    min_similarity: float = 0.5
-
+# 这四个模型搬去了 `web/schemas.py`（011 WI-4）。这里反向 import 并保留同名：
+# `server.AIMessage` 等仍然存在、且与 router 拿到的是同一个类对象。它们不是打桩
+# 接缝，所以 router 直接从 schemas 导入即可，不必走 `_server.`。
+from .schemas import (  # noqa: E402
+    AIMessage,
+    AIQuestionRequest,
+    AIRagRequest,
+    AISummaryRequest,
+)
 
 SUPPORTED_AI_PROVIDERS = {"anthropic", "openai", "gemini", "ollama", "openrouter"}
 
