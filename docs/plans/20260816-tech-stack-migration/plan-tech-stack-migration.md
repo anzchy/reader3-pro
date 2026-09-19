@@ -272,19 +272,27 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 
 **Phase 2a**
 
-- [ ] `web/server.py`（**2,905 行**——本行原写「~2,400 行」，写于 2026-08-16；2026-09-19 `wc -l` 实测 `master` 为 2,905。011 分支上是 2,979，多出的 74 行全部来自 `1be7387` 一个 commit，**不是拖延期间的自然增生**）拆分为 FastAPI routers 六组：
+- [x] `web/server.py`（**2,905 行**——本行原写「~2,400 行」，写于 2026-08-16；2026-09-19 `wc -l` 实测 `master` 为 2,905。011 分支上是 2,979，多出的 74 行全部来自 `1be7387` 一个 commit，**不是拖延期间的自然增生**）拆分为 FastAPI routers 六组：
   - `routers/library.py`（library + collections + stats）
   - `routers/reader.py`（阅读页 + book.epub + 图片资源）
   - `routers/notes.py`
   - `routers/search.py`（搜索 + 语义索引）
-  - `routers/ai.py`（对话 + RAG + 摘要 + 问答）
+  - ~~`routers/ai.py`（对话 + RAG + 摘要 + 问答）~~ → **`routers/ai/` 子包**（下一条）
   - `routers/settings.py`
+  - ✅ **2026-09-19 兑付**（011 WI-4，七个 commit `6afc3fb` → `a61f6c7`）。`server.py` 2,979 → **942 行**，
+    43 条路由全部搬完，`routes.snapshot` 零 diff。**落地形状与本表原文有两处出入，照记**：
+    （1）`ai` 按裁定 A 拆成子包四个文件（`chat.py` 547 / `conversations.py` 236 / `summary.py` 213 / `rag.py` 37），
+    所以「六组」在**实现文件**这一层是七个上下；（2）另有 `routers/health.py` 34 与共用模型 `web/schemas.py` 50。
+    `api_ai_question` 那 433 行**一行没变**——下降的是单文件行数，不是复杂度。
+    验收尚差 `baseline_1b` 一条，见 [`tasks/011-backend-refactor.md`](./tasks/011-backend-refactor.md) §5 完成记录。
   - ⚠️ **2026-09-19 实测：`ai` 这一组过不了下面「每个 router < 500 行」的门槛，且不是靠搬家能解决的。**
     `/api/ai/*` 八条路由合计 708 行，其中 `api_ai_question` **一个函数就是 433 行**（`web/server.py:2454-2886`，
     9 条顶层语句 ＋ 6 个嵌套闭包：`event_gen` 174 / `_do` 139 / `worker_ollama` 55 / `worker_non_stream` 18 / `push` 2 /
     `_release_lease` 2）。它独占的模块级 helper 还有 `_stop_stream_worker` 60 行（调用点只有 `:2662`、`:2670`，都在这个函数里）。
     **433 ＋ 60 ＝ 493，再加 import 与 `APIRouter` 声明就越线**——即「把这条路由单独放一个文件、别的什么都不放」仍然不达标。
-    三条候选路线与取舍记在 [`tasks/011-backend-refactor.md`](./tasks/011-backend-refactor.md) §5，**方向待裁定**，本表不重述。
+    三条候选路线与取舍记在 [`tasks/011-backend-refactor.md`](./tasks/011-backend-refactor.md) §5。
+    **已裁定（2026-09-19）：走 A ＋ 一条具名、可到期、机器执行的豁免**（`chat.py` ≤ 550，到期条件
+    「最大顶层函数 ≤ 400 行」），条款 canonical 在任务书 §5，本表不重述。
 - [x] 新建共享 `book_store.py` —— **已兑付**（`1be7387`，011 WI-3）。**本条原文的三个部分在 2026-09-07 实测时全不成立**，兑付的是订正后的范围：`_Reader3Unpickler` 早在 007/008 期间就收敛成了 `safe_pickle.Reader3Unpickler`，不存在三份重复；`vector_search.py` 直接调 `safe_pickle.load_book_file`，**根本没有 loader、不在合并范围内**。真正重复的是两个**同名不同签名**的 `load_book_cached`（`server.py` 与 `search_service.py`，各挂一个 `lru_cache(maxsize=10)`，同一本书在进程里躺两份）。推导与「同名是陷阱，不只是重复」见 [`tasks/011-backend-refactor.md`](./tasks/011-backend-refactor.md) §0.2，本表不重述
   - [x] **同时解决缓存失效** —— 同一个 commit 兑付。key 里带上 `mtime_ns` ＋ `size`，重新处理一本书之后服务端不再供旧 `Book`
 - [ ] chromadb + sentence-transformers 移入可选依赖组 `[project.optional-dependencies] semantic`（与 README"语义依赖可选"的描述对齐）。2026-09-19 复核：**未做**，`pyproject.toml` 里没有 `[project.optional-dependencies]` 这个表，两者都还在主 `dependencies`
@@ -304,6 +312,10 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 - [ ] C5 书库首页只读元数据，不反序列化正文——**落点待裁决**，见附录 B 文末 UNRESOLVED DECISIONS
 
 **验收**: Phase 1 测试全绿（行为不变的证明）；`server.py` 每个 router < 500 行。完整门槛见 §7。
+> 2026-09-19：「每个 router < 500 行」已由 `scripts/check_router_size.py` 机器执行并接入 `lint.yml`
+> （`a61f6c7`）。**它的范围有个边界**：量的是「`routers/` 下每个文件」∪「`web/` 下声明路由的模块」，
+> 而 `server.py` 已不再声明任何路由，因此掉出了这道闸——它剩下的 942 行共享工具不受上限约束。
+> 是否另立一条 `web/*.py` 上限留给 Phase 2b 裁，见任务书 §5 完成记录。
 
 ### Phase 3 —— 存储去 pickle 化
 
@@ -397,7 +409,7 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 | Phase 1a | Phase 0 | 测试门禁生效（**本地 tdd-guardian**，非 required check——见本节 soak 小节的改基说明）；42 路由契约测试通过；**API v1 形状冻结**；性能基准记录在案 |
 | Phase 1b | 0.3 + 0.5 | **本行的展开（G1/G2 两道门）在 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) §8，本表不重述**。**`baseline-1b` 组**在**本地 `e2e` lane** 绿灯并入 `soak-log.md` 台账（原写「主 CI（非 nightly）」，2026-08-24 随 CI 改为仅发版触发而改基，见本节 soak 小节）；**用例覆盖写路径**（四类型创建 / 改色的现状特征化 **W-5a**（W-5b 归 4B.1）/ 删除 / 笔记保存，断言为刷新后回到同一段文字）；K2–K5 与 K1/K6 的**现状特征化**条各一条正向证据；连续 3 次全量运行零 flaky；其余组**用例写完并 review**，以 skip 形态存在。⚠️ K1/K6 的新行为与 DEG-S1–DEG-S4 的横幅**不在本阶段门槛内**——它们要到 4B.1 / Phase 3 / 4A.4 才存在，写进 1b 会形成依赖环。分组见 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) §0.5 |
 | Track D | Phase 0 | DEG-S1–DEG-S5 设计完成并回写设计规格 §6.4；合同 2 剩余两项收口；loading 骨架屏补齐 |
-| Phase 2a | 1a | **每个声明路由的模块 < 500 行，唯一具名例外 `routers/ai/chat.py` ≤ 560 行**（2026-09-19 裁定，判据与到期条件在 [`tasks/011-backend-refactor.md`](./tasks/011-backend-refactor.md) §5，本表不重述）；**该门槛须由 `scripts/check_router_size.py` 机器执行**——在此之前它只是散文，见 §5；~~`book_store` **三处** loader 合并~~ → **已兑付 `1be7387`**，且实际合并的是**两个同名不同签名的 `load_book_cached`**，不是原文写的「三处 `_Reader3Unpickler`」（`vector_search.py` 没有 loader；依据见 [`tasks/011-backend-refactor.md`](./tasks/011-backend-refactor.md) §0.2）；**notes 乐观并发落地**（WI-5，未做）；行为不变由 1a 证明 |
+| Phase 2a | 1a | ~~**每个声明路由的模块 < 500 行，唯一具名例外 `routers/ai/chat.py` ≤ 560 行**~~ → **已兑付 `a61f6c7`**，例外上限按实测（547 行）回写为 **≤ 550**（2026-09-19 裁定，判据与到期条件在 [`tasks/011-backend-refactor.md`](./tasks/011-backend-refactor.md) §5，本表不重述）；~~**该门槛须由 `scripts/check_router_size.py` 机器执行**——在此之前它只是散文~~ → **已接入 `.github/workflows/lint.yml`**（同一个 commit，见 §5 完成记录；注意 `server.py` 已掉出该闸范围）；~~`book_store` **三处** loader 合并~~ → **已兑付 `1be7387`**，且实际合并的是**两个同名不同签名的 `load_book_cached`**，不是原文写的「三处 `_Reader3Unpickler`」（`vector_search.py` 没有 loader；依据见 [`tasks/011-backend-refactor.md`](./tasks/011-backend-refactor.md) §0.2）；**notes 乐观并发落地**（WI-5，未做）；行为不变由 1a 证明 |
 | Phase 2b | 2a | 跨库搜索性能相对基准可量化改善；`_normalize_with_map` 差分测试通过 |
 | Phase 3 | 2b + Track D **且 soak 门槛达标**（三路汇合，见 §9.1） | 新书完全不依赖 pickle；存量可一键迁移；**`--migrate` 原地读写，不复用摄取路径**；**DEG-S1–DEG-S4 在当时的 UI 里可见**——即 **`acceptance-p3` 组解开 skip 并绿灯**（朴素横幅形态）；真实 iframe 标注迁移 E2E 通过 |
 | Phase 4A | **1b 的 G1**（用例完成门；不必等 G2/soak） | wheel 内容测试通过；settings 与 library 切换后 `baseline-1b` **零改动**全绿；**4A.4 另需 `acceptance-4a4` 组解开 skip 并绿灯**（DEG-S1–DEG-S4 改版形态）；Classic 已删除 |

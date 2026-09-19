@@ -301,9 +301,14 @@ POST /api/ai/question/{book_uuid}   server.py:2454-2886   433 行   ← 一个�
 
 - **范围**：只对 `src/reader3_app/web/routers/ai/chat.py` **一个文件**。`routers/` 下其余每一个文件，
   含 `ai/__init__.py`，一律 < 500，**不设第二条例外**。
-- **上限 N = 560**。来源：不可搬走的正文实测 **493 行**（`api_ai_question` 433 ＋ 它独占的 `_stop_stream_worker` 60），
-  余量 67 行留给 import、模块 docstring、`APIRouter` 声明与路由装饰器。
-  **WI-4 落地后用实测值回写 N，且此后只许下调、不许上调。**
+- ~~**上限 N = 560**~~ → **N = 550**（2026-09-19 回写）。原来源：不可搬走的正文实测 **493 行**
+  （`api_ai_question` 433 ＋ 它独占的 `_stop_stream_worker` 60），余量 67 行留给 import、模块
+  docstring、`APIRouter` 声明与路由装饰器。
+  **回写记录**：`chat.py` 落地实测 **547 行**，67 行余量多估了 54。N 下调到 550 而不是钉死在 547，
+  是因为这条豁免要咬的是**函数拆没拆**（到期条件），不是「谁多写了一行注释」；lint 仅发版触发，
+  为一行注释在发版那天转红，代价和收益不成比例。`api_ai_question` 实测仍是 433 行，到期条件未触发。
+  「只许下调不许上调」由 `tests/unit/test_router_size_gate.py` 末尾那条上界断言执行，且**每次下调后
+  同步收紧**（已 560 → 550）——棘轮不跟着收，就不是棘轮。
 - **到期条件（不是口头承诺，是检查器的一条断言）**：豁免的存在理由是「`chat.py` 里有一个 >400 行的单函数」。
   一旦 `api_ai_question` 被分解到最大函数 ≤400 行，**检查器必须转红并要求删掉这条豁免**。
   即：**这条豁免会自己到期，不需要谁记得回来收。**
@@ -342,13 +347,69 @@ POST /api/ai/question/{book_uuid}   server.py:2454-2886   433 行   ← 一个�
 - ~~`wc -l src/reader3_app/web/routers/*.py` 每个 < 500~~ —— **人肉 `wc -l` 不算兑付**。
   改为：`scripts/check_router_size.py` 在 CI 里绿，且它曾对着拆分前的 `server.py` 见过红。
   它同时执行上面那条豁免的**到期条件**。
-  > **接线时机是有意推后的，别当成漏了。** 脚本与它的 10 条单测已于 2026-09-19 落地
-  > （`scripts/check_router_size.py` ＋ `tests/unit/test_router_size_gate.py`），
-  > 但**还没接进 `.github/workflows/lint.yml`** —— 今天接上去，CI 就会一直红到拆分做完，
-  > 而 CI 是**仅发版触发**的，那意味着这期间任何一次发版都会因为一件正在做的事而失败。
-  > **接线放在拆分完成的那个 commit 里**，与它转绿同时发生。**这一条不兑付，本 WI 不算完。**
+  > ~~**接线时机是有意推后的，别当成漏了。**~~ —— **已兑付（`a61f6c7`，2026-09-19）。**
+  > 脚本与它的 10 条单测先于搬家落地，接线推到拆分转绿的同一个 commit：CI 仅发版触发，
+  > 早接上去等于让这期间每一次发版都因为一件正在做的事而失败。现已进
+  > `.github/workflows/lint.yml` 的 `contracts` job，并用 `/usr/bin/python3` 裸跑验证过
+  > 它仍是零依赖，那条 job「不装任何东西」的性质没丢。
 - `tests/unit/test_ai_queue_lease.py` 的 Q1–Q6 在**每一步搬家之后**各跑一次，不是只在最后跑一次
   —— 它是 SSE 运行时绑定的护栏，而那是本 WI 唯一会静默坏掉的东西。
+
+### 完成记录（2026-09-19）🔨 —— 搬完了，但验收还差 `baseline_1b` 一条
+
+七个 commit，一组一个，每步跑一次 contract ＋ unit ＋ Q1–Q6（P-3 缓解「分小步走」）：
+
+| commit | 组 | 新文件（行） | `server.py` |
+|---|---|---|---|
+| `6afc3fb` | notes | `routers/notes.py` 263 | 2979 → 2760 |
+| `e92cefe` | search | `routers/search.py` 221 | 2760 → 2574 |
+| `2c109c6` | library | `routers/library.py` 333 | 2574 → 2278 |
+| `a7d7a0c` | reader | `routers/reader.py` 126 | 2278 → 2178 |
+| `1c7cb6a` | settings | `routers/settings.py` 348 | 2178 → 1871 |
+| `bb86b0b` | 共用模型 | `web/schemas.py` 50 | 1871 → 1852 |
+| `a61f6c7` | ai ＋ health ＋ 接线 | `routers/ai/{chat 547, conversations 236, summary 213, rag 37}`、`routers/health.py` 34 | 1852 → **942** |
+
+43 条路由全部搬完，`routes.snapshot` 全程零 diff，冻结 8 路径全程零 diff。
+
+**逐条对验收**：
+
+| 验收项 | 状态 |
+|---|---|
+| `routes.snapshot` 零 diff | ✅ 七个 commit 全程未出现在 `git diff --stat` 里 |
+| 008 契约测试全绿 | ✅ `tests/contract` 180 passed / 1 skipped |
+| 009 `baseline_1b` 全绿 | ❌ **未兑付** —— 见下 |
+| `check_router_size.py` 在 CI 里绿 | ✅ `a61f6c7` 接进 `lint.yml` `contracts` job，12 个文件全 PASS |
+| 它曾对着拆分前的 `server.py` 见过红 | ✅ 见上文「机器执行是豁免成立的前提」那条 |
+| 豁免到期条件随脚本执行 | ✅ `min_function_lines=400`，`api_ai_question` 实测 433 |
+| Q1–Q6 每步各跑一次 | ✅ 七步各一次，最后一次 6/6 绿 |
+
+**唯一未兑付项：`baseline_1b`。** 它在 §8 门槛 4 里，也在本节验收里，**本 WI 因此不算完**。
+执行它的会话受「不得跑完整 e2e / soak / packaging lane」约束挡住，需要另行授权或人工执行：
+`uv run python scripts/soak_run.py`（**不加 `--append`**——分支上的运行不进台账，门槛 4 的括号）。
+
+#### 这次搬家新开了一个门禁口子
+
+`check_router_size.py` 量的是「`routers/` 下每个文件」∪「`web/` 下声明路由的模块」。
+`server.py` 现在**一条路由都不声明**，于是掉出了这道闸的范围——它剩下的 942 行共享工具
+不受 500 行上限约束。这不是 bug，是判据「落在声明了路由的模块上」的直接后果（那条判据
+当初正是为了让「聚合入口只有几十行」不构成达标证据）；但它意味着 `server.py` 可以重新
+长胖而没人报警。已同步写进 `routers/health.py` 的 docstring 与 `lint.yml` 的注释。
+**要不要给 `web/*.py` 另立一条上限，留给 WI-8/Phase 2b 裁，本 WI 不顺手扩大范围。**
+
+#### 11 条 B-ii 棘轮往松了走，逐名配了定向破坏
+
+`ai` 组搬走之后，`server.py` 里读这 11 个名字的地方一处不剩，模块级解析点降为空集
+（`load_book_cached` 是三项降两项）。空集会掩盖「这个名字已经没人用了」，所以逐名把
+`_server.X` 换成导入期绑定跑一整条 unit lane，事后按字节还原并 `cmp` 校验（11/11 还原 OK）。
+11 条**全部**红了，且红的不只是两道静态闸——每条都另有 1–14 条行为测试跟着红。
+证据表落在 `tests/unit/test_server_patch_seam_ownership.py` 的棘轮表里（**不只在 commit message**），
+`a61f6c7` 的 message 里有同一张表。与 WI-4 第五步的 `_http_get_json` 对照：那条破坏后**只**红
+`a12`，没有行为测试跟上——它才是「只有静态闸护着」的那一类。
+
+#### 裁定要求写进 PR 描述的两句代价，照记
+
+1. `ai` 领域从此是一个目录而不是一个文件，§6 写的「六组」在**实现文件**这一层变成七个上下。
+2. `api_ai_question` 那 **433 行一行没变**，复杂度没有下降，下降的只是单文件行数。
 
 ---
 
@@ -397,7 +458,7 @@ notes 是 load→modify→save 全覆盖，`os.replace` 只保证单次写入原
 
 | # | 门槛 | 复核方式 |
 |---|---|---|
-| 1 | 每个 `routers/*.py` < 500 行 | `wc -l src/reader3_app/web/routers/*.py` |
+| 1 | 每个 `routers/*.py` < 500 行（唯一具名豁免 `ai/chat.py` ≤ 550，带到期条件） | `python3 scripts/check_router_size.py`（已接入 `lint.yml`）。**人肉 `wc -l` 不算兑付。** 注意范围：`server.py` 不再声明路由，已掉出这道闸——见 §5 完成记录「门禁口子」 |
 | 2 | `tests/contract/routes.snapshot` **零 diff** | `git diff --stat` 里不出现它 |
 | 3 | 008 三条 lane 全绿 | `/tdd-guardian:gate commit` |
 | 4 | 009 `baseline_1b` 67 项全绿，`suite_hash` 仍是 `2747100dadf6` | `uv run python scripts/soak_run.py`（不加 `--append`，本分支上的运行**不进台账**） |
