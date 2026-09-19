@@ -14,22 +14,60 @@ from __future__ import annotations
 import html
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, Header, HTTPException, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from .. import server as _server
 from ...models.annotations import Annotation
 from ...notes_service import (
     NOTES_SCHEMA_VERSION,
-    add_annotation as add_note_annotation,
-    delete_annotation as delete_note_annotation,
+    NotesVersionConflict,
+    add_annotation_and_version as add_note_annotation,
+    annotations_version,
+    delete_annotation_and_version as delete_note_annotation,
     load_annotations as load_note_annotations,
     save_annotations as save_note_annotations,
-    update_annotation as update_note_annotation,
+    update_annotation_and_version as update_note_annotation,
 )
 from ...reader3 import Book
 
 router = APIRouter()
+
+#: 011 WI-5a —— 乐观并发的 HTTP 半边。版本进出都走 header：`ETag` 出、`If-Match` 入。
+#: `If-Match` **可选**：不带它的请求与乐观并发落地之前逐字节一致（状态码、响应体都不变），
+#: 这是 ADR-0011「不得改变任何响应形状」在本组的兑付方式，也是 `tests/contract` 一行不改
+#: 仍然全绿的原因。带它的请求换来的是一次真正的 compare-and-swap —— 比较在
+#: `notes_service` 的书级锁里做，不在这一层，否则两个请求会双双通过检查再依次落盘。
+CONFLICT_DETAIL = "Annotation version conflict"
+
+
+def _etag(version: str) -> str:
+    """把裸版本号包成一个强 ETag。客户端原样抄回 `If-Match` 即可。"""
+    return f'"{version}"'
+
+
+def _conflict(exc: NotesVersionConflict) -> JSONResponse:
+    """409 的响应体：当前版本 ＋ 服务端当前那一条标注（新建时为 `null`）。
+
+    `annotation` 不是可选的装饰。DEG-S5 要求冲突对话框把两版正文**同时**摆出来让用户二选一；
+    本地那版客户端自己有，远端那版只能从这里来。少了它，用户只能闭着眼睛丢掉一版自己的字。
+
+    `note_text` 按 GET 的口径 `html.unescape` 还原：对话框要展示的是他打的字，不是 `&amp;`。
+    """
+    annotation = None
+    if exc.current_annotation is not None:
+        annotation = exc.current_annotation.to_dict()
+        if annotation.get("note_text") is not None:
+            annotation["note_text"] = html.unescape(str(annotation["note_text"]))
+    return JSONResponse(
+        status_code=409,
+        content={
+            "detail": CONFLICT_DETAIL,
+            "etag": _etag(exc.current_version),
+            "annotation": annotation,
+        },
+    )
 
 
 def _refresh_orphaned_annotations(book_id: str, book: Book, annotations: list[Annotation]) -> list[Annotation]:
@@ -71,7 +109,7 @@ class UpdateAnnotationRequest(BaseModel):
 
 
 @router.get("/api/notes/{book_id}")
-async def api_get_book_notes(book_id: str):
+async def api_get_book_notes(book_id: str, response: Response):
     safe_book_id = _server._validate_book_id(book_id)
     book = _server.load_book_cached(safe_book_id)
     if not book:
@@ -121,6 +159,11 @@ async def api_get_book_notes(book_id: str):
         )
         total_count += len(items)
 
+    # 书级汇总也带版本，且与章级那条是同一个值 —— 版本的粒度是「一本书的全部标注」，两条读
+    # 路由读的是同一份状态。笔记面板只走这一条，不给它 ETag 等于逼它为了拿版本号多读一次章级
+    # 路由。只加 header，响应体一个字段都没动。
+    response.headers["ETag"] = _etag(annotations_version(annotations))
+
     return {
         "schema_version": NOTES_SCHEMA_VERSION,
         "book_id": safe_book_id,
@@ -130,7 +173,7 @@ async def api_get_book_notes(book_id: str):
 
 
 @router.get("/api/notes/{book_id}/{chapter_index}")
-async def api_get_chapter_notes(book_id: str, chapter_index: int):
+async def api_get_chapter_notes(book_id: str, chapter_index: int, response: Response):
     safe_book_id = _server._validate_book_id(book_id)
     book = _server.load_book_cached(safe_book_id)
     if not book:
@@ -150,6 +193,11 @@ async def api_get_chapter_notes(book_id: str, chapter_index: int):
             d["note_text"] = html.unescape(str(d["note_text"]))
         out.append(d)
 
+    # 版本算的是**整本书**的标注（`annotations`，含 orphaned 的那些），不是本章过滤后的
+    # `items`：写路由的比较对象是整份文件，读回来的版本若只覆盖一章，客户端拿它去写就会在
+    # 另一章的改动上撞出假冲突，或者更糟 —— 漏掉真冲突。
+    response.headers["ETag"] = _etag(annotations_version(annotations))
+
     return {
         "book_id": safe_book_id,
         "chapter_index": chapter_index,
@@ -159,7 +207,13 @@ async def api_get_chapter_notes(book_id: str, chapter_index: int):
 
 
 @router.post("/api/notes/{book_id}/{chapter_index}", status_code=201)
-async def api_create_annotation(book_id: str, chapter_index: int, payload: CreateAnnotationRequest):
+async def api_create_annotation(
+    book_id: str,
+    chapter_index: int,
+    payload: CreateAnnotationRequest,
+    response: Response,
+    if_match: Optional[str] = Header(default=None, alias="If-Match"),
+):
     safe_book_id = _server._validate_book_id(book_id)
     book = _server.load_book_cached(safe_book_id)
     if not book:
@@ -223,12 +277,22 @@ async def api_create_annotation(book_id: str, chapter_index: int, payload: Creat
         orphaned=False,
     )
 
-    saved = add_note_annotation(_server.BOOKS_DIR, annotation)
+    try:
+        saved, version = add_note_annotation(_server.BOOKS_DIR, annotation, if_match=if_match)
+    except NotesVersionConflict as e:
+        return _conflict(e)
+
+    response.headers["ETag"] = _etag(version)
     return {"id": saved.id, "created_at": saved.created_at, "message": "Annotation created successfully"}
 
 
 @router.delete("/api/notes/{book_id}/{chapter_index}/{note_id}", status_code=204)
-async def api_delete_annotation(book_id: str, chapter_index: int, note_id: str):
+async def api_delete_annotation(
+    book_id: str,
+    chapter_index: int,
+    note_id: str,
+    if_match: Optional[str] = Header(default=None, alias="If-Match"),
+):
     safe_book_id = _server._validate_book_id(book_id)
     book = _server.load_book_cached(safe_book_id)
     if not book:
@@ -236,14 +300,26 @@ async def api_delete_annotation(book_id: str, chapter_index: int, note_id: str):
     if chapter_index < 0 or chapter_index >= len(book.spine):
         raise HTTPException(status_code=400, detail="Invalid chapter_index")
 
-    ok = delete_note_annotation(_server.BOOKS_DIR, safe_book_id, note_id)
+    try:
+        ok, version = delete_note_annotation(_server.BOOKS_DIR, safe_book_id, note_id, if_match=if_match)
+    except NotesVersionConflict as e:
+        return _conflict(e)
+
     if not ok:
         raise HTTPException(status_code=404, detail="Annotation not found")
-    return Response(status_code=204)
+    # 204 仍然是 204、仍然没有 body；多的只有一个 header。
+    return Response(status_code=204, headers={"ETag": _etag(version)})
 
 
 @router.put("/api/notes/{book_id}/{chapter_index}/{note_id}")
-async def api_update_annotation(book_id: str, chapter_index: int, note_id: str, payload: UpdateAnnotationRequest):
+async def api_update_annotation(
+    book_id: str,
+    chapter_index: int,
+    note_id: str,
+    payload: UpdateAnnotationRequest,
+    response: Response,
+    if_match: Optional[str] = Header(default=None, alias="If-Match"),
+):
     safe_book_id = _server._validate_book_id(book_id)
     book = _server.load_book_cached(safe_book_id)
     if not book:
@@ -256,8 +332,15 @@ async def api_update_annotation(book_id: str, chapter_index: int, note_id: str, 
         raise HTTPException(status_code=400, detail="note_text is required")
 
     note_text = html.escape(note_text)
-    updated = update_note_annotation(_server.BOOKS_DIR, safe_book_id, note_id, note_text)
+    try:
+        updated, version = update_note_annotation(
+            _server.BOOKS_DIR, safe_book_id, note_id, note_text, if_match=if_match
+        )
+    except NotesVersionConflict as e:
+        return _conflict(e)
+
     if not updated:
         raise HTTPException(status_code=404, detail="Annotation not found")
 
+    response.headers["ETag"] = _etag(version)
     return {"id": updated.id, "note_text": updated.note_text, "message": "Annotation updated successfully"}
