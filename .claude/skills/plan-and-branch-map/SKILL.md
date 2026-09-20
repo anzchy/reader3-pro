@@ -75,7 +75,7 @@ Do not invent a new number without updating that table.
 | M1b — Playwright E2E | `009-e2e-annotations` | migration | ✅ Merged (PR #20) |
 | M1b-债 — settings apply order | `016-settings-apply-order` | migration | ✅ Merged (PR #21) |
 | MD — design degradation states | `010-design-degradation-states` | **frontend** | WI-1 – WI-8 |
-| M2 — backend refactor | `011-backend-refactor` | migration | 🔨 Done on branch, not merged **(9 ✅ ＋ 1 ⚠️ — exit gate #7 is partial; its blocking of 011 was formally revoked, not passed)** |
+| M2 — backend refactor | `011-backend-refactor` | migration | 🔨 Done on branch, not merged **(9 ✅ ＋ 1 ⚠️ — gate #7 is partial, its blocking formally revoked, not passed; and gate #3's green holds only on the local profile — unit lane is red on clean Linux CI, debt #45, introduced by 011's own WI-5b)** |
 | M3 — storage migration | `012-storage-format` | migration | Allocated |
 | M4a — TS shell + settings + library | `013-ts-frontend-shell` | **frontend** | WI-9 – WI-13 |
 | M4b — TS reader | `014-ts-frontend-reader` | **frontend** | WI-14 – WI-19 |

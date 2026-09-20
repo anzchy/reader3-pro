@@ -354,30 +354,99 @@ git status --porcelain -- \
 
 | 场景 | 结果 | 一句话 |
 |---|---|---|
-| 干净 Linux / CI | ⛔ **未通过（未验证）** | job 建出来了，但一次都没真触发过——而「闸空转」与「闸通过」在输出上同形 |
+| 干净 Linux / CI | ❌ **FAIL（已验证）** | 真跑两次，两次都红；`baseline_1b` 1 failed / 66 passed，且顺带照出 unit lane 在 Linux 上也是红的 |
 | CPU 压力下 | ✅ **PASS** | 10 核压满（结束时 load 20.84），67/67 **首次**通过，58.25s |
 | 随机化收集顺序 | ❌ **FAIL** | seed 3003 首次红 1 条；原样重放两次全绿 ⇒ 分类为 **flaky，不是顺序依赖** |
 
 **当前状态：三项过一项。Phase 3 / 012 仍被阻塞**（另有 ≥10 次 / ≥5 工作日那一条，已满足，见上方台账）。
 
-### 第 1 项 —— 干净 Linux / CI：建成，未验证
+**2026-09-20 当天更新：第 1 项从「未验证」变成「验证为红」。** 数字没变（仍是 1/3），但性质变了——之前是一道没人跑过的闸，现在是一道**跑过、响了、并点出三个具体缺陷**的闸。这三个缺陷本地一个都照不出来，正是 §7 立这一项要买的东西。
+
+### 第 1 项 —— 干净 Linux / CI：**FAIL**（2026-09-20 真跑两次，两次都红）
 
 载体是 `.github/workflows/tests.yml` 的第二个 job `e2e`（9 步），2026-09-20 加入，同时兑付了
-[009 欠账 #31](./009-e2e-annotations.md) 的一半。它固定了本闸要求的两样东西：
+[009 欠账 #31](./009-e2e-annotations.md) 的两半——**包括 (b)「在一次 workflow_dispatch 上见过红」**，
+而且是字面意义上的见过红。
 
-- **lock**：`uv sync --frozen --all-groups`——`--frozen` 就是「锁定 lock 文件」，lock 与
-  `pyproject.toml` 不一致时它直接失败，而不是悄悄重解。
-- **Chromium 版本**：单独一步 `uv run playwright --version` ＋ 列 `~/.cache/ms-playwright`，
-  版本号要连同结果一起抄回本表。
+**闸要的两个固定项（连同结果一并记录）：**
 
-用 `scripts/soak_run.py` 而不是裸 `pytest`，因为本闸的通过条件是 **67/67**，不是「没红」——
-裸 pytest 在用例被 marker 改动悄悄漏选时照样退 0。`--append` **刻意不给**：CI 的运行剖面不属于台账。
+| 项 | 实测值 |
+|---|---|
+| Playwright | **1.62.0** |
+| Chromium | **Chrome for Testing 151.0.7922.34**，revision `chromium-1234` |
+| lock | `uv sync --frozen --all-groups`（lock 与 `pyproject.toml` 不一致就直接失败，不悄悄重解） |
+| OS | `linux-6.17.0-1022-azure`（ubuntu-latest runner） |
+| suite_hash | `2747100dadf6` —— 与冻结值一致，跑的确实是同一套用例 |
 
-**为什么记「未通过」而不是「待办」。** 两个 workflow 都只认 `release.published` / `push.tags: v*` /
-`workflow_dispatch`（`tests.yml:31-36`），触发它需要先 push；本轮没有 push 授权。闸的输出至今是空的，
-而空输出与绿输出长得一模一样——按 §7 纪律 3「失败会阻塞，不是记录下来就算」，未验证只能算未通过。
+用 `scripts/soak_run.py` 而不是裸 `pytest`，因为本闸的通过条件是 **67/67**，不是「没红」。
+`--append` **刻意不给**：CI 的运行剖面不属于台账，两次运行都是 dry run，台账一行没动。
 
-**结清动作**：`gh workflow run tests.yml` 手点一次，把 run 链接、Chromium 版本、67/67 的实际输出抄进本表。
+#### 两次运行
+
+| run | commit | `baseline_1b` | unit lane |
+|---|---|---|---|
+| [35499892289](https://github.com/anzchy/reader3-pro/actions/runs/35499892289) | `a73b4a5` | ❌ 1 failed / 66 passed / **81.89s** —— **哪条红的丢了**，见下 | ❌ 2 failed / 1552 passed |
+| [35500630451](https://github.com/anzchy/reader3-pro/actions/runs/35500630451) | `4f5121d` | ❌ 1 failed / 66 passed / **83.51s** —— `test_w8a_*` | ❌ 1 failed / 1553 passed |
+
+环境层两次全绿：`checkout@v5` / `setup-uv@v6` / `setup-python@v6` / `uv sync` / 装 Chromium
+一路成功。所以红的是 lane 本身，不是 CI 配置——这个区分要留痕，否则下次有人会先去怀疑 action 版本。
+顺带把 `tests.yml:26` 那句「action 版本尚未在 CI 里实跑验证过」的警告销掉了。
+新冒出来的是 Node 20 弃用警告（`upload-artifact@v4`、`setup-uv@v6`），不影响结果。
+
+#### 闸自己的一个缺陷：第一次响了却说不出是谁红的
+
+`scripts/soak_run.py:746` 在不带 `--append` 时把明细 log 写进 `tempfile.mkdtemp()`——这是对的，
+dry run 不该往仓库里拉屎——而 job 的那一步**没给 `--log-dir`**，于是明细落在 `/tmp/soak-ozvxvjvu/`
+里随 runner 一起没了，控制台只剩一行 summary。artifact 那一步收的是
+`.claude/tdd-guardian/soak-logs/`，**那是随 checkout 带进来的历史 log**，4193 字节全是噪声，
+本次真正的明细一个字节都没收到。
+
+**一道说不出「谁红了」的闸，等于逼人把它重跑一遍才能开始查。** 已于 `4f5121d` 修：
+baseline 步骤加 `--log-dir soak-ci-logs`，artifact 改收它、不再收那份历史 log。
+run 35500630451 的明细因此完整抓到。**run 35499892289 那条红是哪个用例，永久丢失**——
+如实记下来，不假设它与第二次是同一条。
+
+#### 第 2 次那条红：`test_w8a_two_overlapping_annotations_both_persist_and_render[chromium]`
+
+```
+FAILED tests/e2e/baseline_1b/test_write_overlap_and_disambiguation.py::
+  test_w8a_two_overlapping_annotations_both_persist_and_render[chromium]
+  - AssertionError: 8.0s 内 notes.json 没有稳定到 2 条，实际 1 条：
+    [{'type': 'marker', 'quote': 'Alpha pro', 'position': 3, ...}]
+```
+
+盘上那一条是 **A（marker）**，说明第一条落了、`assert_roundtrip`（含一次刷新）也过了，
+**没落的是第二条（wavy）**。
+
+**这与第 3 项 seed 3003 那条红是同一家族**：都是「一次笔记写入静默地没发生」，
+都只能通过 `wait_for_notes` 超时观察到，都拿不到任何错误信息。病因同样落在
+[欠账 #43](./009-e2e-annotations.md) 那六个静默出口上。
+
+一处不同要记下来，免得被当成同一个 bug：W-8a 的第二条是**在一次全新的页面加载之后**
+建的（`test_write_overlap_and_disambiguation.py:421` 又 `open_reader` 了一遍），
+所以「A 创建后 `loadAndRender()` 重绘让旧 range 失效」这个对 K-2 成立的解释，**对 W-8a 不直接成立**。
+也就是说六个出口里具体是哪一个，两条用例可能不是同一个。**在 #43 补出可观测性之前，这仍然是猜。**
+
+#### 顺带照出来的：unit lane 在干净 Linux 上是红的（本地 macOS 全绿）
+
+本闸没被要求照这个，但它照出来了。两条，责任不同，已分别立为
+[欠账 #45 / #46](./009-e2e-annotations.md)：
+
+- `tests/unit/test_e2e_group_guard.py::test_positive_selection_of_acceptance_groups_yields_exactly_the_skipped_count`
+  —— **两次都红，确定性的。** 它 shell out 去跑 `pytest tests/e2e -m "acceptance_*"`，
+  而 WI-5b（`cc6bb18`）激活 `acceptance_2a` 之后，那个子进程**真的去启浏览器了**；
+  unit job 不装 Chromium，于是 `BrowserType.launch: Executable doesn't exist`。
+  激活之前整组 module-level skip，碰不到这条路。**一条 unit lane 的用例现在依赖浏览器。**
+- `tests/unit/test_ai_queue_lease.py::test_Q4_worker停不下来时仍释放租约并留ERROR`
+  —— **第一次红、第二次绿，flaky。** 挂在前提断言 `assert not stuck_stream.exited` 上：
+  假 worker 用 `stuck_delay=3.0`，前提是整段 scenario 在 3 秒内跑完，慢 runner 上跑不完。
+
+**这两条本地永远照不出来**，因为本地装着 Chromium、机器也快。它们是这道闸第一次跑就付的钱。
+
+#### 结清动作
+
+第 1 项转绿要两件事：**(1)** 修掉 W-8a 那条红（卡在 #43 的可观测性上）；
+**(2)** 修掉 #45，让 unit lane 在没有浏览器的机器上也能绿。在那之前，本项维持 **FAIL**。
 
 ### 第 2 项 —— CPU 压力下：PASS
 
