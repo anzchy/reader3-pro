@@ -879,9 +879,38 @@ def test_every_acceptance_module_skips_only_via_module_level_pytestmark_with_pha
 # --------------------------------------------------------------------------
 # Case 5：四个 acceptance 组正选后按激活状态分账（guard / S3 / L1）
 # --------------------------------------------------------------------------
-def test_positive_selection_of_acceptance_groups_yields_exactly_the_skipped_count() -> None:
-    """`-m "acceptance_4b1 or …"` ⇒ 退出码 0、errors == failed == 0，且 passed / skipped
-    **两个数各自钉死**：已激活组的条数真的 passed，未激活组的条数真的 skipped。
+#: 本条子进程读这个环境变量，把逐 item 的 setup 阶段结果**写文件**——不走 stdout。
+#: 理由：pytest 自己会捕获插件里的 print，`--setup-plan` 下的输出形态还随版本变；写文件
+#: 是唯一不受捕获策略影响的通道。
+ACCEPTANCE_OUTCOME_ENV = "ACCEPTANCE_OUTCOME_PROBE_PATH"
+
+#: 逐 item 探针插件，写进 `tmp_path`、经 `PYTHONPATH` 以 `-p` 加载，不入仓、不进任何 lane。
+#: 形状照抄下面 `_ACCEPTANCE_WIRING_PLUGIN`（同文件 Case 5b），不发明新机制。
+_ACCEPTANCE_OUTCOME_PLUGIN = '''
+"""临时探针：在 `--setup-plan` 下逐 item 汇报 setup 阶段的结果。
+
+`--setup-plan` 不执行任何 fixture 函数体、不执行用例体，所以**已激活组的那一条不进任何
+summary 计数**：它不是 passed（call 阶段不执行，没有 call report），也不是 skipped。
+只看 summary 的数字，已激活组就成了无人观察的一块。本探针补的正是这块：setup 阶段的
+report 对每条 item 都有，skip 生效的会带 `skipped`，没被 skip 的走到 `passed`。
+"""
+
+import os
+
+
+def pytest_runtest_logreport(report):
+    if report.when != "setup":
+        return
+    with open(os.environ["ACCEPTANCE_OUTCOME_PROBE_PATH"], "a", encoding="utf-8") as fh:
+        fh.write(f"{report.nodeid}\\t{'skipped' if report.skipped else report.outcome}\\n")
+'''
+
+
+def test_positive_selection_of_acceptance_groups_yields_exactly_the_skipped_count(
+    tmp_path: Path,
+) -> None:
+    """`-m "acceptance_4b1 or …" --setup-plan` ⇒ 退出码 0、errors == failed == 0，且
+    **逐目录**分账：登记表内各组的每一条都不是 skipped，表外各组的每一条都是 skipped。
 
     `errors == 0` 在这里只覆盖**收集期**的失败：模块级 import 错、语法错、marker 拼错。
     它**不**覆盖未激活组的 fixture 名写错和用例体里的 `NameError`——模块级 skip 在
@@ -896,14 +925,37 @@ def test_positive_selection_of_acceptance_groups_yields_exactly_the_skipped_coun
     `>= 0`——那等于让这条用例对「某个未激活组悄悄活过来」和「已激活组悄悄被关掉」双向失明。
     两个数都钉：passed 恰好是登记表内各组的条数之和，skipped 恰好是其余各组的条数之和，
     两者相加仍须等于 `EXPECTED_ACCEPTANCE_ITEMS`。
+
+    2026-09-20（欠账 #45）再改此条：子进程由**真跑**换成 `--setup-plan` ＋ 逐 item 探针。
+    上一版让 unit lane 长出了一条浏览器依赖——`acceptance_2a` 解禁后，这里的子进程真的去
+    launch Chromium，没装浏览器的机器上必红（确定性，不是 flaky）；CI run 35500630451 的
+    `unit` job 就红在这一条，那个 job 不装 Chromium。`--setup-plan` 解析整条 fixture 闭包
+    但不执行 fixture 函数体、不执行用例体，于是「不起服务、不起浏览器」重新成立。
+
+    **本次换法的实质代价，写明在此，不许含混。** 原断言 `passed == n_activated` 证明的是
+    「DEG-S5 **真的跑过并通过**」。`--setup-plan` 下 call 阶段不执行，这句话**不再由
+    unit lane 证明**，改由 e2e lane 承担（`uv run pytest tests/e2e --browser chromium`，
+    实测 `75 passed / 16 skipped`，DEG-S5 那一条就在里面）。这是**刻意的 lane 归位**，不是
+    疏忽：「一条浏览器用例通不通得过」不该是 commit 时的性质，它属于 push 闸。本条在 unit
+    lane 保留的是**归属**那一层——登记表内的组不得带生效 skip，表外的组必须带，逐目录判，
+    两个方向的牙都还在。
     """
     g = _guard()
-    n_activated = sum(
-        CANONICAL_ACCEPTANCE_PER_DIR[d]
-        for d in ACCEPTANCE_DIRS
-        if d in CANONICAL_ACTIVATED_ACCEPTANCE_DIRS
+    activated = [d for d in ACCEPTANCE_DIRS if d in CANONICAL_ACTIVATED_ACCEPTANCE_DIRS]
+    dormant = [d for d in ACCEPTANCE_DIRS if d not in CANONICAL_ACTIVATED_ACCEPTANCE_DIRS]
+
+    plugin_dir = tmp_path / "outcome_probe"
+    plugin_dir.mkdir()
+    (plugin_dir / "acceptance_outcome_probe.py").write_text(
+        _ACCEPTANCE_OUTCOME_PLUGIN, encoding="utf-8"
     )
-    n_dormant = CANONICAL_ACCEPTANCE_ITEMS - n_activated
+    report_path = tmp_path / "outcomes.tsv"
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join(
+        p for p in (str(plugin_dir), env.get("PYTHONPATH", "")) if p
+    )
+    env[ACCEPTANCE_OUTCOME_ENV] = str(report_path)
+
     proc = subprocess.run(
         [
             sys.executable,
@@ -912,12 +964,16 @@ def test_positive_selection_of_acceptance_groups_yields_exactly_the_skipped_coun
             E2E_REL,
             "-m",
             " or ".join(ACCEPTANCE_DIRS),
+            "--setup-plan",
             "-q",
             "--no-header",
             "-p",
             "no:cacheprovider",
+            "-p",
+            "acceptance_outcome_probe",
         ],
         cwd=REPO_ROOT,
+        env=env,
         capture_output=True,
         text=True,
         timeout=SUBPROCESS_TIMEOUT_S,
@@ -927,21 +983,58 @@ def test_positive_selection_of_acceptance_groups_yields_exactly_the_skipped_coun
     assert proc.returncode == 0, f"正选四个 acceptance 组时退出码 {proc.returncode}：\n{out}"
     assert counts["errors"] == 0, f"有 collection error——某条 acceptance 用例 import 不进来：\n{out}"
     assert counts["failed"] == 0, f"有 acceptance 用例真的跑起来并失败了：\n{out}"
-    assert counts["passed"] == n_activated, (
-        f"passed == {counts['passed']}，期望 {n_activated}（已激活组 "
-        f"{sorted(CANONICAL_ACTIVATED_ACCEPTANCE_DIRS)} 的条数之和）。多了 = 某个未激活组的 skip"
-        f"被解开而阶段未到；少了 = 某条已宣称激活的用例又被关回去了：\n{out}"
+
+    assert report_path.exists(), (
+        f"探针一行都没写（{report_path} 不存在）——插件没被加载，本条证明不了任何事：\n{out}"
     )
-    assert counts["skipped"] == n_dormant, (
-        f"skipped == {counts['skipped']}，期望 {n_dormant}（登记表之外各组的条数之和）：\n{out}"
+    reported: List[Tuple[str, str]] = []
+    for line in report_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        nodeid, _, outcome = line.partition("\t")
+        reported.append((nodeid, outcome))
+    detail = "\n  ".join(f"{nodeid}\t{outcome}" for nodeid, outcome in reported)
+
+    # 覆盖面先于结论：理由同 Case 5b——覆盖面不全时「零个异常」毫无意义。
+    assert len(reported) == CANONICAL_ACCEPTANCE_ITEMS, (
+        f"探针只逐 item 汇报了 {len(reported)} 条，期望 {CANONICAL_ACCEPTANCE_ITEMS} 条——"
+        f"覆盖面不全时「零个异常」毫无意义：\n  {detail}\n{out}"
     )
-    assert counts["passed"] + counts["skipped"] == g.EXPECTED_ACCEPTANCE_ITEMS, (
-        f"passed + skipped == {counts['passed'] + counts['skipped']}，"
-        f"期望 EXPECTED_ACCEPTANCE_ITEMS == {g.EXPECTED_ACCEPTANCE_ITEMS}：\n{out}"
+
+    by_dir: Dict[str, List[Tuple[str, str]]] = {
+        d: [(n, o) for n, o in reported if n.startswith(f"{E2E_REL}/{d}/")]
+        for d in ACCEPTANCE_DIRS
+    }
+    for d in ACCEPTANCE_DIRS:
+        expected = CANONICAL_ACCEPTANCE_PER_DIR[d]
+        assert len(by_dir[d]) == expected, (
+            f"{E2E_REL}/{d}/ 的探针行数是 {len(by_dir[d])}，本文件独立钉的是 {expected}：\n  {detail}"
+        )
+
+    wrongly_skipped = [
+        f"{n}\t{o}" for d in activated for n, o in by_dir[d] if o == "skipped"
+    ]
+    assert not wrongly_skipped, (
+        f"以下 item 住在**已激活**组 {sorted(CANONICAL_ACTIVATED_ACCEPTANCE_DIRS)} 里却带生效 skip"
+        f"——某条已宣称激活的用例又被关回去了：\n  " + "\n  ".join(wrongly_skipped) + f"\n{out}"
     )
-    assert counts["passed"] + counts["skipped"] == CANONICAL_ACCEPTANCE_ITEMS, (
-        f"passed + skipped == {counts['passed'] + counts['skipped']}，"
-        f"本文件独立钉的是 {CANONICAL_ACCEPTANCE_ITEMS}：\n{out}"
+    wrongly_live = [
+        f"{n}\t{o}" for d in dormant for n, o in by_dir[d] if o != "skipped"
+    ]
+    assert not wrongly_live, (
+        f"以下 item 住在**未激活**组 {dormant} 里却没被 skip 掉——某个未激活组的 skip 被解开"
+        f"而阶段未到：\n  " + "\n  ".join(wrongly_live) + f"\n{out}"
+    )
+
+    n_activated = sum(len(by_dir[d]) for d in activated)
+    n_dormant = sum(len(by_dir[d]) for d in dormant)
+    assert n_activated + n_dormant == CANONICAL_ACCEPTANCE_ITEMS, (
+        f"两类条数之和 == {n_activated + n_dormant}，本文件独立钉的是 "
+        f"{CANONICAL_ACCEPTANCE_ITEMS}（差额 = 有 item 不住在四个组目录下）：\n  {detail}"
+    )
+    assert n_activated + n_dormant == g.EXPECTED_ACCEPTANCE_ITEMS, (
+        f"两类条数之和 == {n_activated + n_dormant}，"
+        f"期望 EXPECTED_ACCEPTANCE_ITEMS == {g.EXPECTED_ACCEPTANCE_ITEMS}：\n  {detail}"
     )
 
 

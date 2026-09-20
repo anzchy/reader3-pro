@@ -448,6 +448,15 @@ FAILED tests/e2e/baseline_1b/test_write_overlap_and_disambiguation.py::
 第 1 项转绿要两件事：**(1)** 修掉 W-8a 那条红（卡在 #43 的可观测性上）；
 **(2)** 修掉 #45，让 unit lane 在没有浏览器的机器上也能绿。在那之前，本项维持 **FAIL**。
 
+> **⬛ 2026-09-20 当天续：(2) 已兑付，(1) 没有。** #45 已修（`--setup-plan` ＋ 逐 item 探针，
+> 详见 [009 台账 #45](./009-e2e-annotations.md)）：`PLAYWRIGHT_BROWSERS_PATH=/nonexistent uv run pytest
+> tests/unit tests/contract -q` 实测 **`1555 passed, 2 skipped in 48.41s`**，修前是 `1 failed`。
+> 牙用两次定向破坏称过，两次还原后 `git diff --exit-code` 干净，**冻结 8 路径零改动**。
+> **但本项仍维持 FAIL，有两个理由，都不是形式主义**：其一，(1) 的 W-8a 一条没动；
+> 其二，**CI 尚未重跑**——上面这些证据全部来自本地模拟的无浏览器环境，而本项的判据原文是
+> 「**干净 Linux / CI**」，本地模拟证明不了它，且 #46 那条 flaky 仍在那边。
+> 想翻盘只有一条路：`gh workflow run tests.yml` 跑出 **67/67 首次通过**。
+
 ### 第 2 项 —— CPU 压力下：PASS
 
 压力源（原样可复现，不依赖任何未入库的文件）：
