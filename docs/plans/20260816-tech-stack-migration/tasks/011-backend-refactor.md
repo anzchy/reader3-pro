@@ -699,6 +699,7 @@ stat 算了但 key 里写死 `0, 0` → 3 红，且恰好是那三条盯新鲜�
 | 7 ⚠️ **部分达成，经范围变更关闭其对 011 的阻塞** | `bench.py` 跑通，反序列化计数不为零，C1/C2 指标相对基准改善 | **门槛原文一字未改，因为它当初提的要求是对的。** 三项里两项兑付、一项没有：`bench.py` 跑通 ✅（rc=0）；反序列化计数不为零 ✅（`unpickle_grand_total` = 95，`book_store` 是唯一读盘点）；**C2（内存）✅ 决定性兑付**——`011-iso-*.json` 三份逐提交隔离实测，WI-9 单独拿下 `after_library_search_bytes` **−123.6 MiB**（237.7 → 114.1）、`after_huge_search_bytes` **−136.3 MiB**（331.7 → 195.4），spread 0.0/0.1/0.1%；**C1（读盘/归一化次数）✗ 没兑付**——`unpickle_grand_total` 95 → 95 一次没少，`normalize_calls` 549 → 541 只省 8 次（＝一本书 8 章）。原因是 `search_library`（`search_service.py:620`）为取 `title`/`author` 无条件先读正文，索引缓存扩到多大都绕不开，已立为**欠账 #35**（[009 跨波欠账表](./009-e2e-annotations.md)）。WI-8 的真实价值是**正确性**（pickle 换了而索引还发旧文本，见 `tests/unit/test_search_service_index_freshness.py` 7 条 ＋ 定向破坏 3 红），而门槛 #7 量不到正确性 |
 | 8 ✅ | DEG-S5 验收用例解禁并转绿 | **2026-09-20 在 `cc6bb18` 上实测兑付**：`uv run pytest tests/e2e/acceptance_2a -k deg_s5 --browser chromium` → `1 passed`；e2e lane 整体 `75 passed / 16 skipped / 66.24s`（此前 74 / 17，多出来的一条就是它）。那条用例**没有被重写**——它的 diff 实测只有 `0 7`，就是模块级 skip 那一块 |
 | 9 ✅ | `tests/conftest.py` 未被修改 | `git diff --stat master..011-backend-refactor -- tests/conftest.py` 为空 |
+| 10 ✅ | `uv run mypy src/` 干净 | **2026-09-20 新增，因为前九条没有一条看得见类型检查**（见下方同日期的说明）。复核方式不是手跑：`tests/unit/test_router_type_annotations.py` 把它钉进**日常 unit lane** —— `test_mypy_is_clean_on_src` 真跑一次 `mypy src/` 并断言退出码 0（权威判据，热跑 0.47s / 冷跑 15.07s），另有一层 AST 静态闸逐个检查十个 router 模块的 `router: APIRouter = APIRouter()`（零秒，说得出是哪个文件忘了标注）。两层都留着是因为失效方式不同：AST 那层不依赖 mypy 装没装，mypy 那层盖得住下一个还没出现的 `has-type`。实测 `Success: no issues found in 41 source files` |
 
 > **2026-09-20 门槛 #7 的裁定：留原文、记「部分达成」、撤销它对 011 合并的阻塞。**
 > 摆在桌上的是四条路：(a) 勾成通过 —— 假的，C1 没兑付；(b) 把门槛改写成「与实际做到的一致」——
@@ -720,7 +721,7 @@ stat 算了但 key 里写死 `0, 0` → 3 红，且恰好是那三条盯新鲜�
 > **剩余部分的去向**：欠账 **#35**，兑付方 **012**，验收判据是 bench 的 `05_library_search_*`
 > 三步不再每轮 +20 次读盘。012 开工时重新裁定它的优先级 —— 这是本条裁定唯一的复审点。
 
-> **2026-09-20 新发现：这 9 条门槛里没有一条看得见 `mypy`，而 011 把它从绿弄成了红。**
+> **2026-09-20 新发现：这（当时的）9 条门槛里没有一条看得见 `mypy`，而 011 把它从绿弄成了红。已修，并补成第 10 条门槛。**
 > 实测 `master` 是 `Success: no issues found in 27 source files`，本分支 `eb8b60b` 是
 > `Found 10 errors in 1 file` —— 全部是 `server.py` 的 `Cannot determine type of "router"
 > [has-type]`，病因是 WI-4/3 拆 router 时引入的循环导入（`2c109c6`）。`.github/workflows/tests.yml:75`
@@ -729,7 +730,7 @@ stat 算了但 key 里写死 `0, 0` → 3 红，且恰好是那三条盯新鲜�
 > 全文 grep 「mypy」在本文与 [009 账本](./009-e2e-annotations.md)里此前**零命中** —— 也就是说
 > 「8 ✅ + 1 ⚠️、无 ❌」这个成色是在一个看不见类型检查的量表上得出的。已立为**欠账 #40**，
 > 兑付方是 011 自己。修法已在沙盒工作树里验证：十个 router 模块写成 `router: APIRouter = APIRouter()`，
-> `mypy src/` 转绿（`Success: no issues found in 41 source files`），每文件一行、零运行时影响。
+> `mypy src/` 转绿（`Success: no issues found in 41 source files`），每文件一行、零运行时影响。**当天就实施了**，连同一个 13 条的回归闸 `tests/unit/test_router_type_annotations.py` —— 只加门槛不加闸没有用：这个洞第一次出现，正是因为唯一看得见 mypy 的地方（CI）只在发版那天说话。unit lane 1541 → **1554 passed, 2 skipped**，`routes.snapshot` 零 diff，欠账 #40 随之结清。
 
 > **2026-09-20 复测：9 条中 8 条兑付，只剩 #7。** #8 由 WI-5b 兑付（`cc6bb18`）。本次连带发现并解决了一件当初没人预见的事：`acceptance_2a` 是本仓**第一个**被激活的 acceptance 组，而 `scripts/lint_e2e_groups.py` 的两条 skip 轴把「未激活组以 skip 形态存在」硬编码在了**每一个** acceptance item 上 —— 于是「解禁」这个动作本身被守卫读成违规（lint rc=1、unit lane 4 条红）。解法是加 `ACTIVATED_ACCEPTANCE_DIRS` 登记表、两条轴对表内目录反向判定，而不是把闸放宽。详见 §6 WI-5b 的完成记录。
 >

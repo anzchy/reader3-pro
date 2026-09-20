@@ -32,7 +32,7 @@ from ...notes_service import (
 )
 from ...reader3 import Book
 
-router = APIRouter()
+router: APIRouter = APIRouter()
 
 #: 011 WI-5a —— 乐观并发的 HTTP 半边。版本进出都走 header：`ETag` 出、`If-Match` 入。
 #: `If-Match` **可选**：不带它的请求与乐观并发落地之前逐字节一致（状态码、响应体都不变），

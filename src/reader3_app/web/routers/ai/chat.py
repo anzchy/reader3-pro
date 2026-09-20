@@ -41,7 +41,7 @@ from ....ai.routing import (
     unique_chapter_orders_from_passages,
 )
 
-router = APIRouter()
+router: APIRouter = APIRouter()
 
 
 def _sse_event(event: str, data: Any) -> bytes:

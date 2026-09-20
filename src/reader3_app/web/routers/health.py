@@ -17,7 +17,7 @@ from fastapi import APIRouter
 
 from .. import server as _server
 
-router = APIRouter()
+router: APIRouter = APIRouter()
 
 
 @router.get("/api/health")

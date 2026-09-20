@@ -24,7 +24,7 @@ from ....ai.conversations import (
     save_conversation_multi as save_disk_conversation_multi,
 )
 
-router = APIRouter()
+router: APIRouter = APIRouter()
 
 
 @router.get("/api/ai/conversations/{book_uuid}")

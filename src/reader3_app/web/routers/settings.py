@@ -32,7 +32,7 @@ from pydantic import BaseModel
 
 from .. import server as _server
 
-router = APIRouter()
+router: APIRouter = APIRouter()
 
 
 @router.get("/settings", response_class=HTMLResponse)

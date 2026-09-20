@@ -28,7 +28,7 @@ from ...search_service import (
     highlight_ranges_for_chapter,
 )
 
-router = APIRouter()
+router: APIRouter = APIRouter()
 
 
 @router.get("/api/search/library")

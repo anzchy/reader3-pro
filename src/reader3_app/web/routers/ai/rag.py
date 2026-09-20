@@ -12,7 +12,7 @@ from fastapi.concurrency import run_in_threadpool
 from ... import server as _server
 from ...schemas import AIRagRequest
 
-router = APIRouter()
+router: APIRouter = APIRouter()
 
 
 @router.post("/api/ai/rag/retrieve")

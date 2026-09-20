@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 
 from .. import server as _server
 
-router = APIRouter()
+router: APIRouter = APIRouter()
 
 
 @router.get("/read/{book_id}/book.epub")

@@ -29,7 +29,7 @@ from .. import server as _server
 from ... import collections_service
 from ...search_service import list_book_ids
 
-router = APIRouter()
+router: APIRouter = APIRouter()
 
 
 @router.get("/", response_class=HTMLResponse)
