@@ -291,6 +291,10 @@ async def api_test_provider(provider_name: str, body: TestProviderRequest):
             messages=messages,
             max_tokens=16,
             timeout_s=min(10, provider_cfg.timeout_s),
+            # 连通性自测**显式不重试**，哪怕 settings 里 max_retries 是 10。
+            # 用户点了「测试」就是要立刻知道通不通：退避三轮会把一个 2 秒的失败变成 8 秒，
+            # 还会把「偶发抖动」伪装成「连得通」——而这条路由存在的意义正是把抖动报出来。
+            max_retries=0,
         )
     except Exception as e:  # noqa: BLE001 - 第 2 档：连通性自测的返回值就是 success/message，失败原因原样交给前端
         return {

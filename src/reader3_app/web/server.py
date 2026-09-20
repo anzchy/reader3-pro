@@ -2,10 +2,12 @@ import os
 import contextlib
 import hmac
 import logging
+import random
 import time
 import json
 import asyncio
 import threading
+import urllib.error  # WI-6：重试要按类型分诊 URLError（含 socket timeout）；出网仍只走 ai/providers/_http
 from urllib.parse import parse_qs, urlsplit
 import html
 import uuid
@@ -21,7 +23,7 @@ from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse, Res
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-# 不再 import safe_pickle：反序列化只经 book_store（011 §4）。占位保留行号：server.py:49/104 被 EXPECTED_CAPTURES 钉着。
+# 不再 import safe_pickle：反序列化只经 book_store（011 §4）。占位保留行号：server.py:51/107 被 EXPECTED_CAPTURES 钉着。
 from .. import book_store
 from ..ai.books import BookUuidResolver
 from ..ai.conversations import (
@@ -52,6 +54,7 @@ from ..ai.providers.gemini import gemini_generate_content
 from ..ai.providers.ollama import ollama_chat_completions
 from ..ai.providers.openai import openai_chat_completions
 from ..ai.providers.openrouter import openrouter_chat_completions
+from ..ai.providers.types import ProviderHTTPError
 from ..ai.queue import AIRequestQueueManager
 from ..ai.rag import retrieve_passages
 from ..ai.routing import (
@@ -575,6 +578,68 @@ def _get_provider_runtime(
     return provider_name, api_key, base_url, model, provider.timeout_s
 
 
+#: 指数退避的底与上限（秒）。用例把这两个名字打成 0 来做到不真的睡——**刻意不另开一个
+#: `sleep` 接缝**：`server` 上每多一个被打桩的名字，WI-1 的注册表就要跟着动一次，
+#: 代价大于收益（tests/unit/test_provider_retry.py 的模块 docstring 记着这笔账）。
+PROVIDER_RETRY_BASE_S = 0.5
+PROVIDER_RETRY_CAP_S = 8.0
+
+#: 值得再试一次的状态码：限流与服务端故障。其余 4xx（400/401/403/404/422）不在里面，
+#: 因为 key 填错、模型名写错、请求体非法重试三次拿到的还是同一条错误，只是让用户多等几秒。
+PROVIDER_RETRY_STATUS_CODES = frozenset({408, 429, 500, 502, 503, 504})
+
+#: 会被重试循环**接住**的异常类型。窄到只有这四类是有意的：
+#: 写成 `except Exception` 会连 `RedirectNotAllowed`（一次安全拒绝，不是故障）、
+#: `ValueError`（base_url 非法）、`HTTPException`（我们自己抛的）一起重试，
+#: 而那三样重试多少次都是同一个结果。落在这个元组外面的异常原样穿出去。
+_PROVIDER_RETRY_CANDIDATES = (
+    ProviderHTTPError,
+    urllib.error.URLError,  # 含 socket timeout；`_http.post_json` 只接 HTTPError，这类是裸穿的
+    TimeoutError,
+    ConnectionError,
+)
+
+
+def _provider_error_is_retryable(exc: BaseException) -> bool:
+    """这个异常值得再试一次吗？
+
+    分诊靠**类型与状态码**，不靠解析错误文本——那段文本来自服务端，随时会变。
+    这正是 `ProviderHTTPError` 存在的理由（见 ai/providers/types.py）。
+    """
+    if isinstance(exc, ProviderHTTPError):
+        return exc.status in PROVIDER_RETRY_STATUS_CODES
+    if isinstance(exc, urllib.error.HTTPError):
+        # post_json 会把 HTTPError 压成 (status, body)，所以这条今天走不到；
+        # 留着是因为流式/探活那两个出网口不经过它，将来接进来时行为要一致。
+        return int(getattr(exc, "code", 0) or 0) in PROVIDER_RETRY_STATUS_CODES
+    return isinstance(exc, (urllib.error.URLError, TimeoutError, ConnectionError))
+
+
+def _provider_retry_budget(provider_name: str, max_retries: Optional[int]) -> int:
+    """这次调用允许重试几次。
+
+    `max_retries=None` 表示「调用方没说，去 settings 里查」。**默认值是 None 而落地成 0
+    的那条回退路径是承重的**：查不到、或者查这件事本身抛了，都退化成 0 次重试——
+    一份读不出来的 ai_settings.json 只该让重试消失，绝不能把 LLM 调用打挂。
+
+    走 `load_ai_settings()`（server 命名空间上的名字，registry 已登记）而不是让
+    `get_provider_settings` 自己去读盘：这样 contract lane 既有的那份打桩仍然拦得住它，
+    `_call_provider` 不会在测试里摸到开发者真正的 config/ai_settings.json。
+    """
+    if max_retries is not None:
+        return max(0, min(int(max_retries), 10))
+    try:
+        return get_provider_settings(provider_name, settings=load_ai_settings()).max_retries
+    except Exception as e:  # noqa: BLE001 - 第 3 档：读不出配置就当 0 次重试，调用照常发出；痕迹是下面这条 WARNING
+        ai_logger.warning(
+            "provider %s: could not read max_retries (%s: %s); continuing with no retries",
+            provider_name,
+            type(e).__name__,
+            e,
+        )
+        return 0
+
+
 def _call_provider(
     provider_name: str,
     *,
@@ -585,7 +650,69 @@ def _call_provider(
     messages: list[dict],
     max_tokens: int,
     timeout_s: int,
+    max_retries: Optional[int] = None,
 ):
+    """ADR-0006 的唯一 LLM 出口，外加 WI-6 接上的重试。
+
+    重试写在这里而不是写进 provider：六个非流式调用点全部经过这一处，写进 provider
+    就是抄五份——那正是 WI-11 刚从 `_http.py` 收掉的毛病。
+
+    **`max_retries` 默认 None（= 去 settings 查）而不是某个数**，且查不到时落到 0：
+    「不传 = 今天的行为」，所以 70 处既有打桩与全部既有用例逐字不变。
+
+    **流式路径不在这道闸上**：ollama 的流式 chat 走 `_egress_post_stream`，不经过这里，
+    因此拿不到重试。那是有意的——SSE 已经把前半段正文推给客户端了，重试会让用户看到
+    重复的文本。
+    """
+    attempts_allowed = _provider_retry_budget(provider_name, max_retries)
+    attempt = 0
+    while True:
+        try:
+            return _provider_call_once(
+                provider_name,
+                api_key=api_key,
+                base_url=base_url,
+                model=model,
+                system=system,
+                messages=messages,
+                max_tokens=max_tokens,
+                timeout_s=timeout_s,
+            )
+        except _PROVIDER_RETRY_CANDIDATES as e:
+            if attempt >= attempts_allowed or not _provider_error_is_retryable(e):
+                # 抛**最后一次**那个异常对象本身，不包一层：包一层就改了 str(e)，
+                # 而它是 SSE 与自测响应的内容（ADR-0011 冻结）。
+                raise
+            delay = random.uniform(
+                0, min(PROVIDER_RETRY_CAP_S, PROVIDER_RETRY_BASE_S * (2**attempt))
+            )
+            # 只记 provider 名、第几次、异常类型/状态码。**不记 api_key、不记 base_url、
+            # 不记请求体**——这条日志会进用户的终端和日志文件。
+            ai_logger.warning(
+                "provider %s: attempt %d/%d failed (%s%s); retrying in %.2fs",
+                provider_name,
+                attempt + 1,
+                attempts_allowed + 1,
+                type(e).__name__,
+                f" status={e.status}" if isinstance(e, ProviderHTTPError) else "",
+                delay,
+            )
+            time.sleep(delay)
+            attempt += 1
+
+
+def _provider_call_once(
+    provider_name: str,
+    *,
+    api_key: Optional[str],
+    base_url: str,
+    model: str,
+    system: str,
+    messages: list[dict],
+    max_tokens: int,
+    timeout_s: int,
+):
+    """一次调用，不含重试。`_call_provider` 的分派体原样搬进来，一个字没改。"""
     if provider_name == "anthropic":
         assert api_key is not None
         return anthropic_messages(

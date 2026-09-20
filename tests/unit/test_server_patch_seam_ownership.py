@@ -55,7 +55,7 @@
 
 扫描集合：三道检查扫的是 **`set(OWNERSHIP) | {"post_stream"}`**，不是 `owner_attr`。
 `post_stream` 是别名的 owner 侧名字，`GLOBAL_RESOLVERS["post_stream"]` 是空集，
-`EXPECTED_CAPTURES["post_stream"]` 是 `server.py:49` 那条 `import_alias`。
+`EXPECTED_CAPTURES["post_stream"]` 是 `server.py:51` 那条 `import_alias`。
 
 `OWNERSHIP` 是**三列**表，不是两列：`server._egress_post_stream` 是
 `from ..ai.providers._http import post_stream as _egress_post_stream` 的别名，
@@ -63,7 +63,7 @@
 
 `EXPECTED_CAPTURES` 今天**不是空的**，这比空基线严格地好：一个「什么都不返回」的
 扫描器会在这条上当场红，而不是白拿一个绿。两条都是生产代码里真实存在的：
-`server.py:49` 的别名，和 `server.py:104` 的 `book_uuid_resolver = BookUuidResolver(BOOKS_DIR)`
+`server.py:51` 的别名，和 `server.py:107` 的 `book_uuid_resolver = BookUuidResolver(BOOKS_DIR)`
 ——后者正好解释了为什么 `BOOKS_DIR`（8 处）和 `book_uuid_resolver`（6 处）必须分别打桩：
 `BOOKS_DIR` 在导入期就被烤进了 resolver 里，只 patch 前者拦不住后者。
 `server.py:1614` 的 `bound = AI_WORKER_STOP_TIMEOUT_S` 是**函数内**局部绑定，不算，
@@ -268,11 +268,17 @@ GLOBAL_RESOLVERS: Dict[str, FrozenSet[str]] = {
 #: Check C 真树基线（2026-09-07 实测）。name -> [(相对路径, 行号, kind)]。
 #: 两条都是生产代码里真实存在的导入期抓取，见模块 docstring。
 EXPECTED_CAPTURES: Dict[str, List[Tuple[str, int, str]]] = {
-    # server.py:104 `book_uuid_resolver = BookUuidResolver(BOOKS_DIR)`
-    "BOOKS_DIR": [("src/reader3_app/web/server.py", 104, "module_assign")],
-    # server.py:49 `from ..ai.providers._http import post_stream as _egress_post_stream`
-    "post_stream": [("src/reader3_app/web/server.py", 49, "import_alias")],
+    # server.py:107 `book_uuid_resolver = BookUuidResolver(BOOKS_DIR)`
+    "BOOKS_DIR": [("src/reader3_app/web/server.py", 107, "module_assign")],
+    # server.py:51 `from ..ai.providers._http import post_stream as _egress_post_stream`
+    "post_stream": [("src/reader3_app/web/server.py", 51, "import_alias")],
 }
+# 行号 2026-09-20（011 WI-6）从 104/49 改成 107/51。**两处的位移不一样，别以为是笔误**：
+# `server.py` 的 import 块新增了三行——`random` 与 `urllib.error` 在最前面（两处都往下推），
+# `from ..ai.providers.types import ProviderHTTPError` 夹在 51 和 107 之间（只推后者）。
+# 于是 import_alias 那条 +2（49→51），module_assign 那条 +3（104→107）。
+# **只改坐标，没有改判据**——抓取的条数、文件、种类（module_assign / import_alias）
+# 一个都没动，A15 仍然是「真树基线 + 一个活探针」。
 
 #: A15 的探针：真树上真实存在的 default_arg 抓取。见 docstring 的维护约定。
 PROBE_CAPTURE_NAME = "DEFAULT_SETTINGS_PATH"
