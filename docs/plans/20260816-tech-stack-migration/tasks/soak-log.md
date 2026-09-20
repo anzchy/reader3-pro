@@ -354,7 +354,7 @@ git status --porcelain -- \
 
 | 场景 | 结果 | 一句话 |
 |---|---|---|
-| 干净 Linux / CI | ❌ **FAIL（已验证）** | 真跑两次，两次都红；`baseline_1b` 1 failed / 66 passed，且顺带照出 unit lane 在 Linux 上也是红的 |
+| 干净 Linux / CI | ❌ **FAIL（已验证）** | 真跑三次，三次都红；`baseline_1b` 每次都是 1 failed / 66 passed。第三次（2026-09-20 修完 #45 后）红的成分少了一条：unit lane 的浏览器依赖已除，只剩 #46 那条 flaky |
 | CPU 压力下 | ✅ **PASS** | 10 核压满（结束时 load 20.84），67/67 **首次**通过，58.25s |
 | 随机化收集顺序 | ❌ **FAIL** | seed 3003 首次红 1 条；原样重放两次全绿 ⇒ 分类为 **flaky，不是顺序依赖** |
 
@@ -362,7 +362,7 @@ git status --porcelain -- \
 
 **2026-09-20 当天更新：第 1 项从「未验证」变成「验证为红」。** 数字没变（仍是 1/3），但性质变了——之前是一道没人跑过的闸，现在是一道**跑过、响了、并点出三个具体缺陷**的闸。这三个缺陷本地一个都照不出来，正是 §7 立这一项要买的东西。
 
-### 第 1 项 —— 干净 Linux / CI：**FAIL**（2026-09-20 真跑两次，两次都红）
+### 第 1 项 —— 干净 Linux / CI：**FAIL**（2026-09-20 真跑三次，三次都红）
 
 载体是 `.github/workflows/tests.yml` 的第二个 job `e2e`（9 步），2026-09-20 加入，同时兑付了
 [009 欠账 #31](./009-e2e-annotations.md) 的两半——**包括 (b)「在一次 workflow_dispatch 上见过红」**，
@@ -456,6 +456,35 @@ FAILED tests/e2e/baseline_1b/test_write_overlap_and_disambiguation.py::
 > 其二，**CI 尚未重跑**——上面这些证据全部来自本地模拟的无浏览器环境，而本项的判据原文是
 > 「**干净 Linux / CI**」，本地模拟证明不了它，且 #46 那条 flaky 仍在那边。
 > 想翻盘只有一条路：`gh workflow run tests.yml` 跑出 **67/67 首次通过**。
+
+> **⬛ 2026-09-20 第三跑：`35512654210` @ `5056614`，仍 FAIL，但红的成分从三条降到两条。**
+> 这是第一次在 CI 上验 #45 的修复，结论是确定的：**unit lane 的浏览器依赖在干净 Linux 上确实死了。**
+>
+> | job | 结果 | 内容 |
+> |---|---|---|
+> | 静态检查 ＋ unit lane | ❌ | ruff ✅ / mypy ✅；`1 failed, 1554 passed, 2 skipped in 93.14s`，**唯一的红是 #46** |
+> | e2e baseline_1b | ❌ | `1 failed, 66 passed, 24 deselected in 77.42s` —— **#44**，与前两跑同一条 |
+>
+> 三个具名结论，分开说，别混：
+>
+> 1. **#45 已在 CI 侧死透。** 前两跑 unit lane 的红里都有它（`a73b4a5` 2 failed、`4f5121d` 1 failed），
+>    这一跑 `test_e2e_group_guard` 不再出现在 FAILED 行里，且总数 1557 与本地
+>    `1555 passed / 2 skipped` 逐字对上。这是本地模拟买不到的那半个证明，现在买到了。
+> 2. **#44 三跑三红，不是 flaky，是确定性的。** 失败签名逐字相同：
+>    `test_w8a_two_overlapping_annotations_both_persist_and_render[chromium]` —— 「8.0s 内
+>    notes.json 没有稳定到 2 条，实际 1 条」，落了 A（`marker` / `yellow` / quote `Alpha pro`）、
+>    没落 B。名字在 `a73b4a5` 那跑永久丢失，所以**按名字确认的是 2/2，按 `1 failed / 66 passed`
+>    的形状确认的是 3/3**——这个区别别抹掉。它现在是第 1 项转绿的**唯一确定性阻塞**。
+> 3. **#46 两红一绿，仍 flaky。** `test_Q4_worker停不下来时仍释放租约并留ERROR`，挂在前提断言上：
+>    「假 worker 本应无视停止事件，但它停了」。`stuck_delay=3.0` 那个隐含时间假设在慢 runner 上不成立。
+>
+> 固定项与前两跑一致：Chrome for Testing 151.0.7922.34（`chromium-1234`）、`linux-6.17.0-1022-azure`、
+> `uv sync --frozen`、**`suite_hash` 仍是 `2747100dadf6`**。仍是 dry run，
+> 台账 10 行一行没动（`[soak] dry run：未写台账`）。
+>
+> `4f5121d` 的 `--log-dir` 兑现了：失败用例名这次**没有丢**。但要说清它兑现到什么程度——
+> 名字不在控制台里，在 `e2e-logs` 产物里（`gh run download <id> -n e2e-logs`）。
+> 比「永久丢失」好，比「一眼看出」差。
 
 ### 第 2 项 —— CPU 压力下：PASS
 
