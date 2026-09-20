@@ -565,11 +565,87 @@ branches 68.29%，9 条 criticalPaths 全 PASS）；e2e lane `75 passed, 16 skip
 
 独立 PR。验收：一条断言「provider 调用在失败后按 `max_retries` 重试」的单测（用 §1 WI-0b 的出网兜底保证它不真的打网络）。
 
+#### WI-6 完成记录（2026-09-20，`eb8b60b`）✅ —— 接通了，但只接通了非流式那一半
+
+走的是路径 1（接通）。落点在 `server._call_provider`——ADR-0006 定的唯一非流式出网口，
+六个调用点因此一次全部受益，不必逐个改。
+
+**使能的改动是一个类型化异常，不是重试循环本身。** 五家 provider 原先把所有 HTTP 失败
+都塌成裸 `RuntimeError(msg)`，状态码在抛出的那一刻就丢了，而重试分类恰恰只能按状态码做
+（靠解析错误文本不可靠——那段文本来自对端服务器）。新增
+`ai/providers/types.py::ProviderHTTPError(RuntimeError)`，只往 `args` 放 `message`、把
+`status` 做成 keyword-only 属性，于是 `str(e)` 逐字节不变——这条是硬要求：它会流到 SSE 的
+`{"type":"error","message":str(e)}` 与设置页测试的 `{"success":false,"message":str(e)}`，
+两处都在 ADR-0011 的冻结之下。五个 provider 各改一行，表达式本身没动。
+
+重试语义：可重试集合 `{408, 429, 500, 502, 503, 504}` ＋ `URLError` / `TimeoutError` /
+`ConnectionError`；4xx 客户端错、`RedirectNotAllowed`、以及 `ValueError` / `AssertionError`
+一律不重试。退避 `uniform(0, min(8.0, 0.5·2^n))`（full jitter），耗尽后 bare `raise` 保留
+原始 traceback。预算三档：显式传参 ⇒ 钳到 `[0, 10]`；不传 ⇒ 读 provider 设置；读不出 ⇒ 0 次。
+连通性测试路由（`routers/settings.py:291`）显式传 `max_retries=0`——那个按钮的语义是
+「现在这一下通不通」，替用户静默等三轮退避是骗人。
+
+复核（自己复跑，非转述）：unit lane **1526 passed, 2 skipped, 61.43s**（基线 1488 + 38）；
+`tests/contract` 180 passed；`routes.snapshot` 零 diff；ruff 全过；覆盖率门禁 PASS
+（`server.py` 分支 63.33% ≥ 58%）；`check_router_size.py` PASS。那 2 条 warning 是既有的——
+用 `--deselect tests/unit/test_provider_retry.py` 复跑得 `1488 passed, 2 skipped, 2 warnings` 为证。
+
+**两处缺口当场记了账，没有假装做完**：[欠账 #36](./009-e2e-annotations.md)（流式与探活
+两个出网口在闸外，先决条件是「已推出的 chunk 怎么办」这条产品语义裁定）、
+[欠账 #38](./009-e2e-annotations.md)（`Retry-After` 拿不到，因为 `_http.post_json` 的返回
+契约把 headers 丢了）。另有一笔量过并判为不值得改：`_provider_retry_budget` 每次调用多读
+一次 `config/ai_settings.json`，实测 **0.015 ms/次**（200 次均值，文件 1.2 KB），对一次数秒
+的 LLM 调用是 10^5 量级的差 —— 记在这里，免得以后有人来「优化」它。
+
 ---
 
 ## 7. WI-7 / WI-8 / WI-9 —— 收尾与 Phase 2b
 
 **WI-7 语义依赖可选化。** `chromadb` 与 `sentence-transformers` 从主 `dependencies` 移进 `[project.optional-dependencies]` 的 `semantic` 组，与 README「语义依赖可选」的描述对齐。验收：不装 `[semantic]` 时 `import reader3_app` 与全部非语义路由正常，语义路由给出可读的降级提示而不是 `ImportError` 堆栈。
+
+#### WI-7 完成记录（2026-09-20，`207779b`）✅ —— 验收兑付，且白捡一道真闸
+
+代码侧本来就做了大半：全仓 `src/` 没有任何模块级 `import chromadb`，唯一 import 点是
+`vector_search._require_semantic_deps()`（函数体内），而 `BookVectorIndex` 里只有
+`index_book`（`:179`）与 `semantic_search`（`:286`）真需要依赖，`is_indexed()` / `status()` /
+`_read_meta()` 是纯读盘。所以验收前半句（非语义路由正常）**在拆分之前就已经成立**。
+
+真正缺的那一处任务书没写：`reader3.py:716` 的 `idx.index_book(...)` 没有捕获，缺依赖时
+`uv run reader3 --index <book>` 吐一屏 traceback，而同一函数里其它每个失败出口都是
+`SystemExit(msg)`。已按邻居的写法补上。补救文案原文是
+`Run: uv add chromadb sentence-transformers`——那是**会撤销本次修复的指引**（`uv add` 写回
+主依赖表），改成 `uv sync --extra semantic` / `pip install 'reader3[semantic]'`。
+
+`[dependency-groups] dev` 首行的 `"reader3[semantic]"` 是承重的：少了它，下一次 `uv sync`
+会按新的主依赖表把 chromadb / torch / transformers 从开发机 venv 里卸掉（CI 的 tests job
+跑 `uv sync --frozen --all-groups`，同理）。extra 是给**用户**的选择，不是给开发机的。
+
+**验收后半句白捡一道真闸**，不必自己造：`lint.yml` 的 wheel job 跑
+`scripts/smoke_installed_wheel.py`，它打 wheel、装进**干净 venv**、起真服务打
+`/api/health`、`/`、`/settings`、`/read/{id}/0` 四条路由（该脚本 `:213` / `:238`）。那个 venv
+从此不再有 chromadb，于是它成了这条验收的真实证据，比 monkeypatch 硬；顺带每次发版少往
+干净环境里下一个 torch。
+
+量过的重量（本机 site-packages 共 1303.1 MiB）：torch 367.5、scipy 87.3、onnxruntime 63.7、
+transformers 57.9、sympy 37.6、numpy 25.2 MiB。传递闭包（`uv tree --package X --depth 25`
+去重计数）：chromadb **86**、sentence-transformers **29**，而 fastapi 12 / uvicorn 14 /
+jinja2 2 / beautifulsoup4 3 / ebooklib 3。
+
+`uv.lock` 一并重生成（CI 用 `uv sync --frozen`，lock 过期即红）：diff **45 insertions /
+38 deletions**，逐包比对 **219 → 219，零增零删零版本变化**；全程没有任何 `Uninstalled` /
+`- torch`，事后 `.venv` 仍是 1.3G。新增 `tests/unit/test_semantic_extra_optional.py` **15 条**，
+其中 C7/C8/C9 是直接解析 `pyproject.toml` 的**静态闸**——没有它，将来某次 `uv add chromadb`
+会无声撤销这次拆分而一切测试照常绿。模拟「没装依赖」用的是 `sys.meta_path` finder 而不是
+`sys.modules[x] = None`：后者抛的 `ModuleNotFoundError` 字样会被 tdd-guardian 的收据判成
+「环境坏了」而拒收红证（实测第一次 `record` 被判 `runner-error`）。
+
+复核（自己复跑，非转述）：unit lane **1541 passed, 2 skipped, 61.80s**（1526 + 15）；ruff
+全过；覆盖率门禁 PASS；红收据 `record` → `verify` = SEPARATION-HELD。
+
+**两条当场记的账**：[欠账 #37](./009-e2e-annotations.md)（缺依赖返 400，语义上应是 503/501；
+ADR-0011 冻结期内不动状态码）、[欠账 #39](./009-e2e-annotations.md)（`jupyter` ＋ `ipywidgets`
+也在运行时依赖里且全仓零代码引用，闭包 100 / 21 —— 同一类缺陷的第二个现场，**刻意没有并进
+本 WI**，因为它改变 `uv sync`（无 extra）装出来的东西，影响每一个下游使用者，该由维护者拍板）。
 
 **WI-8（C1）跨库搜索缓存颠簸。** `load_book_index` 的 `maxsize=4` ＋ `case_sensitive` 入 key ⇒ 有效容量 2 本。换 weighted LRU，key 纳入 mtime/指纹（与 WI-3 的失效机制共用一套）。验收：`bench.py` 的全库搜索指标相对 WI-2 基准可量化改善。
 
@@ -643,6 +719,17 @@ stat 算了但 key 里写死 `0, 0` → 3 红，且恰好是那三条盯新鲜�
 >
 > **剩余部分的去向**：欠账 **#35**，兑付方 **012**，验收判据是 bench 的 `05_library_search_*`
 > 三步不再每轮 +20 次读盘。012 开工时重新裁定它的优先级 —— 这是本条裁定唯一的复审点。
+
+> **2026-09-20 新发现：这 9 条门槛里没有一条看得见 `mypy`，而 011 把它从绿弄成了红。**
+> 实测 `master` 是 `Success: no issues found in 27 source files`，本分支 `eb8b60b` 是
+> `Found 10 errors in 1 file` —— 全部是 `server.py` 的 `Cannot determine type of "router"
+> [has-type]`，病因是 WI-4/3 拆 router 时引入的循环导入（`2c109c6`）。`.github/workflows/tests.yml:75`
+> 的 mypy 步骤没有 `continue-on-error`，但该 workflow 只认 `release.published` / `push.tags: v*` /
+> `workflow_dispatch`，所以它是一颗**发版当天才引爆**的哑弹，日常门禁一次都不会响。
+> 全文 grep 「mypy」在本文与 [009 账本](./009-e2e-annotations.md)里此前**零命中** —— 也就是说
+> 「8 ✅ + 1 ⚠️、无 ❌」这个成色是在一个看不见类型检查的量表上得出的。已立为**欠账 #40**，
+> 兑付方是 011 自己。修法已在沙盒工作树里验证：十个 router 模块写成 `router: APIRouter = APIRouter()`，
+> `mypy src/` 转绿（`Success: no issues found in 41 source files`），每文件一行、零运行时影响。
 
 > **2026-09-20 复测：9 条中 8 条兑付，只剩 #7。** #8 由 WI-5b 兑付（`cc6bb18`）。本次连带发现并解决了一件当初没人预见的事：`acceptance_2a` 是本仓**第一个**被激活的 acceptance 组，而 `scripts/lint_e2e_groups.py` 的两条 skip 轴把「未激活组以 skip 形态存在」硬编码在了**每一个** acceptance item 上 —— 于是「解禁」这个动作本身被守卫读成违规（lint rc=1、unit lane 4 条红）。解法是加 `ACTIVATED_ACCEPTANCE_DIRS` 登记表、两条轴对表内目录反向判定，而不是把闸放宽。详见 §6 WI-5b 的完成记录。
 >
