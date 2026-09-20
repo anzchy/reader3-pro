@@ -758,8 +758,21 @@ Phase 1b 从 Phase 1 中拆出并降级为「仅阻塞 Phase 4」，使 Phase 2/
 - **C1 [P1]** `search_library()` 对库内每本书调 `load_book_cached()`（`lru_cache(maxsize=10)`）+ `load_book_index()`（`lru_cache(maxsize=4)`）。每次 miss 是全书反序列化 + 全书归一化。
   **阈值订正（2026-08-16）**：原文写「库超 10 本即颠簸」，看的是 `load_book_cached` 的 `maxsize=10`。真正的约束是 `load_book_index` 的 **`maxsize=4`** ——**第 5 本就开始颠簸**，不是第 11 本。且 `load_book_index(book_id, books_dir, *, case_sensitive)` 把 `case_sensitive` 编进了 key，同一本书大小写敏感/不敏感各占一格，**有效容量再折半到 2 本**。→ **Phase 2b**。
   一个错的阈值比没有阈值更糟：它会被当成性能测试的判据，然后永远不触发，最后得出「C1 不存在」的结论。
+  **兑付情况（2026-09-20，011 WI-8 `a4e5f49`）：`maxsize` 4 → 12（`case_sensitive` 入 key ⇒ 有效容量 6 本），
+  key 纳入 `(st_mtime_ns, st_size)`。但 C1 的性能目标 ✗ 没兑付** —— `bench/011-iso-*.json` 三份逐提交隔离实测，
+  全库搜索的 `unpickle_grand_total` 恒为 **95**，扩容一次读盘都没省。原因是 `search_library()`
+  （`search_service.py:620`）为取 `title`/`author` 无条件先反序列化整本书，索引缓存命中与否轮不到它。
+  **这一条不是 C5**（C5 只管书库首页），剩余部分立为欠账 #35，兑付方 012。见 [011 §8 门槛 #7 的裁定](tasks/011-backend-refactor.md)。
 - **C2 [P1]** `_normalize_with_map()` 的 `List[int]` 是每字符一个 Python int：300 万字符 → 300 万元素 list（粗估 >100 MB）。换 `array('I')` 约 12 MB，且仍支持 `index_map[i]` 下标，**不改变** `highlight_ranges_for_chapter()` 的偏移语义。稀疏 breakpoint 表示留到第二阶段（casefold 扩张与 combining mark 删除的错误风险高）。→ **Phase 2b**，须做差分测试。
+  **✅ 已兑付（2026-09-20，011 WI-9 `b69a568`）**：`array("I")`（无符号，偏移恒非负；与原文写的 `'I'` 一致）。
+  逐提交隔离实测 `after_library_search_bytes` **237.7 → 114.1 MiB**、`after_huge_search_bytes`
+  **331.7 → 195.4 MiB**，spread 0.0/0.1%。偏移语义未变，差分测试在 `tests/unit/test_normalize_index_map_container.py`。
+  稀疏 breakpoint 表示仍未做，也仍然没有需求。
 - **C3 [P2]** 三处 `lru_cache` 的 key 均不含 mtime/指纹，重新处理同名书后进程继续返回旧 `Book`/`BookIndex` 直到重启。→ **Phase 2a**（并入 weighted LRU）。
+  **✅ 已兑付，但「三处」这个数今天是错的**：`src/` 里只剩两处 `lru_cache`
+  （`book_store.py:66` maxsize=10、`search_service.py:319` maxsize=12），第三处随 011 WI-1…WI-5 的合并消失了。
+  两处的 key 都已含 `(st_mtime_ns, st_size)` —— `book_store` 由 WI-3 兑付，`load_book_index` 由 WI-8（`a4e5f49`）兑付。
+  **weighted LRU 没有做**，裁定是在 011 里用 vanilla `@lru_cache`（ADR-0008 的简单性边界），详见 011 §7 的 WI-8 完成记录。
 - **C4 [P2]** JSONL 若 `load_book()` 仍整份读完，相比 pickle 只是换扩展名——pickle 对 dataclass 图通常更快，JSON 需先建 dict/list 再构造 dataclass，瞬时内存更高。收益完全取决于 A5 的粒度接口 + manifest 字节偏移是否落实。
 - **C5 [P1，2026-08-16 eng-review 新增]** **书库首页把每本书的正文全部反序列化了一遍。** `library_view` 遍历 `books/*_data/`，对每个目录调 `load_book_cached()` ——只为读书名、作者、封面这几个字段，却把整本书的 spine 与全文 text 都拉进内存。`lru_cache(maxsize=10)` 意味着第 11 本起每次刷新首页都是冷读。
   这是**全站访问频次最高的路径**（每次进站必走），而 C1 说的跨库搜索是低频操作 —— C1–C4 一个字没提它，优先级排反了。

@@ -573,7 +573,38 @@ branches 68.29%，9 条 criticalPaths 全 PASS）；e2e lane `75 passed, 16 skip
 
 **WI-8（C1）跨库搜索缓存颠簸。** `load_book_index` 的 `maxsize=4` ＋ `case_sensitive` 入 key ⇒ 有效容量 2 本。换 weighted LRU，key 纳入 mtime/指纹（与 WI-3 的失效机制共用一套）。验收：`bench.py` 的全库搜索指标相对 WI-2 基准可量化改善。
 
+#### WI-8 完成记录（2026-09-20，`a4e5f49`）—— **落地的不是 weighted LRU，也没有达成上面那句验收**
+
+照原文做了一半，另一半被裁掉，两处都要说清：
+
+| 原文要求 | 实际落地 | 为什么 |
+|---|---|---|
+| 换 **weighted LRU** | ❌ **仍是 vanilla `@lru_cache`**，只把上限 4 → 12 | 维护者裁定「011 里用 vanilla 做」。weighted LRU 要自己写淘汰逻辑，属 ADR-0008 说的「FastAPI/BeautifulSoup 之外的抽象」；而它要解决的是容量问题，实测容量**根本不是瓶颈**（见下） |
+| key 纳入 mtime/指纹 | ✅ `(st_mtime_ns, st_size)` 入 key | 与 `book_store` 的 `_load_book_for_stat` 同一个写法：外层做 `os.stat`，内层 memoize，stat 只当 key 材料 |
+| 两个缓存都改 | ❌ **只改了 `load_book_index`** | `book_store.load_book_cached` 的失效在 WI-3 已经做过，重做没有收益 |
+| 验收：全库搜索指标可量化改善 | ❌ **没达成**：`unpickle_grand_total` 95 → 95，`normalize_calls` 549 → 541（省 8 次），RSS ＋0.7 MiB | 见 §8 门槛 #7 的裁定与欠账 #35 |
+
+**这个工作项真正交付的是正确性，不是性能**：pickle 被重新发布之后，旧写法会一直返回
+陈旧索引直到进程重启（附录 B 的 C3 在 index 这一侧的那一半）。证据是
+`tests/unit/test_search_service_index_freshness.py` 的 7 条 ＋ 三次定向破坏：
+去掉 `except OSError` 兜底 → 12 红；删掉三行缓存面转发 → 24 红；
+stat 算了但 key 里写死 `0, 0` → 3 红，且恰好是那三条盯新鲜度的用例。
+**按门槛 #7 的原文，这些一条都不算兑付** —— 门槛量的是次数，不是正确性。
+
 **WI-9（C2）`_normalize_with_map` 换 `array('I')`。** 现在返回 `Tuple[str, List[int]]`，每字符一个 Python int —— 300 万字符约 >100 MB，换 `array('I')` 约 12 MB，且仍支持 `index_map[i]` 下标，**不改变** `highlight_ranges_for_chapter()` 的偏移语义。**必须做差分测试**：新旧实现对同一批语料逐字符比对 index_map（casefold 扩张与 combining mark 删除这两条路径是错误高发区，`epub_corpus.py` 里的 CJK 书是现成语料）。
+
+#### WI-9 完成记录（2026-09-20，`b69a568`）✅ —— 本分支收益最大的一笔
+
+`bench/011-iso-*.json` 三份逐提交隔离（`04a6839` → `b69a568` → `a4e5f49`，同机、同参数、
+相隔 55 秒连跑）：`after_library_search_bytes` **237.7 → 114.1 MiB（−123.6）**、
+`after_huge_search_bytes` **331.7 → 195.4 MiB（−136.3）**，spread 0.0/0.1%。
+`highlight_ranges_for_chapter()` 的偏移语义未变（差分测试在
+`tests/unit/test_normalize_index_map_container.py`）。
+
+两件要跟着记住的：**峰值 RSS 不可分解**（`ru_maxrss` 累计，237.7 里有 62.5 MiB 是解释器
+＋ FastAPI import 的底噪），所以这个数不能读成「省下的堆内存」；以及 WI-8 随后把索引
+缓存上限抬到 12 只花了 **＋0.7 MiB**，正是因为每个条目的 `index_map` 已经被这一笔压掉了
+一个数量级 —— **两个工作项的顺序不能对调**，反过来做要多贵没有测，别替它编数。
 
 **C5 明确不在 011 范围内。** 计划把它标为「落点待裁决」，理由是它严格依赖 Phase 3 的 `manifest.json`。放进 011 需要先造一个过渡版（单独缓存一份轻量书目 JSON），那是一份会在 012 里被删掉的代码。**裁决：推迟到 012，与 `manifest.json` 一起做。** 本条同时消解附录 B 文末 UNRESOLVED DECISIONS 里的这一项。
 
@@ -589,9 +620,29 @@ branches 68.29%，9 条 criticalPaths 全 PASS）；e2e lane `75 passed, 16 skip
 | 4 ✅ | 009 `baseline_1b` 67 项全绿，`suite_hash` 仍是 `2747100dadf6` | **2026-09-19 在 `53a823f` 上随 `gate push` 的 e2e lane 重跑，67 条全绿**（`uv run pytest tests/e2e/baseline_1b --collect-only -q` 复核为 `67 tests collected`；冻结 8 路径对 `master` 零 diff，`suite_hash` 未动）。上一次绿是 `c0ec1cb`，其后 WI-5a 又改了 `routers/notes.py`，所以那次绿不够用，本次是重跑的。原复核方式： `uv run python scripts/soak_run.py`（不加 `--append`，本分支上的运行**不进台账**） |
 | 5 ✅ | WI-0a 注册表覆盖全部 20 个打桩名，且故意制造过期别名时**演示过它会红** | 见 §1 验收 |
 | 6 ✅ | `tests/unit/` + `tests/contract/` 全域出网兜底生效 | 见 §1 验收 |
-| 7 ❌ | `bench.py` 跑通，反序列化计数不为零，C1/C2 指标相对基准改善 | §3 存档的 before/after |
+| 7 ⚠️ **部分达成，经范围变更关闭其对 011 的阻塞** | `bench.py` 跑通，反序列化计数不为零，C1/C2 指标相对基准改善 | **门槛原文一字未改，因为它当初提的要求是对的。** 三项里两项兑付、一项没有：`bench.py` 跑通 ✅（rc=0）；反序列化计数不为零 ✅（`unpickle_grand_total` = 95，`book_store` 是唯一读盘点）；**C2（内存）✅ 决定性兑付**——`011-iso-*.json` 三份逐提交隔离实测，WI-9 单独拿下 `after_library_search_bytes` **−123.6 MiB**（237.7 → 114.1）、`after_huge_search_bytes` **−136.3 MiB**（331.7 → 195.4），spread 0.0/0.1/0.1%；**C1（读盘/归一化次数）✗ 没兑付**——`unpickle_grand_total` 95 → 95 一次没少，`normalize_calls` 549 → 541 只省 8 次（＝一本书 8 章）。原因是 `search_library`（`search_service.py:620`）为取 `title`/`author` 无条件先读正文，索引缓存扩到多大都绕不开，已立为**欠账 #35**（[009 跨波欠账表](./009-e2e-annotations.md)）。WI-8 的真实价值是**正确性**（pickle 换了而索引还发旧文本，见 `tests/unit/test_search_service_index_freshness.py` 7 条 ＋ 定向破坏 3 红），而门槛 #7 量不到正确性 |
 | 8 ✅ | DEG-S5 验收用例解禁并转绿 | **2026-09-20 在 `cc6bb18` 上实测兑付**：`uv run pytest tests/e2e/acceptance_2a -k deg_s5 --browser chromium` → `1 passed`；e2e lane 整体 `75 passed / 16 skipped / 66.24s`（此前 74 / 17，多出来的一条就是它）。那条用例**没有被重写**——它的 diff 实测只有 `0 7`，就是模块级 skip 那一块 |
 | 9 ✅ | `tests/conftest.py` 未被修改 | `git diff --stat master..011-backend-refactor -- tests/conftest.py` 为空 |
+
+> **2026-09-20 门槛 #7 的裁定：留原文、记「部分达成」、撤销它对 011 合并的阻塞。**
+> 摆在桌上的是四条路：(a) 勾成通过 —— 假的，C1 没兑付；(b) 把门槛改写成「与实际做到的一致」——
+> 这正是本文 §4 `:286` 点名过的病「门槛开始迁就实现，本仓库已经有好几笔欠账正是这么长出来的」，
+> 改完之后没人再知道当初承诺过什么；(c) 卡住 011 不合并，直到 C1 的性能那一半做完 ——
+> 而那一半的正解（不为取元数据而读正文）落在 012 的 `load_book_metadata()` 上，为它扣住一整条
+> 已经绿了 8 条门槛的分支，代价和收益不成比例；(d) **门槛原文保留、状态记成「部分达成」、
+> 明确写下是谁在哪一天以什么理由撤销了它对合并的阻塞、剩余部分单独立账**。
+>
+> **走 (d)。** 判据是三个月后有人翻到这里，能回答「原来承诺什么、实际得到什么、放弃了什么、
+> 谁接受了这个代价」。(a) 答不出第二问，(b) 答不出第一问，(c) 把问题换成了「为什么这条分支停了两个月」。
+>
+> 决策链照记：维护者 2026-09-20 把这条裁定委托给 Codex 评审（`gpt-6-astra`，effort high，read-only，
+> 任务 `review-plan-mu93nf2j-0y0wb5`），(d) 是 Codex 给出的第四条路 —— 我原本只提了 (a)/(b)/(c)，
+> 它三条全否了。我复核了它同批提出的六条可核查项，**全部成立**，其中两条打到我头上
+> （见 `bench/README.md` 的「这一节错过什么」与提交 `c4a4ff4`）。维护者可随时推翻这条裁定，
+> 推翻的成本是改这一格 ＋ 把欠账 #35 的兑付方改回 011。
+>
+> **剩余部分的去向**：欠账 **#35**，兑付方 **012**，验收判据是 bench 的 `05_library_search_*`
+> 三步不再每轮 +20 次读盘。012 开工时重新裁定它的优先级 —— 这是本条裁定唯一的复审点。
 
 > **2026-09-20 复测：9 条中 8 条兑付，只剩 #7。** #8 由 WI-5b 兑付（`cc6bb18`）。本次连带发现并解决了一件当初没人预见的事：`acceptance_2a` 是本仓**第一个**被激活的 acceptance 组，而 `scripts/lint_e2e_groups.py` 的两条 skip 轴把「未激活组以 skip 形态存在」硬编码在了**每一个** acceptance item 上 —— 于是「解禁」这个动作本身被守卫读成违规（lint rc=1、unit lane 4 条红）。解法是加 `ACTIVATED_ACCEPTANCE_DIRS` 登记表、两条轴对表内目录反向判定，而不是把闸放宽。详见 §6 WI-5b 的完成记录。
 >
