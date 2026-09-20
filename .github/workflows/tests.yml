@@ -9,6 +9,11 @@
 #     （同一个脚本另有一份 pytest 包装在 `tests/integration/`，由本地 packaging lane
 #      在 push 时跑。CI 这一遍环境更干净，是第三档节奏，见那个文件的 docstring。）
 #
+# **两个 job**：`unit`（静态检查 ＋ unit lane ＋ 覆盖率门禁）与 `e2e`
+# （`baseline_1b` 67/67 ＋ 余下各组）。`e2e` 是 2026-09-20 补的，兑付欠账 #31，
+# 同时充当迁移计划 §7「机制挑战闸」第一项的载体 —— 理由与判据写在它自己头上，
+# 不在这里重述。两个 job 并行、互不依赖：e2e 挂了也要看得见 unit 是绿是红。
+#
 # **触发时机：只在发版时跑，日常 push 不跑**，与 `lint.yml` 同口径。
 # 两条发版路径都认（只打 tag / 在 GitHub 上 Publish Release），concurrency 按 ref
 # 归组取消旧的，所以同一个 tag 不会跑两遍。
@@ -99,3 +104,76 @@ jobs:
           name: coverage-unit
           path: coverage-unit.json
           if-no-files-found: warn
+
+  # ---------------------------------------------------------------------------
+  # 欠账 #31 的兑付：§7 承诺过的「发版关门检查里跑一次 baseline-1b 全量」。
+  # 该承诺 2026-08-16 立下，2026-09-18 复核时发现从未建出来（全仓 workflow 无
+  # Playwright、无 e2e），2026-09-19 裁定为「建 job，不删承诺」，本 job 即是。
+  #
+  # **跟着上面那个 `on:` 走，一个触发器都不新增**（release.published / push.tags: v* /
+  # workflow_dispatch）。日常 commit 与 PR 一律不跑，日常门禁仍归本地 tdd-guardian
+  # 的三条 lane。这一条是 2026-08-23 定的全仓口径，不为这个 job 破例。
+  #
+  # **它同时是迁移计划 §7「机制挑战闸」第一项（干净 Linux / CI 环境）的载体。**
+  # 那道闸的通过条件是 67/67 **首次**通过（重试通过不算绿，只能用来分类），
+  # 固定项是 lock 文件与 Chromium 版本、两者连同结果一并记录 —— 所以下面
+  # `uv sync --frozen`（lock 参与解析）与「记录 Chromium 版本」这一步都是判据的一部分，
+  # 不是顺手加的。结果往 `tasks/soak-log.md` 的机制挑战闸表里记，**不往 soak 台账追行**：
+  # 那 10 次数的是一个固定的本地运行剖面，CI 换了剖面，混进去就是拿不同条件拼「连续」。
+  #
+  # 为什么用 `scripts/soak_run.py` 而不是直接 `pytest tests/e2e -m baseline_1b`：
+  # 后者绿了只说明「没红」，而这道闸要的是 **67/67**。soak_run 会断言 passed == 67、
+  # skipped/failed/errors == 0、deselected == 验收 + 白名单（派生，不是字面量），
+  # 并复核 `suite_hash` 与台账表头的冻结值逐字符相同 —— 「用例被悄悄删了一半然后全绿」
+  # 这种形状只有它拦得住。**不传 `--append`**，CI 这一跑不进台账。
+  e2e:
+    name: e2e baseline_1b（干净 Linux ＋ 冻结 lock，67/67 首次通过）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version-file: "pyproject.toml"
+
+      # 与 unit job 同口径：`--frozen` 让 uv.lock 参与解析。这里还多一层意思——
+      # 机制挑战闸第一项要求「锁定 lock 文件」，`--frozen` 就是那把锁。
+      - name: uv sync
+        run: uv sync --frozen --all-groups
+
+      # `--with-deps` 装的是 Chromium 在干净 ubuntu 上缺的系统库。少了它，
+      # 浏览器起不来的报错会长得像用例失败，而那是环境失败，两者不该同形。
+      - name: 装 Chromium
+        run: uv run playwright install --with-deps chromium
+
+      # 闸的固定项之一，必须留痕：出了问题要能回答「那次跑的是哪个 Chromium」。
+      # 台账里 `browser` 列记的就是这个 revision（本地历史值是 chromium-1234）。
+      - name: 记录 Chromium 版本（闸的固定项，要连同结果一起抄进 soak-log）
+        run: |
+          uv run playwright --version
+          ls -1 ~/.cache/ms-playwright | grep -E '^chromium' || true
+
+      - name: baseline_1b 全量（67/67，不落台账）
+        run: uv run python scripts/soak_run.py
+
+      # baseline 之外那些条（验收组 ＋ 白名单模块）单独跑一遍，不与上面重复：
+      # `-m baseline_1b` 必然把它们 deselect 掉，上一步再绿也证明不了它们。
+      # 绝大多数仍是 skip（未激活的验收组），跑一遍是为了确认「该 skip 的在 skip、
+      # 已激活的在真跑」——acceptance_2a 自 WI-5b 起已激活。
+      - name: e2e 余下各组（验收组 ＋ 白名单模块）
+        if: always()
+        run: uv run pytest tests/e2e -m "not baseline_1b" --browser chromium -q
+
+      - name: 保留 Playwright / 服务端日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-logs
+          path: |
+            test-results/
+            .claude/tdd-guardian/soak-logs/
+          if-no-files-found: ignore

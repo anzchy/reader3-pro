@@ -151,5 +151,11 @@ dev = [
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
     "pytest-playwright>=0.9.0",
+    # 迁移计划 §7 机制挑战闸第三项（随机化 pytest 的收集顺序）的执行工具。
+    # **选它而不是 pytest-randomly 是有理由的，别顺手换**：pytest-randomly 装上即默认
+    # 生效，会改掉**每一条 lane** 的收集顺序，还顺带重置 random/numpy 的种子——对一个
+    # 刻意把运行剖面冻结起来数 soak 次数的仓库，那等于把基准和挑战混成一锅。
+    # pytest-random-order 不给 `--random-order*` 就完全不介入，闸跑完即回到原剖面。
+    "pytest-random-order>=1.1.1",
     "ruff>=0.16.3",
 ]

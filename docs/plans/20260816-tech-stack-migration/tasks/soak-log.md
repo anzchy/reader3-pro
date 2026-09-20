@@ -340,3 +340,131 @@ git status --porcelain -- \
 `--collect-only` 的条数写进 `log` 列指向的产物里，并与 `scripts/lint_e2e_groups.py` 的
 `EXPECTED_BASELINE_ITEMS` 对齐。分母不对，那次运行不算绿（判据见
 [`009-e2e-annotations.md`](./009-e2e-annotations.md) §8 G2）。
+
+---
+
+## 机制挑战闸执行记录（2026-09-20）
+
+规则正文在[迁移计划 §7「机制挑战闸」](../plan-tech-stack-migration.md)——三项各自独立**阻塞 Phase 3**，
+通过条件写死为「**首次**通过」，重试只能用来**分类**。这里只记执行结果，不复述规则。
+
+**这三次都没有写进上面的台账**，也不该写：它们改变了抽样条件，混进那 10 次等于拿不同剖面拼「连续」。
+全部用 `uv run python scripts/soak_run.py`（**不带 `--append`**，只打印不落账）或直接 `pytest` 跑。
+三次运行 `suite_hash` 均为冻结值 `2747100dadf6`。
+
+| 场景 | 结果 | 一句话 |
+|---|---|---|
+| 干净 Linux / CI | ⛔ **未通过（未验证）** | job 建出来了，但一次都没真触发过——而「闸空转」与「闸通过」在输出上同形 |
+| CPU 压力下 | ✅ **PASS** | 10 核压满（结束时 load 20.84），67/67 **首次**通过，58.25s |
+| 随机化收集顺序 | ❌ **FAIL** | seed 3003 首次红 1 条；原样重放两次全绿 ⇒ 分类为 **flaky，不是顺序依赖** |
+
+**当前状态：三项过一项。Phase 3 / 012 仍被阻塞**（另有 ≥10 次 / ≥5 工作日那一条，已满足，见上方台账）。
+
+### 第 1 项 —— 干净 Linux / CI：建成，未验证
+
+载体是 `.github/workflows/tests.yml` 的第二个 job `e2e`（9 步），2026-09-20 加入，同时兑付了
+[009 欠账 #31](./009-e2e-annotations.md) 的一半。它固定了本闸要求的两样东西：
+
+- **lock**：`uv sync --frozen --all-groups`——`--frozen` 就是「锁定 lock 文件」，lock 与
+  `pyproject.toml` 不一致时它直接失败，而不是悄悄重解。
+- **Chromium 版本**：单独一步 `uv run playwright --version` ＋ 列 `~/.cache/ms-playwright`，
+  版本号要连同结果一起抄回本表。
+
+用 `scripts/soak_run.py` 而不是裸 `pytest`，因为本闸的通过条件是 **67/67**，不是「没红」——
+裸 pytest 在用例被 marker 改动悄悄漏选时照样退 0。`--append` **刻意不给**：CI 的运行剖面不属于台账。
+
+**为什么记「未通过」而不是「待办」。** 两个 workflow 都只认 `release.published` / `push.tags: v*` /
+`workflow_dispatch`（`tests.yml:31-36`），触发它需要先 push；本轮没有 push 授权。闸的输出至今是空的，
+而空输出与绿输出长得一模一样——按 §7 纪律 3「失败会阻塞，不是记录下来就算」，未验证只能算未通过。
+
+**结清动作**：`gh workflow run tests.yml` 手点一次，把 run 链接、Chromium 版本、67/67 的实际输出抄进本表。
+
+### 第 2 项 —— CPU 压力下：PASS
+
+压力源（原样可复现，不依赖任何未入库的文件）：
+
+```bash
+# 开一个终端跑压力，10 个忙等进程 = hw.ncpu（本机 sysctl -n hw.ncpu → 10），持续 240s
+python3 - 10 240 <<'PY'
+import multiprocessing as mp, sys, time
+def burn(deadline):
+    while time.monotonic() < deadline:
+        pass
+if __name__ == "__main__":
+    n, dur = int(sys.argv[1]), float(sys.argv[2])
+    d = time.monotonic() + dur
+    ps = [mp.Process(target=burn, args=(d,)) for _ in range(n)]
+    for p in ps: p.start()
+    for p in ps: p.join()
+PY
+
+# 压力跑起来之后，在另一个终端跑（不落台账）
+uv run python scripts/soak_run.py
+```
+
+实测：压力启动前 load average **3.60**，lane 结束时 **20.84**（约 2× 核数，说明压力确实生效了——
+这个数必须记，否则「压力下通过」可能只是压力没起来）。结果 `67 passed, 24 deselected in 58.25s`，
+`verdict: green`，`suite_hash 2747100dadf6`，退出码 0，wall 58.4s。对照无压力时的 ~54s，**慢了约 8%**。
+
+### 第 3 项 —— 随机化收集顺序：FAIL
+
+插件 **`pytest-random-order` 1.2.0**（2026-09-20 加进 `[dependency-groups] dev`）。命令：
+
+```bash
+uv run pytest tests/e2e -m baseline_1b --browser chromium -q -p no:cacheprovider \
+  --random-order --random-order-bucket=global --random-order-seed=<SEED>
+```
+
+**为什么是 `pytest-random-order` 而不是 `pytest-randomly`**：后者装上即生效，且会重置 `random` /
+numpy 的全局种子——在一个刻意冻结运行剖面的仓库里那是污染。前者不给 `--random-order*` 时完全惰性，
+已实测：两次默认 `--collect-only` 输出用 `diff` 比对**逐字节相同**，加上 `--random-order` 才变。
+`--random-order-bucket=global` 是全局打散（默认 `module` 只在模块内打散，照不到跨模块顺序依赖）。
+
+| seed | 首次结果 | 耗时 |
+|---|---|---|
+| 1001 | ✅ 67 passed | 54.59s |
+| 2002 | ✅ 67 passed | 56.00s |
+| 3003 | ❌ **1 failed, 66 passed**, 24 deselected | 63.33s |
+
+**红的那条**：`tests/e2e/baseline_1b/test_kernel_actions_and_url.py::test_k2_note_action_opens_the_editor_and_the_save_lands_a_note_record[chromium]`，
+抛在 `tests/e2e/helpers.py:823`：`AssertionError: 8.0s 内 notes.json 没有稳定到 1 条，实际 0 条：[]`。
+用例开头那句隔离前置 `read_notes(...) == []` **过了**，所以隔离 fixture 是好的，不是脏数据。
+
+**分类（§7 纪律 2：重试只分类，不翻盘）**：seed 3003 原样重放两次——`67 passed` 54.75s、
+`67 passed` 53.14s。**同一个 seed ⇒ 同一个收集顺序，却两绿一红**，因此这是 **flaky，不是顺序依赖**。
+本闸要照的「用例间顺序依赖」那一类缺陷，三个 seed 都没有照出来。但通过条件是「**首次**通过」，
+所以本项**仍然不过**，Phase 3 仍被它挡着。
+
+seed 3003 里 K-2 前后的实际顺序（第 34–38 位），留给需要原样重放的人：
+`test_harness_helpers::test_library_lists_every_book_the_corpus_fixture_builds` →
+`test_kernel_overlay_geometry::test_k3a_overlay_is_fixed_and_has_no_containing_block_ancestor[tooltip]` →
+**K-2** → `test_write_create_annotations::test_w1_real_mouse_drag_creates_marker_and_survives_reload` →
+`test_library_nav_and_collections::test_x2d_selection_marks_only_book_cards_and_rows_not_status_pills`。
+
+#### 这条 flaky 到底是测试侧还是产品侧——**分不出来，而且分不出来本身是缺陷**
+
+这个区分不是学术问题，它决定代价：测试侧的修法要动 `helpers.py` / `baseline_1b/**`，两者都在冻结集里，
+**改一个字节 soak 计数 10 → 0**；产品侧的修法落在 `src/`，不清零。
+
+查下来的事实是：`saveNote()` → `createAnnotation()` 这条写路径上有**六个把失败吞掉的出口**，
+1–5 每一条的可观察结果都与 seed 3003 那次红**逐字相同**（编辑器正常开、点了 Save、盘上 0 条、哪儿都不报错）：
+
+| # | 位置 | 吞掉的是什么 |
+|---|---|---|
+| 1 | `static/js/annotations.js:1145` | `!currentRange \|\| !contentEl` → `return` |
+| 2 | `annotations.js:1150` | 拿不到 `bookId` / `chapterIndex` → `return` |
+| 3 | `annotations.js:1158` | `offsetFromNode` 返回 `null`（iframe 重渲染后 range 指向旧文档）→ `return` |
+| 4 | `annotations.js:58` | `fetch(...).catch(() => null)` —— 网络层失败变成 `null` |
+| 5 | `annotations.js:1200` | 拿到 `resp` 后**从不检查 status**，4xx/5xx 与 200 走同一条路 |
+| 6 | `annotations.js:1105` | `text` 为空 → `return`（良性，但形状相同） |
+
+1、2、3 只写 `console.log`，而 e2e 不捕获浏览器 console；4、5 连 log 都算不上诊断信息。
+同一个文件 `:69` 就有现成的 `showToast()`，写路径一次都没调用。
+
+六条里 `:58` 那条是 **011 WI-5b（`cc6bb18`）新加的**，其余五条追到 `20b1f05`（2025-12-27）；责任划分写在 [009 欠账 #43](./009-e2e-annotations.md)。
+
+所以**不能**断言「8s 等太短」（测试侧）——按 1–5 任意一条，请求可能**根本没发出去**，等 80s 也是 0 条；
+也**不能**断言产品有保存竞态——没有证据。旁证只有一条：红的那次 63.33s，其余各次约 54s，机器当时偏忙。
+
+**结论与建议**：先补可观测性，再谈修。补的位置全在 `src/`，**不碰冻结集、不清零**。立为
+[009 欠账 #42 / #43](./009-e2e-annotations.md)。在那之前，第 3 项维持 FAIL。
