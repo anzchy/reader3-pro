@@ -6,14 +6,27 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "beautifulsoup4>=4.14.2",
-    "chromadb>=1.3.7",
     "ebooklib>=0.20",
     "fastapi>=0.121.2",
     "ipywidgets>=8.1.8",
     "jinja2>=3.1.6",
     "jupyter>=1.1.1",
-    "sentence-transformers>=5.2.0",
     "uvicorn>=0.38.0",
+]
+
+[project.optional-dependencies]
+# 语义检索（ChromaDB + MiniLM 嵌入，见 ADR-0004）是**可选**的：它拖进来的
+# torch/transformers 是整个依赖树里最重的一块，而阅读、关键词搜索、批注、AI 助手
+# 没有一条需要它。移进 extra 而不是删掉，是因为功能本身要保留——`uv sync --extra
+# semantic` 之后语义搜索照常可用。
+#
+# 代码侧对应的约定（tests/unit/test_semantic_extra_optional.py 是它的守卫）：
+# 这两个包只在 vector_search._require_semantic_deps() 的函数体里 import，缺了就抛
+# RuntimeError；`import reader3_app`、全部非语义路由、以及 is_indexed()/status()
+# 这两个纯读盘方法都不许碰它们。
+semantic = [
+    "chromadb>=1.3.7",
+    "sentence-transformers>=5.2.0",
 ]
 
 [project.scripts]
@@ -128,6 +141,11 @@ omit = ["*/__init__.py"]
 
 [dependency-groups]
 dev = [
+    # 自引用，承重：开发环境必须装上 semantic extra。少了这一行，下一次 uv sync 会
+    # 按新的主依赖表把 chromadb / torch / transformers 从本地 venv 里卸掉，于是语义
+    # 搜索的开发与测试在本地静默失去依赖（CI 的 tests job 跑 `uv sync --all-groups`，
+    # 同理）。extra 是给**用户**的选择，不是给开发机的。
+    "reader3[semantic]",
     "hypothesis>=6.165.9",
     "mypy>=2.3.1",
     "pytest>=9.1.1",

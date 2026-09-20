@@ -33,10 +33,14 @@ def _require_semantic_deps() -> Tuple[Any, Any]:
     try:
         import chromadb  # type: ignore
         from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction  # type: ignore
-    except Exception as e:  # pragma: no cover
+    except Exception as e:  # noqa: BLE001 - 第 2 档：唯一的 import 点，把任何 import 期故障统一转译成调用方（路由 / CLI）认得的 RuntimeError；原因留在 __cause__ 里
+        # 文案必须指向 **extra**，不是 `uv add chromadb sentence-transformers`：后者
+        # 会把两个包写回 [project] dependencies，照做的人修好了语义搜索，同时无声
+        # 撤销了「语义依赖可选」这件事（011 WI-7）。
         raise RuntimeError(
             "Semantic search dependencies are not installed. "
-            "Run: uv add chromadb sentence-transformers"
+            "Install the optional extra: `uv sync --extra semantic` "
+            "(or `pip install 'reader3[semantic]'`)."
         ) from e
     return chromadb, SentenceTransformerEmbeddingFunction
 
