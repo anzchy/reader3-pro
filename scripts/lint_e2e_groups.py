@@ -108,7 +108,7 @@ baseline 全部 skipped、push gate 全绿。「扫顶层」是这类检查最�
 `test_testid_dom_uniqueness.py`——那是 ADR-0014 的运行期唯一性护栏，与 009 无关。
 把总数焊死，等于把那个套件的条数写进 009 的门槛：它将来加一个 parametrize 值，红的
 会是 009 的用例，而修法（改总数）与被改的东西毫无关系。派生式只钉三件事：baseline
-恰好 67、acceptance 恰好 17、其余 item 的模块必须在白名单里。
+恰好 68、acceptance 恰好 17、其余 item 的模块必须在白名单里。
 
 **常量的变更史**（改数字必须写理由，不要只覆盖）：
 
@@ -130,6 +130,11 @@ baseline 全部 skipped、push gate 全绿。「扫顶层」是这类检查最�
   `test_read_presentation_anchoring.py::test_r6c_...`，**恰好一条 item**，不做参数化。
   同一天 R-6a 的字号 / 间距两项刺激从两步收回一步（#22 一修，两步就回到原值、净变化为零），
   那是改 `steps` 的内容，**不改条数**。
+- `EXPECTED_BASELINE_ITEMS` 67 → **68**（2026-09-21，欠账 #44 / #9 同批）。
+  `test_w8a_selection_survives_rerender.py` 从白名单迁入 `baseline_1b`，**恰好一条 item**，
+  不做参数化。迁入的时机不是随意挑的：同一个 commit 里 W-5a-③ 要按修好之后的行为改判，
+  `baseline_1b/` 反正要动、`suite_hash` 反正要变，两件事合并只清零一次。它当初落在白名单
+  就是为了等这一刻，到期条件写在 `UNGROUPED_E2E_MODULES` 那条注释里。
 - `EXPECTED_ACCEPTANCE_ITEMS` 14 → **17**（同日，欠账 #14）：R-6 拆 a/b 后 R-6b 三条落进
   `acceptance_4b1`（Wave 4），该目录由 5 变 8。改成按目录定义再求和，是让「哪个目录少了一条」
   在失败消息里直接可读。
@@ -162,7 +167,7 @@ BASELINE_MARKER = "baseline_1b"
 ACCEPTANCE_MARKERS = GROUP_MARKERS[1:]
 
 # `tests/e2e/baseline_1b/` 下的期望 item 数。**实测值**（变更史见文件头）。
-EXPECTED_BASELINE_ITEMS = 67
+EXPECTED_BASELINE_ITEMS = 68
 
 # 四个 acceptance 目录各自的期望 item 数。合计由此派生，不另写字面量。
 #   acceptance_4b1：R-6b ×3（Wave 4）＋ K-1b ＋ K-6b ＋ W-5b ×3（{marker, wavy, underline}，
@@ -219,9 +224,17 @@ UNGROUPED_E2E_MODULES = {
     "tests/e2e/test_testid_dom_uniqueness.py",
 }
 
-# 上面两个白名单模块在一次 `tests/e2e --collect-only` 里贡献的 item 数。
-# 2026-09-02 实测 7（smoke 1 + testid 唯一性 6）。这个数会随 testid 套件自己的增减而变，
+# 上面几个白名单模块在一次 `tests/e2e --collect-only` 里贡献的 item 数。
+# 2026-09-02 实测 7（smoke 1 + testid 唯一性 6）。这个数会随白名单模块自己的增减而变，
 # 改它是**正确的修法**；变的是白名单模块的条数，不是 009 的门槛。
+#
+# 7 → **8**（2026-09-20，欠账 #44）：新增
+# `tests/e2e/test_w8a_selection_survives_rerender.py`，**恰好一条 item**，不做参数化。
+# 它落在白名单而不是 `baseline_1b` 是一笔带到期条件的明账，理由是 `suite_hash` 覆盖面。
+#
+# 8 → **7**（2026-09-21）：**上面那笔明账到期兑付。** W-5a-③ 的改判本来就要动
+# `baseline_1b/`、`suite_hash` 无论如何都要变，所以把这个文件一并迁进去，省掉第二次清零
+# ——这正是那条注释写的到期条件。白名单条目已撤，`EXPECTED_BASELINE_ITEMS` 同批 +1。
 EXPECTED_UNGROUPED_ITEMS = 7
 
 # 派生值，不是字面量。见文件头「为什么必须派生」。

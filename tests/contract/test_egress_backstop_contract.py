@@ -2,7 +2,8 @@
 
 `tests/unit` 和 `tests/contract` 是**同一条 lane**（`uv run pytest tests/unit tests/contract`）
 但是**两个 fixture 根**：能一处注册管两边的地方是 `tests/conftest.py`，而它是冻结路径
-（suite_hash 2747100dadf6，动一个字节就重置 soak 台账）。所以闸体单一来源在
+（动一个字节就重置 soak 台账；当前 suite_hash 见 `soak-log.md`，那里是唯一定义处——
+此处此前抄过一个值，2026-09-21 它烂了）。所以闸体单一来源在
 `tests/unit/egress_guard.py`，**注册**在两处 conftest 各写一遍——C2 钉的正是「contract
 这一处也真的注册了」。
 

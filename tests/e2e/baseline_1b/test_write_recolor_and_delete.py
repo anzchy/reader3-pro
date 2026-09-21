@@ -12,7 +12,7 @@
     W-5a-⓪  同色重按（marker / wavy / underline 各一次）  S'_章 = S_章 \\ S_选区
     W-5a-①  点色板                                        S'_章 = S_章（恒等）
     W-5a-②  异色重按 marker                               S_选区 ⊂ S'_选区，|S'| = |S| + 1
-    W-5a-③  异色重按 wavy / underline                     S_选区 ∩ S'_选区 = ∅，**|S'| = 0**
+    W-5a-③  异色重按 wavy / underline                     S_选区 ∩ S'_选区 = ∅，**|S'| = 1**
     W-6     删除                                          S'_章 = S_章 \\ {target}
 
 **本模块断的一律是今天的行为，不是 4B.1 之后的行为**（任务书 §0.5 的裁定）。
@@ -25,35 +25,44 @@ docstring 里。
 `toggleAnnotation`、`deleteCurrentAnnotation` → `deleteAnnotations`。
 
 ------------------------------------------------------------------------------
-⚠️ **W-5a-③ 的期望值与矩阵原文不一致，本模块按实测写，理由在这里**
+✅ **W-5a-③ 的期望值曾与矩阵原文不一致，2026-09-21 已回到矩阵原文。沿革在这里**
 ------------------------------------------------------------------------------
-矩阵与任务书 §3 都把 W-5a-③ 的今日行为记作「**先删后建**，id 变了，`|S'| == 1`、
-`color == "green"`」。**实测不是这样。** 今天的真实行为是「**删成功、建失败**」：
+矩阵与任务书 §3 把 W-5a-③ 的行为记作「**先删后建**，id 变了，`|S'| == 1`、
+`color == "green"`」。**2026-09-03 实测不是这样**，本模块当时按实测写了一节偏差说明：
+真实行为是「**删成功、建失败**」——
 
     DELETE /api/notes/{book}/{chapter}/{oldId}  → 204
     POST   /api/notes/{book}/{chapter}          → **400**，payload 的 quote 是 **空串**
 
-净结果 `|S'| == 0` ——那条 wavy / underline **被销毁且没有替代品**。成因是
-`toggleAnnotation` 的异色分支里 `deleteAnnotations(anyIds)` 会 `await` 一次
-`loadAndRender()`，而 `render()` 首先 `clearExistingAnnotationMarks()` 拆掉 `<mark>`
-并 `normalize()` 合并文本节点；`this.currentRange` 的两个端点在这次合并里塌到同一个
-偏移上，紧接着跑的 `createAnnotation` 于是把 `quote` 算成空串，服务端拒收。
+净结果 `|S'| == 0`，那条 wavy / underline **被销毁且没有替代品**（跨波欠账 #9，一次真实
+的用户数据丢失）。成因是 `toggleAnnotation` 的异色分支里 `deleteAnnotations(anyIds)` 会
+`await` 一次 `loadAndRender()`，而 `render()` 首先 `clearExistingAnnotationMarks()` 拆掉
+`<mark>` 并 `normalize()` 合并文本节点；`this.currentRange` 的两个端点在这次合并里塌到
+同一个偏移上，紧接着跑的 `createAnnotation` 于是把 `quote` 算成空串，服务端拒收。
 marker 那一支（W-5a-②）不经过这条路——它不先删，所以 `currentRange` 是好的。
 
-「删成功、建失败」这个**结果**是确定的：只要选区还活着，异色分支必然走这条路。
-但**能不能活着走到这里**曾经是竞态，当时没看出来。2026-09-03 实测本模块约四成概率红在
+**2026-09-21：#9 修好了，偏差注销。** 修法在 `annotations.js` 的 `resolveOffsets`：选区
+落定那一刻存一份偏移快照，活选区塌成一个点（`start === end`）而快照还是一段真区间时，
+回落到快照。实测请求序列变成 `DELETE 204 → POST 201`，盘上剩 1 条：`color == "green"`、
+`quote == "Alpha prose"`、`position == 3`、**id 是新的**。这正是矩阵原文那一行，所以
+本节从「偏差说明」变成「沿革记录」——**偏差被注销，不是断言被放宽**。
+
+留着这一整节而不是删掉，是因为「本模块为什么曾经与矩阵不符」这个问题还会有人问；
+把答案连同它的有效期（2026-09-03 → 2026-09-21）一起留在现场，比让下一个人再实测一遍便宜。
+
+**一条容易合并的区分。** 同一天修的 #44（`test_w8a_selection_survives_rerender.py`）
+照的是**另一个**机制：`replaceChild` 之后 Range 边界**上浮到父元素**，端点离开了文本
+节点。本条照的是 `normalize()` 把相邻文本节点**并成一个**，端点还在文本节点里、只是
+选区塌成了一个点。两者都让 `quote` 变成空串，但判据不同，一个修法盖不住另一个——
+只修前者时本条这条路仍然丢数据，2026-09-21 实测过。
+
+「能不能活着走到这里」曾经是竞态，当时没看出来。2026-09-03 实测本模块约四成概率红在
 「一次 DELETE 都没发」上，根因不在改色分支，而在一次页面加载会跑**两遍**
 `loadAndRender()`，第二遍的 `normalize()` 把测试刚装上的选区就地折叠——详见
 `helpers.settle_marks` 的 docstring（欠账 #16 的等待纪律唯一定义处；本模块原先的 `_open_ch0`
 已于 Wave 5 上收为 `helpers.open_ch0`，欠账 #25）。原先那句「实测 10/10 稳定，不是竞态」
 写过头了：10/10 是真的，但它测的是「赢下那场加载竞态之后」的稳定性。`open_ch0` 现在等到
-网络静默、两遍重绘都跑完才返回，
-这条路才真的确定。
-
-**这是一个真实的生产缺陷（用户数据丢失），不是本模块的构造问题。** 本模块按「特征化今天
-的行为」的定则如实断言它，并把 DELETE 204 / POST 400 / `quote == ""` 三件事一起断死——
-一旦有人修好这条路（无论是修 stale range 还是 4B.1 的原地改色），本条会红，而**那是正确
-的红**。计划文档的 W-5a-③ 期望值需要按本条回写，这一条已在 WI-6 的回报里点名。
+网络静默、两遍重绘都跑完才返回，这条路才真的确定。
 
 ------------------------------------------------------------------------------
 **为什么每一步之间都要刷新，且刷新之后必须先等 `<mark>` 数量到位再建选区**
@@ -146,18 +155,22 @@ W6_BYSTANDER_ID = "wi6-w6-bystander-marker"
 EXPECTED_BEFORE_DELETE = 2
 EXPECTED_AFTER_DELETE = 1
 
-#: W-5a-③ 的终态条数。**0 而不是矩阵原文的 1**——理由见模块 docstring 那一整节。
-EXPECTED_AFTER_RECOLOR_TOGGLE = 0
+#: W-5a-③ 的终态条数，**字面量基准**（§0 第五条纪律）。2026-09-21 从 0 改回矩阵原文的
+#: 1——#9 修好之后那次替代性 POST 真的落盘了，沿革见模块 docstring 那一整节。
+#: 写 0 会稳定假红，写 `>= 0` 对「又丢了一次」也绿。
+EXPECTED_AFTER_RECOLOR_TOGGLE = 1
 
-#: 异色重按 wavy / underline 时那次注定失败的 POST 的状态码与 payload 里的 quote。
-#: 断死它们是为了给「删了没建成」这个结论一个**机制层面的**判据：将来若有人把 stale
-#: range 修好，红的会是这两条，且失败消息直接说清楚变的是哪一环。
 #: 异色重按这一支在 `/api/notes/` 上发出的写请求序列，字面量（§0 第五条纪律）。
 #: 只收 DELETE / POST：GET 是 `loadAndRender()` 的重绘噪声，每次重绘都有一次。
+#: **4B.1 之后这一行会变**：原地改色是一次 PUT，既不删也不建（见下方配对说明）。
 EXPECTED_WRITE_SEQUENCE = ["DELETE", "POST"]
 
-EXPECTED_FAILED_POST_STATUS = 400
-EXPECTED_FAILED_POST_QUOTE = ""
+#: 那次替代性 POST 的状态码与 payload 里的 quote。断死它们是为了给「删了又建回来」这个
+#: 结论一个**机制层面的**判据：只断终态条数的话，一个「异色重按 = 什么都不做」的实现也
+#: 能剩 1 条（剩的是**旧那条**），而那是另一种语义。配合下方的 id 断言，两者才闭合。
+#: 2026-09-21 从 `400` / `""` 改成 `201` / 真引文——#9 修好，stale range 不再塌成折叠态。
+EXPECTED_REPLACEMENT_POST_STATUS = 201
+EXPECTED_REPLACEMENT_POST_QUOTE = CH0_QUOTE
 
 #: `notes_service.save_annotations` 写的顶层**对象**的键。任务书 §3 的勘误行点名过：
 #: 「删完后仍是合法 JSON **数组**」按字面实现会稳定假红——盘上是对象，不是数组。
@@ -485,7 +498,7 @@ def test_w5a2_recolor_then_repress_marker_adds_a_second_one(
 
 
 # ---------------------------------------------------------------------------
-# W-5a-③ 异色重按 wavy / underline = 删了，且没建成
+# W-5a-③ 异色重按 wavy / underline = 删了，再建一条新的（id 变）
 # ---------------------------------------------------------------------------
 
 
@@ -496,46 +509,53 @@ def test_w5a2_recolor_then_repress_marker_adds_a_second_one(
         pytest.param("rd-anno-type-underline", id="underline"),
     ],
 )
-def test_w5a3_recolor_then_repress_destroys_without_replacing(
+def test_w5a3_recolor_then_repress_replaces_with_a_new_id(
     page: Page, live_server: str, e2e_books_dir: Path, action_testid: str
 ) -> None:
-    """W-5a-③（S5，**不相交律** `S ∩ S' = ∅`）：异色重按把旧条删掉，**新条没建成**。
+    """W-5a-③（S5，**不相交律** `S ∩ S' = ∅`）：异色重按把旧条删掉，**另建一条新的**。
 
     依据的方法名是 `toggleAnnotation`：同 type 异色时它先 `deleteAnnotations(anyIds)`
     删掉该 type 的旧条，再 `createAnnotation` 建新的。`toggleMarkerAnnotation`（W-5a-②）
     是另一份独立实现，没有这个「先删」的动作——两条用例的差别只有一个集合关系，
     合并成「颜色变成 green 了」的话两支实现都能绿，合并即失去信息。
 
-    ------------------------------------------------------------------------
-    ⚠️ **本条的期望值与矩阵原文不一致，按实测写。完整理由在模块 docstring。**
-    ------------------------------------------------------------------------
-    矩阵与任务书都记作「先删后建，`|S'| == 1`、`color == "green"`、id 变了」。
-    **实测是「删成功、建失败」**：`deleteAnnotations` 里 `await loadAndRender()` 的重绘
-    `clearExistingAnnotationMarks()` + `normalize()` 把 `currentRange` 的两个端点塌到同一
-    偏移，紧接着的 `createAnnotation` 于是把 `quote` 算成空串，`POST` 被服务端 400 拒收。
-    净结果 `|S'| == 0`——那条标注**被销毁且没有替代品**，是一次真实的用户数据丢失。
-    这个**结果**是确定的（选区活着就必然走这条路），但 2026-09-03 发现「能不能活着走到
-    这里」曾是竞态：加载期第二遍 `loadAndRender()` 会折叠测试装上的选区，那种情况下一次
-    DELETE 都不发。原先那句「实测 10/10 稳定，不是竞态」测的是赢下那场竞态之后的稳定性。
-    现在由 `helpers.open_ch0` 等网络静默兜住，见 `helpers.settle_marks` 的 docstring。
+    **不相交律在两个时期都成立，但成立的方式不同**，这一点值得写下来：
+    2026-09-03 – 09-21 期间 `S' == ∅`，交集空是**平凡**成立的（那是欠账 #9 的丢数据态）；
+    #9 修好之后 `|S'| == 1` 而 id 是新的，交集空才是**非平凡**成立的。换句话说，只断
+    `S ∩ S' == ∅` 的话，修好前后都绿——律本身不足以分辨这两种世界，所以下面的基数断言
+    和 id 断言一条都不能省。沿革见模块 docstring 那一整节。
 
-    所以本条断三件事，第三件是机制层面的：
+    所以本条断四件事：
 
-      1. `S ∩ S' == ∅`（矩阵的律，今天以 `S' == ∅` 的形式平凡成立）；
-      2. `len(S') == 0`（**字面量基准**，写 1 会稳定假红）；
-      3. 那次替代性 POST 确实发生过、确实带着空 `quote`、确实被 400 拒收，**且它发生在
-         那次 DELETE 之后**——顺序由 `EXPECTED_WRITE_SEQUENCE` 逐项断死。
+      1. `S ∩ S' == ∅`（矩阵的律）：旧 id 必须不在终态里；
+      2. `len(S') == 1`（**字面量基准**，§0 第五条纪律）：写 0 会稳定假红，
+         写 `>= 1` 对「旧那条压根没被删」也绿；
+      3. 终态那条是**新建的**：id 与旧的不同，且 `color == "green"`、`type` 不变、
+         `quote` 是选中的那段——`>= 1` 或只断条数时，一个「什么都不做」的实现
+         （剩的是旧那条、还是 yellow）照样能过第 2 条；
+      4. 那次替代性 POST 确实发生过、带着**真的引文**、拿到 201，**且它发生在那次
+         DELETE 之后**——顺序由 `EXPECTED_WRITE_SEQUENCE` 逐项断死。
 
-    第 3 条不是装饰：只断「剩 0 条」的话，一个「异色重按 = 纯删除，压根不试图新建」的
-    实现也全绿，而那是**另一种**语义。断死 DELETE→POST(400) 这个序列，本条才真的在描述
-    今天这条路走过了哪几步。**「序列」这两个字曾经名不副实**：DELETE 与 POST 原先各由
-    一个独立的收集器记，两者都只答「有没有发生过」，一个「先建后删」的实现照样全绿
-    （009 审计 F5）。现在两者收进同一个有序列表，顺序反了当场红。
+    第 4 条不是装饰：只断终态的话，一个「异色重按 = 原地改色（一次 PUT）」的实现也能
+    让终态剩 1 条 green——而那是 **4B.1 的语义**，不是今天这条路。断死 DELETE→POST 这个
+    序列，本条才真的在描述今天走过了哪几步。**「序列」这两个字曾经名不副实**：DELETE 与
+    POST 原先各由一个独立的收集器记，两者都只答「有没有发生过」，一个「先建后删」的实现
+    照样全绿（009 审计 F5）。现在两者收进同一个有序列表，顺序反了当场红。
 
-    **【4B.1 配对（Gap 10）】本条两个参数在 4B.1 之后都会变红**，与
-    `acceptance_4b1` 的 W-5b[wavy] / W-5b[underline] 逐参数配对，同一 commit 内一并处理。
-    在那之前，任何把这条路修好的改动（哪怕只是修 stale range 让 POST 不再 400）也会让
-    本条红——**那是正确的红**，说明行为变了，本条要随之改判，不是把断言放宽。
+    **【4B.1 配对（Gap 10）】本条两个参数在 4B.1 之后会再红一次，那时才与
+    `acceptance_4b1` 的 W-5b[wavy] / W-5b[underline] 逐参数配对、同一 commit 内一并处理。**
+    届时变的是第 3 与第 4 件事：原地改色发的是**一次 PUT**、`id` 与 `created_at` **不变**，
+    于是 `EXPECTED_WRITE_SEQUENCE` 与「id 必须变」两条都要改判，而不相交律本身会翻转成
+    「id 必须**不**变」。
+
+    **在那之前本条已经改判过一次，2026-09-21。** 那次不是 4B.1，是单修 stale range
+    （欠账 #9 / #44 同批）：POST 不再带空 quote、不再被 400 拒收。docstring 原文预告过
+    「任何把这条路修好的改动（哪怕只是修 stale range 让 POST 不再 400）也会让本条红——
+    那是正确的红，本条要随之改判，不是把断言放宽」，兑现的就是这一句。**W-5b 那两条
+    当时没有、也不该一起解 skip**：它断的是「恰好一次 PUT、零 DELETE 零 POST、id 不变」，
+    而本条这次给出的是 DELETE→POST、**新 id**；`UpdateAnnotationRequest` 里也还只有
+    `note_text`、没有 `color`，原地改色的通道根本不存在。W-5b 自己的 skip reason 写的
+    顺序是「修 #9 → 落地原地改色（前端 WI-14）→ 删本行」，2026-09-21 只做到第一步。
     """
     assert read_notes(e2e_books_dir, BOOK_ID) == [], "隔离 fixture 没生效：起点不是空的"
 
@@ -580,10 +600,13 @@ def test_w5a3_recolor_then_repress_destroys_without_replacing(
 
     page.on("request", _record_write)
 
-    # 等那次注定失败的 POST，而不是 sleep：`expect_response` 等的是一个确定的事件。
+    # 等那次替代性 POST，而不是 sleep：`expect_response` 等的是一个确定的事件。
+    # 注意 `_is_notes_post` **不看状态码**，所以它对 400 和 201 一视同仁——本条改判
+    # （#9 修好，400 变 201）时它不需要跟着改，状态码由下面那条断言单独负责。
+    # 反过来说：这里超时**不等于**「状态码变了」，而是「那次 POST 压根没发出去」。
     with page.expect_response(_is_notes_post) as post_info:
         page.get_by_test_id(action_testid).click()
-    failed_post = post_info.value
+    replacement_post = post_info.value
 
     assert deletes == [204], (
         f"异色重按应当先发一次 DELETE 并得到 204，实际收到的 DELETE 状态序列是 {deletes}。"
@@ -594,30 +617,44 @@ def test_w5a3_recolor_then_repress_destroys_without_replacing(
         "顺序反了 ⇒ `toggleAnnotation` 变成了「先建后删」，两条标注会有一段共存窗口；"
         "多出或缺少条目 ⇒ 这条分支的写动作数量变了"
     )
-    assert failed_post.status == EXPECTED_FAILED_POST_STATUS, (
-        f"替代性 POST 的状态是 {failed_post.status}，不是今天的 "
-        f"{EXPECTED_FAILED_POST_STATUS}。行为变了：删掉旧条之后的那次新建不再被拒收——"
-        "这正是 4B.1（W-5b）要达成的事，若 4B.1 已落地，本条应随 W-5b 一起改判"
+    assert replacement_post.status == EXPECTED_REPLACEMENT_POST_STATUS, (
+        f"替代性 POST 的状态是 {replacement_post.status}，不是 "
+        f"{EXPECTED_REPLACEMENT_POST_STATUS}。回到 400 ⇒ 欠账 #9 复发："
+        "重绘的 `normalize()` 又把 `currentRange` 塌成折叠态、quote 算成空串被拒收，"
+        "那条标注会被销毁且没有替代品"
     )
-    posted = failed_post.request.post_data_json or {}
-    assert posted.get("quote") == EXPECTED_FAILED_POST_QUOTE, (
-        f"替代性 POST 的 quote 是 {posted.get('quote')!r}，不是今天的空串。"
-        "空串是 stale `currentRange` 在重绘 `normalize()` 之后塌成折叠态的直接后果；"
-        "它一旦变成真的选中文本，说明 stale range 被修好了，本条要改判"
+    posted = replacement_post.request.post_data_json or {}
+    assert posted.get("quote") == EXPECTED_REPLACEMENT_POST_QUOTE, (
+        f"替代性 POST 的 quote 是 {posted.get('quote')!r}，不是选中的那段 "
+        f"{EXPECTED_REPLACEMENT_POST_QUOTE!r}。空串是 stale `currentRange` 塌成折叠态的"
+        "直接后果（欠账 #9）；别的值说明回落用的偏移与当前文档对不上"
     )
 
     wait_for_notes(e2e_books_dir, BOOK_ID, EXPECTED_AFTER_RECOLOR_TOGGLE)
-    frame = open_ch0(page, live_server, expected_marks=0)
+    frame = open_ch0(page, live_server, expected_marks=EXPECTED_AFTER_RECOLOR_TOGGLE)
     after = read_notes(e2e_books_dir, BOOK_ID)
 
     assert len(after) == EXPECTED_AFTER_RECOLOR_TOGGLE, (
         f"异色重按 {expected_type} 之后 notes.json 应当剩 "
         f"{EXPECTED_AFTER_RECOLOR_TOGGLE} 条，实际 {len(after)} 条：{after}"
     )
+    # 不相交律。0 条时它平凡成立，1 条时它才真的在说话——所以它必须排在基数断言之后。
     assert set(_ids(after)) & {old_id} == set(), (
-        f"旧那条（id={old_id!r}）还在：{after}。异色分支应当先把它删掉"
+        f"旧那条（id={old_id!r}）还在：{after}。异色分支应当先把它删掉。"
+        "若终态恰好 1 条而 id 仍是旧的，那是「原地改色」的语义（4B.1 / W-5b），"
+        "不是今天这条路——本条与 W-5b 要同一个 commit 里一起改判"
     )
-    expect(frame.get_by_test_id("rd-anno-span")).to_have_count(0)
+    survivor = after[0]
+    assert survivor["color"] == SWATCH_COLOR, (
+        f"新建那条的颜色是 {survivor['color']!r}，不是点下去的 {SWATCH_COLOR!r}：{survivor}"
+    )
+    assert survivor["type"] == expected_type, (
+        f"新建那条的 type 是 {survivor['type']!r}，不是重按的 {expected_type!r}：{survivor}"
+    )
+    assert survivor["quote"] == CH0_QUOTE, (
+        f"新建那条的 quote 是 {survivor['quote']!r}，不是选中的 {CH0_QUOTE!r}：{survivor}"
+    )
+    expect(frame.get_by_test_id("rd-anno-span")).to_have_count(EXPECTED_AFTER_RECOLOR_TOGGLE)
 
 
 # ---------------------------------------------------------------------------

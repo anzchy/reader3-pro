@@ -472,6 +472,13 @@
       this.pendingConflict = null;
 
       this.currentRange = null;
+      //【#44】选区落定那一刻算好的偏移快照。存在的理由是 currentRange 会被一次
+      // 标注重绘悄悄作废：applySegments(:349) 用 replaceChild 把被标注段落的文本
+      // 节点整个换掉，而 offsetFromNode(:122) 对文本节点做的是**身份**比较
+      // (nodes.find((x) => x.node === textNode))，换掉之后就再也找不回来。
+      // 偏移是纯数字、不持有任何 DOM 引用，所以重绘杀不死它。
+      // 形状是 { start, end, chapterIndex }——chapterIndex 不是装饰，见 offsetsUsable()。
+      this.currentOffsets = null;
       this.currentIndex = null;
       this.currentAnnotationMeta = [];
       this.currentAnnotationIds = [];
@@ -634,7 +641,7 @@
         range.selectNodeContents(mark);
         sel.removeAllRanges();
         sel.addRange(range);
-        this.currentRange = range;
+        this.rememberRange(range);
       }
       console.log("[Annotations] range set", { hasRange: !!this.currentRange });
 
@@ -802,7 +809,7 @@
         console.log('[Annotations] Selection not within content container');
         return;
       }
-      this.currentRange = range;
+      this.rememberRange(range);
       this.setCurrentAnnotations(this.getAnnotationMetaForRange(range));
       this.editingNoteId = null;
 
@@ -1140,6 +1147,99 @@
       this.closeNoteEditorIfOpen();
     }
 
+    /**
+     * 记住选区：活的 Range 一份，重绘杀不死的偏移快照一份。
+     *
+     * 两份都留着而不是只留快照，是因为快照丢信息——cfi 要从真 Range 上算
+     * (contents.cfiFromRange)，Range 还在的时候就该用 Range。快照只在 Range
+     * 指不回文档了的时候才顶上。
+     */
+    rememberRange(range) {
+      this.currentRange = range;
+      this.currentOffsets = this.offsetsForRange(range);
+    }
+
+    /** 把 Range 折算成 contentEl 文本轴上的 {start,end,chapterIndex}；折算不了返回 null。 */
+    offsetsForRange(range) {
+      if (!range || !this.contentEl) return null;
+      const idx = buildTextIndex(this.contentEl);
+      const start = offsetFromNode(idx.nodes, range.startContainer, range.startOffset);
+      const end = offsetFromNode(idx.nodes, range.endContainer, range.endOffset);
+      if (start == null || end == null) return null;
+      return { start, end, chapterIndex: getReaderContext().chapterIndex };
+    }
+
+    /**
+     * 快照只有对得上当前文档才敢用；对不上就返回 null，让调用方红着手退出。
+     *
+     * 这两道检查不是防御性编程的客套。**写进去但位置是错的，比不写更坏**——
+     * 不写，用户至少看得见自己白按了一下；位置错了，是一条指向别处的标注被
+     * 当成真的存进盘里，而且此后每次渲染都会在错的地方划一道。
+     *
+     * - chapterIndex：换章之后偏移轴是另一根，数字却照样落在合法区间里，
+     *   所以长度检查**挡不住**这一种，必须单独比章节号。currentRange 本身
+     *   从不在换章时置空（全文件只有建构子置过一次），快照也就不能指望
+     *   "过期了自然就没了"。
+     * - 长度：同一章内正文重新取过、变短了，旧偏移会越界。
+     */
+    offsetsUsable(snapshot, textLength, chapterIndex) {
+      if (!snapshot) return null;
+      const { start, end } = snapshot;
+      if (!Number.isInteger(start) || !Number.isInteger(end)) return null;
+      if (snapshot.chapterIndex !== chapterIndex) return null;
+      if (start < 0 || end < 0 || start > textLength || end > textLength) return null;
+      return { start, end };
+    }
+
+    /**
+     * Range 的两个边界是否都还锚在当前的文本节点上。
+     *
+     * **这才是「选区被重绘作废了」的判据**，而不是「偏移算不出来」。一开始按后者
+     * 写是错的，探针把它证伪了：`applySegments` 用 `replaceChild` 换掉文本节点时，
+     * 按 DOM 规范，落在被移除节点内的 Range 边界**不会失效**，而是上浮到父元素、
+     * 偏移变成子节点下标。于是 `offsetFromNode` 走元素分支，**不返回 null，而是
+     * 静默给出一个错的偏移**——#44 现场里两端都塌到 3，quote 算成空串。
+     * 换句话说，靠 null 判断的兜底永远不会被触发。
+     */
+    rangeAnchoredIn(range, nodes) {
+      const anchored = (n) => !!n && n.nodeType === Node.TEXT_NODE && nodes.some((x) => x.node === n);
+      return anchored(range.startContainer) && anchored(range.endContainer);
+    }
+
+    /**
+     * 定下这次要写的 {start,end}：活 Range 还锚得住就用它，锚不住就用快照。
+     *
+     * 顺序是有讲究的。活 Range 优先，是因为它能反映选区在记下之后又被改动的情形；
+     * 快照只在 Range 已经指不回文档时顶上。两者都拿不到就返回 null，由调用方
+     * 出声放弃——**宁可不写，也不写一条位置是错的**。
+     */
+    resolveOffsets(idx, chapterIndex) {
+      const range = this.currentRange;
+      if (!range) return null;
+      const snap = this.offsetsUsable(this.currentOffsets, idx.text.length, chapterIndex);
+      if (!this.rangeAnchoredIn(range, idx.nodes)) {
+        if (snap) {
+          console.warn('[Annotations] 活选区已被重绘作废，回落到偏移快照', snap);
+          return snap;
+        }
+        // 没有快照可用时仍走老路算一遍——元素边界的选区（三击整段之类）本来就
+        // 走这条，不该因为这个改动而退化。
+      }
+      const start = offsetFromNode(idx.nodes, range.startContainer, range.startOffset);
+      const end = offsetFromNode(idx.nodes, range.endContainer, range.endOffset);
+      if (start == null || end == null) return snap;
+      //【#9】活选区还锚在文本节点上，但已经塌成一个点。`render()` 里的 normalize() 把
+      // 相邻文本节点并成一个，两个端点于是落到同一个偏移上——节点本身仍在索引里，
+      // 所以上面的 rangeAnchoredIn 看不见这件事（它问的是「还在不在」，不是「还有没有宽度」）。
+      // 塌掉的选区描述不出一段标注：quote 必为空串。快照若还是一段真区间就用快照。
+      // 这正是异色重按 wavy / underline 那条路今天丢数据的地方（先 delete，再重绘，再新建）。
+      if (start === end && snap && snap.start !== snap.end) {
+        console.warn('[Annotations] 活选区已塌成一个点，回落到偏移快照', snap);
+        return snap;
+      }
+      return { start, end };
+    }
+
     async createAnnotation(extra) {
       console.log('[Annotations] createAnnotation called with:', extra);
       if (!this.currentRange || !this.contentEl) {
@@ -1153,18 +1253,33 @@
       }
 
       const idx = buildTextIndex(this.contentEl);
-      const start = offsetFromNode(idx.nodes, this.currentRange.startContainer, this.currentRange.startOffset);
-      const end = offsetFromNode(idx.nodes, this.currentRange.endContainer, this.currentRange.endOffset);
-      if (start == null || end == null) {
-        console.log('[Annotations] createAnnotation: could not calculate start/end positions');
+      const offsets = this.resolveOffsets(idx, ctx.chapterIndex);
+      if (!offsets) {
+        // 这里原本是一句 console.log 就 return：不发 POST、不提示、不报错。
+        // 现在它至少会说话（欠账 #44）。
+        console.error('[Annotations] createAnnotation: 选区已失效且快照不可用，放弃本次写入', {
+          hasSnapshot: !!this.currentOffsets,
+          snapshotChapter: this.currentOffsets ? this.currentOffsets.chapterIndex : null,
+          chapterIndex: ctx.chapterIndex,
+          textLength: idx.text.length,
+        });
+        showToast("这段选区已失效，请重新选中再试");
         return;
       }
-      const s = Math.min(start, end);
-      const e = Math.max(start, end);
+      const s = Math.min(offsets.start, offsets.end);
+      const e = Math.max(offsets.start, offsets.end);
 
       const quote = idx.text.slice(s, e);
       const prefix = idx.text.slice(Math.max(0, s - 50), s);
       const suffix = idx.text.slice(e, Math.min(idx.text.length, e + 50));
+
+      // 空 quote 不是一条标注，是一次算错。#44 现场里它被照发不误，服务端回
+      // 400，而下面那个 resp 从来没人看，于是一次写丢失长得和一次成功一模一样。
+      if (!quote) {
+        console.error('[Annotations] createAnnotation: 算出空 quote，拒发', { s, e, offsets });
+        showToast("没取到选中的文字，请重新选中再试");
+        return;
+      }
 
       let cfi = null;
       const contents = window.Reader3Epub?.getContents?.();
@@ -1200,6 +1315,16 @@
         },
       );
       console.log('[Annotations] createAnnotation: response:', resp);
+      if (!resp || !resp.ok) {
+        // 不看 resp 是 #44 之所以「静默」的最后一环：服务端已经明说 400 了，
+        // 界面照样收工具条、照样重绘，看上去和成功一模一样。
+        console.error('[Annotations] createAnnotation: 写入被拒', {
+          status: resp ? resp.status : null,
+          payload,
+        });
+        showToast(`标注没能保存${resp ? `（${resp.status}）` : ""}，请重试`);
+        return;
+      }
 
       this.closeSelectionToolbarIfOpen();
       await this.renderer.loadAndRender().catch(() => {});

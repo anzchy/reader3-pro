@@ -88,12 +88,15 @@ on `master` yet — downstream branches must still base off it, not off `master`
 means the branch exists and carries commits, but its exit gates are not all met — this state was
 missing until 2026-09-01, which is how 009 kept reading as "Tasks drafted" with six commits on it.
 M1b's two gates are both met: **G1** on 2026-09-05 (unlocks Phase 4A / 013) and **G2** on
-2026-09-06 — `suite_hash` is now **frozen** at `2747100dadf6` and the soak ledger is counting.
-Two consequences you need before touching anything: **Phase 3 / 012 is still blocked — but no
-longer by the count.** The ≥10 runs / ≥5 working days condition is satisfied; what blocks it now is
-§7's three **mechanism-challenge gates**, first run on 2026-09-20 and standing at **1 / 3** (results
-and repro commands live only in `soak-log.md` — do not restate them). Waiting will not clear them;
-two specific actions will. And **any byte changed under
+2026-09-06. `suite_hash` was **re-frozen** at `1e868c7bf811` on 2026-09-21 (prior value
+`2747100dadf6` is void). Two consequences you need before touching anything: **Phase 3 / 012 is
+still blocked, and as of 2026-09-21 it is blocked by everything at once again.** Fixing a real
+data-loss bug (009 debt #9) required re-judging a frozen test, so the ledger's 10 green runs and
+**all three** of §7's **mechanism-challenge gates** — including the one that had PASSED — were
+reset together. The count is back to **0**, the gates to **0 / 3** (results, the reset entry, and
+repro commands live only in `soak-log.md` — do not restate them). That reset was a deliberate,
+recorded trade, not an accident; read the change-history entry before assuming a number here is
+stale. Waiting will not clear any of it. And **any byte changed under
 `tests/e2e/baseline_1b/**`, `tests/e2e/conftest.py`, `helpers.py`, `test_harness_smoke.py`, or the
 four `tests/fixtures/` files resets that count to zero** — docstrings included. Progress and the
 frozen value are defined only in

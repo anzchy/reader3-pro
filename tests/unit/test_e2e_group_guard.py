@@ -115,7 +115,9 @@ SUBPROCESS_TIMEOUT_S = 300
 # --------------------------------------------------------------------------
 # 66 → 67：2026-09-06 欠账 #22 兑付新增 R-6c（理由写在 `scripts/lint_e2e_groups.py`
 # 的「常量的变更史」里，本文件不复述——两处只需数字相等）。
-CANONICAL_BASELINE_ITEMS = 67
+# 67 → 68：2026-09-21 欠账 #44 的回归闸从白名单迁入 `baseline_1b`（同批 W-5a-③ 改判，
+# `suite_hash` 本来就要变，两件事合并只清零一次）。
+CANONICAL_BASELINE_ITEMS = 68
 CANONICAL_ACCEPTANCE_PER_DIR: Dict[str, int] = {
     "acceptance_4b1": 8,
     "acceptance_p3": 4,
@@ -123,8 +125,14 @@ CANONICAL_ACCEPTANCE_PER_DIR: Dict[str, int] = {
     "acceptance_2a": 1,
 }
 CANONICAL_ACCEPTANCE_ITEMS = 17
+# 7 → 8 / 91 → 92：2026-09-20 欠账 #44 新增
+# `tests/e2e/test_w8a_selection_survives_rerender.py`（恰好一条 item）。它按内容属于
+# `baseline_1b`，落在白名单是为了不动 `suite_hash` 的覆盖面——理由与到期动作写在
+# `scripts/lint_e2e_groups.py` 的白名单注释里，本文件不复述。
+# 8 → 7：2026-09-21 那笔明账到期兑付，该文件迁进 `baseline_1b`。**总数仍是 92**——
+# 一条 item 换了住址，没有增减，所以 `CANONICAL_E2E_ITEMS` 不动；动的是它落在哪一段。
 CANONICAL_UNGROUPED_ITEMS = 7
-CANONICAL_E2E_ITEMS = 91
+CANONICAL_E2E_ITEMS = 92
 
 #: **已激活**的 acceptance 组，与 `scripts/lint_e2e_groups.py` 的
 #: `ACTIVATED_ACCEPTANCE_DIRS` 各写一份——本文件是守卫的独立 oracle，不从被测脚本 import
