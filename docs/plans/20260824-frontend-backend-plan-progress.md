@@ -143,6 +143,23 @@
 > 数字与理由的唯一定义处是
 > [`soak-log.md` 变更史第一条](20260816-tech-stack-migration/tasks/soak-log.md)，本文不抄。
 >
+> **⬛ 同日晚些：CI 跑了，绿了，而且是首次。机制闸从 0/3 回到 1/3，#44 与 #46 双双结清。**
+> run [35584711194](https://github.com/anzchy/reader3-pro/actions/runs/35584711194) @ `176c8cb`，
+> `workflow_dispatch`，**`attempt=1`**：e2e job `68 passed, 24 deselected in 76.03s`、
+> `verdict: green`、`suite_hash 1e868c7bf811`、`linux-6.17.0-1022-azure`；unit job
+> `1556 passed, 2 skipped`、**0 failed**，`ruff` 与 `mypy` 同绿。
+>
+> - **这是本仓第一次在干净 Linux 上把 `baseline_1b` 跑全绿。** 前三跑三红、失败签名逐字相同
+>   ⇒ 确定性而非 flaky ⇒ **这一跑不是运气变好，是上浮机制真的被修掉了**。
+> - **也是「CI 上 unit lane 全绿」第一次发生**，011 §8 门槛 3 挂了两天的 ⚠️ 追记就此撤销。
+> - **「首次」核过**：`attempt=1`，且 `tests.yml` / `soak_run.py` / `pyproject.toml` 全文 grep
+>   `reruns` / `retry` **零命中** —— 没有重试插件在背后兜底。这个核对是必要的：§7 纪律 2 写死了
+>   「重试只分类不翻盘」，不核就等于默认了一个没人验过的前提。
+> - **别把证明力扩大。** 它证明的是这套新字节在一个 Linux 剖面下首次通过。机制闸还剩两项
+>   （CPU 压力、随机化收集顺序）需重跑；第 3 项那条 seed 3003 的红挂在 **K-2**，是另一条用例，
+>   机制至今未测 —— 重跑第 3 项正好一并回答。
+> - **那条 `row:` 没有进台账**：CI 跑的是分支，按 011 §8 门槛 4 的括号，分支上的运行不记账。
+>
 > **冻结生效中，代价自 2026-09-06 起是实的；2026-09-21 付过一次。** `suite_hash`
 > 现冻结在 **`1e868c7bf811`**（前值 `2747100dadf6` 已作废）。再动
 > `baseline_1b/**` / `tests/e2e/conftest.py` / `helpers.py` / `test_harness_smoke.py` /

@@ -429,8 +429,46 @@ git status --porcelain -- \
 > **重跑前不要动上面那张汇总表、也不要动下面各项的详细记录**——它们记的是 2026-09-20
 > 那天对旧套件的事实，改掉就没了。新结果另起一节。
 
-**当前状态：三项全部需重跑，已过项数归零。Phase 3 / 012 仍被阻塞**，且比 2026-09-20
-更远：连 ≥10 次 / ≥5 工作日那一条也一并清零了（上方台账现为空表）。
+**当前状态（2026-09-21 重跑一项之后）：三项过一项，两项待重跑。Phase 3 / 012 仍被阻塞**，
+另有 ≥10 次 / ≥5 工作日那一条也在清零后重数（上方台账现为空表）。
+
+### ⬛ 对新冻结值 `1e868c7bf811` 的重跑：第 1 项 **PASS**（2026-09-21）
+
+**这是本仓第一次在干净 Linux 上把 `baseline_1b` 跑全绿。** 前三跑三红，失败签名逐字相同，
+是确定性的，不是 flaky；这一跑不是运气变好，是[欠账 #44](./009-e2e-annotations.md) 的
+**上浮**机制被修掉了。
+
+| 项 | 结果 | 实测 |
+|---|---|---|
+| 干净 Linux / CI | ✅ **PASS** | run [35584711194](https://github.com/anzchy/reader3-pro/actions/runs/35584711194) @ `176c8cb`，`workflow_dispatch`，**`attempt=1`** |
+| CPU 压力下 | **仍需重跑** | 旧 PASS 随哈希作废 |
+| 随机化收集顺序 | **仍需重跑** | 旧 FAIL（seed 3003）随哈希作废；那条红的机制**仍未测** |
+
+**e2e job**（`soak_run.py`，不带 `--append`）逐字：
+
+```
+[soak] 68/92 tests collected (24 deselected) in 0.98s
+[soak] summary: 68 passed, 24 deselected in 76.03s
+[soak] verdict: green（可记账：是）
+[soak] row: | 2026-09-21T09:43:32Z | 176c8cb | green | 76.03 | 1e868c7bf811 | chromium-1234 | linux-6.17.0-1022-azure | … |
+```
+
+非 baseline 那批单独跑：`8 passed, 16 skipped, 68 deselected in 16.40s`。
+
+**unit job**：`1556 passed, 2 skipped in 96.74s`，**0 failed** —— [欠账 #46](./009-e2e-annotations.md)
+在干净 Linux 上确认死透，这也是「CI 上 unit lane 全绿」第一次真的发生
+（见 [011 §8 门槛 3](./011-backend-refactor.md) 挂了两天的那条 ⚠️ 追记）。
+另：`ruff` `All checks passed!`、`mypy` `Success: no issues found in 41 source files`。
+
+**「首次通过」这四个字是核过的，不是默认的。** `attempt=1`；`tests.yml`、`soak_run.py`、
+`pyproject.toml` 全文 grep `reruns` / `retry` 零命中，即没有重试插件在背后兜底。按
+§7 纪律 2，这一跑够格判 PASS。
+
+**别把这一跑的证明力扩大。** 它证明的是**这套新字节在 GitHub 的 Linux runner 上首次通过**。
+第 3 项那条 seed 3003 的红挂在 `test_kernel_actions_and_url.py` 的 K-2 上，是**另一条用例**，
+它的机制（上浮？塌陷？还是第三种）**一次都没测过** —— 第 3 项重跑正好一并回答这个问题。
+那条 `row:` 行也**没有**写进上方台账：CI 跑的是分支，按
+[011 §8 门槛 4 的括号](./011-backend-refactor.md)，分支上的运行不进台账。
 
 **2026-09-20 当天更新：第 1 项从「未验证」变成「验证为红」。** 数字没变（仍是 1/3），但性质变了——之前是一道没人跑过的闸，现在是一道**跑过、响了、并点出三个具体缺陷**的闸。这三个缺陷本地一个都照不出来，正是 §7 立这一项要买的东西。
 
