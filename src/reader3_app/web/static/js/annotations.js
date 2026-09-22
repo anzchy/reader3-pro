@@ -35,6 +35,12 @@
   let notesEtag = null;
 
   function rememberNotesEtag(resp) {
+    // 009 欠账 #43 (i) WI-5 / 修订 A1：`notesEtag` 只经服务端**真提交过**的版本前进。失败响应
+    // （`null`，或非 2xx）带回来的 ETag 不是那样的版本，吸收它会毒化此后每一次写的 `If-Match`；
+    // 这里**原样返回、不清空**——清空等于让之后的写全变成无条件写，DEG-S5 的丢写保护就没了。
+    // 409 体里服务端主动告知的版本是另一回事：那两处（建/删的 409 重试、冲突对话框的吸收）
+    // 是对 `notesEtag` 的直接赋值，刻意不经过这个函数，也就不受这道守卫约束。
+    if (!resp || !resp.ok) return;
     const tag = resp?.headers?.get?.("ETag");
     if (tag) notesEtag = tag;
   }
@@ -62,13 +68,32 @@
       if (body?.etag) notesEtag = body.etag;
       resp = await send();
     }
-    rememberNotesEtag(resp);
+    // 009 欠账 #43 (i) WI-4：失败响应带回来的 ETag 不是服务端提交过的版本，不吸收（W4-C5）。
+    if (resp && resp.ok) rememberNotesEtag(resp);
     return resp;
   }
 
+  // toast 是**单例**：同一时刻 DOM 里至多一个 `rd-toast`。新的一条先把旧节点连同它的
+  // 移除计时器一起撤掉，再挂上新节点（删掉重插）。不叠放有两个理由：叠起来的节点让
+  // `get_by_test_id("rd-toast")` 在 strict mode 下解析出多个节点；而且它们一层层盖在
+  // 底部那一条带上。`pointer-events: none` 保证它**永远**不拦截指针——底部带里可能正
+  // 摆着笔记编辑器的按钮，一个拦截指针的 toast 就是一次 actionability 超时。
+  let toastEl = null;
+  let toastTimer = null;
+
   function showToast(message) {
+    if (toastTimer) {
+      clearTimeout(toastTimer);
+      toastTimer = null;
+    }
+    if (toastEl) {
+      toastEl.remove();
+      toastEl = null;
+    }
     const el = document.createElement("div");
+    el.setAttribute("data-testid", "rd-toast");
     el.textContent = String(message || "");
+    el.style.pointerEvents = "none";
     el.style.position = "fixed";
     el.style.left = "50%";
     el.style.bottom = "26px";
@@ -82,8 +107,83 @@
     el.style.zIndex = "2000";
     el.style.boxShadow = "0 14px 30px rgba(0,0,0,0.22)";
     document.body.appendChild(el);
-    setTimeout(() => el.remove(), 1400);
+    toastEl = el;
+    toastTimer = setTimeout(() => {
+      el.remove();
+      if (toastEl === el) {
+        toastEl = null;
+        toastTimer = null;
+      }
+    }, 1400);
   }
+
+  // ---- 009 欠账 #43 part (i)：写路径失败的可归因诊断 ---------------------------------
+  //
+  // 一次写没落地时，「盘上少一条」是唯一的外部可观测面，而它背后有三种完全不同的失败：
+  // 请求根本没发出去（`requested: false`）、发出去了但没回来（`status: null`——fetch 的
+  // promise 被拒，`.catch(() => null)` 分不清中断与发不出去）、回来了但被拒（数字 `status`）。
+  // `Reader3NotesDiag` 是把它们分开的那份记录：一个**有界** FIFO 环形缓冲，挂在 `window`
+  // 上，随页面生灭。
+  //
+  // 容量 100：FIFO 丢的是**最旧**的，容量太小时一次压力运行里的**第一个**失败会被挤掉，
+  // 而 `t` 字段存在的意义正是拿它去对服务端日志。100 是矩阵地板 50 的两倍，给一阵重试
+  // 加上周围的守卫空转留出余量；条目是六个标量，100 条的内存可以忽略。
+  //
+  // `t` 取 `performance.timeOrigin + performance.now()`：与墙钟同一个纪元（能对服务端日志），
+  // 且在页面内单调（`Date.now()` 会随系统校时往回跳）。
+  //
+  // `reportNotesWriteFailure` 是**唯一**的上报口：一次调用恰好一条 ring 条目、一条
+  // `console.error`、一个 toast，三件事绑在一起，后面任何调用点都没法退化成「只加个 toast」。
+  // console 行是**单个字符串实参**：对象实参在 Playwright 的 `msg.text()` 里渲染成
+  // `JSHandle@object`，贴出来的 console 转储里也读不出字段。
+  const NOTES_DIAG_CAPACITY = 100;
+  const notesDiagEntries = [];
+
+  function notesDiagNow() {
+    return performance.timeOrigin + performance.now();
+  }
+
+  function recordNotesDiag(entry) {
+    const src = entry || {};
+    const stored = {
+      op: src.op ?? null,
+      requested: src.requested ?? null,
+      status: src.status ?? null,
+      ok: src.ok ?? null,
+      id: src.id ?? null,
+      t: notesDiagNow(),
+    };
+    notesDiagEntries.push(stored);
+    while (notesDiagEntries.length > NOTES_DIAG_CAPACITY) notesDiagEntries.shift();
+    return Object.assign({}, stored);
+  }
+
+  function notesDiagSnapshot() {
+    return notesDiagEntries.map((e) => Object.assign({}, e));
+  }
+
+  function reportNotesWriteFailure({ op, resp, id, message, requested } = {}) {
+    const hasResp = resp !== null && resp !== undefined;
+    const entry = recordNotesDiag({
+      op,
+      id,
+      requested: requested !== false,
+      status: hasResp && typeof resp.status === "number" ? resp.status : null,
+      ok: hasResp ? !!resp.ok : false,
+    });
+    const payload = Object.assign({}, entry, { message: message == null ? null : String(message) });
+    console.error(`[Annotations] notes write failed ${JSON.stringify(payload)}`);
+    showToast(message || "标注没能保存，请重试");
+    return entry;
+  }
+
+  window.Reader3NotesDiag = Object.freeze({
+    capacity: NOTES_DIAG_CAPACITY,
+    record: recordNotesDiag,
+    entries: notesDiagSnapshot,
+    reportNotesWriteFailure,
+    showToast,
+  });
 
   function clearExistingAnnotationMarks(container) {
     container.querySelectorAll("mark.annotation").forEach((mark) => {
@@ -710,7 +810,16 @@
      * Toggle marker annotation with specific color
      */
     async toggleMarkerAnnotation(color) {
-      if (!this.currentRange || !this.contentEl) return;
+      // 009 欠账 #43 (i) WI-6：请求前的守卫出口。什么都没发出去，但用户按了按钮——记一条
+      // `requested: false`，让「请求没发出去」与「发出去了没落地」在诊断里分得开。
+      if (!this.currentRange || !this.contentEl) {
+        reportNotesWriteFailure({
+          op: "marker-toggle-no-selection",
+          requested: false,
+          message: "选区已失效，请重新选中再试",
+        });
+        return;
+      }
 
       const selected = color || this.selectedColor || "yellow";
       // Check if there's existing marker annotation with same color
@@ -884,7 +993,15 @@
      * Toggle annotation: if same type exists at selection, remove it; otherwise create new
      */
     async toggleAnnotation(type) {
-      if (!this.currentRange || !this.contentEl) return;
+      // 009 欠账 #43 (i) WI-6：同 `toggleMarkerAnnotation` 的守卫，入口不同、op 不同。
+      if (!this.currentRange || !this.contentEl) {
+        reportNotesWriteFailure({
+          op: "type-toggle-no-selection",
+          requested: false,
+          message: "选区已失效，请重新选中再试",
+        });
+        return;
+      }
 
       // Check if there are existing annotations of this type covering the selection
       const selectedColor = this.selectedColor || "yellow";
@@ -892,7 +1009,11 @@
       if (!existingIds.length) {
         const anyIds = this.getExistingAnnotationIds(type);
         if (anyIds.length) {
-          await this.deleteAnnotations(anyIds);
+          // 修订 A2：改色 = 先删旧、再建新。删失败了就停在这里，不建——否则 ring 说「删失败」、
+          // 盘上却多出一条新的，两份诊断互相矛盾。判据是**这一次**删除的返回值，不是任何
+          // 模块级状态：下一次改色从零开始判定（W4-C7）。
+          const removed = await this.deleteAnnotations(anyIds);
+          if (!removed.ok) return;
         }
       }
 
@@ -923,28 +1044,71 @@
     }
 
     /**
-     * Delete annotations by IDs
+     * Delete annotations by IDs.
+     *
+     * 返回 `{ ok, failedIds }`，调用方据此决定下一步（修订 A2：改色的「先删后建」删失败就不建）。
+     * 这是**本次调用**的结果，不留任何模块级状态。
+     *
+     * 多条删除的失败策略（009 欠账 #43 (i) WI-4，写明而不是留成隐含；W4-C3 钉住它）：
+     * - **失败不中断循环**：每条各删各的，删掉的就是删掉了（部分进度保留）；
+     * - 每个失败的 id **各报一次** `reportNotesWriteFailure({op:"delete", id, …})`；
+     * - 只要有一条失败就**不宣告整体成功**：不关工具条、不 `setCurrentAnnotations([])`、
+     *   不派发 `reader3:annotations:updated`。有删成功的才重绘一次，让屏幕与盘面一致
+     *   （删掉的消失、失败的留着），并只从当前选中集里去掉**删成功**的那些 id——失败的
+     *   仍然选中，再按一次删除就是只重试它们。
      */
     async deleteAnnotations(ids) {
       const uniqueIds = [...new Set(ids)].filter(Boolean);
-      if (!uniqueIds.length) return;
+      if (!uniqueIds.length) return { ok: true, failedIds: [] };
 
       const ctx = getReaderContext();
-      if (!ctx.bookId || ctx.chapterIndex == null) return;
+      // 一条都没删：不能让调用方当成删成功了接着往下走。
+      // 009 欠账 #43 (i) WI-6 / 修订 A3：一次调用只记**一条**（守卫触发了一次，什么都没发），
+      // `id` 是被放弃删除的那些 id，逗号相连。
+      if (!ctx.bookId || ctx.chapterIndex == null) {
+        reportNotesWriteFailure({
+          op: "delete-no-context",
+          requested: false,
+          id: uniqueIds.join(","),
+          message: "没找到当前书章，标注没有删除，请刷新后重试",
+        });
+        return { ok: false, failedIds: uniqueIds };
+      }
 
+      const failedIds = [];
       for (const id of uniqueIds) {
         // 每删一条版本就前进一格，所以必须逐条吸收新版本（`notesWriteWithResync` 会做），
         // 否则这个循环的第二圈会带着第一圈之前的版本出门。
-        await notesWriteWithResync(
+        const resp = await notesWriteWithResync(
           `/api/notes/${encodeURIComponent(ctx.bookId)}/${encodeURIComponent(String(ctx.chapterIndex))}/${encodeURIComponent(id)}`,
           { method: "DELETE" },
         );
+        if (!resp || !resp.ok) {
+          failedIds.push(id);
+          reportNotesWriteFailure({
+            op: "delete",
+            resp,
+            id,
+            message: "标注没能删除，请重试",
+          });
+        }
+      }
+
+      if (failedIds.length) {
+        if (failedIds.length < uniqueIds.length) {
+          const failed = new Set(failedIds);
+          const deleted = new Set(uniqueIds.filter((id) => !failed.has(id)));
+          await this.renderer.loadAndRender().catch(() => {});
+          this.setCurrentAnnotations((this.currentAnnotationMeta || []).filter((m) => !deleted.has(m.id)));
+        }
+        return { ok: false, failedIds };
       }
 
       this.closeSelectionToolbarIfOpen();
       await this.renderer.loadAndRender().catch(() => {});
       this.setCurrentAnnotations([]);
       window.dispatchEvent(new CustomEvent("reader3:annotations:updated"));
+      return { ok: true, failedIds: [] };
     }
 
     /**
@@ -956,7 +1120,16 @@
         meta = this.getAnnotationMetaForRange(this.currentRange);
       }
       const ids = meta.map((item) => item.id).filter(Boolean);
-      if (!ids.length) return;
+      // 009 欠账 #43 (i) WI-6 / 修订 A3：重绘之后选区对不上任何标注时就落在这里——用户点了
+      // 删除，什么都没发出去。不记下来的话，事后读到空的诊断会误以为「删除发出去了、只是慢」。
+      if (!ids.length) {
+        reportNotesWriteFailure({
+          op: "delete-no-ids",
+          requested: false,
+          message: "这里没有可删除的标注",
+        });
+        return;
+      }
       await this.deleteAnnotations(ids);
     }
 
@@ -1066,7 +1239,15 @@
      */
     async resolveConflict(keepLocal) {
       const c = this.pendingConflict;
-      if (!c) return;
+      // 009 欠账 #43 (i) WI-6 / 修订 A3：防御性守卫——没有待决冲突就没有可写的东西。
+      if (!c) {
+        reportNotesWriteFailure({
+          op: "conflict-no-pending",
+          requested: false,
+          message: "没有待解决的冲突",
+        });
+        return;
+      }
 
       if (!keepLocal) {
         // 「采用远端」：本地那版是用户**主动放弃**的，不是要再写一遍 ——
@@ -1086,6 +1267,18 @@
       if (resp && resp.status === 409) {
         // 重试的这一瞬间又被人改了。换上新的两版继续问，仍然不许静默丢。
         await this.openConflictFromResponse(resp, c);
+        return;
+      }
+      // 009 欠账 #43 (i) WI-5：非 409 的失败（数字 status 被拒，或 `resp === null`——请求没回来）
+      // **不收尾**：对话框留着、`pendingConflict` 留着、编辑器里的本地那版不动，再点一次
+      // 「保留我的」就是重试。原先这里无条件 `settleConflict`，那就是在一次没落地的写上宣告成功。
+      if (!resp || !resp.ok) {
+        reportNotesWriteFailure({
+          op: "conflict-keep-mine",
+          resp,
+          id: c.noteId,
+          message: "「保留我的」没能保存，你的版本仍在，请重试",
+        });
         return;
       }
       rememberNotesEtag(resp);
@@ -1109,7 +1302,17 @@
 
     async saveNote() {
       const text = String(this.noteTextarea?.value || "").trim();
-      if (!text) return;
+      // 009 欠账 #43 (i) WI-6 / 修订 A3：用户点了保存，什么都没发出去。文案是提示而不是报错，
+      // 但两条通道（ring ＋ console）照记——空的保存与「保存发出去了却丢了」必须分得开。
+      if (!text) {
+        reportNotesWriteFailure({
+          op: "save-empty-text",
+          requested: false,
+          id: this.editingNoteId || null,
+          message: "笔记是空的，没有保存",
+        });
+        return;
+      }
 
       // If editing an existing note, update it
       if (this.editingNoteId) {
@@ -1128,6 +1331,20 @@
           // textarea 里没被写出去，清掉它就是静默丢写。
           if (resp && resp.status === 409) {
             await this.openConflictFromResponse(resp, { url, noteId, localText: text });
+            return;
+          }
+          // 009 欠账 #43 (i)：非 409 的失败（数字 status 被拒，或 `resp === null`——请求没回来）。
+          // 与 409 同理**不往下走**：不清 `editingNoteId`、不关编辑器、不重绘——用户的字还在
+          // textarea 里，再按一次保存就是重试。原先这里无条件收尾，那就是静默丢写。
+          // 必须排在 `rememberNotesEtag` 之前：失败响应带回来的 ETag 不是服务端提交过的版本，
+          // 吸收它会让下一次写带着毒化的 `If-Match` 出去。
+          if (!resp || !resp.ok) {
+            reportNotesWriteFailure({
+              op: "edit",
+              resp,
+              id: noteId,
+              message: "笔记没能保存，修改仍在编辑器里，请重试",
+            });
             return;
           }
           rememberNotesEtag(resp);
@@ -1242,13 +1459,22 @@
 
     async createAnnotation(extra) {
       console.log('[Annotations] createAnnotation called with:', extra);
+      // 009 欠账 #43 (i) WI-6：这两道守卫原本是一句 console.log 就 return——不发请求、不提示。
       if (!this.currentRange || !this.contentEl) {
-        console.log('[Annotations] createAnnotation: missing currentRange or contentEl');
+        reportNotesWriteFailure({
+          op: "create-no-selection",
+          requested: false,
+          message: "选区已失效，请重新选中再试",
+        });
         return;
       }
       const ctx = getReaderContext();
       if (!ctx.bookId || ctx.chapterIndex == null) {
-        console.log('[Annotations] createAnnotation: missing bookId or chapterIndex');
+        reportNotesWriteFailure({
+          op: "create-no-context",
+          requested: false,
+          message: "没找到当前书章，标注没有保存，请刷新后重试",
+        });
         return;
       }
 

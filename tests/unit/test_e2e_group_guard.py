@@ -131,8 +131,23 @@ CANONICAL_ACCEPTANCE_ITEMS = 17
 # `scripts/lint_e2e_groups.py` 的白名单注释里，本文件不复述。
 # 8 → 7：2026-09-21 那笔明账到期兑付，该文件迁进 `baseline_1b`。**总数仍是 92**——
 # 一条 item 换了住址，没有增减，所以 `CANONICAL_E2E_ITEMS` 不动；动的是它落在哪一段。
-CANONICAL_UNGROUPED_ITEMS = 7
-CANONICAL_E2E_ITEMS = 92
+# 7 → 17 / 92 → 102：2026-09-22 欠账 #43 part (i) 第一批（WI-1 ＋ WI-2）新增
+# `tests/e2e/test_notes_write_failure_is_attributable.py`，**实测 10 条 item**（一次真的
+# `pytest tests/e2e --collect-only -q` 数出来的，不是按矩阵推算的）。这只是本批的条数：
+# 矩阵预测全部落地后是 37 条，WI-3..WI-7 每一批会各自再改这里一次，每次都取实测值。
+# 理由与迁移条件写在 `scripts/lint_e2e_groups.py` 的白名单注释里，本文件不复述。
+# 17 → 23 / 102 → 108：2026-09-22 同一欠账的 WI-3（`saveNote()` PUT 编辑分支）落地，该模块
+# 10 → 16 条，**+6 为实测值**（`pytest tests/e2e --collect-only -q` 全量 108）。
+# 23 → 31 / 108 → 116：2026-09-22 同一欠账的 WI-4（`deleteAnnotations()` ＋ 改色调用方）落地，
+# 该模块 16 → 24 条，**+8 为实测值**（`pytest tests/e2e --collect-only -q` 全量 116）。
+# 31 → 36 / 116 → 121：2026-09-22 同一欠账的 WI-5（`resolveConflict()` 的「保留我的」写）落地，
+# 该模块 24 → 29 条，**+5 为实测值**（`pytest tests/e2e --collect-only -q` 全量 121）。
+# 36 → 43 / 121 → 128：2026-09-22 同一欠账的 WI-6（请求前的静默出口，修订 A3）落地，
+# 该模块 29 → 36 条，**+7 为实测值**（`pytest tests/e2e --collect-only -q` 全量 128）。
+# 43 → 44 / 128 → 129：2026-09-22 同一欠账的 WI-7（成功路径护栏，不装路由）落地，
+# 该模块 36 → 37 条，**+1 为实测值**（`pytest tests/e2e --collect-only -q` 全量 129）。
+CANONICAL_UNGROUPED_ITEMS = 44
+CANONICAL_E2E_ITEMS = 129
 
 #: **已激活**的 acceptance 组，与 `scripts/lint_e2e_groups.py` 的
 #: `ACTIVATED_ACCEPTANCE_DIRS` 各写一份——本文件是守卫的独立 oracle，不从被测脚本 import
@@ -304,6 +319,7 @@ def test_real_tree_collection_is_a_partition_and_counts_match() -> None:
     assert whitelist == {
         f"{E2E_REL}/test_harness_smoke.py",
         f"{E2E_REL}/test_testid_dom_uniqueness.py",
+        f"{E2E_REL}/test_notes_write_failure_is_attributable.py",
     }, f"白名单的内容变了：{sorted(whitelist)}（加项要写理由，且它必须真的贡献 item）"
 
     # (1) 划分：恰好一个组 marker，或模块在白名单里。双 marker 也红。

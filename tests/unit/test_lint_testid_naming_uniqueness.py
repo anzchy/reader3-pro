@@ -399,6 +399,23 @@ def test_u8_real_repo_lints_clean(mod):
 
 
 # ===========================================================================
+# W2-C3（009 欠账 #43 part (i)）：JS 里新造的 `rd-toast` 过得了形状 lint
+# ===========================================================================
+ANNOTATIONS_JS = REPO_ROOT / "src" / "reader3_app" / "web" / "static" / "js" / "annotations.js"
+
+
+def test_w2_c3_rd_toast_testid_is_present_and_shape_clean(mod):
+    """`showToast` 加固后给 toast 节点挂上 `rd-toast`。`src/reader3_app/web/static/**/*.js`
+    在 `SHAPE_ONLY_SCAN_GLOBS` 里，只走形状，不要唯一性登记——本条钉住「它真的在、形状
+    合规、整仓 lint 仍然全绿」三件事，免得 WI-1 红在一个与它行为无关的地方。"""
+    src = ANNOTATIONS_JS.read_text(encoding="utf-8")
+    assert '"rd-toast"' in src, "annotations.js 里没有 `rd-toast` 字面量——showToast 没挂上 testid"
+    assert mod.CANONICAL.fullmatch("rd-toast"), "`rd-toast` 不满足 canonical testid 形状"
+    code, out = call_main(mod)
+    assert code == 0, out
+
+
+# ===========================================================================
 # U9：幂等 —— 连跑两次，判决一致
 # ===========================================================================
 def test_u9_idempotent(mod, tmp_path, monkeypatch):

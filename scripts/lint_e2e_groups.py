@@ -222,6 +222,11 @@ UNGROUPED_E2E_MODULES = {
     # ADR-0014 的运行期唯一性护栏：每个有界 testid 在真实 DOM 里只解析出一个节点。
     # 它守的是选择器口径而不是标注行为，与 009 的五个组正交。
     "tests/e2e/test_testid_dom_uniqueness.py",
+    # 欠账 #43 part (i)：notes 写失败的可归因性（诊断环 / 单串 console.error / 单例 toast）。
+    # 放白名单而不是 `baseline_1b`，理由与当年 w8a 一样是 `suite_hash` 覆盖面——迁进冻结
+    # 目录就要清零 soak 计数。到期条件：下一次**本来就要**动 `baseline_1b/`、`suite_hash`
+    # 无论如何都要变的改动里，把本文件一并迁入并撤掉这一条（`EXPECTED_BASELINE_ITEMS` 同批加）。
+    "tests/e2e/test_notes_write_failure_is_attributable.py",
 }
 
 # 上面几个白名单模块在一次 `tests/e2e --collect-only` 里贡献的 item 数。
@@ -235,7 +240,31 @@ UNGROUPED_E2E_MODULES = {
 # 8 → **7**（2026-09-21）：**上面那笔明账到期兑付。** W-5a-③ 的改判本来就要动
 # `baseline_1b/`、`suite_hash` 无论如何都要变，所以把这个文件一并迁进去，省掉第二次清零
 # ——这正是那条注释写的到期条件。白名单条目已撤，`EXPECTED_BASELINE_ITEMS` 同批 +1。
-EXPECTED_UNGROUPED_ITEMS = 7
+#
+# 7 → **17**（2026-09-22，欠账 #43 part (i) 第一批 = 011 WI-1/WI-2）：新增
+# `tests/e2e/test_notes_write_failure_is_attributable.py`。**17 − 7 = 10 是执行过的
+# `--collect-only` 实测值，只算这一批**；矩阵预测全部落地后该模块是 37 条，WI-3..WI-7
+# 每一批落地时各自再改这里一次，每次都写实测值，不预支。
+#
+# 17 → **23**（2026-09-22，欠账 #43 part (i) WI-3 = `saveNote()` PUT 编辑分支）：该模块
+# 10 → 16 条，**+6 是执行过的 `--collect-only` 实测值**（W3-C1、W3-C3×2、W3-C6、W3-C4、W3-C5）。
+#
+# 23 → **31**（2026-09-22，欠账 #43 part (i) WI-4 = `deleteAnnotations()` ＋ 改色调用方
+# `toggleAnnotation`，修订 A2）：该模块 16 → 24 条，**+8 是执行过的 `--collect-only` 实测值**
+# （W4-C1、W4-C2、W4-C3×2、W4-C5、W4-C6、W4-C7、W4-C4；全量 116）。
+#
+# 31 → **36**（2026-09-22，欠账 #43 part (i) WI-5 = `resolveConflict()` 的「保留我的」写，
+# 修订 A1）：该模块 24 → 29 条，**+5 是执行过的 `--collect-only` 实测值**
+# （W5-C1、W5-C2、W5-C3、W5-C4×2；全量 121）。
+#
+# 36 → **43**（2026-09-22，欠账 #43 part (i) WI-6 = 请求前的静默出口，修订 A3）：该模块
+# 29 → 36 条，**+7 是执行过的 `--collect-only` 实测值**
+# （W6-C1、W6-C4×2、W6-C5×2、W6-C2、W6-C3；全量 128）。W6-C6 在 unit 道，不计入这里。
+#
+# 43 → **44**（2026-09-22，欠账 #43 part (i) WI-7 = 成功路径护栏 建 → 改 → 删，不装路由）：
+# 该模块 36 → 37 条，**+1 是执行过的 `--collect-only` 实测值**（W7-C1；全量 129）。
+# 矩阵 §10 预测的 37 条至此全部落地，与实测一致。
+EXPECTED_UNGROUPED_ITEMS = 44
 
 # 派生值，不是字面量。见文件头「为什么必须派生」。
 EXPECTED_E2E_ITEMS = (
