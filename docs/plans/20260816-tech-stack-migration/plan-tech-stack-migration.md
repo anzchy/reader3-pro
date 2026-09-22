@@ -272,21 +272,39 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 
 **Phase 2a**
 
-- [ ] `web/server.py`（~2,400 行）拆分为 FastAPI routers 六组：
+- [x] `web/server.py`（**2,905 行**——本行原写「~2,400 行」，写于 2026-08-16；2026-09-19 `wc -l` 实测 `master` 为 2,905。011 分支上是 2,979，多出的 74 行全部来自 `1be7387` 一个 commit，**不是拖延期间的自然增生**）拆分为 FastAPI routers 六组：
   - `routers/library.py`（library + collections + stats）
   - `routers/reader.py`（阅读页 + book.epub + 图片资源）
   - `routers/notes.py`
   - `routers/search.py`（搜索 + 语义索引）
-  - `routers/ai.py`（对话 + RAG + 摘要 + 问答）
+  - ~~`routers/ai.py`（对话 + RAG + 摘要 + 问答）~~ → **`routers/ai/` 子包**（下一条）
   - `routers/settings.py`
-- [ ] 新建共享 `book_store.py`：合并 `server.py` / `search_service.py` / `vector_search.py` 三处重复的 `_Reader3Unpickler` 与 `lru_cache` loader（消除同一本书 3 份内存缓存与漂移风险）。粒度接口与「为什么是三处不是四处」见附录 A 的 A5
-  - **同时解决缓存失效**：三处 `lru_cache` 的 key 都不含 mtime，重新处理一本书之后服务端仍然供旧 `Book`。Phase 0 的 P0-1 只保住了用户数据，**没有**让缓存知道盘上的东西变了；这一项在此之前无家可归，现在归 `book_store.py`
-- [ ] chromadb + sentence-transformers 移入可选依赖组 `[project.optional-dependencies] semantic`（与 README"语义依赖可选"的描述对齐）
-- [ ] 修复 `ai/config.py` 设置写入改为原子替换（`.tmp` + `os.replace`，与 notes/collections 一致）
+  - ✅ **2026-09-19 兑付**（011 WI-4，七个 commit `6afc3fb` → `a61f6c7`）。`server.py` 2,979 → **942 行**，
+    43 条路由全部搬完，`routes.snapshot` 零 diff。**落地形状与本表原文有两处出入，照记**：
+    （1）`ai` 按裁定 A 拆成子包四个文件（`chat.py` 547 / `conversations.py` 236 / `summary.py` 213 / `rag.py` 37），
+    所以「六组」在**实现文件**这一层是七个上下；（2）另有 `routers/health.py` 34 与共用模型 `web/schemas.py` 50。
+    `api_ai_question` 那 433 行**一行没变**——下降的是单文件行数，不是复杂度。
+    验收七条全兑付，含 `baseline_1b` 67 passed 且 `suite_hash` 仍为 `2747100dadf6`；
+    见 [`tasks/011-backend-refactor.md`](./tasks/011-backend-refactor.md) §5 完成记录。
+  - ⚠️ **2026-09-19 实测：`ai` 这一组过不了下面「每个 router < 500 行」的门槛，且不是靠搬家能解决的。**
+    `/api/ai/*` 八条路由合计 708 行，其中 `api_ai_question` **一个函数就是 433 行**（`web/server.py:2454-2886`，
+    9 条顶层语句 ＋ 6 个嵌套闭包：`event_gen` 174 / `_do` 139 / `worker_ollama` 55 / `worker_non_stream` 18 / `push` 2 /
+    `_release_lease` 2）。它独占的模块级 helper 还有 `_stop_stream_worker` 60 行（调用点只有 `:2662`、`:2670`，都在这个函数里）。
+    **433 ＋ 60 ＝ 493，再加 import 与 `APIRouter` 声明就越线**——即「把这条路由单独放一个文件、别的什么都不放」仍然不达标。
+    三条候选路线与取舍记在 [`tasks/011-backend-refactor.md`](./tasks/011-backend-refactor.md) §5。
+    **已裁定（2026-09-19）：走 A ＋ 一条具名、可到期、机器执行的豁免**（`chat.py` ≤ 550，到期条件
+    「最大顶层函数 ≤ 400 行」），条款 canonical 在任务书 §5，本表不重述。
+- [x] 新建共享 `book_store.py` —— **已兑付**（`1be7387`，011 WI-3）。**本条原文的三个部分在 2026-09-07 实测时全不成立**，兑付的是订正后的范围：`_Reader3Unpickler` 早在 007/008 期间就收敛成了 `safe_pickle.Reader3Unpickler`，不存在三份重复；`vector_search.py` 直接调 `safe_pickle.load_book_file`，**根本没有 loader、不在合并范围内**。真正重复的是两个**同名不同签名**的 `load_book_cached`（`server.py` 与 `search_service.py`，各挂一个 `lru_cache(maxsize=10)`，同一本书在进程里躺两份）。推导与「同名是陷阱，不只是重复」见 [`tasks/011-backend-refactor.md`](./tasks/011-backend-refactor.md) §0.2，本表不重述
+  - [x] **同时解决缓存失效** —— 同一个 commit 兑付。key 里带上 `mtime_ns` ＋ `size`，重新处理一本书之后服务端不再供旧 `Book`
+- [ ] chromadb + sentence-transformers 移入可选依赖组 `[project.optional-dependencies] semantic`（与 README"语义依赖可选"的描述对齐）。2026-09-19 复核：**未做**，`pyproject.toml` 里没有 `[project.optional-dependencies]` 这个表，两者都还在主 `dependencies`
+  - **阶段归属订正**：本条列在 Phase 2a 下，而 [`tasks/011-backend-refactor.md`](./tasks/011-backend-refactor.md) §7 把它（WI-7）划进「收尾与 Phase 2b」。**以 §8 的退出门槛表为准**——Phase 2a 那一行只列了三项，本条不在其中，**所以它不拦 2a 关门**。两处措辞此后不再各写各的
+- [x] 修复 `ai/config.py` 设置写入改为原子替换 —— **已兑付**（`0e103ab`，008 期间，早于 011 开工）。落地写法与本条原文有一处**刻意偏离**：临时文件名走 `tempfile.mkstemp(dir=同目录)` 而不是仓库别处那种固定的 `f"{path}.tmp"`，因为这个文件装明文 API key，权限位得由 `mkstemp` 保证（理由写在 `ai/config.py:163-167`）
 - [ ] **notes 乐观并发控制**：notes 是 load→modify→save 全覆盖，`os.replace` 只保证单次写入原子，不防两个并发请求互相覆盖——自托管单用户开两个标签页即可触发。加 revision/ETag（或 per-file lock），冲突时返回 409 而非静默丢写。前端侧的冲突 UI 是设计规格 §6.4 的 **DEG-S5**
 - [ ] **`max_retries` 定性**：这个配置项能在设置页填、能存进 `ai_settings.json`、能从 `GET /api/settings` 读回、`settings.js` 也在渲染它——但**全链路没有任何 provider 消费它**。删掉它还是接通它，二选一。留在 Phase 2 而不是 Phase 0，是因为两种选法都是行为变更：接通改的是重试语义，删掉改的是设置页可见字段
-- [ ] 路由启发式修正：`estimate_tokens()` 对 CJK 按 ~1.5 字符/token 估算；Anthropic 默认上下文窗口 1M → 200k
+- [x] 路由启发式修正 —— **已兑付**（`105bbbb`，008 期间）。`ai/routing.py:38-39` 的 `_CJK_CHARS_PER_TOKEN = 1.5` / `_OTHER_CHARS_PER_TOKEN = 4.0`，以及 `:99-102` 那句 "Default DOWN" 注释与 `return 200_000`
 - [ ] 修订 `CLAUDE.md` § Constitution Principles（原 `.specify/memory/constitution.md` 已随 spec-kit 工具链于 2026-08-16 删除，CLAUDE.md 的摘要版成为唯一权威）：保留简单性原则，修订已过时的实现禁令（"除 FastAPI/BeautifulSoup 外不加抽象"已不能描述含 Chroma、5 provider、异步队列、42 路由的系统）；"测试可选"条款删除
+  - ⚠️ **2026-09-19 实测：只兑付了一半，仍然欠着。** 已兑付的部分：spec-kit 那段说明在位（`CLAUDE.md:118-119`），"测试可选"条款全文搜索 **0 命中**，确已删除。**未兑付的部分正是本条点名要改的那句**——`CLAUDE.md:122` 今天仍逐字写着「YAGNI - no abstractions beyond FastAPI/BeautifulSoup」，一字未动。`tasks/011-backend-refactor.md` §0.1 那张实测表把本条整条记成 ✅，**那一格是错的**，已同步订正
+  - 这一格现在不是纯记账问题：`CLAUDE.md:122` ＋ ADR-0008 正是「`api_ai_question` 能不能抽出一层 service」这道题的约束条件（见上面 `routers/ai.py` 那条 ⚠️）。**先裁 router 拆法，再决定要不要动这一条**——反过来做就成了为一次重构去改宪法
 
 **Phase 2b**
 
@@ -295,6 +313,10 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 - [ ] C5 书库首页只读元数据，不反序列化正文——**落点待裁决**，见附录 B 文末 UNRESOLVED DECISIONS
 
 **验收**: Phase 1 测试全绿（行为不变的证明）；`server.py` 每个 router < 500 行。完整门槛见 §7。
+> 2026-09-19：「每个 router < 500 行」已由 `scripts/check_router_size.py` 机器执行并接入 `lint.yml`
+> （`a61f6c7`）。**它的范围有个边界**：量的是「`routers/` 下每个文件」∪「`web/` 下声明路由的模块」，
+> 而 `server.py` 已不再声明任何路由，因此掉出了这道闸——它剩下的 942 行共享工具不受上限约束。
+> 是否另立一条 `web/*.py` 上限留给 Phase 2b 裁，见任务书 §5 完成记录。
 
 ### Phase 3 —— 存储去 pickle 化
 
@@ -388,7 +410,7 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 | Phase 1a | Phase 0 | 测试门禁生效（**本地 tdd-guardian**，非 required check——见本节 soak 小节的改基说明）；42 路由契约测试通过；**API v1 形状冻结**；性能基准记录在案 |
 | Phase 1b | 0.3 + 0.5 | **本行的展开（G1/G2 两道门）在 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) §8，本表不重述**。**`baseline-1b` 组**在**本地 `e2e` lane** 绿灯并入 `soak-log.md` 台账（原写「主 CI（非 nightly）」，2026-08-24 随 CI 改为仅发版触发而改基，见本节 soak 小节）；**用例覆盖写路径**（四类型创建 / 改色的现状特征化 **W-5a**（W-5b 归 4B.1）/ 删除 / 笔记保存，断言为刷新后回到同一段文字）；K2–K5 与 K1/K6 的**现状特征化**条各一条正向证据；连续 3 次全量运行零 flaky；其余组**用例写完并 review**，以 skip 形态存在。⚠️ K1/K6 的新行为与 DEG-S1–DEG-S4 的横幅**不在本阶段门槛内**——它们要到 4B.1 / Phase 3 / 4A.4 才存在，写进 1b 会形成依赖环。分组见 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) §0.5 |
 | Track D | Phase 0 | DEG-S1–DEG-S5 设计完成并回写设计规格 §6.4；合同 2 剩余两项收口；loading 骨架屏补齐 |
-| Phase 2a | 1a | 每个 router < 500 行；`book_store` **三处** loader 合并（第四处已作为死代码删除，见附录 A 的 A5）；**notes 乐观并发落地**；行为不变由 1a 证明 |
+| Phase 2a | 1a | ~~**每个声明路由的模块 < 500 行，唯一具名例外 `routers/ai/chat.py` ≤ 560 行**~~ → **已兑付 `a61f6c7`**，例外上限按实测（547 行）回写为 **≤ 550**（2026-09-19 裁定，判据与到期条件在 [`tasks/011-backend-refactor.md`](./tasks/011-backend-refactor.md) §5，本表不重述）；~~**该门槛须由 `scripts/check_router_size.py` 机器执行**——在此之前它只是散文~~ → **已接入 `.github/workflows/lint.yml`**（同一个 commit，见 §5 完成记录；注意 `server.py` 已掉出该闸范围）；~~`book_store` **三处** loader 合并~~ → **已兑付 `1be7387`**，且实际合并的是**两个同名不同签名的 `load_book_cached`**，不是原文写的「三处 `_Reader3Unpickler`」（`vector_search.py` 没有 loader；依据见 [`tasks/011-backend-refactor.md`](./tasks/011-backend-refactor.md) §0.2）；**notes 乐观并发落地**（WI-5，未做）；行为不变由 1a 证明 |
 | Phase 2b | 2a | 跨库搜索性能相对基准可量化改善；`_normalize_with_map` 差分测试通过 |
 | Phase 3 | 2b + Track D **且 soak 门槛达标**（三路汇合，见 §9.1） | 新书完全不依赖 pickle；存量可一键迁移；**`--migrate` 原地读写，不复用摄取路径**；**DEG-S1–DEG-S4 在当时的 UI 里可见**——即 **`acceptance-p3` 组解开 skip 并绿灯**（朴素横幅形态）；真实 iframe 标注迁移 E2E 通过 |
 | Phase 4A | **1b 的 G1**（用例完成门；不必等 G2/soak） | wheel 内容测试通过；settings 与 library 切换后 `baseline-1b` **零改动**全绿；**4A.4 另需 `acceptance-4a4` 组解开 skip 并绿灯**（DEG-S1–DEG-S4 改版形态）；Classic 已删除 |
@@ -401,6 +423,14 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 
 **Phase 3 开工前，`baseline-1b` 组必须连续绿 ≥ 10 次，且跨度 ≥ 5 个工作日。**
 
+> **这道门槛证明了什么、没证明什么（2026-09-18 补）。** 它证明的是：**冻结的测试套件在一个本地运行剖面下取得了 10 次成功记录**，并附带一段最短日历等待。它**不构成 flaky 率的统计上界**——三条理由，任何一条单独成立即可：
+>
+> 1. **被测对象在变。** 下方「三类清零触发器」明写「**明确不清零的：生产代码变（`commit` 变）**」——十次运行测的不是同一份生产代码，一个固定的失败概率 p 在这里根本不存在。
+> 2. **运行剖面也在变。** 依赖版本不进 `suite_hash`（[`soak-log.md`](./tasks/soak-log.md) 表头明写把 `pyproject.toml` 排除在外），所以十次之间依赖可以漂。
+> 3. **可选停止（optional stopping）。** 规则是红了清零重计，但**不要求根因修复**。只要单轮通过概率大于零，无限重试最终几乎必然攒出 10 连绿——最后那 10 次是**事后选出的窗口**，不是预先指定的样本。
+>
+> 因此本节**不给任何数值化的失败率估计**。审计阶段曾按二项模型算过一个，**已撤回**：它的独立同分布前提在上面三条下不成立，写出去只是虚假精确性。这道门槛买的是**流程纪律**（一段冻结期 ＋ 一段日历时间），不是统计推断。**数值与判据不因此变动**——≥10 次 / ≥5 个工作日、跨度按台账首行与第十行的日期算，一个字不动；这里加的只是界定。
+
 > **数的不再是主 CI 的运行，是本地全量运行——2026-08-24 改基。** 起因是全仓 CI 统一改为**仅发版触发**（`release.published` ＋ `push.tags`，日常 push 不跑）。原文数「主 CI 连绿 10 次」在那条策略下等于要求 5 个工作日内发 10 次版：**门槛不是变严了，是变得不可达**。
 >
 > **数值一个不动**——≥10 次 / ≥5 个工作日是 R9 评审后用户亲自裁定维持的（见「GSTACK REVIEW REPORT」的 R9 行），改基不碰它。换的只有计数基准：
@@ -408,7 +438,15 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 > - 每次 `baseline-1b` 全量运行往 **`soak-log.md`** 追一行，字段见下方「台账字段（canonical）」。跨度按台账首行与第十行的日期算。该台账由 009 建，它是 `baseline-1b` 的产物之一。
 > - 「连续」的清零规则不变：中途任何一次红清零重计，flaky 与 broken 仍不做区分。
 >
-> **必须写明丢了什么**：本地计数丢掉的是「**独立、干净环境**」这一性质。而依赖漂移、时区、缓存这三类，正是上面「跨度条款」想逼出来的东西——它们恰恰在同一台机器上最不容易复现。所以改基之后，跨度条款只剩「日历时间」这一半效力，「环境多样性」那一半没有了。唯一的补偿不在 soak 里：**发版关门检查里跑一次 `baseline-1b` 全量**。这是本条策略的**已知代价，不是疏漏**。
+> **必须写明丢了什么**：本地计数丢掉的是「**独立、干净环境**」这一性质。而依赖漂移、时区、缓存这三类，正是上面「跨度条款」想逼出来的东西——它们恰恰在同一台机器上最不容易复现。所以改基之后，跨度条款只剩「日历时间」这一半效力，「环境多样性」那一半没有了。改基本身是**已知代价，不是疏漏**。
+>
+> **但原文在这里承诺过一项补偿：在发版关门检查中对 `baseline-1b` 做一次全量运行。该补偿至今没有建出来。** 2026-09-18 在 `e7c4890` 上逐文件复核：
+>
+> - `.github/workflows/tests.yml`（101 行）只有一个 job：`unit`（`:43`）。步骤是 ruff / mypy / `pytest tests/unit tests/contract` / 覆盖率门禁，**不起浏览器**。
+> - `.github/workflows/lint.yml`（79 行）两个 job：`contracts`（`:36`）、`wheel`（`:59`）。
+> - 全仓 workflow **没有任何一步跑 Playwright、e2e lane 或 `baseline-1b`**。`grep -rn e2e .github/workflows/` 命中 **4 行、分属两件事**，都不是在跑它：`lint.yml:20/48–49` 的 `scripts/lint_e2e_selectors.py`（静态选择器 lint，`:20` 是讲它的注释），以及 `tests.yml:19` 的一句注释——那句讲的是**本地** tdd-guardian 三条 lane 的触发时机（`.claude/tdd-guardian/config.json` 里 e2e lane 的 `gateOn: ["push"]`），不是 CI job。
+>
+> 所以如实的陈述是：**在那道发版关门检查真的建出来之前，「环境多样性」那一半没有任何补偿**——十次绿全部来自同一台开发机的同一个运行剖面。**这是一个已知缺口，不是一项已生效的控制**，读到这里的人不要把它当成已有的保护。已记入[`tasks/009` 跨波欠账 #31](./tasks/009-e2e-annotations.md)——**2026-09-19 已定方向：建 CI e2e job，本段承诺不删。** 该 job 跟着现有的「仅发版 ＋ `workflow_dispatch`」触发口径走，不新增触发器；兑付方（谁做、落在哪个 WI）仍是**待定**。形状、验收改动与「靠手点 dispatch 补台账行」的理由都记在那一行，此处不重述。
 
 > 数的只是 `baseline-1b`。其余组在 Phase 3 之前尚未激活（它们测的行为还不存在），把它们算进来就会让 soak 门槛永远无法达标——分组定义见 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) §0.5。
 
@@ -473,6 +511,44 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 > 的路径，不写下来就会被当成误加进去的。
 
 > 来源：2026-08-16 eng-review 的 Outside Voice。Codex 主张把 Phase 3 整体挪到 4B 之后，理由之一是「Phase 1 的测试尚无 CI 历史，保护力未经检验」。排序未采纳（见 §4），但这半句成立，转为本门槛。
+
+#### 机制挑战闸（Phase 3 阻塞项，不计入那 10 次）
+
+> **2026-09-18 补。** 上面那段「证明了什么、没证明什么」划出了 soak 计数的边界：它是**一个本地运行剖面**
+> 下的记录。这一小节补的是另一半——在**冻结的 `suite_hash`** 上主动改变条件各跑一次，看这套用例是不是
+> 只在那一个剖面下才绿。**三项全是阻塞性的**：任何一项不过，Phase 3 不开工。
+
+| 场景 | 固定什么 | 通过条件 | 失败后果 |
+|---|---|---|---|
+| 干净 Linux / CI 环境 | 锁定 lock 文件与 Chromium 版本，两者连同结果一并记录 | 全项**首次**通过 | **阻塞 Phase 3** |
+| CPU 压力下 | 压力生成命令与持续时间写进文档，可原样复现 | 全项**首次**通过 | **阻塞 Phase 3**，并分类 |
+| 随机化 pytest 的收集顺序 | 记录插件版本与**可复现的 seed** | 3 个 seed 全绿 | **阻塞 Phase 3**；失败 seed 必须可复现 |
+
+四条纪律，缺任意一条这张表都会退化成没人看的死栏位：
+
+1. **这三次不计入那 10 次。** 它们**改变了抽样条件**——干净环境、CPU 压力、收集顺序都不是 soak 计数的那个运行剖面。混进去等于拿不同条件下的运行拼出一个「连续」，正是上方「台账字段（canonical）」要堵的同一个洞。
+2. **重试通过 ≠ 绿。** 通过条件写死为「**首次**通过」。重试只能用来**分类**（flaky 还是 broken），不能用来翻盘。Playwright 自己也把「首次失败、重试通过」标成 flaky 而非 passed，这里取同一口径。
+3. **失败会阻塞，不是「记录下来就算」。** 三项各自独立阻塞 Phase 3 开工——一道不挡人的闸等于没有闸。
+4. **何时重跑**：`suite_hash` 变了，或 harness 变了。与 soak 计数的清零触发器同源，不另立判据。
+
+> **「全项」是多少条，本文不写死。** 原文写的是「67/67」；2026-09-21 冻结集改判后 baseline_1b 变成 68 条，
+> 那两个 67 当场烂掉。数的唯一派生处是 `scripts/lint_e2e_groups.py` 的 `EXPECTED_BASELINE_ITEMS`
+> （`scripts/soak_run.py` 也从那里取），当期值见 [`tasks/soak-log.md`](./tasks/soak-log.md)。
+> 这里只定性质：**一条不少，且首次就绿**。
+
+> **⚠️ 第 2 项的通过条件有一个已知的洞，尚未修补：「首次通过」没有定义「一次尝试 = 跑几遍」。**
+> 干净 Linux 那项一次 CI run 就是一次尝试，没歧义；但 CPU 压力这项本质上测的是**分布**，n=1 的尝试不构成证据——
+> 2026-09-21 实测：同压力源、同命令（`soak_run.py` 的 `LANE_ARGS`）四跑两红，而其中首跑恰好是绿的。
+> 建议改成「**连续 k 次**（k=5）压力下全绿，首轮即须成立」。**这个改动没有替维护者做**：
+> 动的是一道正挡着 Phase 3 的闸的通过条件，且动它的人刚好是没过这道闸的人。立为
+> [009 欠账 #48](./tasks/009-e2e-annotations.md)，在它裁定之前，第 2 项按本文现有条文是字面 PASS、
+> 按 soak 台账的建议记作**未过**——两者的差别就是这个洞。
+
+> **为什么写「随机化收集顺序」而不是「换随机种子」**：后者太含糊——若被测系统根本不消费那个随机源，换了等于没换，这一栏的信息量是零。这里要照的是**用例间顺序依赖**这一类缺陷，所以判据落在 pytest 的收集顺序上，并要求 seed 可复现、失败能原样重放。
+
+> **执行结果不在这里。** 本小节是判据的定义处；三项各跑了什么、结果如何、失败 seed 是哪个，唯一定义在 [`tasks/soak-log.md` §机制挑战闸执行记录](./tasks/soak-log.md)。**2026-09-21 起以「对新冻结值 `1e868c7bf811` 的重跑」为准**（旧结果随 `suite_hash` 变更按纪律 4 全部作废）：
+> 第 1 项干净 Linux **PASS**、第 3 项随机顺序 **PASS**、第 2 项 CPU 压力字面首绿但建议记作未过（见上方 ⚠️）——
+> **Phase 3 / 012 仍被本闸阻塞，现在只剩第 2 项挡着。**
 
 ---
 
@@ -670,7 +746,16 @@ Phase 1b 从 Phase 1 中拆出并降级为「仅阻塞 Phase 4」，使 Phase 2/
 - **A5 `book_store.py` 先定接口契约再写实现**：
   `load_book(book_id) -> Book`、`load_book_metadata(book_id)`、`load_chapter(book_id, order)`、`iter_chapters(book_id)`、`chapter_count(book_id)`、`book_fingerprint(book_id) -> str`、`storage_format(book_id) -> Literal["json","pkl"]`。
   只暴露全量 `load_book()` 会让 Phase 3 的 JSONL 随机读取与 Phase 2b 的性能优化无处落脚——JSONL 将退化为「换扩展名的 pickle」。`manifest.json` 为每章记录 `offset_bytes` / `length_bytes` / hash，`chapters.jsonl` 二进制 seek 读取；书库页只读 manifest，单章阅读只读一行。
-  **合并范围为三处** `_Reader3Unpickler` / cached-loader：`server.py` 一处、`search_service.py` 一处（`load_book_cached` + `load_book_index`）、`vector_search.py` 一处（2026-08-16 复核；原文写的行号已漂移，故改用符号定位）。
+  **合并范围（2026-09-07 实测订正，此前写的「三处 `_Reader3Unpickler` / cached-loader」三个部分全不成立）**：
+  今天的答案是 **两处同名 loader ＋ 一处建在其上的 index 缓存**——
+  `server.load_book_cached(book_id)` 与 `search_service.load_book_cached(book_id, books_dir)`
+  **同名不同签名**，各挂一个 `lru_cache(maxsize=10)`，同一本书在进程里躺两份且失效时机互不相干；
+  第三处是 `search_service.load_book_index`（`maxsize=4`），它**建在** `search_service.load_book_cached` 之上，
+  不是第三份独立 loader。**`vector_search.py` 不在合并范围内**——它直接调 `safe_pickle.load_book_file`，没有 `lru_cache`。
+  **`_Reader3Unpickler` 这一半的工作早已做完**：受限 unpickler 在 007/008 期间就收敛成了 `safe_pickle.Reader3Unpickler`。
+  > 计划没写出来的那条收益：同名是**陷阱**，不只是重复。测试里 `monkeypatch.setattr(server, "load_book_cached", …)`
+  > 出现 6 次，只换掉 `server` 那一份，`search_service` 那一份纹丝不动——合并让「打了桩」与「真的被打了桩」重新变成同一件事。
+  **已于 `1be7387`（011 WI-3）兑付**，key 里带上 `mtime_ns` ＋ `size`。推导全文见 [`tasks/011-backend-refactor.md`](./tasks/011-backend-refactor.md) §0.2。
   > **原文写的是「四处」。第四处已于 2026-08-16 删除，不进 `book_store.py`。** 那是 `SearchIndex` / `BookIndex.from_book_pkl` / `SearchIndex.build_from_library`——001-search-features 的 T027/T029/T030 产物，实现了没接线，`search_library()` 后来走的是 per-book `load_book_index` 那条路，全仓库零调用方。它带两处分歧：用**裸 `pickle.load`，没有 `_Reader3Unpickler` shim**（另外三处都有），且包在 `except Exception: failed.append(book_id)` 里——一本 legacy `__main__.Book` 的 pkl 在阅读器里能开，在这个索引里会**无声消失**；同时它整段复制了 `load_book_index` 的 `BookIndex` 构造体。把它搬进 `book_store.py` 等于把一个静默失败分支洗成「现役设计」，故直接删除。
   >
   > 删除边界：只删 `SearchIndex` 类与 `BookIndex.from_book_pkl` 这个 classmethod。**`BookIndex` / `ChapterIndex` 两个 dataclass 是活的**——`load_book_index()` 构造它们，`search_book` / `search_library` / 章内定位三条路径都在用。`search_service.py` 773 → 734 行。
@@ -690,8 +775,21 @@ Phase 1b 从 Phase 1 中拆出并降级为「仅阻塞 Phase 4」，使 Phase 2/
 - **C1 [P1]** `search_library()` 对库内每本书调 `load_book_cached()`（`lru_cache(maxsize=10)`）+ `load_book_index()`（`lru_cache(maxsize=4)`）。每次 miss 是全书反序列化 + 全书归一化。
   **阈值订正（2026-08-16）**：原文写「库超 10 本即颠簸」，看的是 `load_book_cached` 的 `maxsize=10`。真正的约束是 `load_book_index` 的 **`maxsize=4`** ——**第 5 本就开始颠簸**，不是第 11 本。且 `load_book_index(book_id, books_dir, *, case_sensitive)` 把 `case_sensitive` 编进了 key，同一本书大小写敏感/不敏感各占一格，**有效容量再折半到 2 本**。→ **Phase 2b**。
   一个错的阈值比没有阈值更糟：它会被当成性能测试的判据，然后永远不触发，最后得出「C1 不存在」的结论。
+  **兑付情况（2026-09-20，011 WI-8 `a4e5f49`）：`maxsize` 4 → 12（`case_sensitive` 入 key ⇒ 有效容量 6 本），
+  key 纳入 `(st_mtime_ns, st_size)`。但 C1 的性能目标 ✗ 没兑付** —— `bench/011-iso-*.json` 三份逐提交隔离实测，
+  全库搜索的 `unpickle_grand_total` 恒为 **95**，扩容一次读盘都没省。原因是 `search_library()`
+  （`search_service.py:620`）为取 `title`/`author` 无条件先反序列化整本书，索引缓存命中与否轮不到它。
+  **这一条不是 C5**（C5 只管书库首页），剩余部分立为欠账 #35，兑付方 012。见 [011 §8 门槛 #7 的裁定](tasks/011-backend-refactor.md)。
 - **C2 [P1]** `_normalize_with_map()` 的 `List[int]` 是每字符一个 Python int：300 万字符 → 300 万元素 list（粗估 >100 MB）。换 `array('I')` 约 12 MB，且仍支持 `index_map[i]` 下标，**不改变** `highlight_ranges_for_chapter()` 的偏移语义。稀疏 breakpoint 表示留到第二阶段（casefold 扩张与 combining mark 删除的错误风险高）。→ **Phase 2b**，须做差分测试。
+  **✅ 已兑付（2026-09-20，011 WI-9 `b69a568`）**：`array("I")`（无符号，偏移恒非负；与原文写的 `'I'` 一致）。
+  逐提交隔离实测 `after_library_search_bytes` **237.7 → 114.1 MiB**、`after_huge_search_bytes`
+  **331.7 → 195.4 MiB**，spread 0.0/0.1%。偏移语义未变，差分测试在 `tests/unit/test_normalize_index_map_container.py`。
+  稀疏 breakpoint 表示仍未做，也仍然没有需求。
 - **C3 [P2]** 三处 `lru_cache` 的 key 均不含 mtime/指纹，重新处理同名书后进程继续返回旧 `Book`/`BookIndex` 直到重启。→ **Phase 2a**（并入 weighted LRU）。
+  **✅ 已兑付，但「三处」这个数今天是错的**：`src/` 里只剩两处 `lru_cache`
+  （`book_store.py:66` maxsize=10、`search_service.py:319` maxsize=12），第三处随 011 WI-1…WI-5 的合并消失了。
+  两处的 key 都已含 `(st_mtime_ns, st_size)` —— `book_store` 由 WI-3 兑付，`load_book_index` 由 WI-8（`a4e5f49`）兑付。
+  **weighted LRU 没有做**，裁定是在 011 里用 vanilla `@lru_cache`（ADR-0008 的简单性边界），详见 011 §7 的 WI-8 完成记录。
 - **C4 [P2]** JSONL 若 `load_book()` 仍整份读完，相比 pickle 只是换扩展名——pickle 对 dataclass 图通常更快，JSON 需先建 dict/list 再构造 dataclass，瞬时内存更高。收益完全取决于 A5 的粒度接口 + manifest 字节偏移是否落实。
 - **C5 [P1，2026-08-16 eng-review 新增]** **书库首页把每本书的正文全部反序列化了一遍。** `library_view` 遍历 `books/*_data/`，对每个目录调 `load_book_cached()` ——只为读书名、作者、封面这几个字段，却把整本书的 spine 与全文 text 都拉进内存。`lru_cache(maxsize=10)` 意味着第 11 本起每次刷新首页都是冷读。
   这是**全站访问频次最高的路径**（每次进站必走），而 C1 说的跨库搜索是低频操作 —— C1–C4 一个字没提它，优先级排反了。

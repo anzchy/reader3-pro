@@ -121,7 +121,12 @@ def test_casefold_expansion_keeps_the_index_map_aligned_with_the_normalised_text
     assert normalized == uc.SHARP_S_CASEFOLDED
     assert len(normalized) == len(uc.SHARP_S_WORD) + 1
     assert len(index_map) == len(normalized)
-    assert index_map == [0, 1, 2, 3, 4, 4, 5]
+    # 011 WI-9 changed the container from `list[int]` to `array("I")`, and
+    # `array("I", [...]) == [...]` is False in Python regardless of the values.
+    # The `list(...)` wrapper crosses that type difference and nothing else: the
+    # asserted value sequence is byte-for-byte the one recorded when this case
+    # was written. Weakening it (to a length, a prefix, a set) would not be.
+    assert list(index_map) == [0, 1, 2, 3, 4, 4, 5]
 
 
 def test_casefold_expansion_yields_duplicate_spans_for_a_single_glyph():

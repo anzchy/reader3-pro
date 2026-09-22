@@ -2,7 +2,8 @@
 
 Twenty is not a round number chosen for looks. ``web.server.load_book_cached``
 is ``@lru_cache(maxsize=10)`` and ``search_service.load_book_index`` is
-``maxsize=4``; a library at or below either bound turns the benchmark into a
+``maxsize=12`` (it was 4 until 011 WI-8/C1 resized it to "six books in hand x
+two case flags"); a library at or below either bound turns the benchmark into a
 measurement of cache hits, which is the opposite of what the benchmark is for.
 The count therefore has to exceed both, and
 ``tests/unit/test_fixture_synthetic_library.py`` asserts it against the real
@@ -26,8 +27,11 @@ from reader3_app.reader3 import Book, BookMetadata, ChapterContent, TOCEntry
 
 PathLike = Union[str, "os.PathLike[str]"]
 
-#: Above both cache bounds (10 and 4) with room to spare, and small enough that
-#: building the whole library stays well inside the unit lane's time budget.
+#: Above both cache bounds (10 and 12) with room to spare, and small enough that
+#: building the whole library stays well inside the unit lane's time budget. The
+#: margin over the index bound is now eight books rather than sixteen; WI-8 left
+#: it deliberately, because the benchmark needs the library to outrun the cache
+#: and a bound that grew to meet the library would delete the measurement.
 DEFAULT_BOOK_COUNT = 20
 
 _FILLER = "The tide went out and the boats leaned over in the mud, one after another. "

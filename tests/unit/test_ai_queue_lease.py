@@ -40,6 +40,13 @@
 超时的处理：本仓没有 pytest-timeout。每个异步用例的**整体**都套在
 `asyncio.wait_for(..., HARD_BOUND_S)` 里，所以「实现挂住」表现为
 `asyncio.TimeoutError`，与断言变红（`AssertionError`）在输出里一眼可分。
+
+011 WI-4 之后 `api_ai_question` 搬到了 `web/routers/ai/chat.py`。这次跟着改的
+**只有三处取 handler 的地方**（两处 `await ...(...)`、一处 `inspect.getsource`）；
+上面那 11 处 `monkeypatch.setattr(server, ...)` 一个字没动。这不是省事，是判据：
+chat.py 走的是 `from .. import server as _server` 再 `_server.X`，属性在调用时才
+解析，所以打在 `server` 上的桩仍然落得到。如果哪天要把这些 setattr 的目标也改成
+`chat_router` 才能绿，那说明接缝被旁路了——别改测试，去看搬家。
 """
 
 from __future__ import annotations
@@ -65,6 +72,7 @@ from reader3_app.ai.books import BookUuidResolver
 from reader3_app.ai.queue import AIRequestQueueManager
 from reader3_app.reader3 import Book, BookMetadata, ChapterContent, TOCEntry
 from reader3_app.web import server
+from reader3_app.web.routers.ai import chat as chat_router
 
 BOOK_ID = "lease_sample_data"
 BOOK_UUID = "22222222-3333-4444-8555-666666666666"
@@ -296,12 +304,20 @@ class _FakeOllamaStream:
 
     没有 done 事件，所以「worker 退出了」只可能是因为它读到了停止事件——
     这正是要证的那件事。退出时往 order 里记一笔。
+
+    **``stuck_gate`` 是「卡住」的唯一表达方式，故意不是一个秒数。** 这里原本写的是
+    ``stuck_delay: float``，第二次 ``readline`` 睡够那么多秒再返回；Q4 于是暗含
+    「整段 scenario 在 stuck_delay 内跑完」这个对运行器速度的假设，慢 runner 上
+    假 worker 自己醒了，前提自毁（欠账 #46，三次 CI 里红了两次）。换成 Event 之后
+    「卡住」不再有时长，只有状态：**没放行就是没放行**，机器快慢与它无关。
+    谁把它设上，谁负责在收尾时 ``set()`` 放行——worker 线程是 daemon
+    （``routers/ai/chat.py:320``），但不该把一个永远阻塞的线程留给后面的用例。
     """
 
-    def __init__(self, order: List[str], *, line_delay: float, stuck_delay: float | None = None) -> None:
+    def __init__(self, order: List[str], *, line_delay: float) -> None:
         self.order = order
         self.line_delay = line_delay
-        self.stuck_delay = stuck_delay
+        self.stuck_gate: threading.Event | None = None
         self.lines_served = 0
         self.exited = False
 
@@ -317,12 +333,78 @@ class _FakeOllamaStream:
         # 第一行立刻给，后面的按 delay 给：消费者得先拿到一个 chunk 才有「断连」
         # 这个时点可言。
         if self.lines_served:
-            delay = self.stuck_delay if self.stuck_delay is not None else self.line_delay
-            time.sleep(delay)
+            if self.stuck_gate is not None:
+                # 卡住——直到测试明确放行为止。这里**不许**出现任何超时参数：
+                # 一旦有，「卡住」就又变成了「最多卡这么久」，#46 原样长回来。
+                self.stuck_gate.wait()
+            time.sleep(self.line_delay)
         self.lines_served += 1
         return json.dumps(
             {"model": "fake-ollama", "message": {"content": "tick"}}
         ).encode("utf-8") + b"\n"
+
+
+# --------------------------------------------------------------------------
+# #46 的回归闸 —— 「卡住」不许再用墙钟冒充
+# --------------------------------------------------------------------------
+
+#: 观察窗：在这段时间内第二次 readline 必须**还没**返回。
+#: 这个方向对慢机器免疫——机器越慢越不可能返回，所以它不会假红。
+_STUCK_OBSERVE_S = 0.5
+
+#: 放行之后的上界。它是**防挂死的保险，不是判据**：一个已经被 set 的
+#: Event，其 wait() 返回所需的时间与任何合理的调度延迟都差着几个数量级。
+_STUCK_RELEASE_BOUND_S = 10.0
+
+
+def test_假流的卡住由放行闸决定而不由墙钟决定() -> None:
+    """Q4 的前提「worker 停不下来」不得依赖运行器跑多快。
+
+    原来的写法用 ``time.sleep(stuck_delay=3.0)`` 冒充「卡住」，于是 Q4 的前提
+    里藏着一句没人写出来的话：**整段 scenario 必须在 3 秒内跑完**。GitHub
+    Actions 的 runner 上跑不完，假 worker 自己醒了，`assert not
+    stuck_stream.exited` 于是自毁——三次 CI 里红了两次（[欠账 #46]）。
+
+    模块 docstring 里「不用 wall clock」那条纪律当时只落实到了 Q3 的偏序断言上；
+    Q4 把秒数挪进了 fixture，假设仍在，只是看不见了。这条用例钉的就是
+    「那个秒数不许再长回来」：第二次 ``readline`` 必须一直阻塞到闸被放行为止。
+
+    两个方向分开断，性质不同，别合并：
+
+    * **放行前一直阻塞** —— 慢机器只会让它更成立，不可能假红。这是判据。
+    * **放行后能返回** —— 这个方向对慢机器敏感，所以用一个远大于任何合理调度
+      延迟的上界兜底。它只是防止实现写挂时把整条 lane 吊死，不承担判断。
+    """
+    order: List[str] = []
+    gate = threading.Event()
+    stream = _FakeOllamaStream(order, line_delay=0.01)
+    stream.stuck_gate = gate
+
+    assert stream.readline(), "第一行必须立刻给：消费者得先拿到一个 chunk 才谈得上断连"
+
+    returned = threading.Event()
+
+    def _second_readline() -> None:
+        stream.readline()
+        returned.set()
+
+    thread = threading.Thread(target=_second_readline, daemon=True)
+    thread.start()
+    try:
+        assert not returned.wait(_STUCK_OBSERVE_S), (
+            f"第二次 readline 在 {_STUCK_OBSERVE_S}s 内自己返回了：假流又在靠墙钟"
+            "「醒过来」。这会让 Q4 的前提重新变成一场对运行器速度的赌，"
+            "而那场赌在 CI 上已经输过两次（欠账 #46）"
+        )
+    finally:
+        # 放行，别把一个永远阻塞的线程留给后面的用例。
+        gate.set()
+
+    assert returned.wait(_STUCK_RELEASE_BOUND_S), (
+        f"闸放行后 {_STUCK_RELEASE_BOUND_S}s 内 readline 仍没返回：卡住的实现"
+        "把自己也锁死了，这样的假流没法用来收尾"
+    )
+    thread.join(_STUCK_RELEASE_BOUND_S)
 
 
 class _ControllableRequest(Request):
@@ -386,7 +468,7 @@ async def _disconnect_after_first_chunk(
     request = _ControllableRequest()
     body = server.AIQuestionRequest(question="what happens here?", provider="ollama")
 
-    response = await server.api_ai_question(request, BOOK_UUID, body, stream=True)
+    response = await chat_router.api_ai_question(request, BOOK_UUID, body, stream=True)
     agen = response.body_iterator
 
     await _drive_until_first_chunk(agen)
@@ -442,7 +524,11 @@ def test_Q4_worker停不下来时仍释放租约并留ERROR(
     # 有界超时调小，用例才跑得快。断言里不出现任何秒数。
     monkeypatch.setattr(server, "AI_WORKER_STOP_TIMEOUT_S", 0.2, raising=False)
 
-    stuck_stream = _FakeOllamaStream(lease_env.order, line_delay=0.02, stuck_delay=3.0)
+    # 「停不下来」用一把只有本用例能放行的闸表达，不用秒数——理由见
+    # `_FakeOllamaStream` 的 docstring 与 `test_假流的卡住由放行闸决定而不由墙钟决定`。
+    stuck_gate = threading.Event()
+    stuck_stream = _FakeOllamaStream(lease_env.order, line_delay=0.02)
+    stuck_stream.stuck_gate = stuck_gate
 
     async def scenario() -> None:
         await _disconnect_after_first_chunk(lease_env, stuck_stream, monkeypatch)
@@ -459,18 +545,22 @@ def test_Q4_worker停不下来时仍释放租约并留ERROR(
         )
         await server.ai_queue.release(lease)
 
-    with caplog.at_level(logging.ERROR, logger="reader3.ai"):
-        _run(scenario)
+    try:
+        with caplog.at_level(logging.ERROR, logger="reader3.ai"):
+            _run(scenario)
 
-    assert not stuck_stream.exited, (
-        "这条用例的前提没成立：假 worker 本应无视停止事件，但它停了"
-    )
+        assert not stuck_stream.exited, (
+            "这条用例的前提没成立：假 worker 本应无视停止事件，但它停了"
+        )
 
-    errors = [r for r in caplog.records if r.levelno >= logging.ERROR]
-    assert errors, (
-        "worker 在有界超时内没停下来，却一条 ERROR 都没留：一个跑飞的 provider "
-        "调用就这样无声无息了"
-    )
+        errors = [r for r in caplog.records if r.levelno >= logging.ERROR]
+        assert errors, (
+            "worker 在有界超时内没停下来，却一条 ERROR 都没留：一个跑飞的 provider "
+            "调用就这样无声无息了"
+        )
+    finally:
+        # 放行，别把 worker 线程永远堵在 readline 里。
+        stuck_gate.set()
 
 
 # --------------------------------------------------------------------------
@@ -485,7 +575,7 @@ def test_Q5_流式路径上没有散落的显式release(lease_env: LeaseEnv) -> 
     """
     import inspect
 
-    source = inspect.getsource(server.api_ai_question)
+    source = inspect.getsource(chat_router.api_ai_question)
     occurrences = source.count("ai_queue.release")
 
     assert occurrences == 1, (
@@ -549,7 +639,7 @@ async def _disconnect_while_provider_call_is_in_flight(env: LeaseEnv) -> None:
     request = _ControllableRequest()
     body = server.AIQuestionRequest(question="what happens here?", provider="anthropic")
 
-    response = await server.api_ai_question(request, BOOK_UUID, body, stream=True)
+    response = await chat_router.api_ai_question(request, BOOK_UUID, body, stream=True)
     agen = response.body_iterator
 
     first = await agen.__anext__()

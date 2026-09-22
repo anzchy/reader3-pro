@@ -4,7 +4,7 @@ import time
 from typing import Any, Dict, List
 
 from ._http import estimate_tokens, post_json, validated_url
-from .types import ProviderResponse
+from .types import ProviderHTTPError, ProviderResponse
 
 DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 
@@ -61,7 +61,7 @@ def openrouter_chat_completions(
         err = resp.get("error")
         if isinstance(err, dict):
             msg = err.get("message")
-        raise RuntimeError(msg or f"OpenRouter API error ({status})")
+        raise ProviderHTTPError(msg or f"OpenRouter API error ({status})", status=status)
 
     text = _extract_text(resp)
     finish_reason = "stop"

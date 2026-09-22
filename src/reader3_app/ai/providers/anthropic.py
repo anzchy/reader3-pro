@@ -4,7 +4,7 @@ import time
 from typing import Any, Dict, List
 
 from ._http import estimate_tokens, post_json
-from .types import ProviderResponse
+from .types import ProviderHTTPError, ProviderResponse
 
 ANTHROPIC_MESSAGES_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
@@ -61,7 +61,7 @@ def anthropic_messages(
         err = resp.get("error")
         if isinstance(err, dict):
             msg = err.get("message")
-        raise RuntimeError(msg or f"Anthropic API error ({status})")
+        raise ProviderHTTPError(msg or f"Anthropic API error ({status})", status=status)
 
     text = _extract_text(resp)
     finish_reason = str(resp.get("stop_reason") or "stop")

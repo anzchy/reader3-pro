@@ -287,6 +287,11 @@ def test_a_threshold_that_cannot_be_measured_fails_the_gate(
     )
 
 
+# ⚠️ 下面这条自 2026-09-19 起**是因为另一个原因绿的**，不要拿它当「设了却量不到」的
+# 证据。它的配置用的是顶层 `"branch": 60`，而那个写法现在判配置错误（G11），于是它在
+# 量任何东西之前就退非零了。原本要钉的语义改由 G10 用规范的嵌套写法承担。
+# 这里**故意不动它**：它的行都在红收据 WI-T8 里，改了就是实现在改自己的规格。
+# 两条合并成一条是一笔欠账（009 #34），要动它得先重录红证。
 def test_an_unmeasurable_critical_path_fails_the_gate(gate, tmp_path, monkeypatch, capsys):
     """criticalPaths 是绝对门槛，「匹配到文件但没有分支」和「匹配到 0 个文件」同类。"""
     cfg = {
@@ -338,3 +343,201 @@ def test_a_metric_with_no_threshold_is_still_not_a_failure(gate, tmp_path, monke
     code, out = run_gate(gate, capsys)
 
     assert code == 0, f"branches 阈值为 0（= 不设门槛），不该因为量不到而拦人；实得：{out}"
+
+
+# --------------------------------------------------------------------------
+# G9: criticalPaths 的门槛写在 rule["thresholds"] 里也必须真的拦人
+#
+# 回归形状是实际发生过的：0c1c8a2（2026-09-07，标题「criticalPaths 的 7 条逐文件
+# 下限从来没生效过」）把配置从顶层 `"branch": N` 搬进 `"thresholds": {"branches": N}`，
+# 因为 tdd-guardian 插件的 lib/config.js 只读 raw.thresholds。那次**只改了配置**，
+# 本脚本的 `rule.get("branch") or rule.get("branches") or 0` 一行没动 —— 于是七条
+# 下限从那天起全部读成 0，逐个 `>= 0%` 真空通过。同一个提交想消灭的状态，换了个
+# 方向复发，活了 12 天没人撞见（commit 钩子只查 lane 新鲜度，不跑这个脚本）。
+# --------------------------------------------------------------------------
+def test_a_per_file_floor_written_under_thresholds_actually_binds(
+    gate, tmp_path, monkeypatch, capsys
+):
+    cfg = {
+        "coverageMode": "absolute",
+        "coverageThresholds": {},
+        "criticalPaths": [
+            {"glob": "src/reader3_app/web/server.py", "thresholds": {"branches": 80}}
+        ],
+    }
+    report = {
+        "totals": {
+            "covered_lines": 100,
+            "num_statements": 100,
+            "covered_branches": 100,
+            "num_branches": 100,
+        },
+        "files": {
+            "src/reader3_app/web/server.py": {
+                "summary": {
+                    "covered_lines": 100,
+                    "num_statements": 100,
+                    # 10% —— 远低于配的 80%
+                    "covered_branches": 10,
+                    "num_branches": 100,
+                }
+            }
+        },
+    }
+    write_config(tmp_path, monkeypatch, gate, cfg)
+    write_report(tmp_path, monkeypatch, gate, report)
+
+    code, out = run_gate(gate, capsys)
+
+    assert code != 0, (
+        "branches: 80 写在 rule['thresholds'] 里，实测 10% 却放行 —— "
+        f"门槛被读成了 0，逐文件下限形同虚设；实得：{out}"
+    )
+    assert "80" in out, f"失败信息里必须出现配的门槛值 80，否则看不出是跟谁比的：{out}"
+
+
+# --------------------------------------------------------------------------
+# G10: criticalPaths 的「设了却量不到」—— 用规范的嵌套写法重新钉一遍
+#
+# 与上面那条老的区别只有一处：配置写成 rule["thresholds"]["branches"]。
+# 它必须因为「量不到」而红，而不是因为别的。所以这里断的是失败原因，不只是退出码。
+# --------------------------------------------------------------------------
+def test_an_unmeasurable_critical_path_fails_for_the_right_reason(
+    gate, tmp_path, monkeypatch, capsys
+):
+    cfg = {
+        "coverageMode": "absolute",
+        "coverageThresholds": {},
+        "criticalPaths": [
+            {"glob": "src/reader3_app/web/server.py", "thresholds": {"branches": 60}}
+        ],
+    }
+    report = {
+        "totals": {"covered_lines": 100, "num_statements": 100},
+        "files": {
+            "src/reader3_app/web/server.py": {
+                "summary": {
+                    "covered_lines": 100,
+                    "num_statements": 100,
+                    "covered_branches": 0,
+                    "num_branches": 0,
+                }
+            }
+        },
+    }
+    write_config(tmp_path, monkeypatch, gate, cfg)
+    write_report(tmp_path, monkeypatch, gate, report)
+
+    code, out = run_gate(gate, capsys)
+
+    assert code != 0, f"branches 门槛设了 60% 却量不到，门禁却放行；实得：{out}"
+    assert "num_branches" in out, (
+        f"失败信息必须说清「量不到」是什么意思（哪个字段为 0），否则读的人只能猜：{out}"
+    )
+
+
+# --------------------------------------------------------------------------
+# G11: 逐文件门槛写在顶层 branch / branches 一律判配置错误
+#
+# 不做兼容回退，理由不是洁癖：这份配置有**两个**评判器。tdd-guardian 插件的
+# lib/config.js 只读 raw.thresholds，顶层键它连看都不看。本脚本若兼容顶层写法，
+# 得到的就是「CI 拦人、本地完全没有这道门槛」，而且没有任何人会被告知——
+# 0c1c8a2 的提交信息自己写下的教训正是这一条。
+# --------------------------------------------------------------------------
+def test_a_misplaced_top_level_floor_is_a_configuration_error(
+    gate, tmp_path, monkeypatch, capsys
+):
+    cfg = {
+        "coverageMode": "absolute",
+        "coverageThresholds": {},
+        # 覆盖率本身是满分的：唯一能让它红的只有「键放错了」这件事
+        "criticalPaths": [{"glob": "src/reader3_app/web/server.py", "branch": 60}],
+    }
+    report = {
+        "totals": {"covered_lines": 100, "num_statements": 100},
+        "files": {
+            "src/reader3_app/web/server.py": {
+                "summary": {
+                    "covered_lines": 100,
+                    "num_statements": 100,
+                    "covered_branches": 100,
+                    "num_branches": 100,
+                }
+            }
+        },
+    }
+    write_config(tmp_path, monkeypatch, gate, cfg)
+    write_report(tmp_path, monkeypatch, gate, report)
+
+    code, out = run_gate(gate, capsys)
+
+    assert code != 0, (
+        "门槛写在顶层 branch 上，插件那一侧根本读不到，门禁却放行 —— "
+        f"这正是 0c1c8a2 后活了 12 天的那个状态；实得：{out}"
+    )
+    assert "thresholds" in out, f"报错必须给出迁移目标 thresholds，否则修的人不知道往哪搬：{out}"
+
+
+# --------------------------------------------------------------------------
+# G12: 反向守卫 —— 一条规则不配 branches，不等于分支量不到就该拦
+#
+# 与 test_a_metric_with_no_threshold_is_still_not_a_failure 是同一条纪律的逐文件版。
+# 没有这条，把「不设门槛就跳过」删掉不会有测试变红，于是 book_store.py 那种
+# 0 分支的纯直线模块会被判成事故（2026-09-19 实测它就是这么红的）。
+# --------------------------------------------------------------------------
+def test_a_rule_that_sets_no_branch_floor_survives_a_branchless_file(
+    gate, tmp_path, monkeypatch, capsys
+):
+    cfg = {
+        "coverageMode": "absolute",
+        "coverageThresholds": {},
+        "criticalPaths": [
+            {
+                "glob": "src/reader3_app/book_store.py",
+                "thresholds": {"lines": 100, "statements": 100},
+            }
+        ],
+    }
+    report = {
+        "totals": {"covered_lines": 100, "num_statements": 100},
+        "files": {
+            "src/reader3_app/book_store.py": {
+                "summary": {
+                    "covered_lines": 27,
+                    "num_statements": 27,
+                    # 纯直线代码：一个分支都没有，这不是事故
+                    "covered_branches": 0,
+                    "num_branches": 0,
+                }
+            }
+        },
+    }
+    write_config(tmp_path, monkeypatch, gate, cfg)
+    write_report(tmp_path, monkeypatch, gate, report)
+
+    code, out = run_gate(gate, capsys)
+
+    assert code == 0, (
+        "这条规则刻意只压语句、不设分支门槛，却因为「没有分支可测」被拦下 —— "
+        f"「不设门槛」被当成了「量不到」；实得：{out}"
+    )
+    assert "lines" in out and "statements" in out, (
+        f"配了的那两项必须真的被判过，否则这条规则等于没配：{out}"
+    )
+
+
+# --------------------------------------------------------------------------
+# G13: 一条门槛都不配的规则判 FAIL —— 与「匹配到 0 个文件」同类
+# --------------------------------------------------------------------------
+def test_a_rule_with_no_thresholds_at_all_fails(gate, tmp_path, monkeypatch, capsys):
+    cfg = {
+        "coverageMode": "absolute",
+        "coverageThresholds": {},
+        "criticalPaths": [{"glob": "src/reader3_app/web/server.py"}],
+    }
+    write_config(tmp_path, monkeypatch, gate, cfg)
+    write_report(tmp_path, monkeypatch, gate, perfect_report(cfg))
+
+    code, out = run_gate(gate, capsys)
+
+    assert code != 0, f"一条什么都不判的 criticalPath 是一条永远绿的门槛，应当拦下：{out}"

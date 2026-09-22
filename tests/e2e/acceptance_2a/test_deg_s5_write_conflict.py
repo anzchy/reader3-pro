@@ -70,13 +70,6 @@ from helpers import (  # type: ignore[import-not-found]
 
 pytestmark = [
     pytest.mark.acceptance_2a,
-    pytest.mark.skip(
-        reason=(
-            "激活阶段 2a：notes 乐观并发（版本号 / 409）与 ConflictDialog 是 Phase 2a 的产物，"
-            "今天 notes_service 是整章回写、后写者静默覆盖前写者。"
-            "到期动作：核对 rd-conflict-* 三个 testid 后删本行。"
-        )
-    ),
 ]
 
 #: 三个版本的笔记正文，全是字面量；三者两两不同，否则「谁盖了谁」不可判定。

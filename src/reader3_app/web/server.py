@@ -2,18 +2,19 @@ import os
 import contextlib
 import hmac
 import logging
+import random
 import time
 import json
 import asyncio
 import threading
+import urllib.error  # WI-6：重试要按类型分诊 URLError（含 socket timeout）；出网仍只走 ai/providers/_http
 from urllib.parse import parse_qs, urlsplit
 import html
 import uuid
 from pathlib import Path
-from functools import lru_cache
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Callable, Optional, cast
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.concurrency import run_in_threadpool
@@ -22,7 +23,8 @@ from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse, Res
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from ..safe_pickle import load_book_file
+# 不再 import safe_pickle：反序列化只经 book_store（011 §4）。占位保留行号：server.py:51/107 被 EXPECTED_CAPTURES 钉着。
+from .. import book_store
 from ..ai.books import BookUuidResolver
 from ..ai.conversations import (
     ConversationMessage as DiskConversationMessage,
@@ -52,6 +54,7 @@ from ..ai.providers.gemini import gemini_generate_content
 from ..ai.providers.ollama import ollama_chat_completions
 from ..ai.providers.openai import openai_chat_completions
 from ..ai.providers.openrouter import openrouter_chat_completions
+from ..ai.providers.types import ProviderHTTPError
 from ..ai.queue import AIRequestQueueManager
 from ..ai.rag import retrieve_passages
 from ..ai.routing import (
@@ -345,20 +348,94 @@ async def _startup_scan_books() -> None:
     # Ensure stable UUID mapping exists for all processed books.
     book_uuid_resolver.scan()
 
-@lru_cache(maxsize=10)
-def load_book_cached(folder_name: str) -> Optional[Book]:
-    """
-    Loads the book from the pickle file.
-    Cached so we don't re-read the disk on every click.
-    """
-    file_path = os.path.join(BOOKS_DIR, folder_name, "book.pkl")
-    if not os.path.exists(file_path):
-        return None
+def _share_loader_cache_surface(
+    wrapper: Callable[[str], Optional[Book]]
+) -> Callable[[str], Optional[Book]]:
+    """Give ``wrapper`` the merged cache's own bound methods, then return it.
 
+    ``cache_clear`` / ``cache_info`` / ``cache_parameters`` are copied off
+    ``book_store.load_book_cached``, so they are the **one real cache's** own
+    methods rather than forwarders onto a second one. Seven test modules and
+    ``tests/contract/conftest.py`` hold at least one of the three on this name;
+    ``tests/contract/test_read_chapter_traversal.py:159`` copies ``cache_clear``
+    off it onto a spy.
+
+    A decorator, and not the equivalent bare ``_share_loader_cache_surface(
+    load_book_cached)`` statement below the ``def``, for two reasons. It leaves
+    no window in which the module-level name exists without the surface — an
+    import executed between a ``def`` and a later call statement would export a
+    callable whose ``cache_clear`` raises ``AttributeError`` — and it keeps the
+    surface visibly part of the definition instead of a line someone can move.
+
+    Both shapes are legal against the import-time-capture scan in
+    ``tests/unit/test_server_patch_seam_ownership.py`` (Check C), and most of
+    the obvious alternatives are not. ``functools.partial(
+    book_store.load_book_cached, books_dir=BOOKS_DIR)`` fails three ways: no
+    ``cache_clear``, ``BOOKS_DIR`` baked at import time (five tests rebind it),
+    and a module-level ``Assign`` naming ``load_book_cached`` that the scanner
+    records as a ``module_assign`` capture. Assigning the three attributes at
+    module level hits that last problem too. The scanner walks assignments,
+    imports, signatures and decorators — it does not descend into function
+    bodies, and the decorator expression here names nothing on its list.
+    """
+    wrapper.cache_clear = book_store.load_book_cached.cache_clear  # type: ignore[attr-defined]
+    wrapper.cache_info = book_store.load_book_cached.cache_info  # type: ignore[attr-defined]
+    wrapper.cache_parameters = book_store.load_book_cached.cache_parameters  # type: ignore[attr-defined]
+    return wrapper
+
+
+@_share_loader_cache_surface
+def load_book_cached(folder_name: str) -> Optional[Book]:
+    """The web layer's view of ``book_store.load_book_cached``: total, and never raising.
+
+    ``BOOKS_DIR`` is read **here, on every call**, not captured at import. Tests
+    rebind it with ``monkeypatch.setattr`` and ``server.py:104`` already
+    documents what happens to a component that captured it instead.
+
+    Deliberately **not** the same object as ``book_store.load_book_cached``
+    (D5-a): six tests patch this name to intercept the eleven server-side call
+    sites, three of them with a one-argument ``lambda folder: ...`` that the
+    two-argument search path would ``TypeError`` on. Two names, one cache — the
+    cache is shared through the surface above, the identity is not.
+
+    Nothing is memoized in this function. The core's ``lru_cache`` is the only
+    one on the path, so ``cache_info()``'s hit and miss columns describe every
+    call that reaches it, and a republished ``book.pkl`` is visible on the next
+    read rather than after a restart.
+
+    Two degradation paths, and the asymmetry is the point (D1-a):
+
+    * **Absence is silent.** A ``*_data`` directory with no ``book.pkl`` is the
+      state between ``mkdir`` and the atomic publish. ``library_view`` walks
+      every such directory on every homepage request, so a trace here would be
+      a per-request log flood for a condition that is not an error. The old
+      code was silent for the same reason, via an ``os.path.exists`` check
+      before the ``try``.
+    * **Everything else degrades loudly and returns ``None``.** The blind
+      ``except Exception`` is deliberate and is what the ``noqa`` records.
+      Narrowing it to ``(FileNotFoundError, UnpicklingError)`` — the two types
+      every damage fixture in the suite produces — would leave ``library_view``
+      to propagate the first ``MemoryError``, ``RecursionError`` on a deep TOC
+      or ``OSError`` (EIO, ENAMETOOLONG, ENOTDIR) out of a per-row call that
+      has no guard around it: one damaged book, and the whole library page
+      500s. ``tests/unit/test_book_store_server_wrapper.py``'s
+      ``test_the_wrapper_swallows_every_exception_class_not_just_the_two_it_has_seen``
+      owns that claim; anyone deleting this ``noqa`` has to delete that test
+      and argue for the 500.
+
+    The core raises on every one of these; deciding what the *user* sees is
+    this layer's job, because this is the layer with a status code to spend.
+    """
     try:
         # No fallback loader: see safe_pickle. A book.pkl the allow-list refuses
         # raises here, and the handler below degrades that one book to None.
-        return load_book_file(file_path)
+        # `book_store` is annotated `-> object`: it is deliberately ignorant of
+        # `reader3.Book`, which is what keeps it importable without the web
+        # layer. Re-stating the type is this layer's job, not a cast that hides
+        # a doubt — every payload it can return is a `Book` or an exception.
+        return cast(Book, book_store.load_book_cached(folder_name, BOOKS_DIR))
+    except FileNotFoundError:
+        return None
     except Exception as e:  # noqa: BLE001 - 第 2 档：坏掉的 book.pkl 只让这一本书从书库消失，其余照常；已 print 留痕（该换成 logger，见 008 报告）
         print(f"Error loading book {folder_name}: {e}")
         return None
@@ -389,89 +466,6 @@ def _book_uuid_or_none(book_folder: str) -> Optional[str]:
         return None
 
 
-@app.get("/", response_class=HTMLResponse)
-async def library_view(request: Request):
-    """Lists all available processed books."""
-    books = []
-
-    # Scan directory for folders ending in '_data' that have a book.pkl
-    if os.path.exists(BOOKS_DIR):
-        for item in os.listdir(BOOKS_DIR):
-            if item.endswith("_data") and os.path.isdir(os.path.join(BOOKS_DIR, item)):
-                # Try to load it to get the title
-                book = load_book_cached(item)
-                if book:
-                    cover_image = None
-                    try:
-                        images_dir = os.path.join(BOOKS_DIR, item, "images")
-                        if os.path.isdir(images_dir):
-                            candidates = [
-                                f
-                                for f in os.listdir(images_dir)
-                                if os.path.isfile(os.path.join(images_dir, f)) and not f.startswith(".")
-                            ]
-                            preferred = [f for f in candidates if "cover" in f.lower() or "title" in f.lower()]
-                            pick_from = preferred or candidates
-                            if pick_from:
-                                cover_image = sorted(pick_from, key=lambda x: (len(x), x.lower()))[0]
-                    except Exception:  # noqa: BLE001 - 第 3 档：封面挑选失败只影响一张缩略图，书本身照常打开
-                        cover_image = None
-
-                    cover_url = f"/read/{item}/images/{cover_image}" if cover_image else None
-                    book_uuid = _book_uuid_or_none(item)
-                    books.append({
-                        "id": item,
-                        "title": book.metadata.title,
-                        "author": ", ".join(book.metadata.authors),
-                        "chapters": len(book.spine),
-                        "section_count": len(book.spine),
-                        "cover_url": cover_url,
-                        "format": "epub",
-                        "book_uuid": book_uuid,
-                    })
-
-    existing_book_ids = {b.get("id") for b in books if b.get("id")}
-    collections = []
-    collections_error: Optional[str] = None
-    try:
-        for c in collections_service.load_collections(_collections_file_path()):
-            present = [bid for bid in (c.book_ids or []) if bid in existing_book_ids]
-            missing = [bid for bid in (c.book_ids or []) if bid not in existing_book_ids]
-            collections.append(
-                {
-                    "id": c.id,
-                    "name": c.name,
-                    "created_at": c.created_at,
-                    "book_ids": list(c.book_ids),
-                    "book_count": len(present),
-                    "missing_book_ids": missing,
-                    "missing_count": len(missing),
-                }
-            )
-        collections.sort(key=lambda x: str(x.get("name") or "").lower())
-    except collections_service.CollectionsFileError as e:
-        collections_error = str(e)
-
-    return templates.TemplateResponse(
-        request,
-        _library_template_name(),
-        {
-            "books": books,
-            "counts": {
-                "all": len(books),
-                "epub": sum(1 for b in books if b.get("format") == "epub"),
-                "pdf": sum(1 for b in books if b.get("format") == "pdf"),
-            },
-            "collections": collections,
-            "collections_error": collections_error,
-            "library_ui_mode": _library_ui_mode(),
-            "ai_default_provider": _ui_default_provider(),
-        },
-    )
-
-@app.get("/settings", response_class=HTMLResponse)
-async def settings_view(request: Request):
-    return templates.TemplateResponse(request, "settings.html", {})
 
 def _validate_book_id_path_safe(book_id: str) -> str:
     safe = os.path.basename(str(book_id or ""))
@@ -482,303 +476,6 @@ def _validate_book_id_path_safe(book_id: str) -> str:
     return safe
 
 
-class CollectionCreateRequest(BaseModel):
-    name: str
-
-
-class CollectionRenameRequest(BaseModel):
-    name: str
-
-
-class CollectionBooksUpdateRequest(BaseModel):
-    add: list[str] = Field(default_factory=list)
-    remove: list[str] = Field(default_factory=list)
-
-
-@app.get("/api/collections")
-async def api_collections_list():
-    try:
-        cols = collections_service.load_collections(_collections_file_path())
-        return {"collections": [c.to_dict() for c in cols]}
-    except collections_service.CollectionsFileError as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/collections", status_code=201)
-async def api_collections_create(body: CollectionCreateRequest):
-    try:
-        created = collections_service.create_collection(_collections_file_path(), name=body.name)
-        return created.to_dict()
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except collections_service.CollectionsFileError as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/collections/{collection_id}")
-async def api_collections_get(collection_id: str):
-    cid = _validate_collection_id(collection_id)
-    try:
-        col = collections_service.get_collection(_collections_file_path(), cid)
-        if not col:
-            raise HTTPException(status_code=404, detail="Collection not found")
-        return col.to_dict()
-    except collections_service.CollectionsFileError as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.put("/api/collections/{collection_id}")
-async def api_collections_rename(collection_id: str, body: CollectionRenameRequest):
-    cid = _validate_collection_id(collection_id)
-    try:
-        updated = collections_service.rename_collection(_collections_file_path(), cid, name=body.name)
-        return updated.to_dict()
-    except KeyError:
-        raise HTTPException(status_code=404, detail="Collection not found")
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except collections_service.CollectionsFileError as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/api/collections/{collection_id}/books")
-async def api_collections_update_books(collection_id: str, body: CollectionBooksUpdateRequest):
-    cid = _validate_collection_id(collection_id)
-    try:
-        col = collections_service.get_collection(_collections_file_path(), cid)
-        if not col:
-            raise HTTPException(status_code=404, detail="Collection not found")
-
-        add_ids = [_validate_book_id(x) for x in (body.add or [])]
-        remove_ids = [_validate_book_id_path_safe(x) for x in (body.remove or [])]
-        remove_allowed = set(col.book_ids or [])
-        remove_ids = [x for x in remove_ids if x in remove_allowed]
-        updated = collections_service.update_collection_books(
-            _collections_file_path(),
-            cid,
-            add=add_ids,
-            remove=remove_ids,
-        )
-        return updated.to_dict()
-    except KeyError:
-        raise HTTPException(status_code=404, detail="Collection not found")
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except collections_service.CollectionsFileError as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.delete("/api/collections/{collection_id}", status_code=204)
-async def api_collections_delete(collection_id: str):
-    cid = _validate_collection_id(collection_id)
-    try:
-        collections_service.delete_collection(_collections_file_path(), cid)
-        return Response(status_code=204)
-    except KeyError:
-        raise HTTPException(status_code=404, detail="Collection not found")
-    except collections_service.CollectionsFileError as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@dataclass(frozen=True)
-class LibraryStats:
-    scope: str
-    books_total: int
-    books_indexed: int
-    indexed_percent: int
-    sections_total: int
-    chunks_total: int
-    computed_at: str
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "scope": self.scope,
-            "books_total": self.books_total,
-            "books_indexed": self.books_indexed,
-            "indexed_percent": self.indexed_percent,
-            "sections_total": self.sections_total,
-            "chunks_total": self.chunks_total,
-            "computed_at": self.computed_at,
-        }
-
-
-def _validate_stats_scope(scope: str) -> tuple[str, Optional[str], Optional[str]]:
-    scope = (scope or "all").strip()
-    if scope == "all":
-        return ("all", None, None)
-    if scope.startswith("format:"):
-        fmt = scope.split(":", 1)[1].strip().lower()
-        if fmt in {"epub", "pdf"}:
-            return (f"format:{fmt}", fmt, None)
-        raise HTTPException(status_code=400, detail="Invalid scope")
-    if scope.startswith("collection:"):
-        raw = scope.split(":", 1)[1].strip()
-        try:
-            cid = str(uuid.UUID(raw))
-        except Exception:  # noqa: BLE001 - 第 2 档：HTTP 边界，转译成 400 Invalid scope；类型待收窄为 ValueError
-            raise HTTPException(status_code=400, detail="Invalid scope")
-        return (f"collection:{cid}", None, cid)
-    raise HTTPException(status_code=400, detail="Invalid scope")
-
-
-def _compute_stats_for_scope(scope: str) -> LibraryStats:
-    validated_scope, fmt, collection_id = _validate_stats_scope(scope)
-
-    all_book_ids = list(list_book_ids(BOOKS_DIR))
-    book_ids: list[str] = []
-    if validated_scope == "all":
-        book_ids = all_book_ids
-    elif fmt:
-        # PDF is a placeholder in 004; treat as no-op unless PDFs are supported later.
-        if fmt == "pdf":
-            book_ids = []
-        else:
-            book_ids = all_book_ids
-    elif collection_id:
-        col = collections_service.get_collection(_collections_file_path(), collection_id)
-        if not col:
-            raise HTTPException(status_code=404, detail="Collection not found")
-        allowed = set(col.book_ids or [])
-        book_ids = [bid for bid in all_book_ids if bid in allowed]
-
-    books_total = len(book_ids)
-    books_indexed = 0
-    sections_total = 0
-    chunks_total = 0
-
-    for bid in book_ids:
-        book = load_book_cached(bid)
-        if book:
-            sections_total += len(book.spine)
-
-        try:
-            idx = BookVectorIndex(bid, books_dir=BOOKS_DIR)
-            if idx.is_indexed():
-                books_indexed += 1
-                status = idx.status()
-                cc = status.get("chunk_count")
-                if isinstance(cc, int):
-                    chunks_total += cc
-        except Exception:  # noqa: BLE001 - FIXME(011): 无正当理由——单本索引统计失败被跳过，首页那个百分比就静默偏小，没有任何痕迹说明它不准
-            continue
-
-    indexed_percent = 0
-    if books_total > 0:
-        indexed_percent = int(round((books_indexed / books_total) * 100))
-
-    computed_at = datetime.now(timezone.utc).isoformat()
-    return LibraryStats(
-        scope=validated_scope,
-        books_total=books_total,
-        books_indexed=books_indexed,
-        indexed_percent=indexed_percent,
-        sections_total=sections_total,
-        chunks_total=chunks_total,
-        computed_at=computed_at,
-    )
-
-
-@app.get("/api/library/stats")
-async def api_library_stats(scope: str = "all", fresh: bool = False):
-    validated_scope, _, _ = _validate_stats_scope(scope)
-    cache_key = validated_scope
-    now = time.monotonic()
-    if not fresh:
-        cached = _stats_cache.get(cache_key)
-        if cached:
-            ts, payload = cached
-            if now - ts <= 5.0:
-                return payload
-
-    try:
-        stats = _compute_stats_for_scope(validated_scope).to_dict()
-    except HTTPException:
-        raise
-    except Exception as e:  # noqa: BLE001 - 第 2 档：HTTP 边界，转译成 500 且 detail 带上原因
-        raise HTTPException(status_code=500, detail=str(e))
-
-    _stats_cache[cache_key] = (now, stats)
-    return stats
-
-@app.get("/read/{book_id}/book.epub")
-async def serve_epub(book_id: str):
-    """Serve the original EPUB for epub.js rendering."""
-    safe_book_id = _validate_book_id(book_id)
-    epub_path = os.path.join(BOOKS_DIR, safe_book_id, "book.epub")
-    if not os.path.exists(epub_path):
-        raise HTTPException(status_code=404, detail="EPUB not found")
-    return FileResponse(epub_path, filename="book.epub")
-
-
-@app.get("/read/{book_id}", response_class=HTMLResponse)
-async def redirect_to_first_chapter(request: Request, book_id: str):
-    """Helper to just go to chapter 0.
-
-    ``request`` 必须显式接下来再透传：``read_chapter`` 要拿它渲染模板，漏了会
-    在**每一次**调用上 TypeError，也就是这条路由一直是 500 而不是 404。它逃过
-    人眼是因为书库页链接直接指向 ``/read/{id}/0``，只有手敲 URL 的人会撞上。
-    mypy 的 ``call-arg`` 抓到了它 —— 这是本仓库开 mypy 的第一笔收益。
-    """
-    return await read_chapter(request=request, book_id=book_id, chapter_index=0)
-
-@app.get("/read/{book_id}/{chapter_index}", response_class=HTMLResponse)
-async def read_chapter(request: Request, book_id: str, chapter_index: int):
-    """The main reader interface.
-
-    ``_validate_book_id`` must run **before** ``load_book_cached``, and that
-    ordering is the whole point: ``load_book_cached`` joins its argument onto
-    ``BOOKS_DIR`` and ``pickle.load``s the result, so an unvalidated ``book_id``
-    is arbitrary-file deserialisation. ``GET /read/../0`` used to return 200
-    with ``<BOOKS_DIR>/../book.pkl`` rendered. The ``os.path.basename`` further
-    down only ever sanitised the URLs written into the template — it ran after
-    the unpickle and protected nothing. Everything below therefore uses
-    ``safe_book_id``; the raw ``book_id`` must not appear again in this function.
-
-    Note that ``TestClient``/httpx normalises ``..`` away before the request is
-    built, so this is only reproducible by handing the raw ASGI scope to the
-    app the way uvicorn does — see ``tests/contract/test_read_chapter_traversal.py``.
-    """
-    safe_book_id = _validate_book_id(book_id)
-    book = load_book_cached(safe_book_id)
-    if not book:
-        raise HTTPException(status_code=404, detail="Book not found")
-
-    if chapter_index < 0 or chapter_index >= len(book.spine):
-        raise HTTPException(status_code=404, detail="Chapter not found")
-
-    current_chapter = book.spine[chapter_index]
-
-    # Calculate Prev/Next links
-    prev_idx = chapter_index - 1 if chapter_index > 0 else None
-    next_idx = chapter_index + 1 if chapter_index < len(book.spine) - 1 else None
-
-    book_uuid = _book_uuid_or_none(safe_book_id)
-    cover_image = None
-    try:
-        images_dir = os.path.join(BOOKS_DIR, safe_book_id, "images")
-        if os.path.isdir(images_dir):
-            candidates = [f for f in os.listdir(images_dir) if os.path.isfile(os.path.join(images_dir, f))]
-            preferred = [f for f in candidates if "cover" in f.lower() or "title" in f.lower()]
-            pick_from = preferred or candidates
-            if pick_from:
-                cover_image = sorted(pick_from, key=lambda x: (len(x), x.lower()))[0]
-    except Exception:  # noqa: BLE001 - 第 3 档：同 187，封面挑选失败只影响一张缩略图
-        cover_image = None
-    cover_url = f"/read/{safe_book_id}/images/{cover_image}" if cover_image else None
-    epub_available = os.path.exists(os.path.join(BOOKS_DIR, safe_book_id, "book.epub"))
-    return templates.TemplateResponse(request, "reader.html", {
-        "book": book,
-        "current_chapter": current_chapter,
-        "chapter_index": chapter_index,
-        "book_id": safe_book_id,
-        "book_uuid": book_uuid,
-        "cover_url": cover_url,
-        "epub_url": f"/read/{safe_book_id}/book.epub",
-        "epub_available": epub_available,
-        "ai_default_provider": _ui_default_provider(),
-        "prev_idx": prev_idx,
-        "next_idx": next_idx
-    })
 
 def _validate_book_id(book_id: str) -> str:
     safe = os.path.basename(book_id)
@@ -808,456 +505,18 @@ def _annotation_matches_chapter_text(chapter_text: str, ann: Annotation) -> bool
     return quote in hay
 
 
-def _refresh_orphaned_annotations(book_id: str, book: Book, annotations: list[Annotation]) -> list[Annotation]:
-    changed = False
-    chapter_text_by_index: dict[int, str] = {}
 
-    for ann in annotations:
-        if ann.orphaned:
-            continue
-        if ann.chapter_index < 0 or ann.chapter_index >= len(book.spine):
-            ann.orphaned = True
-            changed = True
-            continue
-        if ann.chapter_index not in chapter_text_by_index:
-            chapter_text_by_index[ann.chapter_index] = book.spine[ann.chapter_index].text or ""
-        if not _annotation_matches_chapter_text(chapter_text_by_index[ann.chapter_index], ann):
-            ann.orphaned = True
-            changed = True
 
-    if changed:
-        save_note_annotations(BOOKS_DIR, book_id, annotations)
 
-    return [a for a in annotations if not a.orphaned]
-
-
-class CreateAnnotationRequest(BaseModel):
-    type: str = Field(..., description="marker|wavy|underline|note")
-    color: Optional[str] = Field(default=None, description="yellow|green|pink|blue")
-    quote: str
-    prefix: str = ""
-    suffix: str = ""
-    position: Optional[int] = None
-    cfi: Optional[str] = Field(default=None, description="epub.js CFI for precise anchor")
-    note_text: Optional[str] = None
-
-
-class UpdateAnnotationRequest(BaseModel):
-    note_text: str = Field(..., description="Updated note text")
-
-
-@app.get("/api/notes/{book_id}")
-async def api_get_book_notes(book_id: str):
-    safe_book_id = _validate_book_id(book_id)
-    book = load_book_cached(safe_book_id)
-    if not book:
-        raise HTTPException(status_code=404, detail="Book not found")
-
-    annotations = load_note_annotations(BOOKS_DIR, safe_book_id)
-    active = _refresh_orphaned_annotations(safe_book_id, book, annotations)
-
-    by_chapter: dict[int, list[Annotation]] = {}
-    for ann in active:
-        by_chapter.setdefault(ann.chapter_index, []).append(ann)
-
-    def _sort_key(a: Annotation):
-        return (a.position is None, a.position or 0, a.created_at, a.id)
-
-    annotations_by_chapter = []
-    total_count = 0
-    for chapter_index in sorted(by_chapter.keys()):
-        items = sorted(by_chapter[chapter_index], key=_sort_key)
-        chapter_title = book.spine[chapter_index].title if 0 <= chapter_index < len(book.spine) else ""
-
-        summaries = []
-        for a in items:
-            quote = a.quote if len(a.quote) <= 200 else a.quote[:197] + "..."
-            note_text = html.unescape(a.note_text) if a.note_text is not None else None
-            if note_text is not None and len(note_text) > 200:
-                note_text = note_text[:197] + "..."
-            summaries.append(
-                {
-                    "id": a.id,
-                    "type": a.type,
-                    "color": a.color,
-                    "quote": quote,
-                    "note_text": note_text,
-                    "position": a.position,
-                    "created_at": a.created_at,
-                }
-            )
-
-        annotations_by_chapter.append(
-            {
-                "chapter_index": chapter_index,
-                "chapter_title": chapter_title,
-                "count": len(items),
-                "annotations": summaries,
-            }
-        )
-        total_count += len(items)
-
-    return {
-        "schema_version": NOTES_SCHEMA_VERSION,
-        "book_id": safe_book_id,
-        "total_count": total_count,
-        "annotations_by_chapter": annotations_by_chapter,
-    }
-
-
-@app.get("/api/notes/{book_id}/{chapter_index}")
-async def api_get_chapter_notes(book_id: str, chapter_index: int):
-    safe_book_id = _validate_book_id(book_id)
-    book = load_book_cached(safe_book_id)
-    if not book:
-        raise HTTPException(status_code=404, detail="Book not found")
-    if chapter_index < 0 or chapter_index >= len(book.spine):
-        raise HTTPException(status_code=400, detail="Invalid chapter_index")
-
-    annotations = load_note_annotations(BOOKS_DIR, safe_book_id)
-    active = _refresh_orphaned_annotations(safe_book_id, book, annotations)
-    items = [a for a in active if a.chapter_index == chapter_index]
-    items.sort(key=lambda a: (a.position is None, a.position or 0, a.created_at, a.id))
-
-    out = []
-    for a in items:
-        d = a.to_dict()
-        if d.get("note_text") is not None:
-            d["note_text"] = html.unescape(str(d["note_text"]))
-        out.append(d)
-
-    return {
-        "book_id": safe_book_id,
-        "chapter_index": chapter_index,
-        "count": len(items),
-        "annotations": out,
-    }
-
-
-@app.post("/api/notes/{book_id}/{chapter_index}", status_code=201)
-async def api_create_annotation(book_id: str, chapter_index: int, payload: CreateAnnotationRequest):
-    safe_book_id = _validate_book_id(book_id)
-    book = load_book_cached(safe_book_id)
-    if not book:
-        raise HTTPException(status_code=404, detail="Book not found")
-    if chapter_index < 0 or chapter_index >= len(book.spine):
-        raise HTTPException(status_code=400, detail="Invalid chapter_index")
-
-    ann_type = str(payload.type or "").strip().lower()
-    if ann_type not in ("marker", "wavy", "underline", "note"):
-        raise HTTPException(status_code=400, detail="Invalid type")
-
-    color = payload.color
-    if not color:
-        color = "yellow"
-    if color not in ("yellow", "green", "pink", "blue"):
-        raise HTTPException(status_code=400, detail="Invalid color")
-
-    note_text = payload.note_text
-    if ann_type == "note":
-        if note_text is None or not str(note_text).strip():
-            raise HTTPException(status_code=400, detail="note_text is required for type=note")
-        note_text = html.escape(str(note_text))
-    else:
-        note_text = None
-
-    quote = str(payload.quote or "")
-    if not quote.strip():
-        raise HTTPException(status_code=400, detail="quote is required")
-
-    prefix = str(payload.prefix or "")
-    suffix = str(payload.suffix or "")
-    if len(prefix) > 50:
-        prefix = prefix[-50:]
-    if len(suffix) > 50:
-        suffix = suffix[:50]
-
-    position = payload.position
-    if position is not None:
-        try:
-            position = int(position)
-        except Exception:  # noqa: BLE001 - 第 3 档：position 解析不出来就退回 None，标注仍靠 quote/prefix/suffix 锚定；类型待收窄为 (TypeError, ValueError)
-            position = None
-    if position is not None and position < 0:
-        position = 0
-
-    cfi = str(payload.cfi).strip() if payload.cfi is not None else None
-    if not cfi:
-        cfi = None
-
-    annotation = Annotation(
-        book_id=safe_book_id,
-        chapter_index=chapter_index,
-        type=ann_type,  # type: ignore[arg-type]
-        color=color,  # type: ignore[arg-type]
-        quote=quote,
-        prefix=prefix,
-        suffix=suffix,
-        position=position,
-        cfi=cfi,
-        note_text=note_text,
-        orphaned=False,
-    )
-
-    saved = add_note_annotation(BOOKS_DIR, annotation)
-    return {"id": saved.id, "created_at": saved.created_at, "message": "Annotation created successfully"}
-
-
-@app.delete("/api/notes/{book_id}/{chapter_index}/{note_id}", status_code=204)
-async def api_delete_annotation(book_id: str, chapter_index: int, note_id: str):
-    safe_book_id = _validate_book_id(book_id)
-    book = load_book_cached(safe_book_id)
-    if not book:
-        raise HTTPException(status_code=404, detail="Book not found")
-    if chapter_index < 0 or chapter_index >= len(book.spine):
-        raise HTTPException(status_code=400, detail="Invalid chapter_index")
-
-    ok = delete_note_annotation(BOOKS_DIR, safe_book_id, note_id)
-    if not ok:
-        raise HTTPException(status_code=404, detail="Annotation not found")
-    return Response(status_code=204)
-
-
-@app.put("/api/notes/{book_id}/{chapter_index}/{note_id}")
-async def api_update_annotation(book_id: str, chapter_index: int, note_id: str, payload: UpdateAnnotationRequest):
-    safe_book_id = _validate_book_id(book_id)
-    book = load_book_cached(safe_book_id)
-    if not book:
-        raise HTTPException(status_code=404, detail="Book not found")
-    if chapter_index < 0 or chapter_index >= len(book.spine):
-        raise HTTPException(status_code=400, detail="Invalid chapter_index")
-
-    note_text = str(payload.note_text or "").strip()
-    if not note_text:
-        raise HTTPException(status_code=400, detail="note_text is required")
-
-    note_text = html.escape(note_text)
-    updated = update_note_annotation(BOOKS_DIR, safe_book_id, note_id, note_text)
-    if not updated:
-        raise HTTPException(status_code=404, detail="Annotation not found")
-
-    return {"id": updated.id, "note_text": updated.note_text, "message": "Annotation updated successfully"}
-
-
-@app.get("/api/search/library")
-async def api_search_library(
-    q: str = "",
-    mode: str = "keyword",
-    case_sensitive: bool = False,
-    max_results_per_book: int = 3,
-    max_total_results: int = 100,
-    sort_by: str = "relevance",
-):
-    started = time.perf_counter()
-    try:
-        query_obj = SearchQuery(
-            term=q,
-            mode=SearchMode(mode),
-            scope=SearchScope.ALL_BOOKS,
-            case_sensitive=case_sensitive,
-            max_results=1000,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-    max_results_per_book = max(1, min(int(max_results_per_book), 10))
-    max_total_results = max(1, min(int(max_total_results), 1000))
-    if sort_by not in ("relevance", "book_title", "book_author"):
-        raise HTTPException(status_code=400, detail="Invalid sort_by")
-
-    try:
-        result_set, book_order = await run_in_threadpool(
-            search_library,
-            query_obj,
-            books_dir=BOOKS_DIR,
-            max_results_per_book=max_results_per_book,
-            max_total_results=max_total_results,
-            sort_by=sort_by,
-        )
-    except RuntimeError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-    if result_set.execution_time_ms > 2000:
-        logger.warning(
-            "slow library search (%.1fms) mode=%s books=%s",
-            result_set.execution_time_ms,
-            query_obj.mode.value,
-            result_set.searched_books,
-        )
-
-    book_metadata = {}
-    for book_id in book_order:
-        results = result_set.grouped_by_book.get(book_id, [])
-        if not results:
-            continue
-        book_metadata[book_id] = {
-            "book_id": book_id,
-            "title": results[0].book_title,
-            "author": results[0].book_author,
-        }
-
-    return {
-        "query": {
-            "term": query_obj.term,
-            "mode": query_obj.mode.value,
-            "scope": query_obj.scope.value,
-        },
-        "results": [r.__dict__ for r in result_set.results],
-        "grouped_by_book": {bid: [r.__dict__ for r in result_set.grouped_by_book.get(bid, [])] for bid in book_order},
-        "book_order": book_order,
-        "book_metadata": book_metadata,
-        "index_status_by_book": result_set.index_status_by_book,
-        "total_matches": result_set.total_matches,
-        "searched_books": result_set.searched_books,
-        "failed_books": result_set.failed_books,
-        "unindexed_books": result_set.unindexed_books,
-        "is_truncated": result_set.is_truncated,
-        "execution_time_ms": result_set.execution_time_ms or ((time.perf_counter() - started) * 1000),
-        "status_message": result_set.status_message(),
-    }
-
-
-@app.get("/api/search/{book_id}")
-async def api_search_book(
-    book_id: str,
-    q: str = "",
-    mode: str = "keyword",
-    case_sensitive: bool = False,
-    max_results: int = 1000,
-):
-    safe_book_id = _validate_book_id(book_id)
-    started = time.perf_counter()
-    try:
-        query_obj = SearchQuery(
-            term=q,
-            mode=SearchMode(mode),
-            scope=SearchScope.CURRENT_BOOK,
-            case_sensitive=case_sensitive,
-            max_results=max_results,
-            book_id=safe_book_id,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-    try:
-        result_set = await run_in_threadpool(search_book, safe_book_id, query_obj, books_dir=BOOKS_DIR)
-    except RuntimeError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-    if result_set.execution_time_ms > 500:
-        logger.info(
-            "slow in-book search (%.1fms) book=%s mode=%s",
-            result_set.execution_time_ms,
-            safe_book_id,
-            query_obj.mode.value,
-        )
-
-    return {
-        "query": {
-            "term": query_obj.term,
-            "mode": query_obj.mode.value,
-            "scope": query_obj.scope.value,
-            "case_sensitive": query_obj.case_sensitive,
-            "max_results": query_obj.max_results,
-            "book_id": query_obj.book_id,
-        },
-        "results": [r.__dict__ for r in result_set.results],
-        "total_matches": result_set.total_matches,
-        "searched_books": result_set.searched_books,
-        "failed_books": result_set.failed_books,
-        "unindexed_books": result_set.unindexed_books,
-        "is_truncated": result_set.is_truncated,
-        "execution_time_ms": result_set.execution_time_ms or ((time.perf_counter() - started) * 1000),
-        "status_message": result_set.status_message(),
-    }
-
-
-class HighlightRequest(BaseModel):
-    search_term: str
-    occurrence_index: Optional[int] = None
-    case_sensitive: bool = False
-
-
-@app.post("/api/highlight/{book_id}/{chapter_order}")
-async def api_highlight(book_id: str, chapter_order: int, body: HighlightRequest):
-    safe_book_id = _validate_book_id(book_id)
-    try:
-        ranges, total_matches, selected = highlight_ranges_for_chapter(
-            safe_book_id,
-            int(chapter_order),
-            search_term=body.search_term,
-            occurrence_index=body.occurrence_index,
-            case_sensitive=body.case_sensitive,
-            books_dir=BOOKS_DIR,
-        )
-    except IndexError:
-        raise HTTPException(status_code=404, detail="Chapter not found")
-
-    return {
-        "ranges": ranges,
-        "total_matches": total_matches,
-        "selected_occurrence_index": selected,
-    }
-
-
-class IndexRequest(BaseModel):
-    force_reindex: bool = False
-
-
-@app.post("/api/index/{book_id}")
-async def api_index_book(book_id: str, body: IndexRequest):
-    safe_book_id = _validate_book_id(book_id)
-    try:
-        idx = BookVectorIndex(safe_book_id, books_dir=BOOKS_DIR)
-        status = await run_in_threadpool(idx.index_book, force_reindex=body.force_reindex)
-        return status
-    except RuntimeError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:  # noqa: BLE001 - 第 2 档：HTTP 边界，转译成 500 且 detail 带上原因
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/index/{book_id}/status")
-async def api_index_status(book_id: str):
-    safe_book_id = _validate_book_id(book_id)
-    try:
-        idx = BookVectorIndex(safe_book_id, books_dir=BOOKS_DIR)
-        return await run_in_threadpool(idx.status)
-    except RuntimeError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:  # noqa: BLE001 - 第 2 档：HTTP 边界，转译成 500 且 detail 带上原因
-        raise HTTPException(status_code=500, detail=str(e))
-
-class AIMessage(BaseModel):
-    id: str
-    role: str
-    content: str
-    timestamp: str
-    conversation_id: Optional[str] = None
-    metadata: Optional[dict] = None
-
-
-class AISummaryRequest(BaseModel):
-    provider: str
-    model: Optional[str] = None
-    max_tokens: int = 2000
-
-
-class AIQuestionRequest(BaseModel):
-    question: str
-    provider: str
-    model: Optional[str] = None
-    conversation_history: list[AIMessage] = Field(default_factory=list)
-    rag_k: int = 5
-    max_tokens: int = 1000
-
-
-class AIRagRequest(BaseModel):
-    book_uuid: str
-    query: str
-    k: int = 5
-    min_similarity: float = 0.5
-
+# 这四个模型搬去了 `web/schemas.py`（011 WI-4）。这里反向 import 并保留同名：
+# `server.AIMessage` 等仍然存在、且与 router 拿到的是同一个类对象。它们不是打桩
+# 接缝，所以 router 直接从 schemas 导入即可，不必走 `_server.`。
+from .schemas import (  # noqa: E402
+    AIMessage,
+    AIQuestionRequest,
+    AIRagRequest,
+    AISummaryRequest,
+)
 
 SUPPORTED_AI_PROVIDERS = {"anthropic", "openai", "gemini", "ollama", "openrouter"}
 
@@ -1319,6 +578,68 @@ def _get_provider_runtime(
     return provider_name, api_key, base_url, model, provider.timeout_s
 
 
+#: 指数退避的底与上限（秒）。用例把这两个名字打成 0 来做到不真的睡——**刻意不另开一个
+#: `sleep` 接缝**：`server` 上每多一个被打桩的名字，WI-1 的注册表就要跟着动一次，
+#: 代价大于收益（tests/unit/test_provider_retry.py 的模块 docstring 记着这笔账）。
+PROVIDER_RETRY_BASE_S = 0.5
+PROVIDER_RETRY_CAP_S = 8.0
+
+#: 值得再试一次的状态码：限流与服务端故障。其余 4xx（400/401/403/404/422）不在里面，
+#: 因为 key 填错、模型名写错、请求体非法重试三次拿到的还是同一条错误，只是让用户多等几秒。
+PROVIDER_RETRY_STATUS_CODES = frozenset({408, 429, 500, 502, 503, 504})
+
+#: 会被重试循环**接住**的异常类型。窄到只有这四类是有意的：
+#: 写成 `except Exception` 会连 `RedirectNotAllowed`（一次安全拒绝，不是故障）、
+#: `ValueError`（base_url 非法）、`HTTPException`（我们自己抛的）一起重试，
+#: 而那三样重试多少次都是同一个结果。落在这个元组外面的异常原样穿出去。
+_PROVIDER_RETRY_CANDIDATES = (
+    ProviderHTTPError,
+    urllib.error.URLError,  # 含 socket timeout；`_http.post_json` 只接 HTTPError，这类是裸穿的
+    TimeoutError,
+    ConnectionError,
+)
+
+
+def _provider_error_is_retryable(exc: BaseException) -> bool:
+    """这个异常值得再试一次吗？
+
+    分诊靠**类型与状态码**，不靠解析错误文本——那段文本来自服务端，随时会变。
+    这正是 `ProviderHTTPError` 存在的理由（见 ai/providers/types.py）。
+    """
+    if isinstance(exc, ProviderHTTPError):
+        return exc.status in PROVIDER_RETRY_STATUS_CODES
+    if isinstance(exc, urllib.error.HTTPError):
+        # post_json 会把 HTTPError 压成 (status, body)，所以这条今天走不到；
+        # 留着是因为流式/探活那两个出网口不经过它，将来接进来时行为要一致。
+        return int(getattr(exc, "code", 0) or 0) in PROVIDER_RETRY_STATUS_CODES
+    return isinstance(exc, (urllib.error.URLError, TimeoutError, ConnectionError))
+
+
+def _provider_retry_budget(provider_name: str, max_retries: Optional[int]) -> int:
+    """这次调用允许重试几次。
+
+    `max_retries=None` 表示「调用方没说，去 settings 里查」。**默认值是 None 而落地成 0
+    的那条回退路径是承重的**：查不到、或者查这件事本身抛了，都退化成 0 次重试——
+    一份读不出来的 ai_settings.json 只该让重试消失，绝不能把 LLM 调用打挂。
+
+    走 `load_ai_settings()`（server 命名空间上的名字，registry 已登记）而不是让
+    `get_provider_settings` 自己去读盘：这样 contract lane 既有的那份打桩仍然拦得住它，
+    `_call_provider` 不会在测试里摸到开发者真正的 config/ai_settings.json。
+    """
+    if max_retries is not None:
+        return max(0, min(int(max_retries), 10))
+    try:
+        return get_provider_settings(provider_name, settings=load_ai_settings()).max_retries
+    except Exception as e:  # noqa: BLE001 - 第 3 档：读不出配置就当 0 次重试，调用照常发出；痕迹是下面这条 WARNING
+        ai_logger.warning(
+            "provider %s: could not read max_retries (%s: %s); continuing with no retries",
+            provider_name,
+            type(e).__name__,
+            e,
+        )
+        return 0
+
+
 def _call_provider(
     provider_name: str,
     *,
@@ -1329,7 +650,69 @@ def _call_provider(
     messages: list[dict],
     max_tokens: int,
     timeout_s: int,
+    max_retries: Optional[int] = None,
 ):
+    """ADR-0006 的唯一 LLM 出口，外加 WI-6 接上的重试。
+
+    重试写在这里而不是写进 provider：六个非流式调用点全部经过这一处，写进 provider
+    就是抄五份——那正是 WI-11 刚从 `_http.py` 收掉的毛病。
+
+    **`max_retries` 默认 None（= 去 settings 查）而不是某个数**，且查不到时落到 0：
+    「不传 = 今天的行为」，所以 70 处既有打桩与全部既有用例逐字不变。
+
+    **流式路径不在这道闸上**：ollama 的流式 chat 走 `_egress_post_stream`，不经过这里，
+    因此拿不到重试。那是有意的——SSE 已经把前半段正文推给客户端了，重试会让用户看到
+    重复的文本。
+    """
+    attempts_allowed = _provider_retry_budget(provider_name, max_retries)
+    attempt = 0
+    while True:
+        try:
+            return _provider_call_once(
+                provider_name,
+                api_key=api_key,
+                base_url=base_url,
+                model=model,
+                system=system,
+                messages=messages,
+                max_tokens=max_tokens,
+                timeout_s=timeout_s,
+            )
+        except _PROVIDER_RETRY_CANDIDATES as e:
+            if attempt >= attempts_allowed or not _provider_error_is_retryable(e):
+                # 抛**最后一次**那个异常对象本身，不包一层：包一层就改了 str(e)，
+                # 而它是 SSE 与自测响应的内容（ADR-0011 冻结）。
+                raise
+            delay = random.uniform(
+                0, min(PROVIDER_RETRY_CAP_S, PROVIDER_RETRY_BASE_S * (2**attempt))
+            )
+            # 只记 provider 名、第几次、异常类型/状态码。**不记 api_key、不记 base_url、
+            # 不记请求体**——这条日志会进用户的终端和日志文件。
+            ai_logger.warning(
+                "provider %s: attempt %d/%d failed (%s%s); retrying in %.2fs",
+                provider_name,
+                attempt + 1,
+                attempts_allowed + 1,
+                type(e).__name__,
+                f" status={e.status}" if isinstance(e, ProviderHTTPError) else "",
+                delay,
+            )
+            time.sleep(delay)
+            attempt += 1
+
+
+def _provider_call_once(
+    provider_name: str,
+    *,
+    api_key: Optional[str],
+    base_url: str,
+    model: str,
+    system: str,
+    messages: list[dict],
+    max_tokens: int,
+    timeout_s: int,
+):
+    """一次调用，不含重试。`_call_provider` 的分派体原样搬进来，一个字没改。"""
     if provider_name == "anthropic":
         assert api_key is not None
         return anthropic_messages(
@@ -1560,9 +943,6 @@ def _ollama_openai_base_url(base_url: str) -> str:
         return base
     return base + "/v1"
 
-def _sse_event(event: str, data: Any) -> bytes:
-    payload = json.dumps(data, ensure_ascii=False)
-    return f"event: {event}\ndata: {payload}\n\n".encode("utf-8")
 
 
 def _push_event(queue: "asyncio.Queue[dict]", evt: dict) -> bool:
@@ -1584,1255 +964,9 @@ def _push_event(queue: "asyncio.Queue[dict]", evt: dict) -> bool:
     return True
 
 
-async def _stop_stream_worker(
-    *,
-    label: str,
-    stop_event: Optional[threading.Event] = None,
-    thread: Optional[threading.Thread] = None,
-    task: "Optional[asyncio.Task]" = None,
-    timeout_s: Optional[float] = None,
-) -> bool:
-    """取消一个流式 worker 并**等它真的停下**，最多等 ``AI_WORKER_STOP_TIMEOUT_S``。
 
-    为什么要等：调用方紧接着就会释放队列租约，而释放租约的含义是「这本书可以开始
-    下一个请求了」。不等就放，下一个「本该串行」的请求会和上一个还活着的 worker
-    并发打同一个 provider——串行语义于是只是个说法。
 
-    **等不到怎么办：仍然释放租约，只留一条 ERROR。** 这个取舍是刻意的，两害相权：
 
-    * 租约永久泄漏 = 这本书的 AI 问答**功能性死亡**，之后每一个请求都排在一个永不
-      结束的请求后面，且只有重启才能恢复；
-    * 一个跑飞的 worker = 多一次 provider 调用的开销和一个线程。ollama 线程是
-      ``daemon=True``，进程退出时会被回收；非流式 task 已经 cancel 过，它下一个
-      await 点就会退出。
-
-    后者可观测（这条 ERROR 就是），前者不可观测且不可恢复。所以宁可漏 worker，
-    不可漏租约。
-
-    返回 worker 是否在上界内停住——调用方不看返回值，返回值是给测试和以后的调用方的。
-    """
-    bound = AI_WORKER_STOP_TIMEOUT_S if timeout_s is None else timeout_s
-
-    if stop_event is not None:
-        stop_event.set()
-
-    if task is not None:
-        if not task.done():
-            task.cancel()
-        await asyncio.wait({task}, timeout=max(0.0, bound))
-        if not task.done():
-            ai_logger.error(
-                "%s worker did not stop within %.1fs after cancellation; "
-                "releasing the AI queue lease anyway (a leaked lease would block this book permanently)",
-                label,
-                bound,
-            )
-            return False
-        return True
-
-    if thread is not None:
-        if thread.is_alive():
-            await run_in_threadpool(thread.join, max(0.0, bound))
-        if thread.is_alive():
-            ai_logger.error(
-                "%s worker thread did not stop within %.1fs after the stop event was set; "
-                "releasing the AI queue lease anyway (a leaked lease would block this book permanently)",
-                label,
-                bound,
-            )
-            return False
-        return True
-
-    return True
-
-
-@app.get("/api/health")
-async def api_health():
-    """就绪探针。009 的 Playwright `webServer` 与 Phase 5 的 `reader3 launch` 都用它。
-
-    **故意不碰磁盘**：不扫 books/、不读 settings、不加载任何 book.pkl。探针要在
-    书库为空甚至目录不存在时也能答 200，否则 webServer 只会报「服务没起来」，
-    而真实原因是探针自己在一个空目录上 500 了。
-    """
-    return {"status": "ok", "version": _package_version()}
-
-
-@app.get("/api/settings")
-async def api_get_settings():
-    settings = load_ai_settings()
-    return _public_settings_response(settings)
-
-
-class UpdateSettingsRequest(BaseModel):
-    default_provider: Optional[str] = None
-    preferences: Optional[dict] = None
-
-
-@app.put("/api/settings")
-async def api_put_settings(body: UpdateSettingsRequest):
-    settings = load_ai_settings()
-    updated = dict(settings or {})
-    if body.default_provider is not None:
-        provider = str(body.default_provider or "").strip().lower()
-        if provider and provider not in SUPPORTED_AI_PROVIDERS:
-            raise HTTPException(status_code=400, detail="Invalid default_provider")
-        updated["default_provider"] = provider or updated.get("default_provider") or "anthropic"
-    if body.preferences is not None:
-        # 现存 → 补丁，同 /api/settings/import。**不要**从 default_settings_dict()
-        # 重新起头：settings 已经过 _merge_defaults，默认值就在里面，再引一次默认
-        # 只会把用户存过的其它偏好按出厂值写回磁盘——前端发一个 {"theme": "dark"}
-        # 就够把落盘模式、会话上限一起重置掉。
-        existing_prefs = settings.get("preferences") if isinstance(settings.get("preferences"), dict) else {}
-        prefs_patch = body.preferences if isinstance(body.preferences, dict) else {}
-        merged = dict(existing_prefs)
-        merged.update({k: v for k, v in prefs_patch.items() if v is not None})
-        updated["preferences"] = merged
-
-    save_ai_settings(updated)
-    return _public_settings_response(load_ai_settings())
-
-
-@app.get("/api/settings/providers")
-async def api_list_settings_providers():
-    providers = []
-    defaults = default_settings_dict()
-    default_providers = defaults.get("providers") or {}
-    for name in ("anthropic", "openai", "gemini", "ollama", "openrouter"):
-        if name not in SUPPORTED_AI_PROVIDERS:
-            continue
-        p = default_providers.get(name) or {}
-        providers.append(
-            {
-                "name": name,
-                "display_name": {
-                    "anthropic": "Anthropic Claude",
-                    "openai": "OpenAI",
-                    "gemini": "Google Gemini",
-                    "ollama": "Ollama (Local)",
-                    "openrouter": "OpenRouter",
-                }.get(name, name),
-                "description": {
-                    "ollama": "Local AI provider via Ollama (offline-capable)",
-                    "openrouter": "Unified API for many models/providers",
-                }.get(name, ""),
-                "default_base_url": str(p.get("base_url") or _provider_default_base_url(name) or "").strip(),
-                "default_model": str(p.get("model_name") or "").strip(),
-                "supported_features": {
-                    "streaming": True,
-                    "function_calling": False,
-                    "vision": False,
-                },
-                "documentation_url": {
-                    "anthropic": "https://docs.anthropic.com",
-                    "openai": "https://platform.openai.com/docs",
-                    "gemini": "https://ai.google.dev",
-                    "ollama": "https://ollama.com",
-                    "openrouter": "https://openrouter.ai/docs",
-                }.get(name, ""),
-            }
-        )
-    return {"providers": providers}
-
-
-@app.get("/api/settings/providers/{provider_name}")
-async def api_get_provider(provider_name: str):
-    name = (provider_name or "").strip().lower()
-    if name not in SUPPORTED_AI_PROVIDERS:
-        raise HTTPException(status_code=404, detail="Provider not found")
-    settings = load_ai_settings()
-    return _public_provider_config(name, settings=settings)
-
-
-def _settings_export_payload(settings: dict) -> dict:
-    exported: dict = {
-        "default_provider": str(settings.get("default_provider") or "anthropic").strip().lower(),
-        "preferences": settings.get("preferences") if isinstance(settings.get("preferences"), dict) else {},
-        "providers": {},
-    }
-    providers = settings.get("providers") if isinstance(settings.get("providers"), dict) else {}
-    for name, cfg in providers.items():
-        if not isinstance(cfg, dict):
-            continue
-        safe_cfg = dict(cfg)
-        safe_cfg.pop("api_key", None)
-        exported["providers"][str(name).strip().lower()] = safe_cfg
-    return exported
-
-
-@app.get("/api/settings/export")
-async def api_settings_export():
-    settings = load_ai_settings()
-    return _settings_export_payload(settings)
-
-
-@app.post("/api/settings/import")
-async def api_settings_import(body: dict):
-    if not isinstance(body, dict):
-        raise HTTPException(status_code=400, detail="Invalid payload")
-
-    existing = load_ai_settings()
-    updated = dict(existing or {})
-
-    if "default_provider" in body:
-        dp = str(body.get("default_provider") or "").strip().lower()
-        if dp and dp in SUPPORTED_AI_PROVIDERS:
-            updated["default_provider"] = dp
-
-    if isinstance(body.get("preferences"), dict):
-        prefs_default = (default_settings_dict().get("preferences") or {}).copy()
-        prefs_default.update(existing.get("preferences") if isinstance(existing.get("preferences"), dict) else {})
-        prefs_default.update({k: v for k, v in body.get("preferences").items() if v is not None})
-        updated["preferences"] = prefs_default
-
-    existing_providers = existing.get("providers") if isinstance(existing.get("providers"), dict) else {}
-    merged_providers = dict(existing_providers)
-    incoming_providers = body.get("providers") if isinstance(body.get("providers"), dict) else {}
-    for name, patch in incoming_providers.items():
-        pname = str(name or "").strip().lower()
-        if pname not in SUPPORTED_AI_PROVIDERS:
-            continue
-        base = dict(merged_providers.get(pname) or {})
-        if isinstance(patch, dict):
-            for key in ("enabled", "model_name", "base_url", "timeout", "timeout_s", "max_retries"):
-                if key in patch:
-                    base[key] = patch.get(key)
-        # API keys are never imported.
-        merged_providers[pname] = base
-    updated["providers"] = merged_providers
-
-    save_ai_settings(updated)
-    return _public_settings_response(load_ai_settings())
-
-
-class UpdateProviderRequest(BaseModel):
-    api_key: Optional[str] = None
-    base_url: Optional[str] = None
-    model_name: Optional[str] = None
-    enabled: Optional[bool] = None
-    timeout: Optional[int] = None
-    max_retries: Optional[int] = None
-
-
-@app.put("/api/settings/providers/{provider_name}")
-async def api_put_provider(provider_name: str, body: UpdateProviderRequest):
-    name = (provider_name or "").strip().lower()
-    if name not in SUPPORTED_AI_PROVIDERS:
-        raise HTTPException(status_code=404, detail="Provider not found")
-
-    patch: dict[str, Any] = {}
-    if body.api_key is not None:
-        patch["api_key"] = body.api_key
-    if body.base_url is not None:
-        patch["base_url"] = str(body.base_url or "").strip()
-    if body.model_name is not None:
-        patch["model_name"] = str(body.model_name or "").strip()
-    if body.enabled is not None:
-        patch["enabled"] = bool(body.enabled)
-    if body.timeout is not None:
-        patch["timeout_s"] = int(body.timeout)
-        patch["timeout"] = int(body.timeout)
-    if body.max_retries is not None:
-        patch["max_retries"] = int(body.max_retries)
-
-    settings = load_ai_settings()
-    updated = _settings_update_provider(name, settings=settings, patch=patch)
-    save_ai_settings(updated)
-    return _public_provider_config(name, settings=load_ai_settings())
-
-
-@app.delete("/api/settings/providers/{provider_name}", status_code=204)
-async def api_delete_provider(provider_name: str):
-    name = (provider_name or "").strip().lower()
-    if name not in SUPPORTED_AI_PROVIDERS:
-        raise HTTPException(status_code=404, detail="Provider not found")
-    settings = load_ai_settings()
-    providers = dict(settings.get("providers") or {})
-    providers.pop(name, None)
-    settings["providers"] = providers
-    save_ai_settings(settings)
-    return None
-
-
-class TestProviderRequest(BaseModel):
-    api_key: Optional[str] = None
-    base_url: Optional[str] = None
-    model_name: Optional[str] = None
-
-
-@app.post("/api/settings/providers/{provider_name}/test")
-async def api_test_provider(provider_name: str, body: TestProviderRequest):
-    name = (provider_name or "").strip().lower()
-    if name not in SUPPORTED_AI_PROVIDERS:
-        raise HTTPException(status_code=404, detail="Provider not found")
-
-    settings = load_ai_settings()
-    provider_cfg = get_provider_settings(name, settings=settings)
-    stored_base_url = get_provider_base_url(name, settings=settings) or provider_cfg.base_url or ""
-    requested_base_url = str(body.base_url or "").strip() if body.base_url is not None else None
-    base_url = stored_base_url if requested_base_url is None else requested_base_url
-    model = str(body.model_name or "").strip() if body.model_name is not None else provider_cfg.model_name
-
-    # 换了 endpoint 就必须自带 key（finding web/C2）。
-    #
-    # 这条路由没有鉴权（web/C1），所以「请求只给 base_url、key 从盘上取」等于：
-    # 本机任意进程、或者一个做 DNS rebinding 的网页，只要 POST 一次就能让服务器
-    # 把用户存着的真 key 发到它指定的地址去。回落必须在**发请求之前**断掉——
-    # 挪到发完之后再报 400，状态码看着一样，key 已经出去了。
-    if requested_base_url is not None and requested_base_url.rstrip("/") != stored_base_url.rstrip("/") and not body.api_key:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "This request supplies a different base_url than the one in settings, so it must "
-                "also supply its own api_key. The stored API key is never sent to an endpoint "
-                "chosen by the request."
-            ),
-        )
-
-    api_key = body.api_key if body.api_key is not None else get_provider_api_key(name, settings=settings)
-
-    if _provider_requires_api_key(name) and not api_key:
-        raise HTTPException(status_code=401, detail="API key not configured")
-
-    system = "You are a connectivity test. Reply with a single word: OK."
-    messages = [{"role": "user", "content": "OK"}]
-
-    started = time.perf_counter()
-    try:
-        resp = await run_in_threadpool(
-            _call_provider,
-            name,
-            api_key=api_key,
-            base_url=base_url,
-            model=model,
-            system=system,
-            messages=messages,
-            max_tokens=16,
-            timeout_s=min(10, provider_cfg.timeout_s),
-        )
-    except Exception as e:  # noqa: BLE001 - 第 2 档：连通性自测的返回值就是 success/message，失败原因原样交给前端
-        return {
-            "success": False,
-            "provider": name,
-            "message": str(e),
-            "details": {"model": model, "latency_ms": int((time.perf_counter() - started) * 1000)},
-        }
-
-    latency_ms = int((time.perf_counter() - started) * 1000)
-    return {
-        "success": True,
-        "provider": name,
-        "message": "OK",
-        "details": {"model": resp.model, "latency_ms": latency_ms},
-    }
-
-
-@app.get("/api/ollama/status")
-async def api_ollama_status():
-    settings = load_ai_settings()
-    base_url = get_provider_base_url("ollama", settings=settings) or get_provider_settings("ollama", settings=settings).base_url or "http://localhost:11434"
-    root = _ollama_root_base_url(base_url)
-    try:
-        info = _http_get_json(root + "/api/version", timeout_s=2)
-        return {"running": True, "base_url": root, "version": info.get("version")}
-    except Exception as e:  # noqa: BLE001 - 第 2 档：ollama 探活的返回值就是 running/error，失败原因原样交给前端
-        return {"running": False, "base_url": root, "error": str(e)}
-
-
-@app.get("/api/ollama/models")
-async def api_ollama_models():
-    settings = load_ai_settings()
-    base_url = get_provider_base_url("ollama", settings=settings) or get_provider_settings("ollama", settings=settings).base_url or "http://localhost:11434"
-    root = _ollama_root_base_url(base_url)
-    try:
-        tags = _http_get_json(root + "/api/tags", timeout_s=4)
-        models = tags.get("models") if isinstance(tags, dict) else None
-        if not isinstance(models, list):
-            models = []
-        out = []
-        for m in models:
-            if not isinstance(m, dict):
-                continue
-            out.append(
-                {
-                    "name": str(m.get("name") or ""),
-                    "size": m.get("size"),
-                    "modified_at": m.get("modified_at"),
-                    "details": m.get("details") or {},
-                }
-            )
-        return {"models": out, "base_url": root}
-    except Exception as e:  # noqa: BLE001 - 第 2 档：HTTP 边界，转译成 503 且 detail 带上原因
-        raise HTTPException(status_code=503, detail=str(e))
-
-
-@app.get("/api/ai/conversations/{book_uuid}")
-async def api_ai_list_conversations(book_uuid: str, provider: Optional[str] = None):
-    try:
-        book_folder = book_uuid_resolver.folder_for_book_uuid(book_uuid)
-    except Exception:  # noqa: BLE001 - 第 2 档：HTTP 边界，解析不出 book_uuid 即「这本书不存在」→404；类型待收窄为 (KeyError, ValueError)
-        raise HTTPException(status_code=404, detail="Book not found")
-    settings = load_ai_settings()
-    threads = list_disk_conversations_combined(
-        BOOKS_DIR,
-        book_folder=book_folder,
-        book_uuid=str(book_uuid),
-        provider=provider,
-        project_conversations_root=_project_conversations_root(settings),
-    )
-    return {"book_uuid": str(book_uuid), "provider": (provider or "").strip().lower() or None, "conversations": threads}
-
-
-@app.get("/api/ai/conversations/{book_uuid}/{conversation_id}")
-async def api_ai_get_conversation(book_uuid: str, conversation_id: str):
-    try:
-        book_folder = book_uuid_resolver.folder_for_book_uuid(book_uuid)
-    except Exception:  # noqa: BLE001 - 第 2 档：HTTP 边界，解析不出 book_uuid 即「这本书不存在」→404；类型待收窄为 (KeyError, ValueError)
-        raise HTTPException(status_code=404, detail="Book not found")
-    try:
-        settings = load_ai_settings()
-        thread = load_disk_conversation_combined(
-            BOOKS_DIR,
-            book_folder=book_folder,
-            book_uuid=str(book_uuid),
-            conversation_id=conversation_id,
-            project_conversations_root=_project_conversations_root(settings),
-        )
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Conversation not found")
-    except Exception as e:  # noqa: BLE001 - 第 2 档：HTTP 边界，转译成 400 且 detail 带上原因
-        raise HTTPException(status_code=400, detail=str(e))
-    return thread.to_dict()
-
-
-class SaveConversationRequest(BaseModel):
-    provider: str
-    model: Optional[str] = None
-    created_at: Optional[str] = None
-    last_updated: Optional[str] = None
-    messages: list[AIMessage] = Field(default_factory=list)
-
-
-@app.put("/api/ai/conversations/{book_uuid}/{conversation_id}")
-async def api_ai_put_conversation(book_uuid: str, conversation_id: str, body: SaveConversationRequest):
-    try:
-        book_folder = book_uuid_resolver.folder_for_book_uuid(book_uuid)
-    except Exception:  # noqa: BLE001 - 第 2 档：HTTP 边界，解析不出 book_uuid 即「这本书不存在」→404；类型待收窄为 (KeyError, ValueError)
-        raise HTTPException(status_code=404, detail="Book not found")
-    provider = (body.provider or "").strip().lower()
-    if provider not in SUPPORTED_AI_PROVIDERS:
-        raise HTTPException(status_code=400, detail="Unsupported provider")
-
-    msgs: list[DiskConversationMessage] = []
-    for m in body.messages or []:
-        role = (m.role or "").strip().lower()
-        if role not in ("user", "assistant"):
-            continue
-        msg_id = str(m.id or "").strip()
-        if not msg_id:
-            continue
-        msgs.append(
-            DiskConversationMessage(
-                id=msg_id,
-                role=role,
-                content=str(m.content or ""),
-                timestamp=str(m.timestamp or ""),
-                metadata=dict(m.metadata or {}),
-            )
-        )
-
-    thread = DiskConversationThread(
-        schema_version=1,
-        book_uuid=str(book_uuid),
-        book_folder=book_folder,
-        conversation_id=str(conversation_id),
-        provider=provider,
-        model=str(body.model or ""),
-        created_at=str(body.created_at or ""),
-        last_updated=str(body.last_updated or ""),
-        messages=msgs,
-    )
-    try:
-        settings = load_ai_settings()
-        save_disk_conversation_multi(
-            BOOKS_DIR,
-            thread=thread,
-            project_conversations_root=_project_conversations_root(settings),
-            storage_mode=_conversation_disk_storage_mode(settings),
-        )
-    except Exception as e:  # noqa: BLE001 - 第 2 档：HTTP 边界，转译成 400 且 detail 带上原因
-        raise HTTPException(status_code=400, detail=str(e))
-    return {"ok": True}
-
-
-@app.delete("/api/ai/conversations/{book_uuid}/{conversation_id}", status_code=204)
-async def api_ai_delete_conversation(book_uuid: str, conversation_id: str):
-    try:
-        book_folder = book_uuid_resolver.folder_for_book_uuid(book_uuid)
-    except Exception:  # noqa: BLE001 - 第 2 档：HTTP 边界，解析不出 book_uuid 即「这本书不存在」→404；类型待收窄为 (KeyError, ValueError)
-        raise HTTPException(status_code=404, detail="Book not found")
-    try:
-        settings = load_ai_settings()
-        delete_disk_conversation_multi(
-            BOOKS_DIR,
-            book_folder=book_folder,
-            book_uuid=str(book_uuid),
-            conversation_id=conversation_id,
-            project_conversations_root=_project_conversations_root(settings),
-        )
-    except Exception as e:  # noqa: BLE001 - 第 2 档：HTTP 边界，转译成 400 且 detail 带上原因
-        raise HTTPException(status_code=400, detail=str(e))
-    return None
-
-
-def _conversation_to_text(thread: dict) -> str:
-    lines = []
-    msgs = thread.get("messages") if isinstance(thread.get("messages"), list) else []
-    for m in msgs:
-        if not isinstance(m, dict):
-            continue
-        role = str(m.get("role") or "").strip().lower()
-        if role not in ("user", "assistant"):
-            continue
-        label = "User" if role == "user" else "Assistant"
-        content = str(m.get("content") or "").rstrip()
-        lines.append(f"{label}: {content}")
-        lines.append("")
-    return "\n".join(lines).strip() + "\n"
-
-
-def _conversation_to_markdown(thread: dict) -> str:
-    book_uuid = str(thread.get("book_uuid") or "").strip()
-    provider = str(thread.get("provider") or "").strip()
-    model = str(thread.get("model") or "").strip()
-    conv_id = str(thread.get("conversation_id") or "").strip()
-    created_at = str(thread.get("created_at") or "").strip()
-    last_updated = str(thread.get("last_updated") or "").strip()
-
-    out = [
-        "# AI Conversation",
-        "",
-        f"- book_uuid: `{book_uuid}`",
-        f"- conversation_id: `{conv_id}`",
-        f"- provider: `{provider}`",
-        f"- model: `{model}`",
-        f"- created_at: `{created_at}`",
-        f"- last_updated: `{last_updated}`",
-        "",
-        "---",
-        "",
-    ]
-    msgs = thread.get("messages") if isinstance(thread.get("messages"), list) else []
-    for m in msgs:
-        if not isinstance(m, dict):
-            continue
-        role = str(m.get("role") or "").strip().lower()
-        if role not in ("user", "assistant"):
-            continue
-        title = "User" if role == "user" else "Assistant"
-        ts = str(m.get("timestamp") or "").strip()
-        content = str(m.get("content") or "").rstrip()
-        out.append(f"## {title}")
-        if ts:
-            out.append(f"- time: `{ts}`")
-            out.append("")
-        out.append(content or "")
-        out.append("")
-    return "\n".join(out).strip() + "\n"
-
-
-@app.get("/api/ai/conversations/{book_uuid}/{conversation_id}/export")
-async def api_ai_export_conversation(book_uuid: str, conversation_id: str, format: str = "json"):
-    try:
-        book_folder = book_uuid_resolver.folder_for_book_uuid(book_uuid)
-    except Exception:  # noqa: BLE001 - 第 2 档：HTTP 边界，解析不出 book_uuid 即「这本书不存在」→404；类型待收窄为 (KeyError, ValueError)
-        raise HTTPException(status_code=404, detail="Book not found")
-    try:
-        settings = load_ai_settings()
-        thread = load_disk_conversation_combined(
-            BOOKS_DIR,
-            book_folder=book_folder,
-            book_uuid=str(book_uuid),
-            conversation_id=conversation_id,
-            project_conversations_root=_project_conversations_root(settings),
-        ).to_dict()
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Conversation not found")
-    except Exception as e:  # noqa: BLE001 - 第 2 档：HTTP 边界，转译成 400 且 detail 带上原因
-        raise HTTPException(status_code=400, detail=str(e))
-
-    fmt = str(format or "json").strip().lower()
-    if fmt == "json":
-        return thread
-    if fmt in ("text", "txt"):
-        body = _conversation_to_text(thread)
-        return Response(content=body, media_type="text/plain; charset=utf-8")
-    if fmt in ("md", "markdown"):
-        body = _conversation_to_markdown(thread)
-        return Response(content=body, media_type="text/markdown; charset=utf-8")
-    raise HTTPException(status_code=400, detail="Invalid format (use json|text|md)")
-
-
-def _summary_prompt(summary_type: str) -> str:
-    st = (summary_type or "full").strip().lower()
-    if st not in {"overview", "highlights", "background", "full"}:
-        st = "full"
-    if st == "overview":
-        return "只生成 overview（2-3 段），其余字段可以留空。"
-    if st == "highlights":
-        return "只生成 highlights（5-10 条要点，每条 1-2 句），其余字段可以留空。"
-    if st == "background":
-        return "只生成 background（2-4 段：作者/时代/意义/背景），其余字段可以留空。"
-    return "生成 overview（2-3 段）、highlights（5-10 条）、background（2-4 段）。"
-
-
-def _parse_summary_payload(text: str, *, summary_type: str) -> dict:
-    raw = (text or "").strip()
-    if not raw:
-        return {"overview": "", "highlights": [], "background": ""}
-    payload: Any = None
-    try:
-        payload = json.loads(raw)
-    except ValueError as e:
-        # 第 3 档：模型直接回散文是预期的降级路径，不是错误——但它得留痕，
-        # 否则「为什么这本书的 highlights 永远是空的」无从查起。
-        # 只吞 JSONDecodeError（ValueError 子类）：RecursionError / MemoryError
-        # 这类「不是散文，是出事了」的失败必须冒上去，不然用户拿到的是一段被
-        # 当成 overview 的括号。字段组装也因此移出 try——它出错是我们的 bug。
-        ai_logger.debug("summary reply is not JSON (summary_type=%s): %s", summary_type, e)
-
-    if isinstance(payload, dict):
-        overview = str(payload.get("overview") or "")
-        background = str(payload.get("background") or "")
-        highlights_raw = payload.get("highlights") or []
-        highlights = [str(x) for x in highlights_raw] if isinstance(highlights_raw, list) else []
-        return {"overview": overview, "highlights": highlights, "background": background}
-    if payload is not None:
-        ai_logger.debug(
-            "summary reply parsed as %s, not an object (summary_type=%s)",
-            type(payload).__name__,
-            summary_type,
-        )
-
-    st = (summary_type or "full").strip().lower()
-    if st == "highlights":
-        lines = [ln.strip(" \t-•*") for ln in raw.splitlines() if ln.strip()]
-        highlights = [ln for ln in lines if ln][:10]
-        return {"overview": "", "highlights": highlights, "background": ""}
-    if st == "background":
-        return {"overview": "", "highlights": [], "background": raw}
-    return {"overview": raw, "highlights": [], "background": ""}
-
-
-@app.post("/api/ai/rag/retrieve")
-async def api_ai_rag_retrieve(body: AIRagRequest):
-    try:
-        book_folder = book_uuid_resolver.folder_for_book_uuid(body.book_uuid)
-    except Exception:  # noqa: BLE001 - 第 2 档：HTTP 边界，解析不出 book_uuid 即「这本书不存在」→404；类型待收窄为 (KeyError, ValueError)
-        raise HTTPException(status_code=404, detail="Book not found")
-    try:
-        passages, retrieval_time_ms = await run_in_threadpool(
-            retrieve_passages,
-            book_folder,
-            books_dir=BOOKS_DIR,
-            query=body.query,
-            k=body.k,
-            min_similarity=body.min_similarity,
-        )
-        return {"passages": passages, "retrieval_time_ms": retrieval_time_ms}
-    except RuntimeError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@app.post("/api/ai/summary/{book_uuid}")
-async def api_ai_summary(
-    request: Request,
-    book_uuid: str,
-    body: AISummaryRequest,
-    summary_type: str = "full",
-    force_regenerate: bool = False,  # cache is frontend-side for v1
-):
-    try:
-        book_folder = book_uuid_resolver.folder_for_book_uuid(book_uuid)
-    except Exception:  # noqa: BLE001 - 第 2 档：HTTP 边界，解析不出 book_uuid 即「这本书不存在」→404；类型待收窄为 (KeyError, ValueError)
-        raise HTTPException(status_code=404, detail="Book not found")
-
-    provider_name, api_key, base_url, model, timeout_s = _get_provider_runtime(body.provider, body.model)
-    queue_key = f"{book_uuid}:{provider_name}"
-
-    async def _do() -> dict:
-        book = await run_in_threadpool(load_book_cached, book_folder)
-        if not book:
-            raise HTTPException(status_code=404, detail="Book not found")
-
-        ctx_window = provider_context_window(provider_name, model)
-        book_tokens, max_chapter_tokens = await run_in_threadpool(book_token_stats, book)
-        decision = choose_routing(
-            provider_ctx_window=ctx_window,
-            book_tokens=book_tokens,
-            max_chapter_tokens=max_chapter_tokens,
-        )
-        ai_logger.debug(
-            "summary routing book_uuid=%s provider=%s model=%s mode=%s book_tokens=%s ctx_window=%s",
-            str(book_uuid),
-            provider_name,
-            model,
-            decision.mode,
-            int(book_tokens),
-            int(ctx_window),
-        )
-
-        try:
-            passages, retrieval_time_ms = await run_in_threadpool(
-                retrieve_passages,
-                book_folder,
-                books_dir=BOOKS_DIR,
-                query="Summarize the entire book: main ideas, structure, themes, and key takeaways.",
-                k=12,
-                min_similarity=0.35,
-            )
-        except RuntimeError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-        routing_meta: dict[str, Any] = {"mode": decision.mode, "provider_context_window": int(ctx_window)}
-        if decision.mode == "full_book":
-            context = await run_in_threadpool(build_full_book_context, book, budget_tokens=decision.budget_tokens)
-        elif decision.mode == "multi_chapter":
-            orders = unique_chapter_orders_from_passages(passages, limit=8)
-            context, used_orders = await run_in_threadpool(
-                build_multi_chapter_context, book, chapter_orders=orders, budget_tokens=decision.budget_tokens
-            )
-            routing_meta["chapters"] = used_orders
-        else:
-            context = "\n\n".join([f"[{p['chapter_order'] + 1}] {p['chapter_title']}\n{p['text']}" for p in passages])
-        system = (
-            "你是 Reader3 的 AI 阅读助手。默认用中文回答（如果用户明确用英文提问，则用英文）。"
-            "请基于提供的书籍内容生成总结。"
-            "严格输出 JSON，且仅输出 JSON。"
-            "JSON 格式：{"
-            '"overview": string, '
-            '"highlights": string[], '
-            '"background": string'
-            "}。"
-            + _summary_prompt(summary_type)
-        )
-        user = f"书籍内容（用于总结）：\n{context}\n"
-        try:
-            resp = await run_in_threadpool(
-                _call_provider,
-                provider_name,
-                api_key=api_key,
-                base_url=base_url,
-                model=model,
-                system=system,
-                messages=[{"role": "user", "content": user}],
-                max_tokens=body.max_tokens,
-                timeout_s=timeout_s,
-            )
-        except Exception as e:
-            if decision.mode in ("full_book", "multi_chapter"):
-                ai_logger.debug(
-                    "summary fallback to rag book_uuid=%s provider=%s error=%s",
-                    str(book_uuid),
-                    provider_name,
-                    str(e),
-                )
-                rag_context = "\n\n".join([f"[{p['chapter_order'] + 1}] {p['chapter_title']}\n{p['text']}" for p in passages])
-                rag_user = f"书籍片段（用于总结）：\n{rag_context}\n"
-                resp = await run_in_threadpool(
-                    _call_provider,
-                    provider_name,
-                    api_key=api_key,
-                    base_url=base_url,
-                    model=model,
-                    system=system,
-                    messages=[{"role": "user", "content": rag_user}],
-                    max_tokens=body.max_tokens,
-                    timeout_s=timeout_s,
-                )
-                routing_meta["mode"] = "rag_fallback"
-            else:
-                raise
-        payload = _parse_summary_payload(resp.text, summary_type=summary_type)
-        return {
-            "book_uuid": str(book_uuid),
-            "content": payload,
-            "provider": provider_name,
-            "model": resp.model,
-            "generated_at": __import__("datetime").datetime.utcnow().isoformat() + "Z",
-            "token_count": resp.token_count,
-            "from_cache": False,
-            "metadata": {
-                "retrieval_time_ms": retrieval_time_ms,
-                "finish_reason": resp.finish_reason,
-                "routing": routing_meta,
-            },
-        }
-
-    return await ai_queue.run(
-        queue_key,
-        request=request,
-        timeout_s=float(timeout_s),
-        request_label="summary",
-        fn=_do,
-    )
-
-
-@app.post("/api/ai/question/{book_uuid}")
-async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequest, stream: bool = False):
-    try:
-        book_folder = book_uuid_resolver.folder_for_book_uuid(book_uuid)
-    except Exception:  # noqa: BLE001 - 第 2 档：HTTP 边界，解析不出 book_uuid 即「这本书不存在」→404；类型待收窄为 (KeyError, ValueError)
-        raise HTTPException(status_code=404, detail="Book not found")
-
-    question = (body.question or "").strip()
-    if not question:
-        raise HTTPException(status_code=400, detail="question is required")
-    if len(question) > 1000:
-        raise HTTPException(status_code=400, detail="question too long (max 1000 chars)")
-
-    provider_name, api_key, base_url, model, timeout_s = _get_provider_runtime(body.provider, body.model)
-    queue_key = f"{book_uuid}:{provider_name}"
-
-    if stream:
-        # 租约的**唯一**释放点在这个栈上（下面 push_async_callback 注册的
-        # ``_release_lease``）。以前这里是三处散落的显式 release，各自兜一种具体
-        # 异常——而 acquire 到 return 之间的那一大段还会抛别的：任何一种没被点名的
-        # 异常都带着租约逃走，那条队列于是永久 active（C4）。
-        #
-        # 为什么必须是栈而不是一个 try/finally：租约的生命周期跨越「函数返回」这
-        # 条界——正常路径上它要活到 SSE 流结束为止。``pop_all()`` 把待办的释放动作
-        # **移交**给生成器；移交发生在最后一步，在那之前的任何异常都由这里的
-        # ``async with`` 收尾，移交之后这里关的是一个空栈。
-        #
-        # 后压进去的回调先跑（LIFO），所以生成器里压的「停 worker」一定跑在
-        # 「放租约」之前——顺序即语义：租约放掉就等于允许下一个请求开始。
-        lease_stack = contextlib.AsyncExitStack()
-        async with lease_stack:
-            lease = await ai_queue.acquire(
-                queue_key,
-                request=request,
-                timeout_s=float(timeout_s),
-                request_label="question",
-            )
-
-            async def _release_lease() -> None:
-                await ai_queue.release(lease)
-
-            lease_stack.push_async_callback(_release_lease)
-
-            book = await run_in_threadpool(load_book_cached, book_folder)
-            if not book:
-                raise HTTPException(status_code=404, detail="Book not found")
-
-            try:
-                passages, retrieval_time_ms = await run_in_threadpool(
-                    retrieve_passages,
-                    book_folder,
-                    books_dir=BOOKS_DIR,
-                    query=question,
-                    k=body.rag_k,
-                    min_similarity=0.35,
-                )
-            except RuntimeError as e:
-                raise HTTPException(status_code=400, detail=str(e))
-
-            ctx_window = provider_context_window(provider_name, model)
-            book_tokens, max_chapter_tokens = await run_in_threadpool(book_token_stats, book)
-            decision = choose_routing(
-                provider_ctx_window=ctx_window,
-                book_tokens=book_tokens,
-                max_chapter_tokens=max_chapter_tokens,
-            )
-            ai_logger.debug(
-                "question routing book_uuid=%s provider=%s model=%s mode=%s book_tokens=%s ctx_window=%s stream=1",
-                str(book_uuid),
-                provider_name,
-                model,
-                decision.mode,
-                int(book_tokens),
-                int(ctx_window),
-            )
-            if decision.mode == "full_book":
-                context = await run_in_threadpool(build_full_book_context, book, budget_tokens=decision.budget_tokens)
-            elif decision.mode == "multi_chapter":
-                orders = unique_chapter_orders_from_passages(passages, limit=8)
-                context, _used = await run_in_threadpool(
-                    build_multi_chapter_context, book, chapter_orders=orders, budget_tokens=decision.budget_tokens
-                )
-            else:
-                context = "\n\n".join([f"[{p['chapter_order'] + 1}] {p['chapter_title']}\n{p['text']}" for p in passages])
-            history = (body.conversation_history or [])[-50:]
-            chat_history = []
-            for m in history:
-                role = (m.role or "").strip().lower()
-                if role not in ("user", "assistant"):
-                    continue
-                content = (m.content or "").strip()
-                if not content:
-                    continue
-                chat_history.append({"role": role, "content": content})
-
-            system = (
-                "你是 Reader3 的 AI 阅读助手。"
-                "只基于提供的书籍内容回答与书相关的问题；如果内容不足以回答，请明确说明需要更多上下文。"
-                "回答要清晰、简洁。"
-            )
-            user = f"书籍内容（用于回答）：\n{context}\n\n问题：{question}\n"
-
-            message_id = str(__import__("uuid").uuid4())
-            started = time.perf_counter()
-            answer_parts: list[str] = []
-            conversation_id = _conversation_id_from_history(history)
-
-            async def event_gen(lease_stack: contextlib.AsyncExitStack):
-                q: asyncio.Queue[dict] = asyncio.Queue()
-                loop = asyncio.get_running_loop()
-                stop_event = threading.Event()
-
-                def push(evt: dict) -> None:
-                    _push_event(q, evt)
-
-                def worker_ollama() -> None:
-                    url = _ollama_root_base_url(base_url or "http://localhost:11434") + "/api/chat"
-                    chat_messages = []
-                    if system:
-                        chat_messages.append({"role": "system", "content": system})
-                    chat_messages.extend([*chat_history, {"role": "user", "content": user}])
-                    payload = {
-                        "model": model,
-                        "messages": chat_messages,
-                        "stream": True,
-                        "options": {"num_predict": max(64, min(int(body.max_tokens), 4096))},
-                    }
-                    model_out = model
-                    finish_reason = "stop"
-                    try:
-                        # post_stream 交出的是**还没读**的 response：下面这个循环仍然逐行读，
-                        # 每行之前检查 stop_event。换成 post_json 就等于先把整段回答读完
-                        # 再开始推 chunk，断连之后也停不下来。
-                        with _egress_post_stream(url, payload=payload, timeout_s=int(timeout_s)) as resp:
-                            while True:
-                                # 客户端走了或者超时了：别再往一个没人读的队列里推，
-                                # 也别继续跟 provider 说话。检查放在读之前，所以
-                                # 「停」最迟在下一行数据到达时生效。
-                                if stop_event.is_set():
-                                    return
-                                line = resp.readline()
-                                if not line:
-                                    break
-                                raw = line.strip()
-                                if not raw:
-                                    continue
-                                try:
-                                    obj = json.loads(raw.decode("utf-8", errors="replace") or "{}")
-                                except Exception:  # noqa: BLE001 - 第 3 档：ollama 流里解析不了的一行直接跳过，下一行还会来；终止条件是 done 事件，不是这一行
-                                    continue
-                                if not isinstance(obj, dict):
-                                    continue
-                                if obj.get("model"):
-                                    model_out = str(obj.get("model") or model_out)
-                                msg = obj.get("message")
-                                if isinstance(msg, dict):
-                                    delta = msg.get("content")
-                                    if delta:
-                                        loop.call_soon_threadsafe(push, {"type": "chunk", "delta": str(delta)})
-                                if obj.get("done") is True:
-                                    finish_reason = str(obj.get("done_reason") or finish_reason)
-                                    break
-                        loop.call_soon_threadsafe(push, {"type": "done", "model": model_out, "finish_reason": finish_reason})
-                    except Exception as e:  # noqa: BLE001 - 第 2 档：worker 线程的最外层，失败经 error 事件送到客户端，痕迹在 SSE 流里
-                        if stop_event.is_set():
-                            # 已经被叫停了：这个异常多半就是叫停造成的（连接被拆、
-                            # 循环已关）。往一个没人读的队列里推 error 只会在
-                            # worker 线程里再抛一次，那次没人接得住。
-                            return
-                        loop.call_soon_threadsafe(push, {"type": "error", "message": str(e)})
-
-                async def worker_non_stream() -> None:
-                    try:
-                        resp = await run_in_threadpool(
-                            _call_provider,
-                            provider_name,
-                            api_key=api_key,
-                            base_url=base_url,
-                            model=model,
-                            system=system,
-                            messages=[*chat_history, {"role": "user", "content": user}],
-                            max_tokens=body.max_tokens,
-                            timeout_s=timeout_s,
-                        )
-                    except Exception as e:  # noqa: BLE001 - 第 2 档：worker 协程的最外层，失败经 error 事件送到客户端，痕迹在 SSE 流里
-                        await q.put({"type": "error", "message": str(e)})
-                        return
-                    await q.put({"type": "chunk", "delta": resp.text})
-                    await q.put({"type": "done", "model": resp.model, "finish_reason": resp.finish_reason})
-
-                # 租约从 handler 那边**移交**到这里；出这个 with 块就是放租约，
-                # 无论是正常 return、客户端断连、超时，还是生成器被 aclose()。
-                async with lease_stack:
-                    yield _sse_event(
-                        "meta",
-                        {
-                            "message_id": message_id,
-                            "retrieval_sources": passages,
-                            "metadata": {"retrieval_time_ms": retrieval_time_ms, "provider": provider_name},
-                        },
-                    )
-
-                    # 停 worker 的回调**后**压栈，所以它**先**跑（LIFO）：租约必须
-                    # 在 worker 真的停下之后才放，否则下一个「本该串行」的请求会
-                    # 和上一个还活着的 worker 并发打同一个 provider（C5）。
-                    if provider_name == "ollama":
-                        thread = threading.Thread(target=worker_ollama, daemon=True)
-                        thread.start()
-                        lease_stack.push_async_callback(
-                            _stop_stream_worker,
-                            label="ollama question stream",
-                            stop_event=stop_event,
-                            thread=thread,
-                        )
-                    else:
-                        task = asyncio.create_task(worker_non_stream())
-                        lease_stack.push_async_callback(
-                            _stop_stream_worker,
-                            label="question stream",
-                            stop_event=stop_event,
-                            task=task,
-                        )
-
-                    while True:
-                        if request is not None and await request.is_disconnected():
-                            yield _sse_event("error", {"message": "Client disconnected"})
-                            return
-                        if time.monotonic() >= lease.deadline:
-                            yield _sse_event("error", {"message": "AI request timed out"})
-                            return
-                        try:
-                            evt = await asyncio.wait_for(q.get(), timeout=0.5)
-                        except asyncio.TimeoutError:
-                            continue
-
-                        et = str(evt.get("type") or "")
-                        if et == "chunk":
-                            delta = str(evt.get("delta") or "")
-                            answer_parts.append(delta)
-                            yield _sse_event("chunk", {"delta": delta})
-                            continue
-                        if et == "done":
-                            generation_time_ms = int((time.perf_counter() - started) * 1000)
-                            if conversation_id:
-                                ts = __import__("datetime").datetime.utcnow().isoformat() + "Z"
-                                answer_text = "".join(answer_parts)
-                                await run_in_threadpool(
-                                    _save_conversation_snapshot,
-                                    book_uuid=str(book_uuid),
-                                    book_folder=book_folder,
-                                    conversation_id=conversation_id,
-                                    provider=provider_name,
-                                    model=str(evt.get("model") or model),
-                                    history=history,
-                                    assistant_message=DiskConversationMessage(
-                                        id=message_id,
-                                        role="assistant",
-                                        content=answer_text,
-                                        timestamp=ts,
-                                        metadata={
-                                            "retrieval_sources": passages,
-                                            "provider": provider_name,
-                                        },
-                                    ),
-                                )
-                            yield _sse_event(
-                                "done",
-                                {
-                                    "model": str(evt.get("model") or model),
-                                    "finish_reason": str(evt.get("finish_reason") or "stop"),
-                                    "metadata": {
-                                        "retrieval_time_ms": retrieval_time_ms,
-                                        "generation_time_ms": generation_time_ms,
-                                        "provider": provider_name,
-                                    },
-                                },
-                            )
-                            return
-                        if et == "error":
-                            yield _sse_event("error", {"message": str(evt.get("message") or "AI request failed")})
-                            return
-
-            # pop_all() 之后本层的 lease_stack 是空的，上面那个 async with 关它是
-            # 个 no-op —— 租约的收尾责任已经在生成器手上。这一步必须是本分支的
-            # 最后一步：在它之前抛的任何异常都还由这里负责释放。
-            return StreamingResponse(event_gen(lease_stack.pop_all()), media_type="text/event-stream")
-
-    async def _do() -> dict:
-        book = await run_in_threadpool(load_book_cached, book_folder)
-        if not book:
-            raise HTTPException(status_code=404, detail="Book not found")
-
-        try:
-            passages, retrieval_time_ms = await run_in_threadpool(
-                retrieve_passages,
-                book_folder,
-                books_dir=BOOKS_DIR,
-                query=question,
-                k=body.rag_k,
-                min_similarity=0.35,
-            )
-        except RuntimeError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-        ctx_window = provider_context_window(provider_name, model)
-        book_tokens, max_chapter_tokens = await run_in_threadpool(book_token_stats, book)
-        decision = choose_routing(
-            provider_ctx_window=ctx_window,
-            book_tokens=book_tokens,
-            max_chapter_tokens=max_chapter_tokens,
-        )
-        ai_logger.debug(
-            "question routing book_uuid=%s provider=%s model=%s mode=%s book_tokens=%s ctx_window=%s stream=0",
-            str(book_uuid),
-            provider_name,
-            model,
-            decision.mode,
-            int(book_tokens),
-            int(ctx_window),
-        )
-
-        routing_meta: dict[str, Any] = {"mode": decision.mode, "provider_context_window": int(ctx_window)}
-        if decision.mode == "full_book":
-            context = await run_in_threadpool(build_full_book_context, book, budget_tokens=decision.budget_tokens)
-        elif decision.mode == "multi_chapter":
-            orders = unique_chapter_orders_from_passages(passages, limit=8)
-            context, used_orders = await run_in_threadpool(
-                build_multi_chapter_context, book, chapter_orders=orders, budget_tokens=decision.budget_tokens
-            )
-            routing_meta["chapters"] = used_orders
-        else:
-            context = "\n\n".join([f"[{p['chapter_order'] + 1}] {p['chapter_title']}\n{p['text']}" for p in passages])
-
-        history = (body.conversation_history or [])[-50:]
-        anthropic_history = []
-        for m in history:
-            role = (m.role or "").strip().lower()
-            if role not in ("user", "assistant"):
-                continue
-            content = (m.content or "").strip()
-            if not content:
-                continue
-            anthropic_history.append({"role": role, "content": content})
-
-        system = (
-            "你是 Reader3 的 AI 阅读助手。"
-            "只基于提供的书籍内容回答与书相关的问题；如果内容不足以回答，请明确说明需要更多上下文。"
-            "回答要清晰、简洁。"
-        )
-        user = f"书籍内容（用于回答）：\n{context}\n\n问题：{question}\n"
-
-        started = time.perf_counter()
-        try:
-            resp = await run_in_threadpool(
-                _call_provider,
-                provider_name,
-                api_key=api_key,
-                base_url=base_url,
-                model=model,
-                system=system,
-                messages=[*anthropic_history, {"role": "user", "content": user}],
-                max_tokens=body.max_tokens,
-                timeout_s=timeout_s,
-            )
-        except Exception as e:
-            if decision.mode in ("full_book", "multi_chapter"):
-                ai_logger.debug(
-                    "question fallback to rag book_uuid=%s provider=%s error=%s",
-                    str(book_uuid),
-                    provider_name,
-                    str(e),
-                )
-                rag_context = "\n\n".join([f"[{p['chapter_order'] + 1}] {p['chapter_title']}\n{p['text']}" for p in passages])
-                rag_user = f"书籍片段（用于回答）：\n{rag_context}\n\n问题：{question}\n"
-                resp = await run_in_threadpool(
-                    _call_provider,
-                    provider_name,
-                    api_key=api_key,
-                    base_url=base_url,
-                    model=model,
-                    system=system,
-                    messages=[*anthropic_history, {"role": "user", "content": rag_user}],
-                    max_tokens=body.max_tokens,
-                    timeout_s=timeout_s,
-                )
-                routing_meta["mode"] = "rag_fallback"
-            else:
-                raise
-        generation_time_ms = int((time.perf_counter() - started) * 1000)
-
-        msg_id = str(__import__("uuid").uuid4())
-        conversation_id = _conversation_id_from_history(body.conversation_history or [])
-        if conversation_id:
-            ts = __import__("datetime").datetime.utcnow().isoformat() + "Z"
-            await run_in_threadpool(
-                _save_conversation_snapshot,
-                book_uuid=str(book_uuid),
-                book_folder=book_folder,
-                conversation_id=conversation_id,
-                provider=provider_name,
-                model=resp.model,
-                history=(body.conversation_history or [])[-50:],
-                assistant_message=DiskConversationMessage(
-                    id=msg_id,
-                    role="assistant",
-                    content=resp.text,
-                    timestamp=ts,
-                    metadata={
-                        "retrieval_sources": passages,
-                        "provider": provider_name,
-                    },
-                ),
-            )
-        return {
-            "answer": resp.text,
-            "message_id": msg_id,
-            "retrieval_sources": passages,
-            "metadata": {
-                "token_count": resp.token_count,
-                "model": resp.model,
-                "finish_reason": resp.finish_reason,
-                "retrieval_time_ms": retrieval_time_ms,
-                "generation_time_ms": generation_time_ms,
-                "provider": provider_name,
-                "routing": routing_meta,
-            },
-        }
-
-    return await ai_queue.run(
-        queue_key,
-        request=request,
-        timeout_s=float(timeout_s),
-        request_label="question",
-        fn=_do,
-    )
-
-@app.get("/read/{book_id}/images/{image_name}")
-async def serve_image(book_id: str, image_name: str):
-    """
-    Serves images specifically for a book.
-    The HTML contains <img src="images/pic.jpg">.
-    The browser resolves this to /read/{book_id}/images/pic.jpg.
-    """
-    # Security check: ensure book_id is clean
-    safe_book_id = os.path.basename(book_id)
-    safe_image_name = os.path.basename(image_name)
-
-    img_path = os.path.join(BOOKS_DIR, safe_book_id, "images", safe_image_name)
-
-    # isfile 而不是 exists：`image_name=".."` 是**唯一能穿过路由到达这里**的可疑输入
-    # （路由参数是 [^/]+，任何含 `/` 的 payload 在匹配阶段就 404 了，所以上面两行
-    # basename 其实碰不到东西）。而 basename("..") 仍是 ".."，于是 img_path 指向
-    # images/ 的父目录——它存在，exists() 放行，FileResponse 拿到一个目录，
-    # 在 send 阶段炸成 500。一次「文件不存在」被报成「服务器坏了」。
-    if not os.path.isfile(img_path):
-        raise HTTPException(status_code=404, detail="Image not found")
-
-    return FileResponse(img_path)
 
 DEFAULT_PORT = 8123
 DEFAULT_HOST = "127.0.0.1"
@@ -2883,6 +1017,36 @@ def resolve_port(argv: list[str], env: dict[str, str]) -> int:
         return _parse_port(raw, "READER3_PORT")
 
     return DEFAULT_PORT
+
+
+# ---------------------------------------------------------------------------
+# 按关切拆开的 router。**必须在文件末尾 include**：router 模块在导入期会
+# `from .. import server as _server` 绑定本模块对象，放在文件开头 include 会让它
+# 在本模块的名字都还没定义时就被导入。绑的是模块不是属性，所以这里只要求
+# 「server 这个对象已经在 sys.modules 里」，不要求它已经执行完。
+# 规矩与实测依据见 `routers/__init__.py` 的 docstring。
+# ---------------------------------------------------------------------------
+from .routers import library as _library_router  # noqa: E402
+from .routers import reader as _reader_router  # noqa: E402
+from .routers import settings as _settings_router  # noqa: E402
+from .routers import health as _health_router  # noqa: E402
+from .routers.ai import chat as _ai_chat_router  # noqa: E402
+from .routers.ai import conversations as _ai_conversations_router  # noqa: E402
+from .routers.ai import rag as _ai_rag_router  # noqa: E402
+from .routers.ai import summary as _ai_summary_router  # noqa: E402
+from .routers import notes as _notes_router  # noqa: E402
+from .routers import search as _search_router  # noqa: E402
+
+app.include_router(_library_router.router)
+app.include_router(_reader_router.router)
+app.include_router(_settings_router.router)
+app.include_router(_health_router.router)
+app.include_router(_ai_conversations_router.router)
+app.include_router(_ai_rag_router.router)
+app.include_router(_ai_summary_router.router)
+app.include_router(_ai_chat_router.router)
+app.include_router(_notes_router.router)
+app.include_router(_search_router.router)
 
 
 def main() -> int:

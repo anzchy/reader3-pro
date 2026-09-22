@@ -4,7 +4,7 @@ import urllib.parse
 from typing import Any, Dict, List
 
 from ._http import post_json, validated_url
-from .types import ProviderResponse
+from .types import ProviderHTTPError, ProviderResponse
 
 
 DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com"
@@ -106,7 +106,7 @@ def gemini_generate_content(
         err = resp.get("error")
         if isinstance(err, dict):
             msg = err.get("message")
-        raise RuntimeError(msg or f"Gemini API error ({status})")
+        raise ProviderHTTPError(msg or f"Gemini API error ({status})", status=status)
 
     return ProviderResponse(
         text=_extract_text(resp),

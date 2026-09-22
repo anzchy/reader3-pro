@@ -115,7 +115,9 @@ SUBPROCESS_TIMEOUT_S = 300
 # --------------------------------------------------------------------------
 # 66 → 67：2026-09-06 欠账 #22 兑付新增 R-6c（理由写在 `scripts/lint_e2e_groups.py`
 # 的「常量的变更史」里，本文件不复述——两处只需数字相等）。
-CANONICAL_BASELINE_ITEMS = 67
+# 67 → 68：2026-09-21 欠账 #44 的回归闸从白名单迁入 `baseline_1b`（同批 W-5a-③ 改判，
+# `suite_hash` 本来就要变，两件事合并只清零一次）。
+CANONICAL_BASELINE_ITEMS = 68
 CANONICAL_ACCEPTANCE_PER_DIR: Dict[str, int] = {
     "acceptance_4b1": 8,
     "acceptance_p3": 4,
@@ -123,8 +125,42 @@ CANONICAL_ACCEPTANCE_PER_DIR: Dict[str, int] = {
     "acceptance_2a": 1,
 }
 CANONICAL_ACCEPTANCE_ITEMS = 17
-CANONICAL_UNGROUPED_ITEMS = 7
-CANONICAL_E2E_ITEMS = 91
+# 7 → 8 / 91 → 92：2026-09-20 欠账 #44 新增
+# `tests/e2e/test_w8a_selection_survives_rerender.py`（恰好一条 item）。它按内容属于
+# `baseline_1b`，落在白名单是为了不动 `suite_hash` 的覆盖面——理由与到期动作写在
+# `scripts/lint_e2e_groups.py` 的白名单注释里，本文件不复述。
+# 8 → 7：2026-09-21 那笔明账到期兑付，该文件迁进 `baseline_1b`。**总数仍是 92**——
+# 一条 item 换了住址，没有增减，所以 `CANONICAL_E2E_ITEMS` 不动；动的是它落在哪一段。
+# 7 → 17 / 92 → 102：2026-09-22 欠账 #43 part (i) 第一批（WI-1 ＋ WI-2）新增
+# `tests/e2e/test_notes_write_failure_is_attributable.py`，**实测 10 条 item**（一次真的
+# `pytest tests/e2e --collect-only -q` 数出来的，不是按矩阵推算的）。这只是本批的条数：
+# 矩阵预测全部落地后是 37 条，WI-3..WI-7 每一批会各自再改这里一次，每次都取实测值。
+# 理由与迁移条件写在 `scripts/lint_e2e_groups.py` 的白名单注释里，本文件不复述。
+# 17 → 23 / 102 → 108：2026-09-22 同一欠账的 WI-3（`saveNote()` PUT 编辑分支）落地，该模块
+# 10 → 16 条，**+6 为实测值**（`pytest tests/e2e --collect-only -q` 全量 108）。
+# 23 → 31 / 108 → 116：2026-09-22 同一欠账的 WI-4（`deleteAnnotations()` ＋ 改色调用方）落地，
+# 该模块 16 → 24 条，**+8 为实测值**（`pytest tests/e2e --collect-only -q` 全量 116）。
+# 31 → 36 / 116 → 121：2026-09-22 同一欠账的 WI-5（`resolveConflict()` 的「保留我的」写）落地，
+# 该模块 24 → 29 条，**+5 为实测值**（`pytest tests/e2e --collect-only -q` 全量 121）。
+# 36 → 43 / 121 → 128：2026-09-22 同一欠账的 WI-6（请求前的静默出口，修订 A3）落地，
+# 该模块 29 → 36 条，**+7 为实测值**（`pytest tests/e2e --collect-only -q` 全量 128）。
+# 43 → 44 / 128 → 129：2026-09-22 同一欠账的 WI-7（成功路径护栏，不装路由）落地，
+# 该模块 36 → 37 条，**+1 为实测值**（`pytest tests/e2e --collect-only -q` 全量 129）。
+CANONICAL_UNGROUPED_ITEMS = 44
+CANONICAL_E2E_ITEMS = 129
+
+#: **已激活**的 acceptance 组，与 `scripts/lint_e2e_groups.py` 的
+#: `ACTIVATED_ACCEPTANCE_DIRS` 各写一份——本文件是守卫的独立 oracle，不从被测脚本 import
+#: 判据（见上面 `PHASE_TOKEN_RE` 一带的同款说明）。两份必须相等，由
+#: `test_activated_group_registry_is_pinned_independently_of_the_guard_constant` 执行。
+#:
+#: 只改一处就红，正是要的行为：一个目录进了那张表，等于宣称「这一组今天必须真的跑出
+#: passed」，两条 skip 轴对它**反向**判定。若这里写成 `g.ACTIVATED_ACCEPTANCE_DIRS`，
+#: 「把一个还没落地的组塞进登记表」就会让守卫与守卫的守卫同时变绿，而那一组的用例从此
+#: 既不 skip 也不被要求 passed——两条轴对它都不说话。
+#:
+#: `acceptance_2a`：011 WI-5b（DEG-S5 写冲突对话框落地）解禁，2026-09-19。
+CANONICAL_ACTIVATED_ACCEPTANCE_DIRS: FrozenSet[str] = frozenset({"acceptance_2a"})
 
 
 # --------------------------------------------------------------------------
@@ -283,6 +319,7 @@ def test_real_tree_collection_is_a_partition_and_counts_match() -> None:
     assert whitelist == {
         f"{E2E_REL}/test_harness_smoke.py",
         f"{E2E_REL}/test_testid_dom_uniqueness.py",
+        f"{E2E_REL}/test_notes_write_failure_is_attributable.py",
     }, f"白名单的内容变了：{sorted(whitelist)}（加项要写理由，且它必须真的贡献 item）"
 
     # (1) 划分：恰好一个组 marker，或模块在白名单里。双 marker 也红。
@@ -414,6 +451,14 @@ BASE_EXPECTED = dict(
     expected_ungrouped=1,
     # 白名单是**路径**，不是 basename：见 `_m_whitelisted_module_moved_into_subdir`。
     ungrouped_modules={f"{E2E_REL}/test_harness_smoke.py"},
+    # 2026-09-19（011 WI-5b-2）新增。合成基准树的四个 acceptance 组**都未激活**、各带一个
+    # 模块级 skip——这正是下面 21 个变异被写下来时所处的状态。显式传空集，是为了让这棵树的
+    # 含义不随真实仓库的登记表漂移：真树上 `acceptance_2a` 已经激活，这里若跟着默认值走，
+    # 合法基准树会因为「已激活组还留着 skip」当场判红，而红的原因与被测的那 21 条破坏毫无
+    # 关系——最省事的修法（把 2a 从基准树里删掉）还会顺手砍掉 collect-ignore 那条变异的落点。
+    # 已激活那一侧的牙由 `test_guard_is_red_when_an_activated_group_still_carries_a_skip`
+    # 单独装，不挂在这棵对照树上。
+    activated_dirs=frozenset(),
 )
 
 
@@ -791,10 +836,22 @@ def test_baseline_reachable_chain_has_zero_skip_constructs() -> None:
 
 
 def test_every_acceptance_module_skips_only_via_module_level_pytestmark_with_phase_reason() -> None:
-    """条件 2 ＋ 3 ＋ 4：四个 acceptance 目录里每个 `test_*.py` 恰好一个模块级 skip、带激活阶段 reason；目录内无 collect_ignore。"""
+    """条件 2 ＋ 3 ＋ 4，**按组的激活状态分两侧判**；目录内无 collect_ignore 对两侧都不变。
+
+    - **未激活**组（不在 `CANONICAL_ACTIVATED_ACCEPTANCE_DIRS` 里）：每个 `test_*.py` 恰好
+      一个模块级 `pytest.mark.skip`，reason 非空且点名本组的激活阶段，模块内再无别的 skip 构造；
+    - **已激活**组：**一个 skip 构造都不许有**——与域 R 同款判据。
+
+    2026-09-19（011 WI-5b-2）改此条。原文是「四个 acceptance 目录里每个 `test_*.py` 恰好一个
+    模块级 skip」，它在「第一个组被激活」这个事件之前是对的，之后不再是：`acceptance_2a` 的
+    DEG-S5 写冲突用例已经解禁并跑出 passed，旧判据读到的却是「模块级 skip 有 0 个」，于是它
+    要求的恰恰是把一条已经落地的用例重新关掉——判据反过来给退化背书。改的是**哪一侧**适用，
+    不是放宽：未激活那一侧一字未动，已激活那一侧换成更严的「零 skip 构造」。
+    """
     problems: List[str] = []
     seen_any = False
     for d in ACCEPTANCE_DIRS:
+        activated = d in CANONICAL_ACTIVATED_ACCEPTANCE_DIRS
         for f in sorted((E2E_DIR / d).rglob("*.py")):
             text = f.read_text(encoding="utf-8")
             tree = ast.parse(text, filename=str(f))
@@ -803,6 +860,18 @@ def test_every_acceptance_module_skips_only_via_module_level_pytestmark_with_pha
                     isinstance(t, ast.Name) and t.id in {"collect_ignore", "collect_ignore_glob"} for t in node.targets
                 ):
                     problems.append(f"{f.relative_to(REPO_ROOT)}:{node.lineno}  collect_ignore（比 skip 更隐蔽的消失方式）")
+            if activated:
+                # 已激活组：用例模块与辅助模块同一条判据——零 skip 构造。留着的任何一处都能
+                # 让一条「已宣称必须 passed」的用例静默消失，与域 R 上那句 skip 是同一种事故。
+                hits = _skip_constructs(f)
+                if hits:
+                    problems.append(
+                        f"{f.relative_to(REPO_ROOT)}: {d} 已登记在 CANONICAL_ACTIVATED_ACCEPTANCE_DIRS 里"
+                        f"（= 这一组今天必须真的跑出 passed），却仍有 skip 构造：{hits}"
+                    )
+                if f.name.startswith("test_"):
+                    seen_any = True
+                continue
             if not f.name.startswith("test_"):
                 if _skip_constructs(f):
                     problems.append(f"{f.relative_to(REPO_ROOT)}: 非用例模块里出现 skip 构造")
@@ -832,19 +901,85 @@ def test_every_acceptance_module_skips_only_via_module_level_pytestmark_with_pha
 
 
 # --------------------------------------------------------------------------
-# Case 5：四个 acceptance 组正向选中后全部 skip（guard / S3 / L1）
+# Case 5：四个 acceptance 组正选后按激活状态分账（guard / S3 / L1）
 # --------------------------------------------------------------------------
-def test_positive_selection_of_acceptance_groups_yields_exactly_the_skipped_count() -> None:
-    """`-m "acceptance_4b1 or …"` ⇒ 退出码 0、skipped == EXPECTED_ACCEPTANCE_ITEMS、passed == failed == errors == 0。
+#: 本条子进程读这个环境变量，把逐 item 的 setup 阶段结果**写文件**——不走 stdout。
+#: 理由：pytest 自己会捕获插件里的 print，`--setup-plan` 下的输出形态还随版本变；写文件
+#: 是唯一不受捕获策略影响的通道。
+ACCEPTANCE_OUTCOME_ENV = "ACCEPTANCE_OUTCOME_PROBE_PATH"
+
+#: 逐 item 探针插件，写进 `tmp_path`、经 `PYTHONPATH` 以 `-p` 加载，不入仓、不进任何 lane。
+#: 形状照抄下面 `_ACCEPTANCE_WIRING_PLUGIN`（同文件 Case 5b），不发明新机制。
+_ACCEPTANCE_OUTCOME_PLUGIN = '''
+"""临时探针：在 `--setup-plan` 下逐 item 汇报 setup 阶段的结果。
+
+`--setup-plan` 不执行任何 fixture 函数体、不执行用例体，所以**已激活组的那一条不进任何
+summary 计数**：它不是 passed（call 阶段不执行，没有 call report），也不是 skipped。
+只看 summary 的数字，已激活组就成了无人观察的一块。本探针补的正是这块：setup 阶段的
+report 对每条 item 都有，skip 生效的会带 `skipped`，没被 skip 的走到 `passed`。
+"""
+
+import os
+
+
+def pytest_runtest_logreport(report):
+    if report.when != "setup":
+        return
+    with open(os.environ["ACCEPTANCE_OUTCOME_PROBE_PATH"], "a", encoding="utf-8") as fh:
+        fh.write(f"{report.nodeid}\\t{'skipped' if report.skipped else report.outcome}\\n")
+'''
+
+
+def test_positive_selection_of_acceptance_groups_yields_exactly_the_skipped_count(
+    tmp_path: Path,
+) -> None:
+    """`-m "acceptance_4b1 or …" --setup-plan` ⇒ 退出码 0、errors == failed == 0，且
+    **逐目录**分账：登记表内各组的每一条都不是 skipped，表外各组的每一条都是 skipped。
 
     `errors == 0` 在这里只覆盖**收集期**的失败：模块级 import 错、语法错、marker 拼错。
-    它**不**覆盖 fixture 名写错和用例体里的 `NameError`——模块级 skip 在
-    `pytest_runtest_setup` 里 tryfirst 生效，早于 fixture 装配、更早于用例体，所以这一路
+    它**不**覆盖未激活组的 fixture 名写错和用例体里的 `NameError`——模块级 skip 在
+    `pytest_runtest_setup` 里 tryfirst 生效，早于 fixture 装配、更早于用例体，所以那一路
     永远走不到那里。那半句由下一条
     `test_acceptance_wiring_resolves_without_the_module_level_skip` 承担（摘掉 skip 后跑
-    `--setup-plan`），本条只证「它们确实全被 skip 了」。不起服务、不起浏览器。
+    `--setup-plan`）。
+
+    2026-09-19（011 WI-5b-2）改此条。原文断 `passed == 0` 并写明「不起服务、不起浏览器」，
+    两句都随 `acceptance_2a` 解禁而失效：那一组的 DEG-S5 用例现在**真的**起服务、起浏览器
+    并跑出 passed，旧断言会把它读成「skip 被解开而阶段未到」。新口径不是把 `passed` 放宽成
+    `>= 0`——那等于让这条用例对「某个未激活组悄悄活过来」和「已激活组悄悄被关掉」双向失明。
+    两个数都钉：passed 恰好是登记表内各组的条数之和，skipped 恰好是其余各组的条数之和，
+    两者相加仍须等于 `EXPECTED_ACCEPTANCE_ITEMS`。
+
+    2026-09-20（欠账 #45）再改此条：子进程由**真跑**换成 `--setup-plan` ＋ 逐 item 探针。
+    上一版让 unit lane 长出了一条浏览器依赖——`acceptance_2a` 解禁后，这里的子进程真的去
+    launch Chromium，没装浏览器的机器上必红（确定性，不是 flaky）；CI run 35500630451 的
+    `unit` job 就红在这一条，那个 job 不装 Chromium。`--setup-plan` 解析整条 fixture 闭包
+    但不执行 fixture 函数体、不执行用例体，于是「不起服务、不起浏览器」重新成立。
+
+    **本次换法的实质代价，写明在此，不许含混。** 原断言 `passed == n_activated` 证明的是
+    「DEG-S5 **真的跑过并通过**」。`--setup-plan` 下 call 阶段不执行，这句话**不再由
+    unit lane 证明**，改由 e2e lane 承担（`uv run pytest tests/e2e --browser chromium`，
+    实测 `75 passed / 16 skipped`，DEG-S5 那一条就在里面）。这是**刻意的 lane 归位**，不是
+    疏忽：「一条浏览器用例通不通得过」不该是 commit 时的性质，它属于 push 闸。本条在 unit
+    lane 保留的是**归属**那一层——登记表内的组不得带生效 skip，表外的组必须带，逐目录判，
+    两个方向的牙都还在。
     """
     g = _guard()
+    activated = [d for d in ACCEPTANCE_DIRS if d in CANONICAL_ACTIVATED_ACCEPTANCE_DIRS]
+    dormant = [d for d in ACCEPTANCE_DIRS if d not in CANONICAL_ACTIVATED_ACCEPTANCE_DIRS]
+
+    plugin_dir = tmp_path / "outcome_probe"
+    plugin_dir.mkdir()
+    (plugin_dir / "acceptance_outcome_probe.py").write_text(
+        _ACCEPTANCE_OUTCOME_PLUGIN, encoding="utf-8"
+    )
+    report_path = tmp_path / "outcomes.tsv"
+    env = dict(os.environ)
+    env["PYTHONPATH"] = os.pathsep.join(
+        p for p in (str(plugin_dir), env.get("PYTHONPATH", "")) if p
+    )
+    env[ACCEPTANCE_OUTCOME_ENV] = str(report_path)
+
     proc = subprocess.run(
         [
             sys.executable,
@@ -853,12 +988,16 @@ def test_positive_selection_of_acceptance_groups_yields_exactly_the_skipped_coun
             E2E_REL,
             "-m",
             " or ".join(ACCEPTANCE_DIRS),
+            "--setup-plan",
             "-q",
             "--no-header",
             "-p",
             "no:cacheprovider",
+            "-p",
+            "acceptance_outcome_probe",
         ],
         cwd=REPO_ROOT,
+        env=env,
         capture_output=True,
         text=True,
         timeout=SUBPROCESS_TIMEOUT_S,
@@ -866,14 +1005,318 @@ def test_positive_selection_of_acceptance_groups_yields_exactly_the_skipped_coun
     out = proc.stdout + proc.stderr
     counts = _parse_summary_tokens(out)
     assert proc.returncode == 0, f"正选四个 acceptance 组时退出码 {proc.returncode}：\n{out}"
-    assert counts["errors"] == 0, f"有 collection error——某条 skip 用例 import 不进来：\n{out}"
-    assert counts["passed"] == 0, f"有 acceptance 用例真的跑起来并通过了（skip 被解开而阶段未到？）：\n{out}"
+    assert counts["errors"] == 0, f"有 collection error——某条 acceptance 用例 import 不进来：\n{out}"
     assert counts["failed"] == 0, f"有 acceptance 用例真的跑起来并失败了：\n{out}"
-    assert counts["skipped"] == g.EXPECTED_ACCEPTANCE_ITEMS, (
-        f"skipped == {counts['skipped']}，期望 EXPECTED_ACCEPTANCE_ITEMS == {g.EXPECTED_ACCEPTANCE_ITEMS}：\n{out}"
+
+    assert report_path.exists(), (
+        f"探针一行都没写（{report_path} 不存在）——插件没被加载，本条证明不了任何事：\n{out}"
     )
-    assert counts["skipped"] == CANONICAL_ACCEPTANCE_ITEMS, (
-        f"skipped == {counts['skipped']}，本文件独立钉的是 {CANONICAL_ACCEPTANCE_ITEMS}：\n{out}"
+    reported: List[Tuple[str, str]] = []
+    for line in report_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        nodeid, _, outcome = line.partition("\t")
+        reported.append((nodeid, outcome))
+    detail = "\n  ".join(f"{nodeid}\t{outcome}" for nodeid, outcome in reported)
+
+    # 覆盖面先于结论：理由同 Case 5b——覆盖面不全时「零个异常」毫无意义。
+    assert len(reported) == CANONICAL_ACCEPTANCE_ITEMS, (
+        f"探针只逐 item 汇报了 {len(reported)} 条，期望 {CANONICAL_ACCEPTANCE_ITEMS} 条——"
+        f"覆盖面不全时「零个异常」毫无意义：\n  {detail}\n{out}"
+    )
+
+    by_dir: Dict[str, List[Tuple[str, str]]] = {
+        d: [(n, o) for n, o in reported if n.startswith(f"{E2E_REL}/{d}/")]
+        for d in ACCEPTANCE_DIRS
+    }
+    for d in ACCEPTANCE_DIRS:
+        expected = CANONICAL_ACCEPTANCE_PER_DIR[d]
+        assert len(by_dir[d]) == expected, (
+            f"{E2E_REL}/{d}/ 的探针行数是 {len(by_dir[d])}，本文件独立钉的是 {expected}：\n  {detail}"
+        )
+
+    wrongly_skipped = [
+        f"{n}\t{o}" for d in activated for n, o in by_dir[d] if o == "skipped"
+    ]
+    assert not wrongly_skipped, (
+        f"以下 item 住在**已激活**组 {sorted(CANONICAL_ACTIVATED_ACCEPTANCE_DIRS)} 里却带生效 skip"
+        f"——某条已宣称激活的用例又被关回去了：\n  " + "\n  ".join(wrongly_skipped) + f"\n{out}"
+    )
+    wrongly_live = [
+        f"{n}\t{o}" for d in dormant for n, o in by_dir[d] if o != "skipped"
+    ]
+    assert not wrongly_live, (
+        f"以下 item 住在**未激活**组 {dormant} 里却没被 skip 掉——某个未激活组的 skip 被解开"
+        f"而阶段未到：\n  " + "\n  ".join(wrongly_live) + f"\n{out}"
+    )
+
+    n_activated = sum(len(by_dir[d]) for d in activated)
+    n_dormant = sum(len(by_dir[d]) for d in dormant)
+    assert n_activated + n_dormant == CANONICAL_ACCEPTANCE_ITEMS, (
+        f"两类条数之和 == {n_activated + n_dormant}，本文件独立钉的是 "
+        f"{CANONICAL_ACCEPTANCE_ITEMS}（差额 = 有 item 不住在四个组目录下）：\n  {detail}"
+    )
+    assert n_activated + n_dormant == g.EXPECTED_ACCEPTANCE_ITEMS, (
+        f"两类条数之和 == {n_activated + n_dormant}，"
+        f"期望 EXPECTED_ACCEPTANCE_ITEMS == {g.EXPECTED_ACCEPTANCE_ITEMS}：\n  {detail}"
+    )
+
+
+# --------------------------------------------------------------------------
+# Case 5b：已激活组登记表，两条 skip 轴对它**反向**判定（guard / S6 / L1）
+#
+# `acceptance_2a` 是仓库历史上第一个被激活的 acceptance 组（011 WI-5b，DEG-S5 写冲突对话框
+# 落地，2026-09-19）。在它之前，「未激活组以 skip 形态存在」对**每一个** acceptance item
+# 成立；在它之后，那句话只对登记表之外的组成立，表内的组必须真的跑出 passed。
+#
+# 下面五条装的是反向那一侧的牙。没有它们，把新分支写成
+#
+#     if group in activated_dirs:
+#         continue          # 「已激活，不用查」
+#
+# 也能让全套变绿——「已激活」就从一条更严的判据退化成一个免检开关，而那正是把一整组用例
+# 悄悄关掉时最先会被按下的那个开关。上面 Case 4 / Case 5 对真树成立，但真树今天合法，
+# 永远只能证明绿（文件头「两个域不可互相替代」）；反向的可失败性只能在合成树上证。
+#
+# **免检开关这条必须按轴拆开证，不能只靠走 `check_tree` 的那一条**（2026-09-19 复核实测）。
+# 两条轴一起判时它们互相掩护：把 `skip_axis_violations` 的已激活分支整个掏空，动态轴那条
+# 消息照样让 `check_tree` 非空返回、照样点名 `acceptance_2a` 与模块路径（nodeid 里本来就带），
+# 于是整份本文件 38 passed，没有一条用例发现静态轴已经不设防。所以
+# `skip_axis_violations` 与 `skip_marker_violations` **各有一条只调它自己**的用例，
+# 走 `check_tree` 的那一条守的是第三件事：登记表真的被透传到了两条轴上。
+# --------------------------------------------------------------------------
+def test_activated_group_registry_is_pinned_independently_of_the_guard_constant() -> None:
+    """守卫的 `ACTIVATED_ACCEPTANCE_DIRS` 与本文件独立钉的那份必须相等，且只能放 acceptance 目录名。
+
+    与 `CANONICAL_*` 三段条数同一个理由（见那一节的注释）：登记表若只在守卫脚本里有一份，
+    「往表里加一个还没落地的组」就是零成本零信号的——守卫对它不再要求 skip，也没有任何东西
+    要求它 passed，两条轴同时对那一组闭嘴。两份各写一份，只改一处就红。
+    """
+    g = _guard()
+    assert hasattr(g, "ACTIVATED_ACCEPTANCE_DIRS"), (
+        "scripts/lint_e2e_groups.py 里没有 ACTIVATED_ACCEPTANCE_DIRS。"
+        "两条 skip 轴要求每一个 acceptance item 都带生效的 skip，而 acceptance_2a 已经解禁——"
+        "没有「已激活组」这个口径，守卫要求的恰恰是把一条已落地的用例重新关掉（011 WI-5b-2）"
+    )
+    actual = frozenset(g.ACTIVATED_ACCEPTANCE_DIRS)
+    assert actual == CANONICAL_ACTIVATED_ACCEPTANCE_DIRS, (
+        f"守卫登记的已激活组是 {sorted(actual)}，本文件独立钉的是 "
+        f"{sorted(CANONICAL_ACTIVATED_ACCEPTANCE_DIRS)}——两处必须同时改，且都要写清楚"
+        "是哪一次、因为什么进来的"
+    )
+    strays = sorted(actual - set(ACCEPTANCE_DIRS))
+    assert not strays, (
+        f"登记表里出现了不是 acceptance 目录名的条目 {strays}——它对任何一条轴都不生效，"
+        "只会让读的人以为某个组已经激活"
+    )
+
+
+def test_guard_is_red_when_an_activated_group_still_carries_a_skip(tmp_path: Path) -> None:
+    """已激活组里还留着模块级 skip ⇒ **`check_tree` 整体**必须红，且消息点名那一组。
+
+    这是本条登记表存在的全部意义。「这一组今天必须真的跑出 passed」如果没有执行体，
+    删掉 `pytest.mark.skip` 和把它加回来就都是零信号的动作：加回来之后条数一条不差、
+    划分律成立、未激活那一侧的判据照样绿，而那一组的用例已经不再产出 passed。
+
+    **它证明什么、不证明什么**（2026-09-19 复核更正）。本条原先在 assert 文案里写着
+    「`if activated: continue` 式的实现（把已激活当成免检开关）正是这条要杀掉的」——那句话
+    **经定向破坏实测证伪**，不成立：把 `skip_axis_violations` 已激活分支的
+    `for hit in _skip_constructs(f, root):` 换成 `for hit in []:`（语义上就是
+    `if group in activated: continue`），整份本文件仍 **38 passed**。原因是本条调的是
+    `check_tree`，两条 skip 轴一起判，而它断的两件事（`violations` 非空、消息点名
+    `acceptance_2a` / `test_acceptance_2a.py`）全部由**动态轴**那条消息独力满足——nodeid 里
+    本来就带着模块路径。两条轴一起判的用例天然给单侧掏空留了掩护。
+
+    所以分工是：静态轴那一侧的牙在
+    `test_static_skip_axis_alone_is_red_when_an_activated_group_keeps_a_skip`（直接调
+    `skip_axis_violations`），动态轴的在
+    `test_effective_skip_marker_axis_flips_only_for_activated_groups`（直接喂 `CollectedItem`）；
+    本条守的是第三件事，那两条都守不到：登记表真的从 `check_tree` 透传到了两条轴上。
+    断言本身一字未改，改的是对它的描述。
+
+    对照支是 `test_guard_is_green_on_a_legal_synthetic_tree`（同一棵树、空登记表 ⇒ 零违规），
+    两条合起来才说明红是**登记表**带来的，不是这棵树本来就脏。
+    """
+    g = _guard()
+    assert hasattr(g, "ACTIVATED_ACCEPTANCE_DIRS"), (
+        "scripts/lint_e2e_groups.py 里没有 ACTIVATED_ACCEPTANCE_DIRS——"
+        "已激活组的反向判定无从谈起（011 WI-5b-2）"
+    )
+    spec = _base_spec()  # 四个组各带一个合法的模块级 skip：空登记表下这棵树是**合法**的
+    _write_tree(tmp_path, spec)
+    violations = g.check_tree(
+        tmp_path, **dict(BASE_EXPECTED, activated_dirs=frozenset({"acceptance_2a"}))
+    )
+    assert violations, (
+        "acceptance_2a 已登记为已激活，组里却还留着模块级 skip，`check_tree` 没有红——"
+        "登记表没有被透传到两条轴上。（单侧被掏空不由本条守，见 docstring：两条轴一起判时"
+        "它们互相掩护，各自的牙在拆开调用的那两条用例里）"
+    )
+    joined = "\n".join(violations)
+    assert "acceptance_2a" in joined and "test_acceptance_2a.py" in joined, (
+        f"守卫红了，但消息没有点名出问题的那一组 / 那个文件，读的人无从知道是哪一侧错了：\n{joined}"
+    )
+    # 另外三组仍未激活、各自合法，不得被牵连判红——反向判定必须只作用于登记表之内。
+    for d in ("acceptance_4b1", "acceptance_p3", "acceptance_4a4"):
+        assert f"test_{d}.py" not in joined, (
+            f"未激活的 {d} 被连坐判红：反向判定作用到了登记表之外的组上：\n{joined}"
+        )
+
+
+def test_static_skip_axis_alone_is_red_when_an_activated_group_keeps_a_skip(
+    tmp_path: Path,
+) -> None:
+    """**静态轴单独**的牙：直接调 `skip_axis_violations`，不经 `check_tree`。
+
+    与上一条的分工，一句话：上一条证明的是「`check_tree` 整体会红」，**不**证明静态轴那一侧
+    有执行体。2026-09-19 实测：把 `skip_axis_violations` 已激活分支的
+    `for hit in _skip_constructs(f, root):` 换成 `for hit in []:`（语义上就是
+    `if group in activated: continue`，把已激活读成免检开关），整份本文件 **38 passed**——
+    上一条断的 `violations` 非空与「消息点名 acceptance_2a / test_acceptance_2a.py」，
+    全由动态轴那条消息独力满足（nodeid 里本来就带着模块路径）。两条轴一起判的用例互相掩护，
+    单侧掏空只能由「只调它自己」的用例守。本条守静态那一侧。
+
+    **第二段是静态轴不可被动态轴替代的那一类**，也是本条真正的理由。已激活组里写一句
+    `pytest.skip(..., allow_module_level=True)`，整个模块在**收集期**就消失：item 压根不存在，
+    `skip_marker_violations` 收到的集合里根本没有 `acceptance_2a` 这条——它一言不发不是判错，
+    是看不见（同类还有 `collect_ignore`、整模块被排除）。动态轴在这一侧结构性地兜不住，
+    而这恰恰是「把一整组已宣称激活的用例悄悄关掉」最省事的做法：条数轴数的是 collected，
+    连被数的机会都没有。所以下面先把「动态轴确实哑口」坐实，再断静态轴必须说话——
+    少了前半段，后半段就只是又一条同义反复。
+    """
+    g = _guard()
+    assert hasattr(g, "ACTIVATED_ACCEPTANCE_DIRS"), (
+        "scripts/lint_e2e_groups.py 里没有 ACTIVATED_ACCEPTANCE_DIRS——"
+        "已激活组的静态反向判定无从谈起（011 WI-5b-2）"
+    )
+    activated = frozenset({"acceptance_2a"})
+    dormant = ("acceptance_4b1", "acceptance_p3", "acceptance_4a4")
+
+    # --- (1) 已激活组里还留着模块级 skip ⇒ 静态轴**单独**必须红 ------------------
+    kept = tmp_path / "kept"
+    _write_tree(kept, _base_spec())  # 空登记表下这棵树是合法的（见 BASE_EXPECTED 的注释）
+    violations = g.skip_axis_violations(kept, activated_dirs=activated)
+    assert violations, (
+        "acceptance_2a 已登记为已激活，组里却还留着模块级 skip，`skip_axis_violations` "
+        "单独判时没有红——已激活那一侧的静态判据是空的，「已激活」退化成了免检开关"
+    )
+    joined = "\n".join(violations)
+    assert "acceptance_2a" in joined and "test_acceptance_2a.py" in joined, (
+        f"静态轴红了，但消息没有点名出问题的那一组 / 那个文件：\n{joined}"
+    )
+    for d in dormant:
+        assert f"test_{d}.py" not in joined, (
+            f"未激活的 {d} 被连坐判红：反向判定作用到了登记表之外的组上：\n{joined}"
+        )
+
+    # --- (2) 收集期就看不见的消失方式：动态轴哑口，静态轴必须说话 ----------------
+    spec = _base_spec()
+    spec[f"{E2E_REL}/acceptance_2a/test_acceptance_2a.py"] = (
+        "import pytest\n\n"
+        "pytestmark = [pytest.mark.acceptance_2a]\n\n"
+        "# 整模块在收集期消失：一条 item 都不进 --collect-only 的结果，动态轴无从判起。\n"
+        "if True:\n"
+        "    pytest.skip('e2e 环境没就绪，先整模块跳过', allow_module_level=True)\n\n"
+        "def test_acceptance_2a_0():\n    assert True\n"
+    )
+    invisible = tmp_path / "invisible"
+    _write_tree(invisible, spec)
+
+    items = g.collect_items(invisible)
+    from_2a = [getattr(it, "nodeid") for it in items if "acceptance_2a" in _module_of(it)]
+    assert from_2a == [], (
+        f"这棵树本该让 acceptance_2a 在收集期整个消失，实际还收到了 {from_2a}——"
+        "样本立不住，下面那条就证明不了静态轴是不可替代的"
+    )
+    assert g.skip_marker_violations(items, activated_dirs=activated) == [], (
+        "动态轴对这棵树本该一言不发：item 不存在时它无从判起。它若在这里红了，说明它红的"
+        "是别的东西，本条就不再是「只有静态轴看得见」的样本"
+    )
+
+    hidden = g.skip_axis_violations(invisible, activated_dirs=activated)
+    assert hidden, (
+        "已激活组用 `pytest.skip(..., allow_module_level=True)` 把整模块从收集期摘掉，"
+        "静态轴没有红——这一类消失方式动态轴结构性地看不见，静态轴是唯一的防线"
+    )
+    joined_hidden = "\n".join(hidden)
+    assert "acceptance_2a" in joined_hidden and "test_acceptance_2a.py" in joined_hidden, (
+        f"静态轴红了，但消息没有点名那一组 / 那个文件：\n{joined_hidden}"
+    )
+    for d in dormant:
+        assert f"test_{d}.py" not in joined_hidden, (
+            f"未激活的 {d} 被连坐判红：\n{joined_hidden}"
+        )
+
+
+def test_guard_is_red_when_a_dormant_group_is_missing_its_skip_under_a_registry(
+    tmp_path: Path,
+) -> None:
+    """回归：登记表引入后，**未激活**那一侧的判据必须原样还在。
+
+    `_m_skip_missing` 这条变异在空登记表下已经由 `test_guard_is_red_on_every_mutant_tree`
+    覆盖。这里再跑一遍是换了条件：登记表**非空**。两条轴新增的分支若写成「先查 activated，
+    命中就 continue，没命中也 continue」，或把判定错挂成「只要登记表非空就整体跳过 acceptance
+    检查」，空登记表那一版仍然全绿，只有这条会红。
+    """
+    g = _guard()
+    assert hasattr(g, "ACTIVATED_ACCEPTANCE_DIRS"), (
+        "scripts/lint_e2e_groups.py 里没有 ACTIVATED_ACCEPTANCE_DIRS（011 WI-5b-2）"
+    )
+    spec = _base_spec()
+    _m_skip_missing(spec)  # acceptance_p3 的模块级 skip 被删掉，而 p3 并未登记激活
+    _write_tree(tmp_path, spec)
+    violations = g.check_tree(
+        tmp_path, **dict(BASE_EXPECTED, activated_dirs=frozenset({"acceptance_2a"}))
+    )
+    assert violations, (
+        "未激活的 acceptance_p3 丢了模块级 skip，守卫却没红——引入已激活口径时把原来那一半弄丢了"
+    )
+    joined = "\n".join(violations)
+    assert "test_acceptance_p3.py" in joined and "skip" in joined, (
+        f"守卫红了，但消息没有点名 acceptance_p3 的 skip 缺失：\n{joined}"
+    )
+
+
+def test_effective_skip_marker_axis_flips_only_for_activated_groups() -> None:
+    """动态轴（读收集期**实际生效**的 marker）单独一条，四种组合全判。
+
+    单独装它的理由：上面那条合成树用例里静态轴与动态轴会**同时**报红，于是只改静态那一条
+    也能让它绿——动态轴的反向判定没有任何东西执行，而「模块级 pytestmark 被二次赋值覆盖」
+    这类事故只有动态轴看得见（见守卫脚本 `skip_marker_violations` 的 docstring）。这条直接
+    喂 `CollectedItem`，把两条轴拆开。
+
+    item 侧拿到的是 **marker 名**，登记表按**目录名**索引。本仓两者同形，但同形是巧合不是
+    判据：这条用例连同守卫的实现都必须显式走 marker ↔ 目录的既有映射，否则将来某个组的
+    marker 与目录改成不同名时，登记表会静默地对谁都不生效。
+    """
+    g = _guard()
+    assert hasattr(g, "ACTIVATED_ACCEPTANCE_DIRS"), (
+        "scripts/lint_e2e_groups.py 里没有 ACTIVATED_ACCEPTANCE_DIRS（011 WI-5b-2）"
+    )
+    activated, dormant = "acceptance_2a", "acceptance_p3"
+    kw = dict(activated_dirs=frozenset({activated}))
+
+    def item(d: str, *, skipped: bool) -> object:
+        markers = {d} | ({"skip"} if skipped else set())
+        return g.CollectedItem(
+            nodeid=f"{E2E_REL}/{d}/test_x.py::test_x",
+            module=f"{E2E_REL}/{d}/test_x.py",
+            markers=frozenset(markers),
+        )
+
+    v_bad_activated = g.skip_marker_violations([item(activated, skipped=True)], **kw)
+    assert v_bad_activated and activated in "\n".join(v_bad_activated), (
+        f"{activated} 已激活，item 上却带着生效的 skip marker，动态轴没有红：{v_bad_activated}"
+    )
+    assert g.skip_marker_violations([item(activated, skipped=False)], **kw) == [], (
+        f"{activated} 已激活且 item 没有 skip marker——这正是要的状态，动态轴不该判红"
+    )
+    v_bad_dormant = g.skip_marker_violations([item(dormant, skipped=False)], **kw)
+    assert v_bad_dormant and dormant in "\n".join(v_bad_dormant), (
+        f"未激活的 {dormant} 的 item 没有任何生效 skip marker，动态轴没有红（旧判据丢了）：{v_bad_dormant}"
+    )
+    assert g.skip_marker_violations([item(dormant, skipped=True)], **kw) == [], (
+        f"未激活的 {dormant} 的 item 带生效 skip marker——合法状态，不该判红"
     )
 
 

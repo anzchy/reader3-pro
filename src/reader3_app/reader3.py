@@ -713,7 +713,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         if not os.path.exists(os.path.join(book_dir, "book.pkl")):
             raise SystemExit(f"Book not found or not processed: {book_id} (expected {book_dir}/book.pkl)")
         idx = BookVectorIndex(book_id, books_dir=books_dir)
-        meta = idx.index_book(force_reindex=args.force)
+        try:
+            meta = idx.index_book(force_reindex=args.force)
+        except RuntimeError as e:
+            # 缺 [semantic] extra 时 _require_semantic_deps 抛的就是 RuntimeError，
+            # 它带着一句用户照着做就能修好的话。让它一路穿到顶层，终端上得到的是一屏
+            # traceback——而这个函数里其它每一个失败出口（书没找到、没给参数、文件
+            # 不存在）都是 SystemExit(msg)。这里跟着它们走。
+            raise SystemExit(str(e))
         print(f"Indexed {book_id}: {meta.get('chunk_count', 0)} chunks using {meta.get('model_name')}")
         return 0
 

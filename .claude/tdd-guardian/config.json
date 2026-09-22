@@ -11,7 +11,7 @@
   "lanes": [
     {
       "name": "unit",
-      "description": "In-process pytest over tests/unit and tests/contract. Contract tests use FastAPI TestClient (httpx, already a transitive dep) against the real router tree, so they stay in-process and need no port.",
+      "description": "pytest over tests/unit and tests/contract. Mostly in-process: contract tests use FastAPI TestClient (httpx, already a transitive dep) against the real router tree, so they need no port. Not strictly in-process, and the description used to claim otherwise: a few cases deliberately spawn bounded child interpreters (test_egress_backstop_unit.py's C14 probes, test_egress_backstop_subprocess.py's C11/C12, test_soak_run.py), each with an explicit subprocess timeout so a hung child fails the gate instead of hanging it. That is allowed here; an unbounded subprocess is not.",
       "command": "uv run pytest tests/unit tests/contract --cov=src/reader3_app --cov-report=json:coverage-unit.json --cov-report=term",
       "gateOn": [
         "taskCompleted",
@@ -35,7 +35,7 @@
     },
     {
       "name": "packaging",
-      "description": "Builds a wheel, installs it into a clean venv with dependencies resolved at LATEST (uv.lock deliberately not used), starts a real reader3-server and hits four routes. The only place in the repo that would notice a dependency major bump breaking the installed app -- uv run and the unit lane both go through the pinned lock and stay green. ~50s measured 2026-09-03 (an earlier note said ~17s; that predates the current dependency set and the latest-version resolution it does on every run). Still gates on push, not on commit -- and the gap is the reason: at 17s someone would argue for moving it to commit, at 50s nobody will.",
+      "description": "Builds a wheel, installs it into a clean venv with dependencies resolved at LATEST (uv.lock deliberately not used), starts a real reader3-server and hits four routes. The only place in the repo that would notice a dependency major bump breaking the installed app -- uv run and the unit lane both go through the pinned lock and stay green. ~50s measured 2026-09-03 (an earlier note said ~17s; that predates the current dependency set and the latest-version resolution it does on every run). Still gates on push, not on commit -- and the gap is the reason: at 17s someone would argue for moving it to commit, at 50s nobody will. This lane carried C11/C12 of WI-3 from 2026-09-07 until later the same day; they moved to tests/unit/test_egress_backstop_subprocess.py and the unit lane. Two reasons, in order: they are test-harness correctness and have nothing to do with wheels, so a 'do not prune these' comment was the only thing holding them here; and the cost argument was measured wrong (~1.9s against a ~44s unit lane, not ~3s against a ~4s one). This lane is wheel smoke only -- if a case here does not concern the installed artifact, it is in the wrong lane.",
       "command": "uv run pytest tests/integration -m slow",
       "gateOn": [
         "push"
@@ -60,31 +60,53 @@
   "criticalPaths": [
     {
       "glob": "src/reader3_app/reader3.py",
-      "branch": 80
+      "thresholds": {
+        "branches": 80
+      }
     },
     {
       "glob": "src/reader3_app/notes_service.py",
-      "branch": 83
+      "thresholds": {
+        "branches": 83
+      }
     },
     {
       "glob": "src/reader3_app/collections_service.py",
-      "branch": 72
+      "thresholds": {
+        "branches": 72
+      }
     },
     {
       "glob": "src/reader3_app/ai/books.py",
-      "branch": 72
+      "thresholds": {
+        "branches": 72
+      }
     },
     {
       "glob": "src/reader3_app/ai/conversations.py",
-      "branch": 55
+      "thresholds": {
+        "branches": 55
+      }
     },
     {
       "glob": "src/reader3_app/search_service.py",
-      "branch": 56
+      "thresholds": {
+        "branches": 56
+      }
     },
     {
       "glob": "src/reader3_app/web/server.py",
-      "branch": 58
+      "thresholds": {
+        "branches": 58
+      }
+    },
+    {
+      "glob": "src/reader3_app/book_store.py",
+      "description": "011 §4：进程内所有 book.pkl 的唯一读取路径。0 分支，所以门槛压在语句上；分支沿用全局底线，等真的长出分支再说。",
+      "thresholds": {
+        "lines": 100,
+        "statements": 100
+      }
     }
   ]
 }

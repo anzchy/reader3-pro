@@ -6,12 +6,14 @@ import time
 import unicodedata
 import html
 import logging
+from array import array
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import lru_cache
 from typing import Optional, List, Tuple, Dict, Union
 
-from .safe_pickle import load_book_file
+from .book_store import _book_pkl_path, load_book_cached
+# 不再 import safe_pickle：反序列化只经 book_store（011 §4）。占位保留行号：本文件多处 docstring 按行号引用。
 
 logger = logging.getLogger("reader3.search")
 
@@ -116,16 +118,35 @@ def _is_latin_base_char(ch: str) -> bool:
         return False
 
 
-def _normalize_with_map(text: str, *, case_sensitive: bool) -> Tuple[str, List[int]]:
+def _normalize_with_map(text: str, *, case_sensitive: bool) -> Tuple[str, array]:
     """
     Returns (normalized_text, index_map), where index_map[i] is the original index
     for normalized_text[i].
 
     - Case-insensitive matching uses Unicode casefold (may expand chars), while keeping a map.
     - Diacritic stripping is applied only to Latin runs (FR-009).
+
+    The map is an ``array("I")``, not a ``list[int]`` (011 WI-9). One entry per
+    normalised character means a three-million-character book holds three
+    million entries, and a list pays for a pointer *and* a boxed int per entry;
+    the array stores the raw 32-bit offsets and measured ~9x smaller on the
+    140k-character mixed sample in tests/unit/test_normalize_index_map_container.py.
+    Consumers only ever call ``len()`` and index forward, which `array` answers
+    identically -- and `array[i]` returns a plain `int`, so the spans built from
+    it serialise exactly as before.
+
+    Note the container's one sharp edge: C guarantees `unsigned int` is only >=2
+    bytes. On a platform where `array("I").itemsize` were 2, an offset above
+    65535 would raise OverflowError here rather than wrap silently -- loudly,
+    which is the point, but from `append()` deep inside this loop rather than
+    from anything that names the cause. The itemsize case in
+    tests/unit/test_normalize_index_map_container.py checks the width up front,
+    so such a platform fails that test with a message that says which typecode
+    is too narrow. It does not make this function safe there; it makes the
+    reason findable, and no such platform is supported.
     """
     normalized_chars: List[str] = []
-    index_map: List[int] = []
+    index_map = array("I")
     in_latin_run = False
 
     for original_index, ch in enumerate(text):
@@ -226,21 +247,6 @@ def search_text(
     return matches
 
 
-def _book_pkl_path(book_id: str, books_dir: str) -> str:
-    return os.path.join(books_dir, book_id, "book.pkl")
-
-
-@lru_cache(maxsize=10)
-def load_book_cached(book_id: str, books_dir: str) -> object:
-    """Read a book through the allow-listed unpickler, with no fallback loader.
-
-    The `pickle.load` fallback that used to sit here ran on exactly the streams
-    the restricted pass refused, which made the restriction decorative. A
-    `book.pkl` that the allow-list cannot read now raises; see `safe_pickle`.
-    """
-    return load_book_file(_book_pkl_path(book_id, books_dir))
-
-
 def list_book_ids(books_dir: str) -> List[str]:
     result: List[str] = []
     if not os.path.exists(books_dir):
@@ -258,7 +264,7 @@ def list_book_ids(books_dir: str) -> List[str]:
 
 def _find_spans_with_map(
     normalized_text: str,
-    index_map: List[int],
+    index_map: array,
     normalized_term: str,
     *,
     max_spans: int,
@@ -279,8 +285,53 @@ def _find_spans_with_map(
     return spans, total
 
 
-@lru_cache(maxsize=4)
-def load_book_index(book_id: str, books_dir: str, *, case_sensitive: bool) -> "BookIndex":
+# --- the index cache's two numbers, and the rule that produces them --------
+#
+# 011 WI-8/C1. The old bound was a bare `maxsize=4`, which with `case_sensitive`
+# in the key is an effective capacity of **two books**.
+#
+# The rule, so the number is arguable rather than arbitrary: this cache serves
+# **the working set of ordinary reading** — call it six books in hand, a current
+# read plus a shelf of recently opened ones — and each of those books occupies
+# *two* slots, because a user who toggles the case switch produces a second
+# entry for the same book. Six times two is twelve. Change the estimate of the
+# working set and the bound follows; do not change the bound on its own.
+#
+# **What this bound explicitly does not try to do.** It does not make a
+# sequential pass over a whole library cheap, and no one should read it as
+# evidence that raising it further would. Measured over a 20-book library, a
+# scan's hit rate is 0.0% at every bound below the library size — 2, 4, 10 and
+# 19 all measured 0.0%, and only 20 reached 66.7%. A weighted LRU changes which
+# entry is evicted, not that one is. That cliff belongs to C5/012, and the bound
+# here stays strictly below `DEFAULT_BOOK_COUNT` on purpose: the §6 benchmark is
+# only meaningful while the synthetic library outruns every cache on the read
+# path, and `tests/unit/test_fixture_synthetic_library.py` fails if it stops
+# doing so.
+#
+# The cost side, stated rather than discovered later: an entry holds a whole
+# book's normalised text plus its `array("I")` offset map, so a large book runs
+# to a few megabytes and twelve of them to a few tens. That is the other reason
+# the rule is about a reading session and not about a library.
+_INDEX_WORKING_SET_BOOKS = 6
+_INDEX_CACHE_MAXSIZE = _INDEX_WORKING_SET_BOOKS * 2  # x2: `case_sensitive` is in the key
+
+
+@lru_cache(maxsize=_INDEX_CACHE_MAXSIZE)
+def _load_book_index_for_stat(
+    book_id: str,
+    books_dir: str,
+    st_mtime_ns: int,
+    st_size: int,
+    *,
+    case_sensitive: bool,
+) -> "BookIndex":
+    """The memoized half. ``st_mtime_ns`` and ``st_size`` are key material only.
+
+    Same shape as ``book_store._load_book_for_stat``, and deliberately the same
+    shape: they are read by the caller, not here, because the memo is consulted
+    before this body ever runs, so a stat taken inside it could never invalidate
+    anything.
+    """
     book = load_book_cached(book_id, books_dir)
     author = ", ".join(getattr(getattr(book, "metadata", None), "authors", []) or [])
     title = getattr(getattr(book, "metadata", None), "title", book_id)
@@ -298,6 +349,66 @@ def load_book_index(book_id: str, books_dir: str, *, case_sensitive: bool) -> "B
             )
         )
     return BookIndex(book_id=book_id, book_title=title, book_author=author, chapters=chapters)
+
+
+#: The key a book gets when its ``book.pkl`` cannot be stat-ed. See
+#: ``load_book_index``: negative values cannot collide with any real
+#: ``(st_mtime_ns, st_size)`` pair, so an unreadable file gets one stable key
+#: rather than a fabricated fresh one.
+_UNSTATABLE = (-1, -1)
+
+
+def load_book_index(book_id: str, books_dir: str, *, case_sensitive: bool) -> "BookIndex":
+    """Return the normalised search index for a book, rebuilt when the file changes.
+
+    Before 011 WI-8 this was one ``@lru_cache`` keyed on
+    ``(book_id, books_dir, case_sensitive)``. Nothing in that key said anything
+    about the file, so a republished ``book.pkl`` reached the reader fresh —
+    WI-3 put ``(st_mtime_ns, st_size)`` into ``book_store.load_book_cached``'s
+    key — and reached *search* stale, because a warm entry here kept serving
+    text normalised from the previous bytes. The stat now rides in the key, the
+    same way and for the same reason it does in ``book_store``.
+
+    **Two stats per cold call, on purpose.** This function stats, and the
+    ``load_book_cached`` inside the memoized half stats again. Sharing one stat
+    would mean either widening ``load_book_cached``'s signature — a documented
+    patch seam six tests are written against — or reaching into
+    ``book_store._load_book_for_stat`` by its private name. An ``os.stat`` is a
+    microsecond against an unpickle plus a whole-book normalisation; both ways
+    of saving it cost more than it is worth. This is a choice, not an oversight.
+
+    **The stat is key material, not an existence check.** When it raises, this
+    function does not: it keys the call as ``_UNSTATABLE`` and lets the memoized
+    half call ``load_book_cached``, whose own ``os.stat`` raises the error a
+    caller actually sees. So the exception for an absent or unreadable book is
+    the loader's, byte for byte, exactly as it was before this split — one place
+    produces it, one message to keep stable, and ``web/server.py`` keeps
+    dispatching on the type it always did. ``lru_cache`` does not memoize
+    exceptions, so no entry is left behind. It also keeps the loader patch seam
+    whole: a test that substitutes ``search_service.load_book_cached`` to build
+    an index from a fabricated ``Book`` stays isolated from the disk, which an
+    authoritative stat here would silently end.
+    """
+    try:
+        stat_result = os.stat(_book_pkl_path(book_id, books_dir))
+        st_mtime_ns, st_size = stat_result.st_mtime_ns, stat_result.st_size
+    except OSError:
+        st_mtime_ns, st_size = _UNSTATABLE
+    return _load_book_index_for_stat(
+        book_id, books_dir, st_mtime_ns, st_size, case_sensitive=case_sensitive
+    )
+
+
+# The cache surface belongs to the public name, because that is the name every
+# caller and every test holds — eleven call sites across the suite reach for
+# `load_book_index.cache_clear()` / `.cache_info()` / `.cache_parameters()`.
+# These are the inner cache's own bound methods, not wrappers, so `cache_info()`
+# counts the one real set of hits and misses. Nothing is memoized above this
+# line: the outer function's only work is the stat, so a "hit" here means the
+# whole normalisation was skipped, which is what the counters are read for.
+load_book_index.cache_clear = _load_book_index_for_stat.cache_clear  # type: ignore[attr-defined]
+load_book_index.cache_info = _load_book_index_for_stat.cache_info  # type: ignore[attr-defined]
+load_book_index.cache_parameters = _load_book_index_for_stat.cache_parameters  # type: ignore[attr-defined]
 
 
 def _semantic_results_for_book(
@@ -741,7 +852,9 @@ class ChapterIndex:
     chapter_title: str
     chapter_order: int
     normalized_text: str
-    index_map: List[int]
+    #: ``array("I")`` of original-text offsets, one per normalised character
+    #: (011 WI-9). Indexed and len()'d only -- never mutated, never sliced.
+    index_map: array
 
 
 @dataclass

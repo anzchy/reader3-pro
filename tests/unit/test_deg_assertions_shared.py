@@ -292,6 +292,11 @@ _HEALTH_SERVER = (
 )
 
 
+# 在**父进程**里 urllib.request.urlopen 打一个真的子进程 server（回环）。
+# tests/fixtures/deg_assertions.py 是冻结路径，而它 :357 的重试循环 catch
+# (URLError, ConnectionError, OSError)——少标一个的表现是偶发红，不是稳定红。
+# 名单锁在 tests/unit/test_egress_backstop_unit.py 的 EXPECTED_EXEMPTIONS。
+@pytest.mark.real_loopback_socket
 def test_pickle_fallback_server_boots_a_real_process_with_the_env_var_set(tmp_path: Path) -> None:
     import urllib.request
 
@@ -303,6 +308,11 @@ def test_pickle_fallback_server_boots_a_real_process_with_the_env_var_set(tmp_pa
             assert r.read().decode() == "allow_pickle=1", "READER3_ALLOW_PICKLE=1 没有传进子进程"
 
 
+# 在**父进程**里 urllib.request.urlopen 打一个真的子进程 server（回环）。
+# tests/fixtures/deg_assertions.py 是冻结路径，而它 :357 的重试循环 catch
+# (URLError, ConnectionError, OSError)——少标一个的表现是偶发红，不是稳定红。
+# 名单锁在 tests/unit/test_egress_backstop_unit.py 的 EXPECTED_EXEMPTIONS。
+@pytest.mark.real_loopback_socket
 def test_pickle_fallback_server_raises_instead_of_skipping_when_the_process_dies(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError, match="退出码 7"):
         with pickle_fallback_server(

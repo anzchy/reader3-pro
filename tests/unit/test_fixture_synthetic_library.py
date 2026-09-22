@@ -9,8 +9,10 @@ The bounds are read from the live ``cache_parameters()`` of the production
 functions, never copied into this file. Raising ``maxsize`` to 20 in a future
 refactor would silently invalidate the benchmark; here it turns the lane red.
 
-``web.server.load_book_cached`` is only *inspected*, never called: it closes
-over the module-level ``BOOKS_DIR``, which is the user's real library.
+``web.server.load_book_cached`` is only *inspected*, never called. After 011 §4
+it no longer closes over ``BOOKS_DIR`` -- it reads the module-level name on
+every call (``server.py:433``) -- but the reason not to call it is unchanged and
+is if anything more direct: the value it would read is the user's real library.
 """
 
 from __future__ import annotations
@@ -62,7 +64,14 @@ def test_the_library_is_larger_than_every_cache_on_the_read_path():
     loader_bound = search_service.load_book_cached.cache_parameters()["maxsize"]
     index_bound = search_service.load_book_index.cache_parameters()["maxsize"]
 
-    assert (homepage_bound, loader_bound, index_bound) == (10, 10, 4)
+    # 011 WI-8/C1 moved the index bound from 4 to 12. The number is a rule, not
+    # a preference: the index cache serves the working set of ordinary reading —
+    # six books in hand — and each book occupies two slots because
+    # `case_sensitive` is in the key, so 6 x 2 = 12. It stays strictly below
+    # `DEFAULT_BOOK_COUNT` on purpose; see the assertions below, which are the
+    # benchmark's precondition and the reason this bound may not simply grow
+    # until a full-library scan fits.
+    assert (homepage_bound, loader_bound, index_bound) == (10, 10, 12)
     assert sl.DEFAULT_BOOK_COUNT > homepage_bound
     assert sl.DEFAULT_BOOK_COUNT > loader_bound
     assert sl.DEFAULT_BOOK_COUNT > index_bound
@@ -101,10 +110,30 @@ def test_one_pass_over_the_library_evicts_books_it_already_loaded(library):
         search_service.load_book_cached.cache_clear()
 
 
-def test_the_search_index_cache_thrashes_four_times_faster(library):
-    """L3 - the tighter bound is the one that decides cross-book search cost."""
+def test_the_search_index_cache_still_thrashes_before_the_library_ends(library):
+    """L3 - the tighter bound is still the one that decides cross-book search cost.
+
+    Renamed and recomputed by 011 WI-8/C1, which moved the index bound from 4 to
+    12. "Four times faster" was a statement about 4-against-10 and stopped being
+    true; what did *not* change is the claim this case exists for — the index
+    cache is the first of the two to overflow, so it is the one that sets the
+    cost of a pass over the library. WI-8 deliberately did not try to remove
+    that: any bound below the library size gives a sequential scan a zero hit
+    rate, and the fix for that access pattern belongs to C5/012.
+
+    The walk length is derived from the live bound rather than written down, so
+    this case keeps demonstrating eviction if the bound is revisited; the bound's
+    exact value is pinned once, in
+    `test_the_library_is_larger_than_every_cache_on_the_read_path`.
+    """
     books_dir, created = library
-    names = [p.name for p in created[:6]]
+    bound = search_service.load_book_index.cache_parameters()["maxsize"]
+    walk = bound + 2
+    assert walk <= sl.DEFAULT_BOOK_COUNT, (
+        "the index bound has grown past the synthetic library, which is the "
+        "benchmark precondition this file exists to hold"
+    )
+    names = [p.name for p in created[:walk]]
 
     search_service.load_book_index.cache_clear()
     search_service.load_book_cached.cache_clear()
@@ -113,19 +142,34 @@ def test_the_search_index_cache_thrashes_four_times_faster(library):
             search_service.load_book_index(name, str(books_dir), case_sensitive=False)
 
         info = search_service.load_book_index.cache_info()
-        assert info.misses == 6
-        assert info.currsize == info.maxsize == 4
+        assert info.misses == walk
+        assert info.hits == 0
+        assert info.currsize == info.maxsize == bound
 
-        # names[0] and names[1] have already been pushed out by names[4:6].
+        # names[0] and names[1] have already been pushed out by the last two.
         search_service.load_book_index(names[0], str(books_dir), case_sensitive=False)
-        assert search_service.load_book_index.cache_info().misses == 7
+        after = search_service.load_book_index.cache_info()
+        assert after.misses == walk + 1
+        assert after.hits == 0  # the re-read was not a hit: it had been evicted
+
+        # A book still inside the window does hit, so the miss above is eviction
+        # and not a cache that never worked at all.
+        search_service.load_book_index(names[-1], str(books_dir), case_sensitive=False)
+        assert search_service.load_book_index.cache_info().hits == 1
     finally:
         search_service.load_book_index.cache_clear()
         search_service.load_book_cached.cache_clear()
 
 
 def test_case_sensitivity_doubles_the_index_cache_pressure(library):
-    """L2 - two entries per book, so four books already overflow a 4-slot cache."""
+    """L2 - two entries per book, so the bound buys half as many books as it says.
+
+    The fact is unchanged by 011 WI-8/C1 and the assertions below are untouched;
+    only the arithmetic in this sentence moved. The doubling is *why* the new
+    bound is stated as "six books in hand x two case flags" rather than as a
+    slot count: at `maxsize=12` a user who toggles the case switch is working
+    with six books of room, not twelve.
+    """
     books_dir, created = library
     name = created[0].name
 

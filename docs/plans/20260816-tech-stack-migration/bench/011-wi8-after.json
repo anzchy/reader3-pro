@@ -1,0 +1,803 @@
+{
+  "schema": 1,
+  "generated_at": "2026-09-20T07:46:28+0800",
+  "repeat": 5,
+  "environment": {
+    "python": "3.10.18",
+    "implementation": "CPython",
+    "platform": "macOS-26.3.1-arm64-arm-64bit",
+    "machine": "arm64",
+    "processor": "arm",
+    "cpu_count": 10,
+    "load_avg": [
+      2.29,
+      2.18,
+      2.1
+    ],
+    "cpu_brand": "Apple M4",
+    "mem_bytes": "25769803776",
+    "power": "Now drawing from 'Battery Power' | -InternalBattery-0 (id=22151267)\t45%; discharging; 4:57 remaining present: true | lowpowermode=0"
+  },
+  "metrics": {
+    "cold_start": {
+      "import_server_ms": {
+        "unit": "ms",
+        "n": 5,
+        "median": 182.283,
+        "min": 178.401,
+        "max": 185.708,
+        "spread_pct": 4.0,
+        "samples": [
+          183.265,
+          182.283,
+          178.401,
+          178.43,
+          185.708
+        ]
+      },
+      "import_testclient_ms": {
+        "unit": "ms",
+        "n": 5,
+        "median": 24.882,
+        "min": 24.364,
+        "max": 25.86,
+        "spread_pct": 6.0,
+        "samples": [
+          25.86,
+          24.364,
+          24.623,
+          24.882,
+          25.471
+        ]
+      },
+      "startup_scan_ms": {
+        "unit": "ms",
+        "n": 5,
+        "median": 6.746,
+        "min": 6.606,
+        "max": 6.966,
+        "spread_pct": 5.3,
+        "samples": [
+          6.606,
+          6.746,
+          6.783,
+          6.624,
+          6.966
+        ]
+      },
+      "first_page_ms": {
+        "unit": "ms",
+        "n": 5,
+        "median": 7.624,
+        "min": 7.391,
+        "max": 8.257,
+        "spread_pct": 11.4,
+        "samples": [
+          7.557,
+          7.683,
+          7.391,
+          7.624,
+          8.257
+        ]
+      },
+      "ready_to_serve_ms": {
+        "unit": "ms",
+        "n": 5,
+        "median": 213.393,
+        "min": 209.807,
+        "max": 218.145,
+        "spread_pct": 3.9,
+        "samples": [
+          215.731,
+          213.393,
+          209.807,
+          209.936,
+          218.145
+        ]
+      },
+      "_wall_ms": {
+        "unit": "ms",
+        "n": 5,
+        "median": 271.529,
+        "min": 267.606,
+        "max": 278.287,
+        "spread_pct": 3.9,
+        "samples": [
+          275.491,
+          271.529,
+          267.606,
+          270.003,
+          278.287
+        ]
+      },
+      "peak_rss": {
+        "unit": "bytes",
+        "n": 5,
+        "median": 68370432.0,
+        "min": 68272128.0,
+        "max": 68386816.0,
+        "spread_pct": 0.2,
+        "samples": [
+          68386816.0,
+          68370432.0,
+          68321280.0,
+          68370432.0,
+          68272128.0
+        ]
+      },
+      "_library_size": 20
+    },
+    "ingest": {
+      "build_epub_ms": {
+        "unit": "ms",
+        "n": 5,
+        "median": 5.987,
+        "min": 5.934,
+        "max": 6.096,
+        "spread_pct": 2.7,
+        "samples": [
+          6.096,
+          5.934,
+          5.958,
+          6.008,
+          5.987
+        ]
+      },
+      "process_epub_ms": {
+        "unit": "ms",
+        "n": 5,
+        "median": 40.798,
+        "min": 39.8,
+        "max": 44.793,
+        "spread_pct": 12.2,
+        "samples": [
+          39.8,
+          40.738,
+          40.798,
+          44.256,
+          44.793
+        ]
+      },
+      "_wall_ms": {
+        "unit": "ms",
+        "n": 5,
+        "median": 123.173,
+        "min": 122.223,
+        "max": 125.996,
+        "spread_pct": 3.1,
+        "samples": [
+          122.223,
+          122.992,
+          123.173,
+          124.533,
+          125.996
+        ]
+      },
+      "epub_bytes": {
+        "unit": "bytes",
+        "n": 5,
+        "median": 11802.0,
+        "min": 11802.0,
+        "max": 11802.0,
+        "spread_pct": 0.0,
+        "samples": [
+          11802.0,
+          11802.0,
+          11802.0,
+          11802.0,
+          11802.0
+        ]
+      },
+      "pkl_bytes": {
+        "unit": "bytes",
+        "n": 5,
+        "median": 6000616.0,
+        "min": 6000616.0,
+        "max": 6000616.0,
+        "spread_pct": 0.0,
+        "samples": [
+          6000616.0,
+          6000616.0,
+          6000616.0,
+          6000616.0,
+          6000616.0
+        ]
+      },
+      "peak_rss": {
+        "unit": "bytes",
+        "n": 5,
+        "median": 99418112.0,
+        "min": 99385344.0,
+        "max": 99614720.0,
+        "spread_pct": 0.2,
+        "samples": [
+          99614720.0,
+          99418112.0,
+          99418112.0,
+          99385344.0,
+          99434496.0
+        ]
+      },
+      "_chars": 3000000,
+      "_text_chars_out": 3000008
+    },
+    "query": {
+      "inbook_small_first_ms": {
+        "unit": "ms",
+        "n": 5,
+        "median": 18.573,
+        "min": 18.462,
+        "max": 19.082,
+        "spread_pct": 3.3,
+        "samples": [
+          18.573,
+          18.462,
+          18.51,
+          18.622,
+          19.082
+        ]
+      },
+      "inbook_small_second_ms": {
+        "unit": "ms",
+        "n": 5,
+        "median": 13.328,
+        "min": 13.186,
+        "max": 13.572,
+        "spread_pct": 2.9,
+        "samples": [
+          13.328,
+          13.274,
+          13.186,
+          13.34,
+          13.572
+        ]
+      },
+      "inbook_huge_first_ms": {
+        "unit": "ms",
+        "n": 5,
+        "median": 1021.32,
+        "min": 1018.425,
+        "max": 1032.237,
+        "spread_pct": 1.4,
+        "samples": [
+          1018.425,
+          1018.484,
+          1032.237,
+          1021.32,
+          1025.789
+        ]
+      },
+      "inbook_huge_second_ms": {
+        "unit": "ms",
+        "n": 5,
+        "median": 86.152,
+        "min": 85.566,
+        "max": 87.387,
+        "spread_pct": 2.1,
+        "samples": [
+          86.152,
+          85.904,
+          87.11,
+          85.566,
+          87.387
+        ]
+      },
+      "library_first_ms": {
+        "unit": "ms",
+        "n": 5,
+        "median": 1037.587,
+        "min": 1031.227,
+        "max": 1039.54,
+        "spread_pct": 0.8,
+        "samples": [
+          1036.538,
+          1037.587,
+          1039.3,
+          1039.54,
+          1031.227
+        ]
+      },
+      "library_second_ms": {
+        "unit": "ms",
+        "n": 5,
+        "median": 1034.23,
+        "min": 1029.289,
+        "max": 1037.957,
+        "spread_pct": 0.8,
+        "samples": [
+          1029.289,
+          1030.064,
+          1037.957,
+          1034.23,
+          1035.9
+        ]
+      },
+      "inbook_small_speedup_x": 1.4,
+      "inbook_huge_speedup_x": 11.9,
+      "library_speedup_x": 1.0
+    },
+    "rss": {
+      "baseline_bytes": {
+        "unit": "bytes",
+        "n": 5,
+        "median": 21823488.0,
+        "min": 21823488.0,
+        "max": 21954560.0,
+        "spread_pct": 0.6,
+        "samples": [
+          21823488.0,
+          21954560.0,
+          21823488.0,
+          21823488.0,
+          21839872.0
+        ]
+      },
+      "after_import_bytes": {
+        "unit": "bytes",
+        "n": 5,
+        "median": 65650688.0,
+        "min": 65617920.0,
+        "max": 65748992.0,
+        "spread_pct": 0.2,
+        "samples": [
+          65617920.0,
+          65650688.0,
+          65748992.0,
+          65650688.0,
+          65617920.0
+        ]
+      },
+      "after_library_page_bytes": {
+        "unit": "bytes",
+        "n": 5,
+        "median": 77709312.0,
+        "min": 77676544.0,
+        "max": 77807616.0,
+        "spread_pct": 0.2,
+        "samples": [
+          77709312.0,
+          77758464.0,
+          77807616.0,
+          77692928.0,
+          77676544.0
+        ]
+      },
+      "after_library_search_bytes": {
+        "unit": "bytes",
+        "n": 5,
+        "median": 120438784.0,
+        "min": 120389632.0,
+        "max": 120553472.0,
+        "spread_pct": 0.1,
+        "samples": [
+          120438784.0,
+          120553472.0,
+          120537088.0,
+          120422400.0,
+          120389632.0
+        ]
+      },
+      "after_huge_search_bytes": {
+        "unit": "bytes",
+        "n": 5,
+        "median": 205684736.0,
+        "min": 205651968.0,
+        "max": 205799424.0,
+        "spread_pct": 0.1,
+        "samples": [
+          205684736.0,
+          205799424.0,
+          205799424.0,
+          205668352.0,
+          205651968.0
+        ]
+      },
+      "_platform_unit_note": "ru_maxrss on darwin read as bytes"
+    },
+    "counters": {
+      "unpickle": {
+        "book_store": {
+          "unit": "count",
+          "n": 5,
+          "median": 95.0,
+          "min": 95.0,
+          "max": 95.0,
+          "spread_pct": 0.0,
+          "samples": [
+            95.0,
+            95.0,
+            95.0,
+            95.0,
+            95.0
+          ]
+        },
+        "pickle_load_fallback": {
+          "unit": "count",
+          "n": 5,
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0,
+          "spread_pct": null,
+          "samples": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "safe_pickle_total": {
+          "unit": "count",
+          "n": 5,
+          "median": 95.0,
+          "min": 95.0,
+          "max": 95.0,
+          "spread_pct": 0.0,
+          "samples": [
+            95.0,
+            95.0,
+            95.0,
+            95.0,
+            95.0
+          ]
+        },
+        "vector_search": {
+          "unit": "count",
+          "n": 5,
+          "median": 0.0,
+          "min": 0.0,
+          "max": 0.0,
+          "spread_pct": null,
+          "samples": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      },
+      "unpickle_grand_total": {
+        "unit": "count",
+        "n": 5,
+        "median": 95.0,
+        "min": 95.0,
+        "max": 95.0,
+        "spread_pct": 0.0,
+        "samples": [
+          95.0,
+          95.0,
+          95.0,
+          95.0,
+          95.0
+        ]
+      },
+      "normalize_calls": {
+        "unit": "count",
+        "n": 5,
+        "median": 541.0,
+        "min": 541.0,
+        "max": 541.0,
+        "spread_pct": 0.0,
+        "samples": [
+          541.0,
+          541.0,
+          541.0,
+          541.0,
+          541.0
+        ]
+      },
+      "normalize_chars": {
+        "unit": "count",
+        "n": 5,
+        "median": 967924.0,
+        "min": 967924.0,
+        "max": 967924.0,
+        "spread_pct": 0.0,
+        "samples": [
+          967924.0,
+          967924.0,
+          967924.0,
+          967924.0,
+          967924.0
+        ]
+      },
+      "vector_search_instrumented": true,
+      "unpickle_unmeasured": {
+        "web.server": "模块没有 load_book_file 绑定，读盘已转给别处",
+        "search_service": "模块没有 load_book_file 绑定，读盘已转给别处"
+      },
+      "steps": [
+        {
+          "step": "00_startup",
+          "unpickle": {
+            "book_store": 0,
+            "vector_search": 0,
+            "safe_pickle_total": 0,
+            "pickle_load_fallback": 0
+          },
+          "normalize_calls": 0,
+          "normalize_chars": 0
+        },
+        {
+          "step": "01_library_page",
+          "unpickle": {
+            "book_store": 20,
+            "vector_search": 0,
+            "safe_pickle_total": 20,
+            "pickle_load_fallback": 0
+          },
+          "normalize_calls": 0,
+          "normalize_chars": 0
+        },
+        {
+          "step": "02_reader_page",
+          "unpickle": {
+            "book_store": 21,
+            "vector_search": 0,
+            "safe_pickle_total": 21,
+            "pickle_load_fallback": 0
+          },
+          "normalize_calls": 0,
+          "normalize_chars": 0
+        },
+        {
+          "step": "03_in_book_search",
+          "unpickle": {
+            "book_store": 21,
+            "vector_search": 0,
+            "safe_pickle_total": 21,
+            "pickle_load_fallback": 0
+          },
+          "normalize_calls": 9,
+          "normalize_chars": 16132
+        },
+        {
+          "step": "04_library_page_again",
+          "unpickle": {
+            "book_store": 40,
+            "vector_search": 0,
+            "safe_pickle_total": 40,
+            "pickle_load_fallback": 0
+          },
+          "normalize_calls": 9,
+          "normalize_chars": 16132
+        },
+        {
+          "step": "05_library_search_1",
+          "unpickle": {
+            "book_store": 55,
+            "vector_search": 0,
+            "safe_pickle_total": 55,
+            "pickle_load_fallback": 0
+          },
+          "normalize_calls": 181,
+          "normalize_chars": 322644
+        },
+        {
+          "step": "05_library_search_2",
+          "unpickle": {
+            "book_store": 75,
+            "vector_search": 0,
+            "safe_pickle_total": 75,
+            "pickle_load_fallback": 0
+          },
+          "normalize_calls": 361,
+          "normalize_chars": 645284
+        },
+        {
+          "step": "05_library_search_3",
+          "unpickle": {
+            "book_store": 95,
+            "vector_search": 0,
+            "safe_pickle_total": 95,
+            "pickle_load_fallback": 0
+          },
+          "normalize_calls": 541,
+          "normalize_chars": 967924
+        }
+      ],
+      "_library_size": 20,
+      "_library_search_rounds": 3
+    },
+    "ttfb": {
+      "1": {
+        "ttfb_ms": {
+          "unit": "ms",
+          "n": 5,
+          "median": 6.503,
+          "min": 6.439,
+          "max": 6.998,
+          "spread_pct": 8.6,
+          "samples": [
+            6.464,
+            6.607,
+            6.503,
+            6.439,
+            6.998
+          ]
+        },
+        "_wall_ms": {
+          "unit": "ms",
+          "n": 5,
+          "median": 273.829,
+          "min": 269.963,
+          "max": 285.07,
+          "spread_pct": 5.5,
+          "samples": [
+            269.963,
+            285.07,
+            273.781,
+            273.829,
+            284.03
+          ]
+        },
+        "body_bytes": {
+          "unit": "bytes",
+          "n": 5,
+          "median": 49033.0,
+          "min": 49033.0,
+          "max": 49033.0,
+          "spread_pct": 0.0,
+          "samples": [
+            49033.0,
+            49033.0,
+            49033.0,
+            49033.0,
+            49033.0
+          ]
+        },
+        "per_book_ms": 6.503
+      },
+      "5": {
+        "ttfb_ms": {
+          "unit": "ms",
+          "n": 5,
+          "median": 6.771,
+          "min": 6.679,
+          "max": 6.971,
+          "spread_pct": 4.3,
+          "samples": [
+            6.771,
+            6.859,
+            6.679,
+            6.971,
+            6.736
+          ]
+        },
+        "_wall_ms": {
+          "unit": "ms",
+          "n": 5,
+          "median": 274.057,
+          "min": 268.922,
+          "max": 278.644,
+          "spread_pct": 3.5,
+          "samples": [
+            273.52,
+            268.922,
+            274.057,
+            275.701,
+            278.644
+          ]
+        },
+        "body_bytes": {
+          "unit": "bytes",
+          "n": 5,
+          "median": 58793.0,
+          "min": 58793.0,
+          "max": 58793.0,
+          "spread_pct": 0.0,
+          "samples": [
+            58793.0,
+            58793.0,
+            58793.0,
+            58793.0,
+            58793.0
+          ]
+        },
+        "per_book_ms": 1.354
+      },
+      "10": {
+        "ttfb_ms": {
+          "unit": "ms",
+          "n": 5,
+          "median": 7.22,
+          "min": 7.154,
+          "max": 7.657,
+          "spread_pct": 7.0,
+          "samples": [
+            7.657,
+            7.154,
+            7.189,
+            7.235,
+            7.22
+          ]
+        },
+        "_wall_ms": {
+          "unit": "ms",
+          "n": 5,
+          "median": 279.039,
+          "min": 272.844,
+          "max": 289.028,
+          "spread_pct": 5.8,
+          "samples": [
+            289.028,
+            287.287,
+            275.736,
+            272.844,
+            279.039
+          ]
+        },
+        "body_bytes": {
+          "unit": "bytes",
+          "n": 5,
+          "median": 70995.0,
+          "min": 70995.0,
+          "max": 70995.0,
+          "spread_pct": 0.0,
+          "samples": [
+            70995.0,
+            70995.0,
+            70995.0,
+            70995.0,
+            70995.0
+          ]
+        },
+        "per_book_ms": 0.722
+      },
+      "20": {
+        "ttfb_ms": {
+          "unit": "ms",
+          "n": 5,
+          "median": 8.025,
+          "min": 7.847,
+          "max": 8.7,
+          "spread_pct": 10.6,
+          "samples": [
+            8.023,
+            8.477,
+            8.025,
+            7.847,
+            8.7
+          ]
+        },
+        "_wall_ms": {
+          "unit": "ms",
+          "n": 5,
+          "median": 286.724,
+          "min": 279.987,
+          "max": 294.618,
+          "spread_pct": 5.1,
+          "samples": [
+            286.724,
+            289.84,
+            279.987,
+            283.35,
+            294.618
+          ]
+        },
+        "body_bytes": {
+          "unit": "bytes",
+          "n": 5,
+          "median": 95395.0,
+          "min": 95395.0,
+          "max": 95395.0,
+          "spread_pct": 0.0,
+          "samples": [
+            95395.0,
+            95395.0,
+            95395.0,
+            95395.0,
+            95395.0
+          ]
+        },
+        "per_book_ms": 0.401
+      },
+      "_fit": {
+        "slope_ms_per_book": 0.0811,
+        "intercept_ms": 6.4,
+        "r_squared": 0.9987
+      }
+    }
+  }
+}

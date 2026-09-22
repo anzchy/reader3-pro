@@ -19,7 +19,7 @@
 
 | 计划清单项 | 实测状态 |
 |---|---|
-| `web/server.py` 拆成六个 router | ❌ 未动。且它已经从计划写的「~2,400 行」长到 **2,905 行** —— 拖着不拆，分母还在涨 |
+| `web/server.py` 拆成六个 router | ❌ 未动。且它已经从计划写的「~2,400 行」长到 **2,905 行** —— 拖着不拆，分母还在涨。**2026-09-19 复核：`master` 上仍是 2,905，这 12 天没再涨**；本分支上的 2,979 全部来自 `1be7387`（WI-3 合缓存），不是自然增生。**但拆法本身出了新问题**：六组里 `ai` 那一组过不了 < 500 行的门槛，且搬家解决不了，见 §5 |
 | 新建 `book_store.py`，合并「三处重复的 `_Reader3Unpickler` 与 `lru_cache` loader」 | ⚠️ **前提已变**，见 §0.2 |
 | 缓存失效：三处 `lru_cache` 的 key 都不含 mtime | ❌ 未做 |
 | chromadb + sentence-transformers 移入 optional `[semantic]` | ❌ 未做，两者都还在 `pyproject.toml` 的主 `dependencies` 里 |
@@ -27,9 +27,16 @@
 | notes 乐观并发控制（revision/ETag，冲突返 409） | ❌ 未做。`notes_service.py` 里没有 revision、没有 ETag，服务端没有任何一处返 409 |
 | `max_retries` 定性（删掉还是接通，二选一） | ❌ 未做，且**这道选择题已经被 ADR-0011 替我们做完了**，见 §6 |
 | 路由启发式：CJK ~1.5 字符/token、Anthropic 默认窗口降到 200k | ✅ **已做**（`ai/routing.py` 的 `_CJK_CHARS_PER_TOKEN` / `_OTHER_CHARS_PER_TOKEN`，以及 Anthropic 分支上那句 "Default DOWN" 注释） |
-| 修订 `CLAUDE.md` § Constitution Principles | ✅ **已做**，CLAUDE.md 里那份七条摘要现在是唯一权威 |
+| 修订 `CLAUDE.md` § Constitution Principles | ⚠️ **半条**（2026-09-19 订正，原记 ✅ —— **那一格是错的**）。已做：七条摘要成为唯一权威（`CLAUDE.md:116-119`），"测试可选"条款全文搜索 0 命中、确已删除。**没做的恰恰是计划点名要改的那句**：`CLAUDE.md:122` 今天仍逐字写着「YAGNI - no abstractions beyond FastAPI/BeautifulSoup」。这一格现在直接压在 §5 那道选择题上 |
 
-**九项里三项已完成、一项前提失效、五项待做。** WI-1 的第一件事就是把这张表回写进计划，否则下一个读计划的人（可能是三周后的你）会照着一份 30% 过期的清单开工。
+~~**九项里三项已完成、一项前提失效、五项待做。**~~ **2026-09-19 重数（WI-1 落账时）：九项里四项已完成、一项半条、四项待做。**
+
+与 2026-09-07 那次相比的三处变动，都由本次复核给出：
+- `book_store` ＋ 缓存失效两项从「前提已变 / 未做」变成 **✅ 已兑付**（`1be7387`，WI-3）——它们在原表里是两行，合并成一项计。
+- CLAUDE.md 那项从 ✅ 降为 **⚠️ 半条**，理由见上表。
+- 新增一条原表没有的发现：`ai` 组过不了 < 500 行门槛（§5）。**它不是清单漂移，是门槛与实现对不上**，性质不同，所以单列。
+
+WI-1 的第一件事就是把这张表回写进计划，否则下一个读计划的人（可能是三周后的你）会照着一份 30% 过期的清单开工。**本次回写已完成，见下面 §2 的完成记录。**
 
 ### 0.2 `book_store.py` 要合并的是**缓存**，不是 unpickler
 
@@ -131,6 +138,23 @@ WI-0b 是 layout-independent 的：无论名字搬到哪，一次真实出网都
 
 > **顺带记一笔已知漂移**：`soak-log.md` 表头那行「门槛进度：N / ≥10 次」是**手工维护**的，`test_soak_log_contract.py` 里没有任何一条测试拿它跟表体行数对账。它会悄悄对不上。修法（给表头加一条与行数对账的契约测试）不在本分支范围内，记在这里免得下次靠记忆发现。
 
+### 完成记录（2026-09-19）✅ —— 四条兑付，一条被约束挡住
+
+| # | 状态 | 兑付内容 |
+|---|---|---|
+| 1 | ✅ | Phase 2a 清单回写进 `plan-tech-stack-migration.md`：`book_store` ＋ 缓存失效两项勾掉并注明 `1be7387`；`ai/config.py` 原子写注明 `0e103ab`（008 期间）；路由启发式注明 `105bbbb`（008 期间）。`book_store` 那项按 §0.2 整条重写 |
+| 2 | ✅ | 附录 A 的 A5 重写为「两处同名 loader ＋ 一处建在其上的 index 缓存」，`vector_search.py` 明确移出合并范围，并把 `monkeypatch` 那条收益补进去 |
+| 3 | ✅（无需改动） | 附录 B 的 C1 复核：`load_book_index` 的 `maxsize=4` ＋ `case_sensitive` 入 key ⇒ 有效容量 2 本，仍然成立。**未改一字** |
+| 4 | ⛔ **未做，被约束挡住** | `.claude/skills/plan-and-branch-map/SKILL.md` 的里程碑表。本次会话明确禁止改 `.claude/` 下的任何配置，所以没动。**而且这一格已经比任务书写的更陈旧**：任务书要求「`Allocated` → `Tasks drafted`」，但 SKILL.md 今天写的已经是 `Tasks drafted`，而本分支已有 7 个 commit ——按 SKILL.md 自己定义的状态语义，它现在该是 **🚧 In progress**。**留给下一个有权改 `.claude/` 的人，一次改到位** |
+| 5 | ✅ | [进度盘](../../20260824-frontend-backend-plan-progress.md) 的 011 行同步 |
+
+**本次复核推翻了 §0.1 实测表的两格**（两格都是本文件自己写的，不是别人的）：
+- `book_store` 与缓存失效：⚠️/❌ → ✅（`1be7387` 已兑付）
+- `CLAUDE.md § Constitution Principles`：✅ → ⚠️ 半条（`CLAUDE.md:122` 那句禁令一字未动）
+
+**并带出一条原表没有的发现**：六组 router 里 `ai` 组过不了 < 500 行门槛，且按职责搬家解决不了（算术见 §5）。
+**这一条会改变 WI-4 的做法，所以必须在 WI-4 开工前裁定，不能边做边定。**
+
 ---
 
 ## 3. WI-2 —— 修 `scripts/bench.py`（先修仪器，再动被测物）
@@ -150,6 +174,21 @@ AttributeError: module 'reader3_app.web.server' has no attribute '_Reader3Unpick
 ### 验收
 - `python scripts/bench.py`（默认 20 本）跑通，反序列化计数**不为零**（为零说明探针挂在了不会被走到的地方，是另一种坏）。
 - 把结果作为 Phase 2b 的 before 基准存档。
+
+### 完成记录（2026-09-07）✅
+
+产出：[`bench/011-wi2-before.json`](../bench/011-wi2-before.json) ＋ [`bench/README.md`](../bench/README.md)（repeat=5，六项指标全产出，退出码 0）。
+
+**坏的不止一处。** 本节写的 `AttributeError` 是真的，但它只是两处独立故障里的一处：
+
+1. 探针挂在已消失的 `mod._Reader3Unpickler` 上 → 指标 4/5 不产出。**改法**：三处 loader 今天各自 `from .safe_pickle import load_book_file`，即各有一个自己的模块级绑定，包那一份即可，per-loader 归属原样保住，用的正是 WI-0 那道守卫盯着的同一条接缝。
+2. **五个 worker 的 `TestClient` 全是裸构造。** 服务端那道 Host 白名单只放行 127.0.0.1 / localhost / [::1]，而 `TestClient` 默认发 `testserver` → 每个请求 400 `Invalid host header`。指标 2 会当场炸（它自己查状态码），指标 1/3/4/5/6 **安静地量到 400 响应**。
+
+所以本节那句「好消息是**其余部分都在**」是错的：`bench.py` 从来没有真正跑通过，`011-wi2-before.json` 是零号基准，不是「又一份」。第 2 条的教训固化成了 `expect_ok()`——非 2xx 当场炸，不让仪器坏掉的表现形式是「所有数都很漂亮地等于 0」。
+
+**新增一个跨重构可比的口径 `safe_pickle_total`**（包 `safe_pickle.safe_load`，不问调用者是谁）。理由：WI-3 合并之后 `web.server` 那一格会掉下去，但那只说明绑定换了地方，不说明少读了一次盘。今天 100 = 40 + 60，两口径相等 ⇒ 没有第四个绕开这三个绑定的读盘点。
+
+基线已经把 WI-3 要修的东西显出来了 —— 第 03 步「同一本书换一处 loader 再 unpickle 一遍」，第 04 步「maxsize=10 撑不住 20 本，19 本重读」。逐步明细见 `bench/README.md`。
 
 ---
 
@@ -197,12 +236,198 @@ key 里纳入 `book.pkl` 的 `st_mtime_ns` + `st_size`（不做内容 hash —�
 
 - **ADR-0011：Phase 2 不得改变任何响应形状。** 路由的增删改必须同 commit 更新 `tests/contract/routes.snapshot`；本分支的正确 diff 是**这个文件一行都不动**。它一动就说明搬家搬丢了或前缀写错了。
 - **WI-0 必须已经落地。** 见 §1。这不是建议顺序，是先决条件。
-- 每个 router < 500 行（§7 的门槛）。`server.py` 现在 2,905 行，六组均分是 484 —— 没有余量，`schemas.py` 和 `book_store.py` 分走的那部分是达标的关键。
+- 每个 router < 500 行（§7 的门槛）。`server.py` 在 `master` 上 2,905 行、本分支 2,979 行（2026-09-19 实测），六组均分是 484 —— 没有余量，`schemas.py` 和 `book_store.py` 分走的那部分是达标的关键。
+- ⚠️ **但均分是错的模型。实测下来，`ai` 组不是「余量紧」，是根本过不去。** 见下。
+
+### 2026-09-19 实测：`ai` 组过不了 < 500 行，且搬家解决不了
+
+先给数，再给选项。以下都是当天对 `web/server.py`（2,979 行）做 AST 走查得到的，不是估算：
+
+| 组 | 路由数 | 路由正文合计 |
+|---|---|---|
+| `ai`（`/api/ai/*` 八条） | 8 | **708** |
+| `settings`（含 `/api/ollama/*` 两条与 `/api/settings/providers/*` 五条） | — | 255 |
+| `notes` | — | 243 |
+| `search` | — | 190 |
+| `reader` | — | 138 |
+| `library` | — | 134 |
+
+**五组绰绰有余，只有 `ai` 越线，而且差得不是一点。** 越线的原因集中在一个函数上：
+
+```
+POST /api/ai/question/{book_uuid}   server.py:2454-2886   433 行   ← 一个函数
+  顶层语句 9 条，其余全是嵌套闭包：
+    event_gen          174    SSE 生成器
+    _do                139
+    worker_ollama       55    ollama 的后台线程体
+    worker_non_stream   18
+    push                 2
+    _release_lease       2
+```
+
+它**独占**的模块级 helper：`_stop_stream_worker` 60 行（`server.py:1661`，全仓库调用点只有 `:2662` 与 `:2670`，两处都在这个函数体内）。
+`_save_conversation_snapshot` 47 行（调用点 `:2700`、`:2847`，也只在它里面，但按职责归 `conversations`）。
+
+> **决定性的那道算术**：`433 ＋ 60 ＝ 493`。**即使把这条路由单独放一个文件、别的什么都不放**，再加 import 与
+> `APIRouter` 声明就越过 500。**没有任何一种「按职责搬家」能让它达标。** 差额在 10–30 行量级 —— 这个事实本身也值得记一笔：
+> 门槛不是被甩开，是被擦着蹭过，说明 500 这个数在这个边界上是个任意值。
+
+**三条候选路线**（2026-09-19 已向 Codex 求证，它的结论与代价评估记在括号里）：
+
+- **A. `routers/ai/` 拆成子包**（`chat.py` / `conversations.py` / `summary.py` ＋ `rag.py`）。纯搬家，零行为变更，
+  `baseline_1b` 风险最低。**代价：`chat.py` 仍然约 510–520 行，A 单独用并不达标**——Codex 推荐 A 时写的是
+  「让 `chat.py` 严格低于 500」，那一步在上面这道算术下做不到，**这是它给的方案里唯一一处与实测冲突的地方**。
+  A 要成立，必须搭配下面 C 的一条具名豁免。
+- **B. 先把 SSE 机器抽成 service 层**（`ai/streaming.py`），让路由函数变薄，再做六组平拆。是唯一能靠**减少复杂度**
+  而不是**切文件**达标的路线。代价：闭包捕获的是请求态，这等于在一张**不能廉价扩展的 e2e 网**下重新设计全程序
+  最容易弄红的那个端点；且它正面顶上 `CLAUDE.md:122` 与 ADR-0008（见 §0.1 那一格）。Codex **明确拒绝**这条，
+  理由是「把低风险搬迁升级为最高风险端点的重新设计」。
+- **C. 给 `chat.py` 写一条具名豁免**（门槛改为「每个 router < 500 行，`chat.py` 例外，上限 N，理由：单个 SSE 端点 433 行」）。
+  最便宜。代价：门槛开始迁就实现——**本仓库已经有好几笔欠账正是这么长出来的**。
+
+### 裁定（2026-09-19）：走 A，配一条具名、可到期、机器执行的豁免
+
+**采纳 A（`routers/ai/` 拆子包），并给 `chat.py` 一条豁免。** 三层理由：
+
+1. **B 现在做是顺序错的。** 它要动的是全程序最容易把 `baseline_1b` 弄红的端点，而 e2e 网是冻结的、扩不起。
+   更关键的是它正面顶上 `CLAUDE.md:122` 与 ADR-0008 —— 而那一条恰好是 §0.1 刚被降为「⚠️ 半条」的**未兑付项**。
+   先改宪法再做重构，和为了做重构去改宪法，中间只隔一个顺序。**B 不是被否决，是被排到 2b 之后**，
+   前置条件是 `CLAUDE.md:122` 那一格先独立结清。
+2. **差额只有 10–30 行。** 493 ＋ 样板 vs 500。门槛不是被甩开，是被擦着蹭过 —— 这在报告「500 在这个边界上是个
+   任意值」，不是在报告一个 god-module。为 10 行去重构全仓库最危险的端点，是让门槛驱动工程。
+3. **豁免写成可证伪的，就不是钻空子。** 与本仓库那几笔「门槛迁就实现」的欠账的区别全在下面四条里。
+
+#### 豁免条款（canonical，别处只许链接不许重述）
+
+- **范围**：只对 `src/reader3_app/web/routers/ai/chat.py` **一个文件**。`routers/` 下其余每一个文件，
+  含 `ai/__init__.py`，一律 < 500，**不设第二条例外**。
+- ~~**上限 N = 560**~~ → **N = 550**（2026-09-19 回写）。原来源：不可搬走的正文实测 **493 行**
+  （`api_ai_question` 433 ＋ 它独占的 `_stop_stream_worker` 60），余量 67 行留给 import、模块
+  docstring、`APIRouter` 声明与路由装饰器。
+  **回写记录**：`chat.py` 落地实测 **547 行**，67 行余量多估了 54。N 下调到 550 而不是钉死在 547，
+  是因为这条豁免要咬的是**函数拆没拆**（到期条件），不是「谁多写了一行注释」；lint 仅发版触发，
+  为一行注释在发版那天转红，代价和收益不成比例。`api_ai_question` 实测仍是 433 行，到期条件未触发。
+  「只许下调不许上调」由 `tests/unit/test_router_size_gate.py` 末尾那条上界断言执行，且**每次下调后
+  同步收紧**（已 560 → 550）——棘轮不跟着收，就不是棘轮。
+- **到期条件（不是口头承诺，是检查器的一条断言）**：豁免的存在理由是「`chat.py` 里有一个 >400 行的单函数」。
+  一旦 `api_ai_question` 被分解到最大函数 ≤400 行，**检查器必须转红并要求删掉这条豁免**。
+  即：**这条豁免会自己到期，不需要谁记得回来收。**
+- **机器执行是豁免成立的前提**：2026-09-19 实测，`.github/workflows/*.yml` 与 `scripts/*.py` 里
+  **没有任何一处在检查这条 500 行门槛** —— 它从写下那天起就只是计划表里的一句散文。
+  **一条没人测量的门槛，它的豁免也永远不会到期**，那才是真的钻空子。
+  所以 WI-4 的第一步不是搬家，是 `scripts/check_router_size.py`：
+  - 判据落在**每个声明了路由的模块**上，不落在包上 —— 这样「聚合入口只有几十行」自动不构成达标证据；
+  - 今天对着 `server.py`（2,979 行，43 条路由）**必须是红的**，这是它的定向破坏证据，不是事后补的；
+  - 它连豁免的到期条件一起断言（上一条）。
+
+**代价照记，不粉饰**：`ai` 领域从此是一个目录而不是一个文件，计划 §6 写的「六组」在**实现文件**这一层变成七个上下；
+433 行那个函数**一行没变**，复杂度没有下降，下降的只是单文件行数。这两句必须出现在 WI-4 的 PR 描述里。
+
+#### 三件已经不是选项的事
+1. **不得为了压线把代码倒进 `utils.py` 之类的筐。** 按职责拆是诚实工程，为压线而拆就是钻门禁空子。
+2. **不得用「聚合入口只有几十行」充当达标证据。** 行数检查落在**每个实现文件**上，不落在 `__init__.py`。
+3. **不得把「拆了文件」说成「降低了函数复杂度」。** 433 行那个函数在 A 和 C 下一行没变。
+
+**搬家的最高风险不是行数，是 SSE 的运行时绑定**：停止信号、并发 lease、worker 引用的对象，在换了模块之后可能静默失效
+——函数正文一字不动也可能坏。**廉价护栏已经存在，不用新写**：`tests/unit/test_ai_queue_lease.py` 的 Q1–Q6
+（`:230`/`:277`/`:405`/`:431`/`:480`/`:569`）覆盖的正是「抛异常后下一个请求仍拿得到租约」「断连后 worker 先停租约后放」
+「worker 停不下来时仍释放租约」「非 ollama 路径断连时 worker 真的被取消」。它在 unit lane 上、**不在冻结的 8 条路径里**，
+每搬一步重跑一次即可。`/api/ai/*` 下**没有** stop 路由，停止走的是断连路径，Q3/Q6 正对这条。
+
+### 归属：`POST /api/settings/providers/{name}/test` 留在 `settings`
+
+判准是**这条接口承担的用户操作**，不是它调不调模型、也不是路径前缀 —— 它是设置页里「测一下我填的 key 对不对」，
+属于配置流程。它与 `ai` 组共用 `_call_provider`（`server.py:1396`，调用点 `:1976` 在本路由内，`:2394`/`:2415` 在 summary，
+`:2627`/`:2806`/`:2827` 在 question）——**共用底层调用不要求路由同组**。这条与上面 `/api/ollama/*` 归 `settings` 是同一条判准，
+一并在 PR 描述里写明。
 
 ### 验收
-- `routes.snapshot` 零 diff。
+- `routes.snapshot` 零 diff。**这个文件一动就说明搬丢了或前缀写错了。**
 - 008 契约测试 + 009 `baseline_1b` 全绿。
-- `wc -l src/reader3_app/web/routers/*.py` 每个 < 500。
+- ~~`wc -l src/reader3_app/web/routers/*.py` 每个 < 500~~ —— **人肉 `wc -l` 不算兑付**。
+  改为：`scripts/check_router_size.py` 在 CI 里绿，且它曾对着拆分前的 `server.py` 见过红。
+  它同时执行上面那条豁免的**到期条件**。
+  > ~~**接线时机是有意推后的，别当成漏了。**~~ —— **已兑付（`a61f6c7`，2026-09-19）。**
+  > 脚本与它的 10 条单测先于搬家落地，接线推到拆分转绿的同一个 commit：CI 仅发版触发，
+  > 早接上去等于让这期间每一次发版都因为一件正在做的事而失败。现已进
+  > `.github/workflows/lint.yml` 的 `contracts` job，并用 `/usr/bin/python3` 裸跑验证过
+  > 它仍是零依赖，那条 job「不装任何东西」的性质没丢。
+- `tests/unit/test_ai_queue_lease.py` 的 Q1–Q6 在**每一步搬家之后**各跑一次，不是只在最后跑一次
+  —— 它是 SSE 运行时绑定的护栏，而那是本 WI 唯一会静默坏掉的东西。
+
+### 完成记录（2026-09-19）✅ —— 七条验收全兑付
+
+七个 commit，一组一个，每步跑一次 contract ＋ unit ＋ Q1–Q6（P-3 缓解「分小步走」）：
+
+| commit | 组 | 新文件（行） | `server.py` |
+|---|---|---|---|
+| `6afc3fb` | notes | `routers/notes.py` 263 | 2979 → 2760 |
+| `e92cefe` | search | `routers/search.py` 221 | 2760 → 2574 |
+| `2c109c6` | library | `routers/library.py` 333 | 2574 → 2278 |
+| `a7d7a0c` | reader | `routers/reader.py` 126 | 2278 → 2178 |
+| `1c7cb6a` | settings | `routers/settings.py` 348 | 2178 → 1871 |
+| `bb86b0b` | 共用模型 | `web/schemas.py` 50 | 1871 → 1852 |
+| `a61f6c7` | ai ＋ health ＋ 接线 | `routers/ai/{chat 547, conversations 236, summary 213, rag 37}`、`routers/health.py` 34 | 1852 → **942** |
+
+43 条路由全部搬完，`routes.snapshot` 全程零 diff，冻结 8 路径全程零 diff。
+
+**逐条对验收**：
+
+| 验收项 | 状态 |
+|---|---|
+| `routes.snapshot` 零 diff | ✅ 七个 commit 全程未出现在 `git diff --stat` 里 |
+| 008 契约测试全绿 | ✅ `tests/contract` 180 passed / 1 skipped |
+| 009 `baseline_1b` 全绿 | ✅ **67 passed / 24 deselected, 56.14s**（`c0ec1cb`，见下） |
+| `check_router_size.py` 在 CI 里绿 | ✅ `a61f6c7` 接进 `lint.yml` `contracts` job，12 个文件全 PASS |
+| 它曾对着拆分前的 `server.py` 见过红 | ✅ 见上文「机器执行是豁免成立的前提」那条 |
+| 豁免到期条件随脚本执行 | ✅ `min_function_lines=400`，`api_ai_question` 实测 433 |
+| Q1–Q6 每步各跑一次 | ✅ 七步各一次，最后一次 6/6 绿 |
+
+**`baseline_1b`（§8 门槛 4，2026-09-19 由维护者本人执行）**：
+
+```
+[soak] 67/91 tests collected (24 deselected) in 0.32s
+[soak] summary: 67 passed, 24 deselected in 56.14s
+[soak] verdict: green（可记账：是）
+[soak] row: | 2026-09-19T04:11:13Z | c0ec1cb | green | 56.14 | 2747100dadf6 | chromium-1234 | darwin-25.3.0 | … |
+[soak] dry run：未写台账（加 --append 才写）
+```
+
+三件事各自要点出来：
+
+1. **`suite_hash` 仍是 `2747100dadf6`**，与 G2 冻结值逐字相等——WI-4 搬了 43 条路由、`src/` 动了
+   16 个文件，冻结的 8 条路径**一个字节没碰**，soak 计数不受影响（§0.3 的承诺兑现）。
+2. **未加 `--append`，没有写进 `soak-log.md`**，这是**对的**，不是漏了：门槛 4 的括号写明分支上的
+   运行不进台账——台账数的是 `master` 上冻结覆盖面的稳定性，分支上跑它是当护栏不是攒次数。
+3. 67 项对得上门槛 4 的「67 项全绿」，不是子集绿。
+
+这次跑之前，e2e 网上一次见绿是 `6165e1b`（2026-09-06），距此 25 个 commit，中间 `src/` 改了
+16 个文件 / +2769 / −2104。**contract lane 查的是路由存在性与响应形状，它不开浏览器**——模板挂载、
+静态资源前缀、SSE 实际串流这三处正是换家之后最可能静默坏的地方，只有这一跑能证伪。
+
+#### 这次搬家新开了一个门禁口子
+
+`check_router_size.py` 量的是「`routers/` 下每个文件」∪「`web/` 下声明路由的模块」。
+`server.py` 现在**一条路由都不声明**，于是掉出了这道闸的范围——它剩下的 942 行共享工具
+不受 500 行上限约束。这不是 bug，是判据「落在声明了路由的模块上」的直接后果（那条判据
+当初正是为了让「聚合入口只有几十行」不构成达标证据）；但它意味着 `server.py` 可以重新
+长胖而没人报警。已同步写进 `routers/health.py` 的 docstring 与 `lint.yml` 的注释。
+**要不要给 `web/*.py` 另立一条上限，留给 WI-8/Phase 2b 裁，本 WI 不顺手扩大范围。**
+
+#### 11 条 B-ii 棘轮往松了走，逐名配了定向破坏
+
+`ai` 组搬走之后，`server.py` 里读这 11 个名字的地方一处不剩，模块级解析点降为空集
+（`load_book_cached` 是三项降两项）。空集会掩盖「这个名字已经没人用了」，所以逐名把
+`_server.X` 换成导入期绑定跑一整条 unit lane，事后按字节还原并 `cmp` 校验（11/11 还原 OK）。
+11 条**全部**红了，且红的不只是两道静态闸——每条都另有 1–14 条行为测试跟着红。
+证据表落在 `tests/unit/test_server_patch_seam_ownership.py` 的棘轮表里（**不只在 commit message**），
+`a61f6c7` 的 message 里有同一张表。与 WI-4 第五步的 `_http_get_json` 对照：那条破坏后**只**红
+`a12`，没有行为测试跟上——它才是「只有静态闸护着」的那一类。
+
+#### 裁定要求写进 PR 描述的两句代价，照记
+
+1. `ai` 领域从此是一个目录而不是一个文件，§6 写的「六组」在**实现文件**这一层变成七个上下。
+2. `api_ai_question` 那 **433 行一行没变**，复杂度没有下降，下降的只是单文件行数。
 
 ---
 
@@ -210,13 +435,120 @@ key 里纳入 `book.pkl` 的 `st_mtime_ns` + `st_size`（不做内容 hash —�
 
 ### WI-5 notes 乐观并发
 
-notes 是 load→modify→save 全覆盖，`os.replace` 只保证单次写入原子，**不防两个并发请求互相覆盖** —— 自托管单用户开两个标签页就能触发。加 revision（或 ETag），冲突时返 409 而不是静默丢写。
+**先更正本节原来写错的病因。** 这里原文写的是「`os.replace` 只保证单次写入原子，**不防两个并发请求互相覆盖**」。**这句在今天不成立**，写它的时候大概也已经不成立了：`notes_service.py:44` 的 `_book_write_lock` 早就在，两层（进程内按书取的 `threading.Lock` ＋ `notes.json.lock` 上的 `fcntl.flock`），且 `add_annotation` / `delete_annotation` / `update_annotation` 三个函数**都**把它持有在 load→modify→save 三步之外——那个 docstring 甚至逐字写着「`os.replace` cannot help — the race is between the read and the write」。文件层面的互相覆盖已经堵死了。留着错的病因不改，代价很具体：下一个人来做 WI-5，照着这句「去加个锁」，发现锁已经在，于是判定本条早就做完了——**而真正的丢写一行没动**。
+
+真正的丢写在**客户端跨请求的陈旧性**，锁管不着：B 在 T0 读到某条 note 的 A0 版本，A 在 T1 把它改成 A1，B 在 T2 提交一个基于 A0 算出来的 `note_text`，服务端照单全收，A1 被无声盖掉。这三步里没有任何两步在同一个临界区里——陈旧性在两次 HTTP 请求**之间**，不在文件里，再宽的锁也拦不住。自托管单用户开两个标签页就能触发。
+
+**结论没变，只是理由换了**：加版本号（ETag），冲突时返 409 而不是静默丢写。
 
 **验收用例已经写好了**：`tests/e2e/acceptance_2a/test_deg_s5_write_conflict.py` 里的 `test_deg_s5_concurrent_note_edit_shows_conflict_dialog_and_loses_nothing`，现在是 skip 状态。本 WI 的完成标志是**它能解禁并转绿**，不是重写它。前端侧的冲突 UI 是设计规格 §6.4 的 DEG-S5。
 
 它在 `acceptance_2a/`，不在冻结覆盖面里 —— 解禁它不重置 soak 计数（§0.3）。
 
 ⚠️ **409 是新增的响应状态码。** ADR-0011 冻的是「响应形状」与「路由存在性」，`routes.snapshot` 只收 `METHOD path`，不收状态码，所以快照零 diff。但这仍然是一次对外可见的行为变更，**独立 PR，PR 描述里显式声明**。
+
+#### 完成记录 —— WI-5 拆成 5a / 5b，**5a 已兑付，5b 未开工**
+
+分界线就是「谁来跑验收」：后端半边（5a）全部可以由 unit lane 判定，前端半边（5b）的完成
+标志是 DEG-S5 那条 Playwright 用例转绿。两者放在一个 WI 里，结果是后端做完了也不敢记账。
+
+**WI-5a（本次完成）——`ETag` 出、`If-Match` 入、冲突返 409。**
+
+| 落点 | 内容 |
+|---|---|
+| `notes_service.py` 269→424 行 | `annotations_version()`（sha256 over canonical sorted-key JSON）、`normalize_etag()`、`NotesVersionConflict`、模块私有 `_require_version()`，以及三个 `*_and_version(..., if_match=None)` 原语 |
+| `web/routers/notes.py` 263→346 行 | 两条 GET 加 `ETag` 响应头；三条写路由加可选 `If-Match`；`_conflict()` 渲染 409 体 |
+| `tests/unit/test_notes_optimistic_concurrency.py` 新增 649 行 | 20 条用例 |
+
+**三条设计裁定，连同它们的代价一起记下来**（都已写进对应的 docstring，此处只列结论）：
+
+1. **版本从内容派生，盘上零改动。** 哈希算在**逻辑内容**（`to_dict()` 的规范化 JSON）上，
+   不是 `notes.json` 的字节。差别不是修辞：012 要重排这个文件的版式，字节派生的版本号会在
+   重排那天让**每一个**在线客户端的版本失效，而一条标注都没变。`NOTES_SCHEMA_VERSION` 仍是 1，
+   文件没加任何字段 —— R10 的「迁移后字节不变」不受影响。
+2. **粒度是整本书一个版本。** 已知代价：A 在第 3 章加高亮，会让正在改第 7 章一条不相干笔记的
+   B 收到一个他没招惹的冲突框。选它的理由是 `load_annotations` / `save_annotations` 本来就
+   整本书进出 —— 书级是**写操作实际具备的粒度**，而按标注分版本也描述不了 create / delete /
+   将来的重排。**这是选择，不是疏忽**；要改成按标注分版本，前置条件是先给文件一条按标注写的路径。
+3. **同样内容重写一遍，版本不动。** 版本是内容的函数，不是写次数的计数器。网络超时后的重发
+   （拿 X 覆盖 X）不该让其他客户端的版本失效 —— 那是纯误报，而误报是用户学会无视冲突框的路径。
+   代价：一次空写在版本上不可见；可以接受，因为空写没让任何人丢东西。
+
+**两条附带判断**：POST（新建）带 `If-Match` 时**照样校验**，但 409 体里 `annotation` 为 `null`
+——服务端没有「这条标注的当前版本」可报，而静默放行会让同一个 header 在不同路由上含义不同；
+以及**409 优先于 404**，陈旧客户端去改一条已被别人删掉的笔记，得到的是 409 不是 404（404 会
+引导他「是不是 id 写错了」然后重试，409 才说出真相：这里发生过你没看见的事）。
+
+**ADR-0011 是怎么守住的**：`If-Match` 是**可选** header，不带它时三条写路由逐字节是老行为。
+所以 `tests/contract` **一行没改**仍是 180 passed，`routes.snapshot` 零 diff。
+
+**核心判据是怎么称重的**：第 19 条用例断「两个写者握同一个版本并发进来，恰好一个成功」。
+它单独立着不算证据 —— 一次顺序调用两遍的测试在「比较放在锁外」的坏实现下同样是绿的。所以
+配了两道称：第 20 条把锁外预检真的演一遍，证明同一套并发编排能抓住「两个都成功」；以及一次
+**定向破坏** —— 把 `_require_version` 从 `with _book_write_lock` 里挪到外面，第 19 条在
+`:610` 转红而第 20 条不动，破坏后按 `cmp` 校验还原。比较与写同处一把锁，这条才是真的 CAS。
+
+**门禁实测**：unit lane `1291 passed, 2 skipped, 51.07s`（此前 1271 / 47.93s，+20 条 / +3.1s，
+多出来的时间是两条并发用例各 2s 的会合窗口）；`tests/contract` 180 passed；
+`check_router_size.py` 通过（`notes.py` 346 ≤ 500）；`check_coverage_gate.py` PASS，
+`notes_service.py [branches] 100.00% >= 83%`，无 partial branch；八条冻结路径与
+`routes.snapshot` 均零 diff。红收据 `WI-5a` 为 `assertion-failure`，verdict `SEPARATION-HELD`。
+
+**WI-5b（2026-09-20 完成，`cc6bb18`）** —— `ConflictDialog` ＋ 解禁 DEG-S5。
+
+409 体在 WI-5a 就已按它的需要成形（`annotation.note_text` 是远端那一版，`etag` 可直接拿去
+重试），由第 10 条用例钉住；本次把它接到前端。**用 vanilla JS 做在 011 里**，没有推到 014 等
+TS 外壳 —— ADR-0008 的技术栈边界不允许为一个对话框引框架，而推迟意味着这条门槛要挂到另一个
+分支上去。
+
+| 落点 | 内容 |
+|---|---|
+| `web/static/js/annotations.js` +189/−11 | 模块级 `notesEtag` ＋ `notesWriteWithResync()`（写请求带 `If-Match`，遇 409 取回服务端版本重试一次）；DELETE 循环同走；`ConflictDialog` 的装配与两个出口 |
+| `web/templates/reader.html` +26 | `<dialog role="alertdialog">`，两个出口各一，**没有第三条关闭路径** |
+| `web/static/css/annotations.css` +81 | `.conflict-dialog` 与 `::backdrop` |
+| `tests/e2e/acceptance_2a/test_deg_s5_write_conflict.py` −7 | **只删了模块级 skip 那一块**，一条断言没动 |
+
+**解禁撞上了一条没人预见的不变式，这才是本 WI 真正的成本。** `acceptance_2a` 是本仓历史上
+**第一个**被激活的 acceptance 组，而 `scripts/lint_e2e_groups.py` 的两条 skip 轴（静态 AST 轴
+与收集期生效 marker 轴）都把「未激活组以 skip 形态存在」硬编码在了**每一个** acceptance item
+上。于是删掉那 7 行的瞬间，守卫判红：lint rc=1、unit lane 4 条红（全在 `test_e2e_group_guard.py`）。
+
+**选的是加登记表，不是放宽闸。** 新增 `ACTIVATED_ACCEPTANCE_DIRS = frozenset({"acceptance_2a"})`，
+两条轴对表内目录**反向**判定：静态轴要求整组零 skip 构造，动态轴要求收集期不带任何生效 skip
+marker；表外维持原判据不变。代价是这份判据在 oracle 侧要各维一份（`test_e2e_group_guard.py:78`
+明写「不从被测脚本 import 判据」，那是设计不是冗余）。好处是它不只没削弱闸，还把闸反过来用：
+**说激活了，就得真的绿**。
+
+目录名从模块路径读（新增 `group_dir_of`），**不拿 marker 名冒充**。今天五个组的 marker 名与目录
+名同形，直接查表也对 —— 但那是巧合不是映射。一旦某组改成不同名，登记表会**静默地对谁都不生效**：
+已激活组既不被要求 passed、也不再被要求 skip，两条轴同时闭嘴，而条数轴数的是 collected，照样满分。
+
+**两条轴的牙分别称过，而且第一版没称住。** 反向判定最容易退化成 `if activated: continue`
+（＝把「已激活」读成免检开关）。第一版只补了一条走 `check_tree` 的用例，看起来是在守这件事 ——
+实测把静态轴的已激活分支整个掏空，**整份 oracle 38 passed 全绿**：那条用例断的两件事全由动态轴
+的消息独力满足了（nodeid 里本来就带模块路径），两条轴一起判时互相掩护。补法是拆开各立一条只调
+单轴的用例：
+
+- `test_static_skip_axis_alone_is_red_when_an_activated_group_keeps_a_skip` —— 掏空静态轴 ⇒ 1 failed
+- `test_effective_skip_marker_axis_flips_only_for_activated_groups` —— 掏空动态轴 ⇒ 1 failed
+
+两次定向破坏后均按 `cmp` 校验还原为字节一致。静态轴这一侧还专门配了一个「动态轴结构性看不见」
+的样本：已激活组用 `pytest.skip(..., allow_module_level=True)` 把整模块从收集期摘掉，item 压根
+不存在，动态轴无从判起 —— 那正是静态轴不可替代的理由。
+
+**一条空防守，记在这里免得日后被当成已验证的。** 对话框自己那道
+`dialog.addEventListener("cancel", e => e.preventDefault())` 今天**没有被任何用例执行到**。
+定向破坏实测：删掉它，DEG-S5 仍然 `1 passed`。原因在 `toolbar.js:148` —— 它在 `document` 上注册
+了**捕获阶段**的 keydown，笔记编辑器打开时（冲突路径故意让它开着）先 `preventDefault()` ＋
+`stopPropagation()` 把 Escape 吃掉，Escape 根本到不了 `<dialog>` 的 `cancel`。用例里那条
+「Esc 关不掉」于是为一个**与对话框自身防守无关**的理由而绿。防守保留作纵深，但谁要动
+`toolbar.js` 的 Escape 分支，得知道这条断言今天护不住它。
+
+**门禁实测**：`lint_e2e_groups.py` rc=0（派生总数 91、`acceptance_2a` 1/1）；unit lane
+`1296 passed, 2 skipped, 57.94s`（此前 1291，+5 条）；覆盖率门禁 PASS（lines 84.67% /
+branches 68.29%，9 条 criticalPaths 全 PASS）；e2e lane `75 passed, 16 skipped, 66.24s`；
+`baseline_1b` `67 passed, 54.23s`。冻结 8 路径零 diff，`suite_hash` `2747100dadf6` 未动；
+`acceptance_2a` 不在冻结覆盖面里（§0.3），soak 计数不受影响。
 
 ### WI-6 `max_retries` —— 这道选择题已经不由我们做了
 
@@ -233,15 +565,122 @@ notes 是 load→modify→save 全覆盖，`os.replace` 只保证单次写入原
 
 独立 PR。验收：一条断言「provider 调用在失败后按 `max_retries` 重试」的单测（用 §1 WI-0b 的出网兜底保证它不真的打网络）。
 
+#### WI-6 完成记录（2026-09-20，`eb8b60b`）✅ —— 接通了，但只接通了非流式那一半
+
+走的是路径 1（接通）。落点在 `server._call_provider`——ADR-0006 定的唯一非流式出网口，
+六个调用点因此一次全部受益，不必逐个改。
+
+**使能的改动是一个类型化异常，不是重试循环本身。** 五家 provider 原先把所有 HTTP 失败
+都塌成裸 `RuntimeError(msg)`，状态码在抛出的那一刻就丢了，而重试分类恰恰只能按状态码做
+（靠解析错误文本不可靠——那段文本来自对端服务器）。新增
+`ai/providers/types.py::ProviderHTTPError(RuntimeError)`，只往 `args` 放 `message`、把
+`status` 做成 keyword-only 属性，于是 `str(e)` 逐字节不变——这条是硬要求：它会流到 SSE 的
+`{"type":"error","message":str(e)}` 与设置页测试的 `{"success":false,"message":str(e)}`，
+两处都在 ADR-0011 的冻结之下。五个 provider 各改一行，表达式本身没动。
+
+重试语义：可重试集合 `{408, 429, 500, 502, 503, 504}` ＋ `URLError` / `TimeoutError` /
+`ConnectionError`；4xx 客户端错、`RedirectNotAllowed`、以及 `ValueError` / `AssertionError`
+一律不重试。退避 `uniform(0, min(8.0, 0.5·2^n))`（full jitter），耗尽后 bare `raise` 保留
+原始 traceback。预算三档：显式传参 ⇒ 钳到 `[0, 10]`；不传 ⇒ 读 provider 设置；读不出 ⇒ 0 次。
+连通性测试路由（`routers/settings.py:291`）显式传 `max_retries=0`——那个按钮的语义是
+「现在这一下通不通」，替用户静默等三轮退避是骗人。
+
+复核（自己复跑，非转述）：unit lane **1526 passed, 2 skipped, 61.43s**（基线 1488 + 38）；
+`tests/contract` 180 passed；`routes.snapshot` 零 diff；ruff 全过；覆盖率门禁 PASS
+（`server.py` 分支 63.33% ≥ 58%）；`check_router_size.py` PASS。那 2 条 warning 是既有的——
+用 `--deselect tests/unit/test_provider_retry.py` 复跑得 `1488 passed, 2 skipped, 2 warnings` 为证。
+
+**两处缺口当场记了账，没有假装做完**：[欠账 #36](./009-e2e-annotations.md)（流式与探活
+两个出网口在闸外，先决条件是「已推出的 chunk 怎么办」这条产品语义裁定）、
+[欠账 #38](./009-e2e-annotations.md)（`Retry-After` 拿不到，因为 `_http.post_json` 的返回
+契约把 headers 丢了）。另有一笔量过并判为不值得改：`_provider_retry_budget` 每次调用多读
+一次 `config/ai_settings.json`，实测 **0.015 ms/次**（200 次均值，文件 1.2 KB），对一次数秒
+的 LLM 调用是 10^5 量级的差 —— 记在这里，免得以后有人来「优化」它。
+
 ---
 
 ## 7. WI-7 / WI-8 / WI-9 —— 收尾与 Phase 2b
 
 **WI-7 语义依赖可选化。** `chromadb` 与 `sentence-transformers` 从主 `dependencies` 移进 `[project.optional-dependencies]` 的 `semantic` 组，与 README「语义依赖可选」的描述对齐。验收：不装 `[semantic]` 时 `import reader3_app` 与全部非语义路由正常，语义路由给出可读的降级提示而不是 `ImportError` 堆栈。
 
+#### WI-7 完成记录（2026-09-20，`207779b`）✅ —— 验收兑付，且白捡一道真闸
+
+代码侧本来就做了大半：全仓 `src/` 没有任何模块级 `import chromadb`，唯一 import 点是
+`vector_search._require_semantic_deps()`（函数体内），而 `BookVectorIndex` 里只有
+`index_book`（`:179`）与 `semantic_search`（`:286`）真需要依赖，`is_indexed()` / `status()` /
+`_read_meta()` 是纯读盘。所以验收前半句（非语义路由正常）**在拆分之前就已经成立**。
+
+真正缺的那一处任务书没写：`reader3.py:716` 的 `idx.index_book(...)` 没有捕获，缺依赖时
+`uv run reader3 --index <book>` 吐一屏 traceback，而同一函数里其它每个失败出口都是
+`SystemExit(msg)`。已按邻居的写法补上。补救文案原文是
+`Run: uv add chromadb sentence-transformers`——那是**会撤销本次修复的指引**（`uv add` 写回
+主依赖表），改成 `uv sync --extra semantic` / `pip install 'reader3[semantic]'`。
+
+`[dependency-groups] dev` 首行的 `"reader3[semantic]"` 是承重的：少了它，下一次 `uv sync`
+会按新的主依赖表把 chromadb / torch / transformers 从开发机 venv 里卸掉（CI 的 tests job
+跑 `uv sync --frozen --all-groups`，同理）。extra 是给**用户**的选择，不是给开发机的。
+
+**验收后半句白捡一道真闸**，不必自己造：`lint.yml` 的 wheel job 跑
+`scripts/smoke_installed_wheel.py`，它打 wheel、装进**干净 venv**、起真服务打
+`/api/health`、`/`、`/settings`、`/read/{id}/0` 四条路由（该脚本 `:213` / `:238`）。那个 venv
+从此不再有 chromadb，于是它成了这条验收的真实证据，比 monkeypatch 硬；顺带每次发版少往
+干净环境里下一个 torch。
+
+量过的重量（本机 site-packages 共 1303.1 MiB）：torch 367.5、scipy 87.3、onnxruntime 63.7、
+transformers 57.9、sympy 37.6、numpy 25.2 MiB。传递闭包（`uv tree --package X --depth 25`
+去重计数）：chromadb **86**、sentence-transformers **29**，而 fastapi 12 / uvicorn 14 /
+jinja2 2 / beautifulsoup4 3 / ebooklib 3。
+
+`uv.lock` 一并重生成（CI 用 `uv sync --frozen`，lock 过期即红）：diff **45 insertions /
+38 deletions**，逐包比对 **219 → 219，零增零删零版本变化**；全程没有任何 `Uninstalled` /
+`- torch`，事后 `.venv` 仍是 1.3G。新增 `tests/unit/test_semantic_extra_optional.py` **15 条**，
+其中 C7/C8/C9 是直接解析 `pyproject.toml` 的**静态闸**——没有它，将来某次 `uv add chromadb`
+会无声撤销这次拆分而一切测试照常绿。模拟「没装依赖」用的是 `sys.meta_path` finder 而不是
+`sys.modules[x] = None`：后者抛的 `ModuleNotFoundError` 字样会被 tdd-guardian 的收据判成
+「环境坏了」而拒收红证（实测第一次 `record` 被判 `runner-error`）。
+
+复核（自己复跑，非转述）：unit lane **1541 passed, 2 skipped, 61.80s**（1526 + 15）；ruff
+全过；覆盖率门禁 PASS；红收据 `record` → `verify` = SEPARATION-HELD。
+
+**两条当场记的账**：[欠账 #37](./009-e2e-annotations.md)（缺依赖返 400，语义上应是 503/501；
+ADR-0011 冻结期内不动状态码）、[欠账 #39](./009-e2e-annotations.md)（`jupyter` ＋ `ipywidgets`
+也在运行时依赖里且全仓零代码引用，闭包 100 / 21 —— 同一类缺陷的第二个现场，**刻意没有并进
+本 WI**，因为它改变 `uv sync`（无 extra）装出来的东西，影响每一个下游使用者，该由维护者拍板）。
+
 **WI-8（C1）跨库搜索缓存颠簸。** `load_book_index` 的 `maxsize=4` ＋ `case_sensitive` 入 key ⇒ 有效容量 2 本。换 weighted LRU，key 纳入 mtime/指纹（与 WI-3 的失效机制共用一套）。验收：`bench.py` 的全库搜索指标相对 WI-2 基准可量化改善。
 
+#### WI-8 完成记录（2026-09-20，`a4e5f49`）—— **落地的不是 weighted LRU，也没有达成上面那句验收**
+
+照原文做了一半，另一半被裁掉，两处都要说清：
+
+| 原文要求 | 实际落地 | 为什么 |
+|---|---|---|
+| 换 **weighted LRU** | ❌ **仍是 vanilla `@lru_cache`**，只把上限 4 → 12 | 维护者裁定「011 里用 vanilla 做」。weighted LRU 要自己写淘汰逻辑，属 ADR-0008 说的「FastAPI/BeautifulSoup 之外的抽象」；而它要解决的是容量问题，实测容量**根本不是瓶颈**（见下） |
+| key 纳入 mtime/指纹 | ✅ `(st_mtime_ns, st_size)` 入 key | 与 `book_store` 的 `_load_book_for_stat` 同一个写法：外层做 `os.stat`，内层 memoize，stat 只当 key 材料 |
+| 两个缓存都改 | ❌ **只改了 `load_book_index`** | `book_store.load_book_cached` 的失效在 WI-3 已经做过，重做没有收益 |
+| 验收：全库搜索指标可量化改善 | ❌ **没达成**：`unpickle_grand_total` 95 → 95，`normalize_calls` 549 → 541（省 8 次），RSS ＋0.7 MiB | 见 §8 门槛 #7 的裁定与欠账 #35 |
+
+**这个工作项真正交付的是正确性，不是性能**：pickle 被重新发布之后，旧写法会一直返回
+陈旧索引直到进程重启（附录 B 的 C3 在 index 这一侧的那一半）。证据是
+`tests/unit/test_search_service_index_freshness.py` 的 7 条 ＋ 三次定向破坏：
+去掉 `except OSError` 兜底 → 12 红；删掉三行缓存面转发 → 24 红；
+stat 算了但 key 里写死 `0, 0` → 3 红，且恰好是那三条盯新鲜度的用例。
+**按门槛 #7 的原文，这些一条都不算兑付** —— 门槛量的是次数，不是正确性。
+
 **WI-9（C2）`_normalize_with_map` 换 `array('I')`。** 现在返回 `Tuple[str, List[int]]`，每字符一个 Python int —— 300 万字符约 >100 MB，换 `array('I')` 约 12 MB，且仍支持 `index_map[i]` 下标，**不改变** `highlight_ranges_for_chapter()` 的偏移语义。**必须做差分测试**：新旧实现对同一批语料逐字符比对 index_map（casefold 扩张与 combining mark 删除这两条路径是错误高发区，`epub_corpus.py` 里的 CJK 书是现成语料）。
+
+#### WI-9 完成记录（2026-09-20，`b69a568`）✅ —— 本分支收益最大的一笔
+
+`bench/011-iso-*.json` 三份逐提交隔离（`04a6839` → `b69a568` → `a4e5f49`，同机、同参数、
+相隔 55 秒连跑）：`after_library_search_bytes` **237.7 → 114.1 MiB（−123.6）**、
+`after_huge_search_bytes` **331.7 → 195.4 MiB（−136.3）**，spread 0.0/0.1%。
+`highlight_ranges_for_chapter()` 的偏移语义未变（差分测试在
+`tests/unit/test_normalize_index_map_container.py`）。
+
+两件要跟着记住的：**峰值 RSS 不可分解**（`ru_maxrss` 累计，237.7 里有 62.5 MiB 是解释器
+＋ FastAPI import 的底噪），所以这个数不能读成「省下的堆内存」；以及 WI-8 随后把索引
+缓存上限抬到 12 只花了 **＋0.7 MiB**，正是因为每个条目的 `index_map` 已经被这一笔压掉了
+一个数量级 —— **两个工作项的顺序不能对调**，反过来做要多贵没有测，别替它编数。
 
 **C5 明确不在 011 范围内。** 计划把它标为「落点待裁决」，理由是它严格依赖 Phase 3 的 `manifest.json`。放进 011 需要先造一个过渡版（单独缓存一份轻量书目 JSON），那是一份会在 012 里被删掉的代码。**裁决：推迟到 012，与 `manifest.json` 一起做。** 本条同时消解附录 B 文末 UNRESOLVED DECISIONS 里的这一项。
 
@@ -251,16 +690,54 @@ notes 是 load→modify→save 全覆盖，`os.replace` 只保证单次写入原
 
 | # | 门槛 | 复核方式 |
 |---|---|---|
-| 1 | 每个 `routers/*.py` < 500 行 | `wc -l src/reader3_app/web/routers/*.py` |
-| 2 | `tests/contract/routes.snapshot` **零 diff** | `git diff --stat` 里不出现它 |
-| 3 | 008 三条 lane 全绿 | `/tdd-guardian:gate commit` |
-| 4 | 009 `baseline_1b` 67 项全绿，`suite_hash` 仍是 `2747100dadf6` | `uv run python scripts/soak_run.py`（不加 `--append`，本分支上的运行**不进台账**） |
-| 5 | WI-0a 注册表覆盖全部 20 个打桩名，且故意制造过期别名时**演示过它会红** | 见 §1 验收 |
-| 6 | `tests/unit/` + `tests/contract/` 全域出网兜底生效 | 见 §1 验收 |
-| 7 | `bench.py` 跑通，反序列化计数不为零，C1/C2 指标相对基准改善 | §3 存档的 before/after |
-| 8 | DEG-S5 验收用例解禁并转绿 | `pytest tests/e2e/acceptance_2a -k deg_s5` |
-| 9 | `tests/conftest.py` 未被修改 | `git diff --stat master..011-backend-refactor -- tests/conftest.py` 为空 |
+| 1 ✅ | 每个 `routers/*.py` < 500 行（唯一具名豁免 `ai/chat.py` ≤ 550，带到期条件） | `python3 scripts/check_router_size.py`（已接入 `lint.yml`）。**人肉 `wc -l` 不算兑付。** 注意范围：`server.py` 不再声明路由，已掉出这道闸——见 §5 完成记录「门禁口子」 |
+| 2 ✅ | `tests/contract/routes.snapshot` **零 diff** | `git diff --stat` 里不出现它 |
+| 3 ✅ | 008 三条 lane 全绿 | **不是 `/tdd-guardian:gate commit`** —— 原文写的是它，但 `.claude/tdd-guardian/config.json` 里只有 `unit` 的 `gateOn` 含 `commit`，`e2e` 与 `packaging` 都挂在 `push` 上，**那条命令只跑一条 lane，验不了这条门槛**。用 `/tdd-guardian:gate push`。2026-09-19 在 `53a823f` 上实测三条全绿：unit `1291 passed, 2 skipped, 50.91s`；e2e `91 collected → 74 passed, 17 skipped, 60.64s`；packaging `1 passed, 1 deselected, 26.77s`；覆盖率门禁 PASS（lines 84.67% / branches 68.29%，8 条 criticalPaths 全 PASS）。**兑付前 `e2e` / `packaging` 的上一次绿是 2026-09-06 的 `6165e1b`，落后 29 个提交、其间 `src/` 改了 17 文件 +3017/−2114** —— 这段盲区是靠 unit lane 的绿冒充三条 lane 的绿维持的 。**⚠️ 2026-09-20 追记：这条绿只在本地那个运行剖面下成立。** 同日 CI 首次真跑（[35499892289](https://github.com/anzchy/reader3-pro/actions/runs/35499892289) / [35500630451](https://github.com/anzchy/reader3-pro/actions/runs/35500630451)），**unit lane 在干净 Linux 上两次都红**，其中确定性的那条是 011 自己引入的——WI-5b 激活 `acceptance_2a` 之后，`tests/unit/test_e2e_group_guard.py` 的 oracle 子进程真的去启浏览器，而 unit job 不装 Chromium（[欠账 #45](./009-e2e-annotations.md)）。本地照不出来是因为开发机装着 Chromium。**本条门槛的措辞是「三条 lane 全绿」，没说在哪台机器上**——011 合并前应当按 #45 修掉，否则这条绿买到的比它看起来的少。**⬛ 2026-09-20 再续：#45 已修并结清**（`--setup-plan` ＋ 逐 item 探针，`src/` 一行未动；`PLAYWRIGHT_BROWSERS_PATH=/nonexistent uv run pytest tests/unit tests/contract -q` 实测 `1555 passed, 2 skipped in 48.41s`，牙用两次定向破坏称过 —— 见 [009 台账 #45](./009-e2e-annotations.md)）。**但本条的 ⚠️ 追记不撤销**：在 CI 上真看见一次 unit lane 全绿之前，「三条 lane 全绿」这句话仍只在本地剖面下有证据。**⬛ 2026-09-20 三续：CI 已重跑（run 35512654210 @ `5056614`），追记照旧不撤。**unit job 实测 `1 failed, 1554 passed, 2 skipped in 93.14s` —— #45 确认死透（FAILED 行里不再有 `test_e2e_group_guard`，总数 1557 与本地逐字对上），但唯一那条红是 [#46](./009-e2e-annotations.md)，仍是 flaky。**红的成分从两条降到一条，「CI 上 unit lane 全绿」仍未发生**，所以本条门槛买到的东西没有变多：它现在缺的是一条具名的 flaky，不再是一条设计缺陷。**⬛ 2026-09-21 四续：那条 flaky（#46）已修并结清，追记仍不撤。** 假 worker 从 `sleep(3.0)` 换成阻塞在显式 `threading.Event` 上，由用例末尾主动放行——「它本应还没停」从赌机器够快变成构造保证，同批加了一条守卫用例盯着这条性质。本地 `-k Q4` 连跑 10 次全绿，叠 12 个烧核进程再连跑 10 次仍全绿；但这两组数字是**支持性证据不是主证据**（本机太快，本来也证伪不了一个只在慢 runner 上发作的时间假设），主证据是「断言不再依赖时间」这个结构性事实。当天工作树三条 lane 全绿：unit **1556 passed / 2 skipped / 56.13s**（TOTAL 83%）、e2e **76 passed / 16 skipped / 66.21s**、packaging **1 passed / 15.76s**。**「CI 上 unit lane 全绿」仍未发生**——CI 还没在这份代码上跑过，所以本条门槛买到的东西还是没变多。**⬛ 2026-09-21 五续：⚠️ 追记正式撤销 —— 它等的那件事发生了。** run [35584711194](https://github.com/anzchy/reader3-pro/actions/runs/35584711194) @ `176c8cb`，unit job `1556 passed, 2 skipped in 96.74s`、**0 failed**，同 job 内 `ruff` `All checks passed!`、`mypy` `Success: no issues found in 41 source files`（门槛 10 在 CI 上也是第一次被真的看见）。**这条追记从 2026-09-20 挂到今天，中间三跑三次都不够格撤它**，撤销的条件一开始就写死了「在 CI 上真看见一次 unit lane 全绿」，现在逐字兑付。**本条门槛至此在两个运行剖面下都有证据**，不再是「只在本地成立」 |
+| 4 ✅ | 009 `baseline_1b` 全项全绿，`suite_hash` 与当时冻结值一致。**2026-09-21 起这两个数都变了：68 项、`1e868c7bf811`** | **2026-09-19 在 `53a823f` 上随 `gate push` 的 e2e lane 重跑，67 条全绿**（`uv run pytest tests/e2e/baseline_1b --collect-only -q` 复核为 `67 tests collected`；冻结 8 路径对 `master` 零 diff，`suite_hash` 未动）。上一次绿是 `c0ec1cb`，其后 WI-5a 又改了 `routers/notes.py`，所以那次绿不够用，本次是重跑的。原复核方式： `uv run python scripts/soak_run.py`（不加 `--append`，本分支上的运行**不进台账**）。**⬛ 2026-09-21：本条的两个数字都被 011 自己改掉了，勾重新挣了一次。** 修 [欠账 #9](./009-e2e-annotations.md)（选区塌陷丢写）动到冻结集里的两个文件——W-5a-③ 因缺陷修好而**改判**（期望终态 0 → 1），#44 的回归用例从白名单**迁入** `baseline_1b/`——于是 `suite_hash` `2747100dadf6` → **`1e868c7bf811`**，条数 67 → **68**。当天在工作树上实测 `baseline_1b` **68 passed / 55.08s**，`soak_run.py` dry run **`68 passed, 24 deselected in 54.66s`、`verdict: green（可记账：是）`**（未加 `--append`，仍按括号里那条纪律）。**代价不在本条门槛上，在它下游**：`master` 侧的 soak 计数 **10 → 0**，机制挑战闸三项（含已 PASS 的 CPU 压力项）一并作废。这是维护者当天在「全修」与「保住计数」之间明确选的一支，账单记在 [`soak-log.md`](./soak-log.md) 变更史第一条。**⬛ 同日续：新的 68 条在干净 Linux 上也绿了，且是首次。** run 35584711194 @ `176c8cb`：`68 passed, 24 deselected in 76.03s`、`verdict: green`、`suite_hash 1e868c7bf811`、`attempt=1`。本条门槛此前的全部证据都出自开发机，现在多了一个运行剖面——而这正是 [欠账 #44](./009-e2e-annotations.md) 三跑三红买到的教训：本地绿证明不了 CI 绿 |
+| 5 ✅ | WI-0a 注册表覆盖全部 20 个打桩名，且故意制造过期别名时**演示过它会红** | 见 §1 验收 |
+| 6 ✅ | `tests/unit/` + `tests/contract/` 全域出网兜底生效 | 见 §1 验收 |
+| 7 ⚠️ **部分达成，经范围变更关闭其对 011 的阻塞** | `bench.py` 跑通，反序列化计数不为零，C1/C2 指标相对基准改善 | **门槛原文一字未改，因为它当初提的要求是对的。** 三项里两项兑付、一项没有：`bench.py` 跑通 ✅（rc=0）；反序列化计数不为零 ✅（`unpickle_grand_total` = 95，`book_store` 是唯一读盘点）；**C2（内存）✅ 决定性兑付**——`011-iso-*.json` 三份逐提交隔离实测，WI-9 单独拿下 `after_library_search_bytes` **−123.6 MiB**（237.7 → 114.1）、`after_huge_search_bytes` **−136.3 MiB**（331.7 → 195.4），spread 0.0/0.1/0.1%；**C1（读盘/归一化次数）✗ 没兑付**——`unpickle_grand_total` 95 → 95 一次没少，`normalize_calls` 549 → 541 只省 8 次（＝一本书 8 章）。原因是 `search_library`（`search_service.py:620`）为取 `title`/`author` 无条件先读正文，索引缓存扩到多大都绕不开，已立为**欠账 #35**（[009 跨波欠账表](./009-e2e-annotations.md)）。WI-8 的真实价值是**正确性**（pickle 换了而索引还发旧文本，见 `tests/unit/test_search_service_index_freshness.py` 7 条 ＋ 定向破坏 3 红），而门槛 #7 量不到正确性 |
+| 8 ✅ | DEG-S5 验收用例解禁并转绿 | **2026-09-20 在 `cc6bb18` 上实测兑付**：`uv run pytest tests/e2e/acceptance_2a -k deg_s5 --browser chromium` → `1 passed`；e2e lane 整体 `75 passed / 16 skipped / 66.24s`（此前 74 / 17，多出来的一条就是它）。那条用例**没有被重写**——它的 diff 实测只有 `0 7`，就是模块级 skip 那一块 |
+| 9 ✅ | `tests/conftest.py` 未被修改 | `git diff --stat master..011-backend-refactor -- tests/conftest.py` 为空 |
+| 10 ✅ | `uv run mypy src/` 干净 | **2026-09-20 新增，因为前九条没有一条看得见类型检查**（见下方同日期的说明）。复核方式不是手跑：`tests/unit/test_router_type_annotations.py` 把它钉进**日常 unit lane** —— `test_mypy_is_clean_on_src` 真跑一次 `mypy src/` 并断言退出码 0（权威判据，热跑 0.47s / 冷跑 15.07s），另有一层 AST 静态闸逐个检查十个 router 模块的 `router: APIRouter = APIRouter()`（零秒，说得出是哪个文件忘了标注）。两层都留着是因为失效方式不同：AST 那层不依赖 mypy 装没装，mypy 那层盖得住下一个还没出现的 `has-type`。实测 `Success: no issues found in 41 source files` |
 
+> **2026-09-20 门槛 #7 的裁定：留原文、记「部分达成」、撤销它对 011 合并的阻塞。**
+> 摆在桌上的是四条路：(a) 勾成通过 —— 假的，C1 没兑付；(b) 把门槛改写成「与实际做到的一致」——
+> 这正是本文 §4 `:286` 点名过的病「门槛开始迁就实现，本仓库已经有好几笔欠账正是这么长出来的」，
+> 改完之后没人再知道当初承诺过什么；(c) 卡住 011 不合并，直到 C1 的性能那一半做完 ——
+> 而那一半的正解（不为取元数据而读正文）落在 012 的 `load_book_metadata()` 上，为它扣住一整条
+> 已经绿了 8 条门槛的分支，代价和收益不成比例；(d) **门槛原文保留、状态记成「部分达成」、
+> 明确写下是谁在哪一天以什么理由撤销了它对合并的阻塞、剩余部分单独立账**。
+>
+> **走 (d)。** 判据是三个月后有人翻到这里，能回答「原来承诺什么、实际得到什么、放弃了什么、
+> 谁接受了这个代价」。(a) 答不出第二问，(b) 答不出第一问，(c) 把问题换成了「为什么这条分支停了两个月」。
+>
+> 决策链照记：维护者 2026-09-20 把这条裁定委托给 Codex 评审（`gpt-6-astra`，effort high，read-only，
+> 任务 `review-plan-mu93nf2j-0y0wb5`），(d) 是 Codex 给出的第四条路 —— 我原本只提了 (a)/(b)/(c)，
+> 它三条全否了。我复核了它同批提出的六条可核查项，**全部成立**，其中两条打到我头上
+> （见 `bench/README.md` 的「这一节错过什么」与提交 `c4a4ff4`）。维护者可随时推翻这条裁定，
+> 推翻的成本是改这一格 ＋ 把欠账 #35 的兑付方改回 011。
+>
+> **剩余部分的去向**：欠账 **#35**，兑付方 **012**，验收判据是 bench 的 `05_library_search_*`
+> 三步不再每轮 +20 次读盘。012 开工时重新裁定它的优先级 —— 这是本条裁定唯一的复审点。
+
+> **2026-09-20 新发现：这（当时的）9 条门槛里没有一条看得见 `mypy`，而 011 把它从绿弄成了红。已修，并补成第 10 条门槛。**
+> 实测 `master` 是 `Success: no issues found in 27 source files`，本分支 `eb8b60b` 是
+> `Found 10 errors in 1 file` —— 全部是 `server.py` 的 `Cannot determine type of "router"
+> [has-type]`，病因是 WI-4/3 拆 router 时引入的循环导入（`2c109c6`）。`.github/workflows/tests.yml:75`
+> 的 mypy 步骤没有 `continue-on-error`，但该 workflow 只认 `release.published` / `push.tags: v*` /
+> `workflow_dispatch`，所以它是一颗**发版当天才引爆**的哑弹，日常门禁一次都不会响。
+> 全文 grep 「mypy」在本文与 [009 账本](./009-e2e-annotations.md)里此前**零命中** —— 也就是说
+> 「8 ✅ + 1 ⚠️、无 ❌」这个成色是在一个看不见类型检查的量表上得出的。已立为**欠账 #40**，
+> 兑付方是 011 自己。修法已在沙盒工作树里验证：十个 router 模块写成 `router: APIRouter = APIRouter()`，
+> `mypy src/` 转绿（`Success: no issues found in 41 source files`），每文件一行、零运行时影响。**当天就实施了**，连同一个 13 条的回归闸 `tests/unit/test_router_type_annotations.py` —— 只加门槛不加闸没有用：这个洞第一次出现，正是因为唯一看得见 mypy 的地方（CI）只在发版那天说话。unit lane 1541 → **1554 passed, 2 skipped**，`routes.snapshot` 零 diff，欠账 #40 随之结清。
+
+> **2026-09-20 复测：9 条中 8 条兑付，只剩 #7。** #8 由 WI-5b 兑付（`cc6bb18`）。本次连带发现并解决了一件当初没人预见的事：`acceptance_2a` 是本仓**第一个**被激活的 acceptance 组，而 `scripts/lint_e2e_groups.py` 的两条 skip 轴把「未激活组以 skip 形态存在」硬编码在了**每一个** acceptance item 上 —— 于是「解禁」这个动作本身被守卫读成违规（lint rc=1、unit lane 4 条红）。解法是加 `ACTIVATED_ACCEPTANCE_DIRS` 登记表、两条轴对表内目录反向判定，而不是把闸放宽。详见 §6 WI-5b 的完成记录。
+>
+> **2026-09-19 实测：9 条中 7 条兑付，剩 #7 与 #8。** 此前看板与本文都读作「只剩 1 条（#8）」，那是错的 —— 它把一条 unit lane 的绿当成了三条 lane 的绿，#3 与 #4 当时其实都没有当前的证据。这一次是先跑再改：`gate push` 三条 lane 全绿之后才在表里打勾。**剩下两条的性质不同**：#8（DEG-S5 ＝ WI-5b）是还没做的活；#7（bench C1/C2）是 WI-8 / WI-9 未开工，`array('I')` 在 `src/` 里搜不到 —— 也就是说它连 before/after 的 after 都还不存在。
+>
+> **勾的成色不一样，记清楚**：#1 / #2 / #3 / #4 / #9 是 2026-09-19 当天实测的；**#5 与 #6 的勾沿用前序会话的证据，当天没有重测** —— 它们钉的是静态守卫（注册表与出网兜底），随 unit lane 一起跑，lane 绿即它们绿，但这是推断不是直接观测。谁要把 011 收口，这两条值得亲手再验一次。
+>
 > **门槛 4 的括号很重要。** 分支上的 soak 运行**不能**记进 `soak-log.md` —— 台账数的是 `master` 上冻结覆盖面的稳定性。分支上跑它是为了当护栏，不是为了攒次数。
 
 ---
@@ -273,7 +750,8 @@ notes 是 load→modify→save 全覆盖，`os.replace` 只保证单次写入原
 |---|---|---|
 | **WI-0** | 打桩接缝守卫（名字归属 + 出网兜底） | 归属注册表覆盖 20 个名字；过期别名场景转红；全域 TCP 出网转红 |
 | **WI-3** | `book_store.py`：两份缓存合一 + mtime 入 key + 粒度接口 | 跨模块 `is` 同一对象；mtime 变化后读到新内容；`baseline_1b` 不红 |
-| **WI-5** | notes 乐观并发，冲突返 409 | 并发写第二个请求得 409 且**两份内容都没丢**；DEG-S5 解禁 |
+| **WI-5a** ✅ | notes 乐观并发的后端半边（`ETag` / `If-Match` / 409） | 两个写者握同一版本并发进来恰好一个成功（＋锁外预检的反向对照）；过期 `If-Match` 得 409 **且盘上一个字节没变**；不带 `If-Match` 时行为逐字节不变 |
+| **WI-5b** ✅ | `ConflictDialog` ＋ 解禁 DEG-S5 | `pytest tests/e2e/acceptance_2a -k deg_s5` 转绿（**浏览器用例，不在 unit lane 里**）——2026-09-20 在 `cc6bb18` 上实测 `1 passed`，e2e lane 整体 75 passed / 16 skipped |
 | **WI-9** | `_normalize_with_map` 换 `array('I')` | 新旧实现对 CJK / casefold / combining mark 三类语料的 index_map 逐字符差分 |
 
 ### 跑之前知道这两件事

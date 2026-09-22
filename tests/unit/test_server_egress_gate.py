@@ -275,13 +275,20 @@ def test_w2_ollama_status_整条路都不泄漏本地文件内容(
     只 patch ``load_ai_settings`` / ``get_provider_base_url`` 两个入口，路由体内的
     ``_ollama_root_base_url``、``_http_get_json`` 和 ``except Exception`` 全部按原样跑——
     要钉的正是「异常分支拦不住成功读到文件的那条路径」。
+
+    2026-09-19（011 WI-4）：``api_ollama_status`` 搬到了 ``web/routers/settings.py``，
+    所以调用点从 ``server.`` 改到 ``routers.settings.``。**两处 monkeypatch 仍然打在
+    ``server`` 上，一个字没改**——这不是将就，这正是本次搬家要的结果：路由体里写的是
+    ``_server.load_ai_settings(...)``，属性在调用时才解析，所以打在 server 上的桩照样
+    生效。如果哪天这条测试要改 patch 目标才能绿，那说明接缝被旁路了，别改它，去看搬家。
     """
     from reader3_app.web import server
+    from reader3_app.web.routers import settings as settings_router
 
     monkeypatch.setattr(server, "load_ai_settings", lambda *a, **kw: {})
     monkeypatch.setattr(server, "get_provider_base_url", lambda *a, **kw: f"file://{leak_root}")
 
-    result = asyncio.run(server.api_ollama_status())
+    result = asyncio.run(settings_router.api_ollama_status())
     payload = json.dumps(result, ensure_ascii=False, default=str)
 
     assert SECRET not in payload, (

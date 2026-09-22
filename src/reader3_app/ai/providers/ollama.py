@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from ._http import post_json, validated_url
-from .types import ProviderResponse
+from .types import ProviderHTTPError, ProviderResponse
 
 DEFAULT_BASE_URL = "http://localhost:11434"
 
@@ -68,7 +68,7 @@ def ollama_chat_completions(
 
     status, resp = post_json(url, payload=payload, timeout_s=timeout_s)
     if status >= 400:
-        raise RuntimeError(_error_message(status, resp))
+        raise ProviderHTTPError(_error_message(status, resp), status=status)
 
     msg = resp.get("message") or {}
     if not isinstance(msg, dict):

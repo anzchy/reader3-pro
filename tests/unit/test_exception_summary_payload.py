@@ -9,6 +9,10 @@ log to say so.
 Assertion levels (see tests/unit/conftest.py):
     L2 return value
     L4 fault injection -- a parse that fails for a reason other than "not JSON"
+
+011 WI-4 之后 `_parse_summary_payload` 从 `web/server.py` 搬到了
+`web/routers/ai/summary.py`。这里跟着改的只有**取函数的地方**——这是个纯函数，
+没有 monkeypatch 接缝，改导入不会掩盖任何接缝被搬断的情况。
 """
 
 from __future__ import annotations
@@ -18,7 +22,7 @@ import logging
 
 import pytest
 
-from reader3_app.web import server
+from reader3_app.web.routers.ai import summary as summary_router
 
 
 def _ai_records(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
@@ -38,7 +42,7 @@ def test_prose_reply_falls_back_to_text_and_leaves_a_trace(
     """L2: a non-JSON reply still degrades to text, but the degradation is visible."""
     caplog.set_level(logging.DEBUG, logger="reader3.ai")
 
-    out = server._parse_summary_payload("This book is about a ship.", summary_type="full")
+    out = summary_router._parse_summary_payload("This book is about a ship.", summary_type="full")
 
     assert out == {
         "overview": "This book is about a ship.",
@@ -57,7 +61,7 @@ def test_pathological_nesting_is_not_mistaken_for_prose() -> None:
     raw = "[" * depth + "]" * depth
 
     with pytest.raises(RecursionError):
-        server._parse_summary_payload(raw, summary_type="full")
+        summary_router._parse_summary_payload(raw, summary_type="full")
 
 
 def test_json_object_reply_is_parsed_into_its_three_fields() -> None:
@@ -67,7 +71,7 @@ def test_json_object_reply_is_parsed_into_its_three_fields() -> None:
         ensure_ascii=False,
     )
 
-    assert server._parse_summary_payload(raw, summary_type="full") == {
+    assert summary_router._parse_summary_payload(raw, summary_type="full") == {
         "overview": "o",
         "highlights": ["a", "b"],
         "background": "bg",
@@ -80,7 +84,7 @@ def test_json_array_reply_falls_back_and_says_why(
     """L2: valid JSON that is not an object is a different failure than bad JSON."""
     caplog.set_level(logging.DEBUG, logger="reader3.ai")
 
-    out = server._parse_summary_payload('["a", "b"]', summary_type="highlights")
+    out = summary_router._parse_summary_payload('["a", "b"]', summary_type="highlights")
 
     assert out == {"overview": "", "highlights": ['["a", "b"]'], "background": ""}
     messages = [r.getMessage() for r in _ai_records(caplog) if r.levelno == logging.DEBUG]
@@ -101,7 +105,7 @@ def test_empty_reply_returns_empty_fields(caplog: pytest.LogCaptureFixture) -> N
     """
     caplog.set_level(logging.DEBUG, logger="reader3.ai")
 
-    out = server._parse_summary_payload("   ", summary_type="full")
+    out = summary_router._parse_summary_payload("   ", summary_type="full")
 
     assert out == {"overview": "", "highlights": [], "background": ""}
     assert _ai_records(caplog) == [], (

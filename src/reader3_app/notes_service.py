@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import contextlib
 import fcntl
+import hashlib
 import json
 import os
 import tempfile
 import threading
-from typing import Iterator, List
+from typing import Iterator, List, Optional, Tuple
 
 from .models.annotations import Annotation
 from .safe_paths import safe_book_folder
@@ -14,6 +15,29 @@ from .safe_paths import safe_book_folder
 
 class NotesFileError(RuntimeError):
     """Raised when notes.json exists but cannot be understood."""
+
+
+class NotesVersionConflict(RuntimeError):
+    """A write arrived holding a version that is no longer the current one.
+
+    This is the *only* thing ``_book_write_lock`` cannot catch. The lock closes
+    the window between one writer's load and its own save; it says nothing about
+    a client that read the file at T0, was overtaken at T1, and submits at T2 a
+    payload computed from what it saw at T0. Both writes are individually
+    well-formed and individually serialised — and the earlier one is gone.
+
+    Carries the server's current version and, when the request named a single
+    annotation, that annotation as the server currently holds it. The caller
+    needs both: the version to retry with, and the remote text to show the user
+    beside their own before anything is discarded.
+    """
+
+    def __init__(self, current_version: str, current_annotation: Optional[Annotation] = None) -> None:
+        super().__init__(
+            f"the current notes version is {current_version}, which the caller did not hold"
+        )
+        self.current_version = current_version
+        self.current_annotation = current_annotation
 
 
 NOTES_FILENAME = "notes.json"
@@ -238,32 +262,163 @@ def save_annotations(books_dir: str, book_id: str, annotations: List[Annotation]
         raise
 
 
-def add_annotation(books_dir: str, annotation: Annotation) -> Annotation:
+def annotations_version(annotations: List[Annotation]) -> str:
+    """A version token for one book's annotations, derived from their content.
+
+    Hashes the *logical* content — the canonical (sorted-key) JSON of every
+    record — and not the bytes of ``notes.json``. The difference is not
+    cosmetic: 012 owns the on-disk schema and will reformat that file (indent,
+    key order, possibly field names). A byte-derived token would invalidate
+    every live client's version on the day of that reformat, with not one
+    annotation changed, and every one of those clients would be shown a conflict
+    dialog it cannot act on.
+
+    Nothing is stored. ``notes.json`` gains no field and ``NOTES_SCHEMA_VERSION``
+    stays 1 — a version that is a function of the content needs no home of its
+    own, and Phase 3 requires the file's bytes to survive migration unchanged.
+
+    Granularity is **one version per book**, and that is a choice with a known,
+    accepted cost: A adding a highlight in chapter 3 invalidates B's version
+    while B edits an unrelated note in chapter 7, so B gets a conflict dialog it
+    did not earn. Per-annotation versioning would avoid that, and would also
+    fail to describe the operations that are not about one annotation (create,
+    delete, and any future reorder). Book granularity is what
+    ``load_annotations``/``save_annotations`` already work in — the whole list,
+    always — so it is the granularity the writes actually have. Do not "fix"
+    this into per-annotation versions without first giving the file a
+    per-annotation write path.
+    """
+    canonical = json.dumps(
+        [a.to_dict() for a in annotations],
+        sort_keys=True,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def normalize_etag(value: str) -> str:
+    """Reduce the three spellings of one ``If-Match`` value to the bare token.
+
+    Clients, proxies and hand-written ``curl`` lines send ``"v"``, ``v`` and
+    ``W/"v"`` for the same version. Treating those as different versions costs a
+    *false* conflict, and a dialog that fires when nothing is wrong is how users
+    learn to dismiss the dialog that matters.
+    """
+    token = value.strip()
+    if token.startswith("W/"):
+        token = token[2:].strip()
+    if len(token) >= 2 and token.startswith('"') and token.endswith('"'):
+        token = token[1:-1]
+    return token
+
+
+def _require_version(
+    annotations: List[Annotation],
+    if_match: Optional[str],
+    note_id: Optional[str],
+) -> None:
+    """Compare-and-swap, first half. **Callers must already hold the book lock.**
+
+    Comparing outside the lock would be theatre: two requests would each read
+    the same version, each pass, and then write in turn — exactly the lost
+    update this function exists to refuse, with a conflict check on top of it.
+    So this is a module-private helper called from inside the ``with`` block,
+    never from the router.
+
+    ``if_match is None`` means the client did not opt in, and then every write
+    behaves exactly as it did before optimistic concurrency existed. That is
+    what keeps the frozen response shapes (ADR-0011) intact for every existing
+    caller.
+    """
+    if if_match is None:
+        return
+
+    current = annotations_version(annotations)
+    if normalize_etag(if_match) == current:
+        return
+
+    current_annotation: Optional[Annotation] = None
+    if note_id is not None:
+        for ann in annotations:
+            if ann.id == note_id:
+                current_annotation = ann
+                break
+    raise NotesVersionConflict(current, current_annotation)
+
+
+def add_annotation_and_version(
+    books_dir: str,
+    annotation: Annotation,
+    if_match: Optional[str] = None,
+) -> Tuple[Annotation, str]:
+    """Append one annotation; return it together with the resulting version.
+
+    ``note_id`` is ``None`` in the version check on purpose: a create has no
+    "the server's copy of this annotation" to report back, because the thing
+    being created does not exist on the server. The conflict still fires — a
+    client that chose to send ``If-Match`` said its create was based on a list
+    it had seen — but it carries only the current version.
+    """
     with _book_write_lock(books_dir, annotation.book_id):
         annotations = load_annotations(books_dir, annotation.book_id)
+        _require_version(annotations, if_match, None)
         annotations.append(annotation)
         save_annotations(books_dir, annotation.book_id, annotations)
-    return annotation
+        return annotation, annotations_version(annotations)
 
 
-def delete_annotation(books_dir: str, book_id: str, note_id: str) -> bool:
+def delete_annotation_and_version(
+    books_dir: str,
+    book_id: str,
+    note_id: str,
+    if_match: Optional[str] = None,
+) -> Tuple[bool, str]:
+    """Delete by id; return whether it was there, and the resulting version.
+
+    The version check runs *before* the "was it there" check, so a stale client
+    whose target has already been deleted by someone else is told 409, not 404.
+    404 invites a retry ("wrong id?"); 409 says what actually happened —
+    something you did not see has changed here, re-read it.
+    """
     with _book_write_lock(books_dir, book_id):
         annotations = load_annotations(books_dir, book_id)
+        _require_version(annotations, if_match, note_id)
         before = len(annotations)
         annotations = [a for a in annotations if a.id != note_id]
         if len(annotations) == before:
-            return False
+            return False, annotations_version(annotations)
         save_annotations(books_dir, book_id, annotations)
-    return True
+        return True, annotations_version(annotations)
 
 
-def update_annotation(books_dir: str, book_id: str, note_id: str, note_text: str) -> Annotation | None:
-    """Update note_text for an existing annotation. Returns updated annotation or None if not found."""
+def update_annotation_and_version(
+    books_dir: str,
+    book_id: str,
+    note_id: str,
+    note_text: str,
+    if_match: Optional[str] = None,
+) -> Tuple[Optional[Annotation], str]:
+    """Update note_text; return the updated annotation (or None) and the version."""
     with _book_write_lock(books_dir, book_id):
         annotations = load_annotations(books_dir, book_id)
+        _require_version(annotations, if_match, note_id)
         for ann in annotations:
             if ann.id == note_id:
                 ann.note_text = note_text
                 save_annotations(books_dir, book_id, annotations)
-                return ann
-    return None
+                return ann, annotations_version(annotations)
+        return None, annotations_version(annotations)
+
+
+def add_annotation(books_dir: str, annotation: Annotation) -> Annotation:
+    return add_annotation_and_version(books_dir, annotation)[0]
+
+
+def delete_annotation(books_dir: str, book_id: str, note_id: str) -> bool:
+    return delete_annotation_and_version(books_dir, book_id, note_id)[0]
+
+
+def update_annotation(books_dir: str, book_id: str, note_id: str, note_text: str) -> Annotation | None:
+    """Update note_text for an existing annotation. Returns updated annotation or None if not found."""
+    return update_annotation_and_version(books_dir, book_id, note_id, note_text)[0]

@@ -207,3 +207,84 @@ mark.annotation.annotation--note {
 mark.annotation.is-jump-target {
   outline: 2px solid rgba(37, 99, 235, 0.6);
 }
+
+/* DEG-S5 写冲突对话框（011 WI-5b）。原生 <dialog> + showModal()，遮罩交给 ::backdrop，
+   不自己铺一层 div —— 自铺的遮罩要么漏点击、要么顺手就长出一条「点遮罩关掉」的路径，
+   而这个弹层的整个要点是它没有那条路径。 */
+.conflict-dialog {
+  border: 0;
+  border-radius: 14px;
+  padding: 20px 22px;
+  max-width: 560px;
+  width: calc(100% - 48px);
+  background: #fff;
+  color: #1f2937;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+  font-family: -apple-system, system-ui, sans-serif;
+}
+
+.conflict-dialog::backdrop {
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.conflict-dialog .conflict-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.conflict-dialog .conflict-hint {
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 14px;
+}
+
+.conflict-dialog .conflict-versions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.conflict-dialog .conflict-version {
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.conflict-dialog .conflict-version-label {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: #6b7280;
+  margin-bottom: 4px;
+}
+
+.conflict-dialog .conflict-version-body {
+  font-size: 14px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  min-height: 1.55em;
+}
+
+.conflict-dialog .conflict-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.conflict-dialog .conflict-actions button {
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  border-radius: 9px;
+  padding: 7px 14px;
+  font-size: 13px;
+  background: #fff;
+  color: #1f2937;
+  cursor: pointer;
+}
+
+.conflict-dialog .conflict-actions button#note-conflict-keep-mine {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}

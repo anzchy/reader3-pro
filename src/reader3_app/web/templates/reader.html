@@ -1624,6 +1624,32 @@
     </div>
     <div id="note-tooltip" data-testid="rd-note-tooltip" aria-hidden="true"></div>
 
+    <!-- DEG-S5 写冲突对话框（011 WI-5b）。原生 <dialog>，房式抄 library.html 里那四个
+         弹层；差别只在**出口**：这一个**没有**关闭按钮（Modal 通式的那个 *-close 后缀在
+         本弹层上刻意不存在）、Esc 在 `cancel` 里被拦下、遮罩点击不关。DEG-S5 是唯一一条
+         会真正丢用户数据的降级——被放弃的那一版必须先摆出来让人看见，再由他二选一，
+         关掉对话框不是一个合法的答案。role 用 alertdialog 而不是 dialog：这不是一个
+         可以稍后再说的面板。两版正文都渲在里面，缺一版就等于让人闭着眼睛丢自己的字。 -->
+    <dialog class="conflict-dialog" id="note-conflict-dialog" role="alertdialog"
+            aria-labelledby="note-conflict-title" data-testid="rd-conflict-dialog">
+        <div class="conflict-title" id="note-conflict-title">这条笔记已被另一处改过</div>
+        <div class="conflict-hint">两版都在下面。选一版留下——没有第三个出口。</div>
+        <div class="conflict-versions">
+            <div class="conflict-version">
+                <div class="conflict-version-label">我这一版（还没存上）</div>
+                <div class="conflict-version-body" id="note-conflict-local"></div>
+            </div>
+            <div class="conflict-version">
+                <div class="conflict-version-label">服务器上这一版</div>
+                <div class="conflict-version-body" id="note-conflict-remote"></div>
+            </div>
+        </div>
+        <div class="conflict-actions">
+            <button type="button" id="note-conflict-keep-mine" data-testid="rd-conflict-keep-mine">保留我的</button>
+            <button type="button" id="note-conflict-take-remote" data-testid="rd-conflict-take-remote">采用远端</button>
+        </div>
+    </dialog>
+
     <!-- Search Drawer -->
     <div id="reader-search-drawer" aria-hidden="true" data-testid="rd-search-panel">
         <div class="drawer-header">

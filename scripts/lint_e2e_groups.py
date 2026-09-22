@@ -21,18 +21,28 @@
 - 条数：`baseline_1b` == `EXPECTED_BASELINE_ITEMS`，四个 acceptance 目录各 ==
   `EXPECTED_ACCEPTANCE_PER_DIR[dir]`，白名单 == `EXPECTED_UNGROUPED_ITEMS`；marker ↔ 目录
   一一对应（`count_violations`）；
-- **skip 轴动态性质**（`skip_marker_violations`，读的是探针拿回的**实际生效 marker**）：每条
-  acceptance item 上必须真的有 `skip` / `skipif`，每条 baseline item 上一个都不许有
-  （`xfail` 一并禁）；
+- **skip 轴动态性质**（`skip_marker_violations`，读的是探针拿回的**实际生效 marker**）：
+  **未激活** acceptance 组的每条 item 上必须真的有 `skip` / `skipif`，**已激活**组
+  （`ACTIVATED_ACCEPTANCE_DIRS`）的每条 item 上一个都不许有，每条 baseline item 上一个都
+  不许有（`xfail` 一并禁）；
 - skip 轴静态性质（`skip_axis_violations`，纯 AST）：
   * 域 R（`baseline_1b` 的**收集可达闭包**：`baseline_domain_files()` 求的 conftest 链
     ＋ import 闭包，见下）里**零** skip 构造——`pytest.skip(` / `pytest.importorskip(` /
     `pytest.xfail(` / `pytest.mark.skip` / `skipif` / `xfail`，**函数体与异常处理器里的一并计入**，
     **且 import 别名一并解析**（`from pytest import skip` / `import pytest as pt`）；
-  * 四个 acceptance 目录里每个 `test_*.py` **恰好**一个模块级 `pytestmark` 内的
+  * **未激活**的 acceptance 目录里每个 `test_*.py` **恰好**一个模块级 `pytestmark` 内的
     `pytest.mark.skip(reason=…)`，reason 非空且点名本组的激活阶段（`4B.1` / `P3` / `4A.4` / `2a`），
-    模块内再无其他 skip 构造；
+    模块内再无其他 skip 构造；**已激活**的 acceptance 目录里**零** skip 构造（与域 R 同款判据）；
   * 五个组目录内没有 `collect_ignore` / `collect_ignore_glob`。
+
+**为什么需要「已激活组」这个口径（`ACTIVATED_ACCEPTANCE_DIRS`，2026-09-19 / 011 WI-5b-2）。**
+上面两条 skip 轴原本要求**每一个** acceptance item 都带生效的 skip——「未激活组以 skip 形态
+存在」在四个组全都没落地时，与「acceptance 组一律 skip」等价，于是当初就照后者写了。
+`acceptance_2a` 的 DEG-S5 写冲突用例解禁并真的跑出 `1 passed` 的那一刻，两者分岔：守卫读到
+「模块级 skip 有 0 个」，报的是违规，而它要求的**修法恰恰是把一条已经落地的用例重新关掉**。
+判据在这里会给退化背书，所以必须有一处地方记下「哪些组已经激活」，并对它们**反向**判定。
+登记表而不是开关：表内的组换的是一条**更严**的判据（零 skip ＋ 必须真的 passed），不是免检
+——差别在于，写成免检开关时，「把一个还没落地的组塞进表里」会让那一组同时逃掉两侧。
 
 **为什么静态与动态两条 skip 轴都要有。** 静态那条断的是「源码里写了一个模块级
 `pytestmark = [..., pytest.mark.skip(...)]`」——它证明**存在一处赋值**，不证明**收集出来的
@@ -98,7 +108,7 @@ baseline 全部 skipped、push gate 全绿。「扫顶层」是这类检查最�
 `test_testid_dom_uniqueness.py`——那是 ADR-0014 的运行期唯一性护栏，与 009 无关。
 把总数焊死，等于把那个套件的条数写进 009 的门槛：它将来加一个 parametrize 值，红的
 会是 009 的用例，而修法（改总数）与被改的东西毫无关系。派生式只钉三件事：baseline
-恰好 67、acceptance 恰好 17、其余 item 的模块必须在白名单里。
+恰好 68、acceptance 恰好 17、其余 item 的模块必须在白名单里。
 
 **常量的变更史**（改数字必须写理由，不要只覆盖）：
 
@@ -120,6 +130,11 @@ baseline 全部 skipped、push gate 全绿。「扫顶层」是这类检查最�
   `test_read_presentation_anchoring.py::test_r6c_...`，**恰好一条 item**，不做参数化。
   同一天 R-6a 的字号 / 间距两项刺激从两步收回一步（#22 一修，两步就回到原值、净变化为零），
   那是改 `steps` 的内容，**不改条数**。
+- `EXPECTED_BASELINE_ITEMS` 67 → **68**（2026-09-21，欠账 #44 / #9 同批）。
+  `test_w8a_selection_survives_rerender.py` 从白名单迁入 `baseline_1b`，**恰好一条 item**，
+  不做参数化。迁入的时机不是随意挑的：同一个 commit 里 W-5a-③ 要按修好之后的行为改判，
+  `baseline_1b/` 反正要动、`suite_hash` 反正要变，两件事合并只清零一次。它当初落在白名单
+  就是为了等这一刻，到期条件写在 `UNGROUPED_E2E_MODULES` 那条注释里。
 - `EXPECTED_ACCEPTANCE_ITEMS` 14 → **17**（同日，欠账 #14）：R-6 拆 a/b 后 R-6b 三条落进
   `acceptance_4b1`（Wave 4），该目录由 5 变 8。改成按目录定义再求和，是让「哪个目录少了一条」
   在失败消息里直接可读。
@@ -152,7 +167,7 @@ BASELINE_MARKER = "baseline_1b"
 ACCEPTANCE_MARKERS = GROUP_MARKERS[1:]
 
 # `tests/e2e/baseline_1b/` 下的期望 item 数。**实测值**（变更史见文件头）。
-EXPECTED_BASELINE_ITEMS = 67
+EXPECTED_BASELINE_ITEMS = 68
 
 # 四个 acceptance 目录各自的期望 item 数。合计由此派生，不另写字面量。
 #   acceptance_4b1：R-6b ×3（Wave 4）＋ K-1b ＋ K-6b ＋ W-5b ×3（{marker, wavy, underline}，
@@ -167,6 +182,30 @@ EXPECTED_ACCEPTANCE_PER_DIR: Dict[str, int] = {
     "acceptance_2a": 1,
 }
 EXPECTED_ACCEPTANCE_ITEMS = sum(EXPECTED_ACCEPTANCE_PER_DIR.values())
+
+#: **已激活**的 acceptance 组目录名。这是一张**登记表，不是开关**。
+#:
+#: 一个目录进了这张表，就等于宣称「这一组的用例今天必须**真的跑出 passed**」，下面两条
+#: skip 轴对它**反向**判定：静态轴要求组内一个 skip 构造都没有（与域 R 同款判据），动态轴
+#: 要求它的每条 item 在收集期**没有**任何生效的 skip marker。表外的组维持原判据不变——
+#: 「未激活组以 skip 形态存在」。
+#:
+#: 读作开关就错了：它不是「这一组免检」，而是「这一组换一条更严的判据」。把一个还没落地的
+#: 组塞进来，等于让那一组同时逃掉两侧——既不被要求 skip，也没人真的在跑它，而条数轴数的是
+#: collected，照样满分。所以往表里加名字的动作和改条数常量一样要写理由。
+#:
+#: 谁在什么时候该动它：某个组的 skip 被解禁、那一组的用例在 e2e lane 上真的转绿的**同一次**
+#: 改动里，往表里加它的目录名（并同步 `tests/unit/test_e2e_group_guard.py` 里独立钉的那一份，
+#: 两处相等由那个文件执行）。反过来要把一组关回去，先把名字从表里删掉，再加模块级 skip。
+#: 后续 `acceptance_4b1`（阶段 4B.1）/ `acceptance_p3`（P3）/ `acceptance_4a4`（4A.4）解禁时
+#: 各往里加一个名字；表满四个之日，`PHASE_TOKEN_FOR_DIR` 那条 reason 判据就再没有落点了。
+#:
+#: 变更史：
+#: - `acceptance_2a` 进表（2026-09-19，011 WI-5b / WI-5b-2）。DEG-S5 写冲突对话框落地，
+#:   `test_deg_s5_write_conflict.py` 的模块级 skip 删除后实测 `1 passed`。它是本仓历史上
+#:   **第一个**被激活的 acceptance 组，「已激活组」这个口径也是因它而生：在它之前，两条轴
+#:   要求**每一个** acceptance item 都带生效的 skip，于是解禁本身被读成违规。
+ACTIVATED_ACCEPTANCE_DIRS: FrozenSet[str] = frozenset({"acceptance_2a"})
 
 # `tests/e2e/` 下**不带组 marker**的模块白名单。这是唯一的豁免口径：不在这里、
 # 又没有组 marker 的 item 一律违规。每一项都必须在本次收集里真的贡献 item——悬空条目
@@ -183,12 +222,49 @@ UNGROUPED_E2E_MODULES = {
     # ADR-0014 的运行期唯一性护栏：每个有界 testid 在真实 DOM 里只解析出一个节点。
     # 它守的是选择器口径而不是标注行为，与 009 的五个组正交。
     "tests/e2e/test_testid_dom_uniqueness.py",
+    # 欠账 #43 part (i)：notes 写失败的可归因性（诊断环 / 单串 console.error / 单例 toast）。
+    # 放白名单而不是 `baseline_1b`，理由与当年 w8a 一样是 `suite_hash` 覆盖面——迁进冻结
+    # 目录就要清零 soak 计数。到期条件：下一次**本来就要**动 `baseline_1b/`、`suite_hash`
+    # 无论如何都要变的改动里，把本文件一并迁入并撤掉这一条（`EXPECTED_BASELINE_ITEMS` 同批加）。
+    "tests/e2e/test_notes_write_failure_is_attributable.py",
 }
 
-# 上面两个白名单模块在一次 `tests/e2e --collect-only` 里贡献的 item 数。
-# 2026-09-02 实测 7（smoke 1 + testid 唯一性 6）。这个数会随 testid 套件自己的增减而变，
+# 上面几个白名单模块在一次 `tests/e2e --collect-only` 里贡献的 item 数。
+# 2026-09-02 实测 7（smoke 1 + testid 唯一性 6）。这个数会随白名单模块自己的增减而变，
 # 改它是**正确的修法**；变的是白名单模块的条数，不是 009 的门槛。
-EXPECTED_UNGROUPED_ITEMS = 7
+#
+# 7 → **8**（2026-09-20，欠账 #44）：新增
+# `tests/e2e/test_w8a_selection_survives_rerender.py`，**恰好一条 item**，不做参数化。
+# 它落在白名单而不是 `baseline_1b` 是一笔带到期条件的明账，理由是 `suite_hash` 覆盖面。
+#
+# 8 → **7**（2026-09-21）：**上面那笔明账到期兑付。** W-5a-③ 的改判本来就要动
+# `baseline_1b/`、`suite_hash` 无论如何都要变，所以把这个文件一并迁进去，省掉第二次清零
+# ——这正是那条注释写的到期条件。白名单条目已撤，`EXPECTED_BASELINE_ITEMS` 同批 +1。
+#
+# 7 → **17**（2026-09-22，欠账 #43 part (i) 第一批 = 011 WI-1/WI-2）：新增
+# `tests/e2e/test_notes_write_failure_is_attributable.py`。**17 − 7 = 10 是执行过的
+# `--collect-only` 实测值，只算这一批**；矩阵预测全部落地后该模块是 37 条，WI-3..WI-7
+# 每一批落地时各自再改这里一次，每次都写实测值，不预支。
+#
+# 17 → **23**（2026-09-22，欠账 #43 part (i) WI-3 = `saveNote()` PUT 编辑分支）：该模块
+# 10 → 16 条，**+6 是执行过的 `--collect-only` 实测值**（W3-C1、W3-C3×2、W3-C6、W3-C4、W3-C5）。
+#
+# 23 → **31**（2026-09-22，欠账 #43 part (i) WI-4 = `deleteAnnotations()` ＋ 改色调用方
+# `toggleAnnotation`，修订 A2）：该模块 16 → 24 条，**+8 是执行过的 `--collect-only` 实测值**
+# （W4-C1、W4-C2、W4-C3×2、W4-C5、W4-C6、W4-C7、W4-C4；全量 116）。
+#
+# 31 → **36**（2026-09-22，欠账 #43 part (i) WI-5 = `resolveConflict()` 的「保留我的」写，
+# 修订 A1）：该模块 24 → 29 条，**+5 是执行过的 `--collect-only` 实测值**
+# （W5-C1、W5-C2、W5-C3、W5-C4×2；全量 121）。
+#
+# 36 → **43**（2026-09-22，欠账 #43 part (i) WI-6 = 请求前的静默出口，修订 A3）：该模块
+# 29 → 36 条，**+7 是执行过的 `--collect-only` 实测值**
+# （W6-C1、W6-C4×2、W6-C5×2、W6-C2、W6-C3；全量 128）。W6-C6 在 unit 道，不计入这里。
+#
+# 43 → **44**（2026-09-22，欠账 #43 part (i) WI-7 = 成功路径护栏 建 → 改 → 删，不装路由）：
+# 该模块 36 → 37 条，**+1 是执行过的 `--collect-only` 实测值**（W7-C1；全量 129）。
+# 矩阵 §10 预测的 37 条至此全部落地，与实测一致。
+EXPECTED_UNGROUPED_ITEMS = 44
 
 # 派生值，不是字面量。见文件头「为什么必须派生」。
 EXPECTED_E2E_ITEMS = (
@@ -605,9 +681,17 @@ def baseline_domain_files(root: Path, e2e_dir: str = DEFAULT_E2E_DIR) -> List[Pa
     return sorted(seen.values(), key=lambda p: p.as_posix())
 
 
-def skip_axis_violations(root: Path, e2e_dir: str = DEFAULT_E2E_DIR) -> List[str]:
-    """条件 1–5（矩阵 Unit A 第四条）。域 R 零 skip；acceptance 只许模块级带 reason 的 skip；无 collect_ignore。"""
+def skip_axis_violations(
+    root: Path,
+    e2e_dir: str = DEFAULT_E2E_DIR,
+    *,
+    activated_dirs: Iterable[str] = ACTIVATED_ACCEPTANCE_DIRS,
+) -> List[str]:
+    """条件 1–5（矩阵 Unit A 第四条）。域 R 零 skip；无 collect_ignore；acceptance 按
+    `ACTIVATED_ACCEPTANCE_DIRS` 分两侧判——**未激活**组只许一个模块级带 reason 的 skip，
+    **已激活**组一个 skip 构造都不许有。"""
     e2e = root / e2e_dir
+    activated = set(activated_dirs)
     out: List[str] = []
 
     # ---- 域 R：baseline_1b 的收集可达闭包（conftest 链 ＋ import 闭包）--------------
@@ -639,6 +723,19 @@ def skip_axis_violations(root: Path, e2e_dir: str = DEFAULT_E2E_DIR) -> List[str
                     )
             if group == BASELINE_MARKER:
                 continue  # 域 R 已经查过零 skip
+            if group in activated:
+                # 已激活组：与域 R 同款判据——整组零 skip 构造，用例模块与辅助模块一视同仁。
+                # 这里 `group` 就是目录名（`gdir = e2e / group`），不经过 marker 名。
+                for hit in _skip_constructs(f, root):
+                    out.append(
+                        f"[skip 轴·已激活组] {hit}\n"
+                        f"    {group} 已登记在 ACTIVATED_ACCEPTANCE_DIRS 里"
+                        "（= 这一组今天必须真的跑出 passed），组内不得有任何 skip 构造"
+                        "——留着的那一条会让一条已宣称激活的用例静默消失，而条数轴数的是 collected，"
+                        "照样满分。要把这一组重新关掉，先把它从登记表里删掉并写明理由，"
+                        "而不是在这里补一个 skip"
+                    )
+                continue
             hits = _skip_constructs(f, root)
             if not f.name.startswith("test_"):
                 for hit in hits:
@@ -647,8 +744,11 @@ def skip_axis_violations(root: Path, e2e_dir: str = DEFAULT_E2E_DIR) -> List[str
             marks = _module_level_skip_marks(tree)
             if len(marks) != 1:
                 out.append(
-                    f"[skip 轴·acceptance] {rel}: 模块级 pytestmark 里的 pytest.mark.skip 有 {len(marks)} 个，应恰好 1 个"
-                    "——未激活组以 skip 形态存在，skip 只允许挂在模块级 pytestmark 上"
+                    f"[skip 轴·未激活组] {rel}: 模块级 pytestmark 里的 pytest.mark.skip 有 {len(marks)} 个，应恰好 1 个"
+                    f"——{group} 不在 ACTIVATED_ACCEPTANCE_DIRS 里，未激活组以 skip 形态存在，"
+                    "skip 只允许挂在模块级 pytestmark 上。"
+                    "若这一组**已经**解禁并在 e2e lane 上真的转绿，正确的修法是把它登记进"
+                    "ACTIVATED_ACCEPTANCE_DIRS（那一侧要求整组零 skip），不是把 skip 加回来"
                 )
                 continue
             mark = marks[0]
@@ -678,8 +778,33 @@ def skip_axis_violations(root: Path, e2e_dir: str = DEFAULT_E2E_DIR) -> List[str
 # ---------------------------------------------------------------------------
 
 
-def skip_marker_violations(items: Sequence[CollectedItem]) -> List[str]:
-    """acceptance 的每条 item 必须**真的**带生效的 skip marker；baseline 的一条都不许带。
+def group_dir_of(item: CollectedItem, e2e_dir: str = DEFAULT_E2E_DIR) -> Optional[str]:
+    """item 所属的组**目录名**——从模块路径读，**不**从 marker 名猜。
+
+    `ACTIVATED_ACCEPTANCE_DIRS` 按目录名索引，而 item 侧手里只有 marker 名
+    （`acceptance_2a`…）。今天本仓五个组的 marker 名与目录名同形，直接拿 marker 当目录名
+    去查表也能对——但那是**巧合，不是映射**。marker 与目录的对应关系由 `GROUP_MARKERS`
+    那句「与 `tests/e2e/<marker>/` 目录一一对应」定义、由 `count_violations` 的 marker↔目录
+    轴执行；一旦某个组把 marker 改成与目录不同名，拿 marker 查表会让登记表**静默地对谁都
+    不生效**：已激活组既不被要求 passed，也不再被要求 skip，两条轴同时对它闭嘴，而条数轴
+    数的是 collected，什么都看不出来。目录归属的定义处是模块路径，所以从它读。
+    """
+    prefix = f"{e2e_dir.rstrip('/')}/"
+    rel = normalize_module(item.module)
+    if not rel.startswith(prefix):
+        return None
+    head = rel[len(prefix) :].split("/", 1)[0]
+    return head if head in GROUP_MARKERS else None
+
+
+def skip_marker_violations(
+    items: Sequence[CollectedItem],
+    *,
+    e2e_dir: str = DEFAULT_E2E_DIR,
+    activated_dirs: Iterable[str] = ACTIVATED_ACCEPTANCE_DIRS,
+) -> List[str]:
+    """**未激活** acceptance 组的每条 item 必须真的带生效的 skip marker；**已激活**组的
+    每条 item 一个都不许带；baseline 的一条都不许带。
 
     静态那条（`skip_axis_violations`）证明的是「源码里有一处合规的
     `pytestmark = [..., pytest.mark.skip(reason=…)]` 赋值」。那不等于「item 被 skip」——
@@ -694,10 +819,22 @@ def skip_marker_violations(items: Sequence[CollectedItem]) -> List[str]:
     """
     out: List[str] = []
     acceptance = set(ACCEPTANCE_MARKERS)
+    activated = set(activated_dirs)
     for it in items:
         groups = it.group_markers()
         effective = set(it.markers) & EFFECTIVE_SKIP_MARKERS
-        if groups & acceptance and not effective:
+        # 目录名从模块路径读，不拿 marker 名冒充（见 `group_dir_of` 的 docstring）。
+        gdir = group_dir_of(it, e2e_dir)
+        if groups & acceptance and gdir is not None and gdir in activated:
+            if effective:
+                out.append(
+                    f"[skip 轴·生效·已激活组] {it.nodeid} 属于已激活组 {gdir}"
+                    f"（ACTIVATED_ACCEPTANCE_DIRS），收集期却带着生效的 skip marker"
+                    f" {sorted(effective)}（实际 marker：{sorted(it.markers)}）"
+                    "——登记进那张表等于宣称这一组今天必须真的跑出 passed；"
+                    "带着 skip 的它一条 passed 都不产出，而条数轴数的是 collected，照样满分"
+                )
+        elif groups & acceptance and not effective:
             out.append(
                 f"[skip 轴·生效] {it.nodeid} 带 acceptance marker {sorted(groups & acceptance)}，"
                 f"收集期却没有任何生效的 skip marker（实际 marker：{sorted(it.markers)}）"
@@ -726,6 +863,7 @@ def check_tree(
     expected_per_dir: Mapping[str, int] = EXPECTED_ACCEPTANCE_PER_DIR,
     expected_ungrouped: Optional[int] = EXPECTED_UNGROUPED_ITEMS,
     ungrouped_modules: Iterable[str] = UNGROUPED_E2E_MODULES,
+    activated_dirs: Iterable[str] = ACTIVATED_ACCEPTANCE_DIRS,
     items: Optional[Sequence[CollectedItem]] = None,
 ) -> List[str]:
     """对 `root/e2e_dir` 跑全部检查，返回违规列表（空 = 绿）。收集失败本身也是一条违规。
@@ -752,8 +890,10 @@ def check_tree(
             expected_ungrouped=expected_ungrouped,
             ungrouped_modules=ungrouped_modules,
         )
-        violations += skip_marker_violations(items)
-    violations += skip_axis_violations(root, e2e_dir)
+        violations += skip_marker_violations(
+            items, e2e_dir=e2e_dir, activated_dirs=activated_dirs
+        )
+    violations += skip_axis_violations(root, e2e_dir, activated_dirs=activated_dirs)
     return violations
 
 
