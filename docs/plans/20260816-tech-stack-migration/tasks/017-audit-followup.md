@@ -353,12 +353,46 @@ FAIL」也能让上面两条变绿，而那是一道谁都过不去的闸。
 **绿**：`tests/unit/test_coverage_gate_failclosed.py` **26 passed**（原 22 ＋ 新 4）；
 真实配置下 `uv run python scripts/check_coverage_gate.py` 仍 **PASS**（rc=0）；`ruff` 干净。
 
-### WI-12 🧪 并发测试去抖、去挂（#23、#24，should）
+### WI-12 ✅ 并发测试去抖、去挂（#23、#24，should）
 
 - **#23**：反向对照靠「保存屏障两秒超时」推进，不能证明第二个写者已过锁外预检。改用显式事件；
   正向用例也用事件确立争用，不拿耗时当证据。
 - **#24**：worker 是非 daemon 线程，`:582` 断言一响就跳过 `barrier.abort()`，死锁回归会把
   pytest 挂住。改成子进程跑 + 父进程强制超时与回收；`barrier.abort()` 进 `finally`。
+
+**#23 的改法**：争用从「等 2 秒，然后假定对方应该就位了」换成**正面观察**。新增
+`ObservableBookLock`（`tests/fixtures/notes_concurrency.py`）：`__enter__` 先做一次非阻塞
+`acquire`，拿不到就先把 `someone_is_waiting` 立起来、**再**去阻塞——非阻塞失败那一刻，锁
+**确实**被别人持有，这是事实不是推断。它按 `os.path.abspath(_lock_path(...))` 塞进
+`_BOOK_THREAD_LOCKS`，产品代码一行没动。正向用例里第一个进到 `save_annotations` 的写者等的
+就是这个事件，等到了才往下写。
+
+反向对照的会合点从 `save`（锁**内**）搬到了**锁外的预检点**。老写法那个屏障在正确实现下
+根本不可达——第二个写者正卡在锁上——于是它只能靠超时往下走，而它要证明的唯一一件事恰恰是
+「第二个写者已经过了锁外预检」。新的会合点一定可达，所以「屏障没破」本身就是那句话的证据。
+
+**#24 的改法**：整场编排搬进 `multiprocessing` 子进程（spawn），父进程 `join(60s)` 之后
+`kill()`。**线程留着没换成两个进程**：这两条用例问的是「一个服务进程里的两个请求」，判决点
+是 `_book_write_lock` 里那把 `threading.Lock`；跨进程那一半已由 `test_notes_concurrent_write.py`
+用 flock 守着，换成两个进程等于把问题换掉。子进程内部收尾一律进 `finally`。
+
+**红→绿，三次变异**：
+- **M1**（把 `_require_version` 挪到锁外，即审计描述的那种坏实现）⇒
+  `AssertionError: 期望一胜一冲突，实得 ['ok', 'ok']`。核心判断仍然有牙。
+- **M2**（把装锁的键改错一个字，于是那把可观测锁**根本没装上**）⇒
+  `没有观察到第二个写者在等这把书级锁……实得证据：{'second_writer_blocked_on_the_lock': False}`。
+  新加的证据断言不是装饰：一个从头到尾没发生过争用的编排，现在会红而不是安静变绿。
+- **M3**（子进程里造一场真正的死锁：等一个永不到来的事件，等待上限拉到一小时）⇒ 父进程在
+  硬上限处判红并 `kill()`，**5.37s 退出**，pytest 正常结束。老写法在这里是**挂住**——而挂住的
+  CI 没有人读得懂。
+
+**顺带**：正向那条用例的耗时从「2 秒屏障超时」降到毫秒级——它本来就不该为等待付钱。
+反向对照原来要付两次超时（≈4s），现在一次都不付。
+
+**绿**：`test_notes_optimistic_concurrency.py` ＋ `test_notes_concurrent_write.py`
+**26 passed in 4.59s**；`ruff check tests/` 干净；冻结集 8 条路径 `git diff` 为空
+（`tests/fixtures/notes_concurrency.py` 不在冻结集里——冻的是 `epub_corpus` / `epub_zip` /
+`ai_stub` 三个）。
 
 ### WI-13 🧪 两条「实现坏了也能过」的护栏（#21、#29，should）
 

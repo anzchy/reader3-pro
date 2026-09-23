@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import html
 import json
+import multiprocessing
 import pickle
 import threading
 from dataclasses import dataclass
@@ -45,6 +46,7 @@ from typing import Any, Dict, Iterator, List, Optional, Tuple
 import pytest
 from fastapi.testclient import TestClient
 
+import notes_concurrency  # type: ignore[import-not-found]
 from reader3_app import notes_service, search_service
 from reader3_app.ai.books import BookUuidResolver
 from reader3_app.models.annotations import Annotation
@@ -75,6 +77,10 @@ NOTE_B = "B 基于初稿的修改"
 RENDEZVOUS_TIMEOUT_S = 2.0
 
 JOIN_TIMEOUT_S = 30.0
+
+#: 父进程给子进程的硬上限。017 WI-12（审计 #24）：编排跑在子进程里，超了就 `kill()`，
+#: 于是一次死锁回归拿到的是一条红，而不是一个永远不结束的 pytest。
+CHILD_TIMEOUT_S = 60.0
 
 #: 今天三条写路由的响应形状。ADR-0011 冻的就是这些；没有 `If-Match` 时必须一字不差。
 CREATE_KEYS = {"id", "created_at", "message"}
@@ -542,51 +548,68 @@ def test_the_version_ignores_how_the_file_is_formatted_on_disk(world: World) -> 
 # --------------------------------------------------------------------------- 5. 比较必须在锁里
 
 def _stage_two_writers(
-    monkeypatch: pytest.MonkeyPatch,
-    launch,
-) -> List[Tuple[str, Any]]:
-    """把两个写者并排放进 load→save 之间的窗口，回收各自的结局。
+    tmp_path: Path,
+    books_dir: str,
+    note_id: str,
+    shared_version: str,
+    mode: str,
+) -> Tuple[List[str], Dict[str, Any]]:
+    """在**子进程**里把两个写者并排放进 load→save 之间的窗口，取回结局与证据。
 
-    窗口靠在 `save_annotations` 外面包一层、停在 `Barrier(2)` 上撑开 —— 不睡挂钟，也**不
-    改产品代码**（包在测试自己这一侧的模块命名空间上）。
+    两处与老写法不同，各对应一条审计：
 
-    `barrier.wait` 带超时，理由与 WI-23 同：比较真的在锁里时，第二个写者正卡在书级锁上，
-    会合点**不可达**，超时是从那个死等里出来的唯一出口。比较若在锁外，两个写者会一起到达，
-    超时一分钱都不付。
+    **跑在子进程里（#24）**。老写法用两个非 daemon 线程，而 `:582` 那句
+    `assert not t.is_alive()` 一响就跳过了后面的 `barrier.abort()` —— 一次死锁回归会把
+    一个还在等的线程留在进程里，pytest 于是永远不结束：**症状是挂住，不是失败**，而挂住
+    的 CI 没有人读得懂。现在父进程 `join(CHILD_TIMEOUT_S)`，超了就 `kill()` 并在这里报
+    红；子进程内部的收尾也一律进 `finally`。
+
+    **用事件确立争用，不拿耗时当证据（#23）**。编排细节在
+    `tests/fixtures/notes_concurrency.py`：第一个进到 `save_annotations` 的写者等的是
+    「有人真的在等这把书级锁」这个正面事件，不是一个 2 秒的屏障超时。证据跟着结局一起
+    报回来，由下面的用例断言 —— 否则一个从头到尾没发生过争用的编排会安安静静地变绿。
     """
-    barrier = threading.Barrier(2)
-    real_save = notes_service.save_annotations
+    ctx = multiprocessing.get_context("spawn")
+    result_path = tmp_path / f"stage-{mode}.json"
+    proc = ctx.Process(
+        target=notes_concurrency.stage_two_writers,
+        args=(
+            books_dir,
+            BOOK_ID,
+            note_id,
+            [NOTE_A1, NOTE_B],
+            shared_version,
+            mode,
+            str(result_path),
+        ),
+        name=f"stage-{mode}",
+    )
+    proc.start()
+    try:
+        proc.join(CHILD_TIMEOUT_S)
+        assert not proc.is_alive(), (
+            f"编排子进程 {CHILD_TIMEOUT_S}s 内没有结束 —— 写者卡住了（死锁回归？）。"
+            "父进程这就把它杀掉；这条是红，不是挂起。"
+        )
+        assert proc.exitcode == 0, f"编排子进程非零退出：exitcode={proc.exitcode}"
+    finally:
+        if proc.is_alive():
+            proc.kill()
+            proc.join(5)
 
-    def save_at_barrier(books_dir, book_id, annotations):
-        try:
-            barrier.wait(RENDEZVOUS_TIMEOUT_S)
-        except threading.BrokenBarrierError:
-            pass
-        return real_save(books_dir, book_id, annotations)
-
-    monkeypatch.setattr(notes_service, "save_annotations", save_at_barrier)
-
-    outcomes: List[Tuple[str, Any]] = [("not-run", None), ("not-run", None)]
-
-    def run(index: int) -> None:
-        try:
-            outcomes[index] = ("ok", launch(index))
-        except BaseException as exc:  # noqa: BLE001 - 测试要把**任何**失败归类，而不是只认预期的那一种
-            outcomes[index] = (_classify(exc), exc)
-
-    threads = [threading.Thread(target=run, args=(i,), name=f"writer-{i}") for i in range(2)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join(JOIN_TIMEOUT_S)
-        assert not t.is_alive(), f"{t.name} 没有在 {JOIN_TIMEOUT_S}s 内结束：写者卡住了"
-
-    barrier.abort()
-    return outcomes
+    assert result_path.exists(), (
+        f"子进程正常退出却没留下结局文件 {result_path} —— 编排根本没跑完"
+    )
+    payload = json.loads(result_path.read_text(encoding="utf-8"))
+    evidence = payload["evidence"]
+    assert evidence.get("stuck_writers") == [], (
+        f"子进程里有写者没结束：{evidence.get('stuck_writers')}"
+    )
+    return payload["outcomes"], evidence
 
 
 def test_two_writers_holding_the_same_version_leave_exactly_one_winner(
-    world: World, monkeypatch: pytest.MonkeyPatch
+    world: World, tmp_path: Path
 ) -> None:
     """**本 WI 的核心判断**：两个写者握着同一个（当时合法的）版本并发进来，恰好一个成功。
 
@@ -595,21 +618,28 @@ def test_two_writers_holding_the_same_version_leave_exactly_one_winner(
     检查、然后依次落盘：两个成功，后写者的内容盖掉前写者的，409 一次也不会发生。
 
     一次顺序调用两遍的测试在那种坏实现下同样是绿的，所以它证明不了任何事情。这里是并发。
+
+    017 WI-12（审计 #23）：争用由**事件**确立。第一个写者在锁里等到「有人真的在等这把锁」
+    才往下写，而不是等一个 2 秒的屏障超时然后假定第二个写者已经就位。所以下面除了结局，
+    还要断那个事件真的立起来过 —— 没有它，一个两个写者压根没撞上的编排也会绿。
     """
     note_id = _seed_note(world)
     shared_version = _etag(_chapter_get(world))
-    books_dir = str(world.books_dir)
-    texts = [NOTE_A1, NOTE_B]
 
-    outcomes = _stage_two_writers(
-        monkeypatch,
-        lambda i: _update_and_version(books_dir, BOOK_ID, note_id, texts[i], shared_version),
+    outcomes, evidence = _stage_two_writers(
+        tmp_path, str(world.books_dir), note_id, shared_version, "cas"
     )
 
-    kinds = sorted(kind for kind, _ in outcomes)
+    assert evidence.get("second_writer_blocked_on_the_lock") is True, (
+        "没有观察到第二个写者在等这把书级锁 —— 两个写者没有落在同一个窗口里，"
+        f"下面那句『恰好一个成功』也就不是证据；实得证据：{evidence}"
+    )
+
+    kinds = sorted(outcomes)
     assert kinds == ["conflict", "ok"], f"期望一胜一冲突，实得 {outcomes}"
 
-    winner_index = next(i for i, (kind, _) in enumerate(outcomes) if kind == "ok")
+    winner_index = outcomes.index("ok")
+    texts = [NOTE_A1, NOTE_B]
     assert world.text_on_disk(note_id) == texts[winner_index], (
         f"盘上不是胜者写的那一版：{world.records()}"
     )
@@ -617,7 +647,7 @@ def test_two_writers_holding_the_same_version_leave_exactly_one_winner(
 
 
 def test_a_check_outside_the_lock_would_let_both_writers_through(
-    world: World, monkeypatch: pytest.MonkeyPatch
+    world: World, tmp_path: Path
 ) -> None:
     """反向对照：把比较挪到锁外，同一场并发下**两个都成功** —— 后写者静默盖掉前写者。
 
@@ -627,21 +657,23 @@ def test_a_check_outside_the_lock_would_let_both_writers_through(
 
     顺带它也把任务书 §6 那句话证伪了：书级锁一直都在，两次写都拿到了锁、都成功了 ——
     丢的那一版不是被并发写坏的文件，是一次基于陈旧读的合法写。
+
+    017 WI-12（审计 #23）：会合点搬到了**锁外的预检点**上。老写法把屏障开在 `save` 里，
+    那是锁**内**：正确实现下第二个写者根本到不了，于是对照只能靠 2 秒超时往下走 ——
+    它因此从来没有证明过「第二个写者已经过了锁外预检」，而那正是它要证明的唯一一件事。
+    现在会合点一定可达，所以「屏障没破」本身就是那句话的证据。
     """
     note_id = _seed_note(world)
-    books_dir = str(world.books_dir)
-    texts = [NOTE_A1, NOTE_B]
-    #: 锁外那次检查比的是什么不重要（这里是整份标注的规范化文本），重要的是它发生在锁**外**。
-    snapshot = json.dumps(world.records(), sort_keys=True, ensure_ascii=False)
 
-    def precheck_outside_the_lock(index: int):
-        current = json.dumps(world.records(), sort_keys=True, ensure_ascii=False)
-        assert current == snapshot, "锁外预检自己就没通过，这一轮编排不成立"
-        return notes_service.update_annotation(books_dir, BOOK_ID, note_id, texts[index])
+    outcomes, evidence = _stage_two_writers(
+        tmp_path, str(world.books_dir), note_id, "", "precheck_outside_lock"
+    )
 
-    outcomes = _stage_two_writers(monkeypatch, precheck_outside_the_lock)
-
-    assert [kind for kind, _ in outcomes] == ["ok", "ok"], (
+    assert evidence.get("rendezvous_broke") is False, (
+        "锁外预检点上的会合超时了 —— 两个写者没有都过预检，这一轮对照不成立；"
+        f"实得证据：{evidence}"
+    )
+    assert outcomes == ["ok", "ok"], (
         f"锁外预检竟然拦住了一个写者：{outcomes}。"
         "那说明这套并发编排根本没让两个写者落在同一个窗口里，"
         "上一条『恰好一个成功』也就不再是证据。"
