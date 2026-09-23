@@ -255,12 +255,42 @@ cfi 指第 21 次、文本匹配必落第 1 次）在把 CFI 分支整个失效�
 `uv run pytest tests/unit/test_provider_retry.py tests/unit/test_provider_call_budget_wiring.py -q` **50 passed**；
 `ruff check src/` 干净；`grep 'noqa: BLE001' src/reader3_app/web/server.py` 只剩两处既有豁免（:314、:439）。
 
-### WI-9 🧪 AI 队列租约测试（#13、#14，should）
+### WI-9 ✅ AI 队列租约测试（#13、#14，should）
 
 - **#13**：Q4 的 `stuck_gate` 并不保证 worker 已经进到第二次 `readline()`。用「阻塞读已进入」
   事件同步；清理时释放 gate 并 join worker。
 - **#14**：把 gate 换成可观测的——记录 `wait()` 进入与其 timeout 参数。**验收判据**：把实现换成
   无条件 `sleep(3)`、完全无视 gate，这条测试必须变红（现在它会绿）。
+
+**改法**：两条审计其实共用一个缺口——「卡住」这件事**只能从外面按时长观察**。裸
+`threading.Event` 给不出「有人真的进来等了」这个正面事件，于是 #13 只能赌时序、#14 只能断时长。
+新增 `_ObservableGate` 把三件事记下来：进没进过 `wait()`（`wait_until_entered()`）、进去时带的
+timeout 实参（`wait_timeouts`，必须是 `[None]`）、谁在里面等（`waiter_thread`，收尾 join 用）。
+
+**#13 的两半**：
+- *同步*：`_disconnect_after_first_chunk()` 新增可选的 `before_disconnect` 钩子。Q4 在断连**之前**
+  等 worker 真的进到闸里。拿到第一个 chunk 不等于 worker 已经开始读第二行——它还可能卡在
+  `call_soon_threadsafe` 到下一次循环顶之间（`routers/ai/chat.py:248-253`），那一瞬翻起 stop_event
+  的话 worker 会在循环顶上**干净地 return**，Q4 的前提当场自毁。这不是把窗口调大，是取消窗口。
+- *收尾*：放行之后 **join** 那个线程并断言它真的结束了。join 结果先收集、出了 `finally` 再断——
+  在 `finally` 里 assert 会把 try 体里真正的失败盖掉。
+
+**#14 的验收判据照着原文做了**：把假流的阻塞换成无条件 `time.sleep(3)`、完全不碰闸（M1）——
+- 打在**改之前**的文件上：**7 passed**（全绿，正是审计说的「现在它会绿」）；
+- 打在**改之后**的文件上：**2 failed / 5 passed**，红的是 `test_假流的卡住由放行闸决定而不由墙钟决定`
+  与 `test_Q4_...`。同一个变异同时钉住两条审计：#14 要的正面证据，和 #13 那个「worker 必须已经
+  进到第二次 readline」的前提。
+
+**#13 收尾那一半单独有变异盯着**：拿掉 Q4 `finally` 里的 `stuck_gate.set()`（M2）⇒ join 超时 ⇒
+`AssertionError: 收尾之后 worker 线程的状态: [True]（期望 [False]）`，**1 failed / 6 passed**，
+只红 Q4 一条。
+
+**绿**：`uv run pytest tests/unit/test_ai_queue_lease.py -q` **7 passed**；
+unit lane **1610 passed, 2 skipped**（TOTAL 83%）；`ruff check tests/` 干净。
+
+**一处说清楚的局限**：「断连早于 worker 进闸」这个竞态本身**无法在不改产品代码的前提下确定性地
+复现**——那个窗口是纯调度（`call_soon_threadsafe` 到下一次 `stop_event.is_set()` 之间几微秒）。
+所以这里不假造一次红，而是把前提从「赌它成立」换成「等到它成立，等不到就红且说得清原因」。
 
 ### WI-10 🧪 egress 两处证据要分阶段（#16、#18，should）
 
