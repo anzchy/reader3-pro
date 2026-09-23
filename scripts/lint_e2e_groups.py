@@ -233,6 +233,15 @@ UNGROUPED_E2E_MODULES = {
     # 并把 soak 计数清零。到期条件也一样——下一次本来就要动 `baseline_1b/` 的改动里
     # 一并迁入，同批撤掉这一条并给 `EXPECTED_BASELINE_ITEMS` 加上去。
     "tests/e2e/test_stored_cfi_must_agree_with_quote.py",
+    # 017 WI-6（审计 #5）：冲突对话框同一时刻只许有一次收尾在飞。它驱动的是 DEG-S5
+    # 对话框，与 `acceptance_2a/test_deg_s5_write_conflict.py` 同一块 UI，但那一条是
+    # **激活阶段**的验收（两个真上下文、服务端会不会 409、两支的去向），本条是单个
+    # 上下文里两次点击之间的并发，两者判据不重叠，也就不该并进那个组、改它的
+    # `EXPECTED_ACCEPTANCE_PER_DIR`。落白名单的理由与上面两条一字不差：迁进
+    # `baseline_1b/` 会改 `suite_hash` 并把 soak 计数清零；到期条件同样是「下一次本来
+    # 就要动 `baseline_1b/` 的改动里一并迁入，同批撤条目并给 `EXPECTED_BASELINE_ITEMS`
+    # 加上去」。
+    "tests/e2e/test_conflict_resolution_single_flight.py",
 }
 
 # 上面几个白名单模块在一次 `tests/e2e --collect-only` 里贡献的 item 数。
@@ -274,8 +283,13 @@ UNGROUPED_E2E_MODULES = {
 # 44 → **47**（2026-09-23，017 WI-5 = 审计 #3 / #9）：新增
 # `tests/e2e/test_stored_cfi_must_agree_with_quote.py`，**+3 是执行过的
 # `--collect-only` 实测值**（当场一次、刷新一次、外加一条「没有重绘介入时照旧写得出
-# 能重锚的 cfi」的退化护栏）。三条都不参数化。
-EXPECTED_UNGROUPED_ITEMS = 47
+# 能重锚的 cfi」的退化护栏）。三条都不参数化。#
+# 47 → **51**（2026-09-23，017 WI-6 = 审计 #5）：新增
+# `tests/e2e/test_conflict_resolution_single_flight.py`，**+4 是执行过的
+# `--collect-only` 实测值**。四条对应三层防线各一条（按钮 `disabled`、
+# `conflictSubmitting` 单飞守卫、写回来之后的冲突身份核对）外加一条「没有并发干扰时
+# 照旧写盘收尾并放开按钮」的退化护栏；三层各自被逐一注掉验证过只红对应的那一条。
+EXPECTED_UNGROUPED_ITEMS = 51
 
 # 派生值，不是字面量。见文件头「为什么必须派生」。
 EXPECTED_E2E_ITEMS = (

@@ -593,6 +593,8 @@
       this.conflictKeepMine = qs("note-conflict-keep-mine");
       this.conflictTakeRemote = qs("note-conflict-take-remote");
       this.pendingConflict = null;
+      // 017 WI-6（审计 #5）：有没有一次「保留我的」的写还在飞。见 `setConflictBusy`。
+      this.conflictSubmitting = false;
 
       this.currentRange = null;
       //【#44】选区落定那一刻算好的偏移快照。存在的理由是 currentRange 会被一次
@@ -1258,7 +1260,32 @@
     }
 
     /**
+     * 提交期间把两个出口一起锁上，写回来之后一起放开（017 WI-6，审计 #5）。
+     *
+     * 这是**给人看的**那一层：用户得看见「正在保存，别再点了」，而不是点下去没反应。
+     * 它不是唯一一层，也不该是——`disabled` 是一条 DOM 属性，一次重绘、一段外部脚本、
+     * 或者任何绕过按钮直接调 `Reader3AnnotationUI.resolveConflict(...)` 的路径都能越过它。
+     * 真正挡住并发的是 `resolveConflict()` 开头那道 `conflictSubmitting` 守卫。
+     */
+    setConflictBusy(busy) {
+      const on = !!busy;
+      this.conflictSubmitting = on;
+      if (this.conflictKeepMine) this.conflictKeepMine.disabled = on;
+      if (this.conflictTakeRemote) this.conflictTakeRemote.disabled = on;
+      this.conflictDialog?.setAttribute?.("aria-busy", on ? "true" : "false");
+    }
+
+    /**
      * 两个出口。`keepLocal` 为真 = 「保留我的」，为假 = 「采用远端」。
+     *
+     * **同一时刻只许有一次收尾在飞**（017 WI-6，审计 #5）。原先不是这样：「保留我的」
+     * 的 PUT 还在飞时两个按钮都还能点，点「采用远端」会当场 `settleConflict()` 收尾，
+     * 而那个在飞的写回来之后仍会 `settleConflict(c, c.localText)` —— 用户看见自己最后
+     * 作出的选择被反了过来，再点一次「保留我的」还会再发一次写。
+     *
+     * 守卫分两个方向，谁也替不了谁：进门那道（`conflictSubmitting`）挡的是「新的调用
+     * 进不来」；回来之后那道（`this.pendingConflict !== c`）挡的是「回来的这一次还算不算
+     * 数」—— 一次回调只能收尾它出发时的那一场冲突。
      */
     async resolveConflict(keepLocal) {
       const c = this.pendingConflict;
@@ -1272,6 +1299,20 @@
         return;
       }
 
+      // 017 WI-6（审计 #5）：上一次选择还在写，这一次一律拒掉 —— 两个出口都拒。
+      // 「采用远端」也要拒：它不发请求，却会**当场**把冲突收掉，于是在飞的那次写回来时
+      // 用户的选择已经被换过一轮了。两条通道照记（ring ＋ console），因为这两种拒绝都
+      // 不改屏幕，只看 DOM 分不出「守卫挡住了」和「代码压根没跑到」。
+      if (this.conflictSubmitting) {
+        reportNotesWriteFailure({
+          op: "conflict-busy",
+          requested: false,
+          id: c.noteId,
+          message: "上一次选择还在保存，请稍候",
+        });
+        return;
+      }
+
       if (!keepLocal) {
         // 「采用远端」：本地那版是用户**主动放弃**的，不是要再写一遍 ——
         // 这一支一条带本地正文的写都不许发。盘上已经是远端那版，什么都不用做。
@@ -1281,11 +1322,31 @@
 
       // 「保留我的」：必须**真的**写到服务端。只关对话框、只改前端内存的实现，会在下一次
       // 刷新时把用户的字变回远端那版 —— 那正是这条降级要消灭的静默丢写。
-      const resp = await fetch(c.url, {
-        method: "PUT",
-        headers: notesWriteHeaders({ "Content-Type": "application/json" }),
-        body: JSON.stringify({ note_text: c.localText }),
-      }).catch(() => null);
+      this.setConflictBusy(true);
+      let resp;
+      try {
+        resp = await fetch(c.url, {
+          method: "PUT",
+          headers: notesWriteHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ note_text: c.localText }),
+        }).catch(() => null);
+      } finally {
+        // 任何出口都要放开：失败要能重试，409 之后那一场新冲突也要能点。
+        this.setConflictBusy(false);
+      }
+
+      // 回来的这一次，还是当初点下去的那一场冲突吗？不是就只记账、不收尾 ——
+      // 写本身可能已经落地了（下面盘上就是本地那版），我们拒绝的是**替它宣告收尾**：
+      // 那会拿一份过期的 `localText` 盖掉用户此刻正在看、正在编辑的那一格。
+      if (this.pendingConflict !== c) {
+        reportNotesWriteFailure({
+          op: "conflict-stale",
+          resp,
+          id: c.noteId,
+          message: "这条冲突已经被别的操作收掉了，这次保存不再改动界面",
+        });
+        return;
+      }
 
       if (resp && resp.status === 409) {
         // 重试的这一瞬间又被人改了。换上新的两版继续问，仍然不许静默丢。
