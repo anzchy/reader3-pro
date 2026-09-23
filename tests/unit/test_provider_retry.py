@@ -55,6 +55,7 @@ from __future__ import annotations
 
 import importlib
 import random
+import threading
 import time
 import urllib.error
 from pathlib import Path
@@ -509,6 +510,61 @@ def test_R10b_settings读不出来时失败的调用也只调一次(
     assert len(calls) == 1, "读不出配置 ⇒ 退化成 0，不是退化成某个默认重试次数"
 
 
+def test_R10c_配置数据坏成别的类型时同样退化为0次重试(
+    monkeypatch: pytest.MonkeyPatch, sleeps: List[float]
+) -> None:
+    """坏配置不只有 `AiSettingsError` 一种形状。
+
+    `get_provider_settings()` 读的是用户手写的 JSON：`max_retries: "很多"` 会在
+    `int()` 上抛 `ValueError`，`timeout_s: []` 抛 `TypeError`，缺 `model_name` 也是
+    `ValueError`。这些全是**数据**坏了，与 `AiSettingsError` 同一档——退化成 0 次重试、
+    调用照常发出。只认 `AiSettingsError` 会让这几种坏配置直接把 LLM 调用打挂。
+    """
+    _no_backoff(monkeypatch)
+
+    for exc in (ValueError("invalid literal for int()"), TypeError("int() argument must be str")):
+        def _boom(*a: Any, __exc: BaseException = exc, **kw: Any) -> Dict[str, Any]:
+            raise __exc
+
+        monkeypatch.setattr(server, "load_ai_settings", _boom)
+        calls = _stub_provider(monkeypatch, [_response()])
+
+        resp = _call()
+
+        assert resp.text == ANSWER_SENTINEL, f"{type(exc).__name__} 把调用打挂了"
+        assert len(calls) == 1
+    assert sleeps == []
+
+
+def test_R10d_查配置时的编程错误必须原样抛出(
+    monkeypatch: pytest.MonkeyPatch, sleeps: List[float]
+) -> None:
+    """「配置读不出来」这条退路只给配置，不给我们自己写错的代码。
+
+    `except Exception` 把两者收成一类：一个拼错的属性名、一个 `None` 解引用，都会被
+    记成一条 WARNING 然后当作「这份配置没说重试几次」继续跑下去。于是重试静默消失，
+    而真正的 bug 一声不吭地活在生产里——`AGENTS.md` 禁止新增 `BLE001` 豁免，禁的正是
+    这个。`AttributeError`（拼错的名字、`None` 解引用）是编程错误最典型的形状，它必须
+    穿过这层退路，让 500 和堆栈把位置指出来。
+    """
+    _no_backoff(monkeypatch)
+
+    boom = AttributeError("'NoneType' object has no attribute 'get'")
+
+    def _typo(*a: Any, **kw: Any) -> Dict[str, Any]:
+        raise boom
+
+    monkeypatch.setattr(server, "load_ai_settings", _typo)
+    calls = _stub_provider(monkeypatch, [_response()])
+
+    with pytest.raises(AttributeError) as excinfo:
+        _call()
+
+    assert excinfo.value is boom, "编程错误被换成了别的异常，堆栈指不回出事的地方"
+    assert calls == [], "吞掉编程错误之后还把调用发了出去——错误就此没有任何痕迹"
+    assert sleeps == []
+
+
 # ==========================================================================
 # R11 / R13：`str(e)` 一个字节都不许变
 # ==========================================================================
@@ -671,3 +727,199 @@ def test_R12_连通性自测失败时provider只被调一次(
     assert body["message"] == "connection refused", "失败原因原样交给前端，不许被重试逻辑改写"
     assert len(calls) == 1, "连通性自测必须显式 max_retries=0"
     assert sleeps == []
+
+
+# ==========================================================================
+# R14–R20（017 WI-1，审计 #2）：重试循环的**总预算**与**叫停信号**
+#
+# 之前这个循环只知道「还能再试几次」，不知道「还有多久」，也不知道「还有没有人要
+# 这个结果」。两件事都由调用方掌握而它拿不到：
+#
+#   * `ai_queue.run()` 到点会 `task.cancel()` 并给客户端 504——但 `_call_provider`
+#     跑在 `run_in_threadpool` 的线程里，取消一个等它的协程**停不下这个线程**。
+#     审计 #2 用桩复现过：504 已经返回，第 2、3 次调用**在那之后才发出**。
+#   * 客户端断连同理：连接已经拆了，钱还在烧。
+#
+# 所以加两个可选参数——`deadline`（`time.monotonic()` 的绝对时刻）与 `should_stop`
+# （一个返回 bool 的可调用对象）。两个都不传 = 今天的行为逐字不变，R17 盯着这一条。
+# ==========================================================================
+
+
+def _expired() -> float:
+    return time.monotonic() - 1.0
+
+
+def _burn(seconds: float) -> None:
+    """真的消耗掉这么多**单调钟**时间。
+
+    不能用 `time.sleep`：`sleeps` fixture 已经把它换成了只记账的空操作，而这条用例
+    要的正是「钟真的走过了预算」。
+    """
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        pass
+
+
+def test_R14_第一次调用把预算跑完之后不再开新一轮(
+    monkeypatch: pytest.MonkeyPatch, sleeps: List[float]
+) -> None:
+    """503 之后本来还能再试 3 次，但预算在第一次调用里就用完了——一次都不许再发。
+
+    这是审计 #2 复现出来的那一幕：504 已经交给客户端，重试仍在烧钱。预算是在调用
+    **进行当中**走完的，不是进门时就过期的（那是 R20），所以第一次调用照发不误。
+    """
+    _no_backoff(monkeypatch)
+    boom = _provider_http_error("service unavailable", 503)
+
+    calls: List[Dict[str, Any]] = []
+
+    def _slow_then_fail(**kwargs: Any) -> ProviderResponse:
+        calls.append(kwargs)
+        _burn(0.05)
+        raise boom
+
+    _install_ollama_stub(monkeypatch, server, _slow_then_fail)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        _call(max_retries=3, deadline=time.monotonic() + 0.02)
+
+    assert len(calls) == 1, f"到点之后又发了 {len(calls) - 1} 次调用"
+    assert excinfo.value is boom, "抛的仍须是最后一次那个异常对象本身（R4）"
+    assert sleeps == [], "到点了就不该再退避"
+
+
+def test_R15_被叫停之后不再开新一轮(
+    monkeypatch: pytest.MonkeyPatch, sleeps: List[float]
+) -> None:
+    """客户端在第一次调用**进行当中**断连 ⇒ 不许再发第二次。
+
+    旗子是在调用途中翻的，不是进门前就翻好的（那是 R20）——所以第一次调用照发不误，
+    而第 2、3 次一次都不许有。
+    """
+    _no_backoff(monkeypatch)
+    boom = _provider_http_error("service unavailable", 503)
+    stopped = threading.Event()
+
+    calls: List[Dict[str, Any]] = []
+
+    def _fail_then_disconnect(**kwargs: Any) -> ProviderResponse:
+        calls.append(kwargs)
+        stopped.set()  # 客户端就在这一刻断的
+        raise boom
+
+    _install_ollama_stub(monkeypatch, server, _fail_then_disconnect)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        _call(max_retries=3, should_stop=stopped.is_set)
+
+    assert len(calls) == 1, f"被叫停之后又发了 {len(calls) - 1} 次调用"
+    assert excinfo.value is boom
+    assert sleeps == []
+
+
+def test_R16_退避途中被叫停也不许再开新一轮(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """叫停信号是在**睡着的时候**翻的，醒来必须发现它。
+
+    退避可以长达 8 秒（`PROVIDER_RETRY_CAP_S`）。只在进入退避前查一次，等于给了
+    跑飞的重试一整个退避窗口的时间去发下一次请求。这条用例把 `time.sleep` 换成
+    「翻旗子」，所以循环只有在**醒来后再查一次**时才停得下来。
+    """
+    _set_retry_constants(monkeypatch, server, base=0.02, cap=0.02)
+    stopped = threading.Event()
+
+    slept: List[float] = []
+
+    def _sleep_and_flip(seconds: float) -> None:
+        slept.append(float(seconds))
+        stopped.set()
+
+    monkeypatch.setattr(time, "sleep", _sleep_and_flip)
+
+    boom = _provider_http_error("service unavailable", 503)
+    calls = _stub_provider(monkeypatch, [boom])
+
+    with pytest.raises(RuntimeError) as excinfo:
+        _call(max_retries=3, should_stop=stopped.is_set)
+
+    assert len(calls) == 1, f"退避途中被叫停，却又发了 {len(calls) - 1} 次调用"
+    assert excinfo.value is boom
+    assert len(slept) >= 1, (
+        "这条用例要的是「睡前没停、睡后停了」。一次都没睡说明进入退避前就停了，"
+        "那是 R15 在测的事，这条用例就没碰到它要守的那半边。"
+    )
+
+
+def test_R17_两个参数都不传时重试行为逐字不变(
+    monkeypatch: pytest.MonkeyPatch, sleeps: List[float]
+) -> None:
+    """护栏：`deadline` / `should_stop` 的默认值必须是「没有预算、没人叫停」。
+
+    它们一旦默认成某个真值，全仓 6 个调用点和 70 处既有打桩的行为会一起改变。
+    """
+    _no_backoff(monkeypatch)
+    calls = _stub_provider(
+        monkeypatch,
+        [
+            _provider_http_error("boom", 503),
+            _provider_http_error("boom", 503),
+            _provider_http_error("boom", 503),
+            _response(),
+        ],
+    )
+
+    resp = _call(max_retries=3)
+
+    assert resp.text == ANSWER_SENTINEL
+    assert len(calls) == 4, "3 次重试全额用完"
+    assert len(sleeps) == 3
+
+
+def test_R18_单次调用的超时被收到剩余预算之内(
+    monkeypatch: pytest.MonkeyPatch, sleeps: List[float]
+) -> None:
+    """预算只剩 2 秒，就不该给这次调用 30 秒的传输超时。
+
+    否则「总预算」只是个说法：一次 30 秒的 connect 就能把它整个盖过去。
+    """
+    _no_backoff(monkeypatch)
+    calls = _stub_provider(monkeypatch, [_response()])
+
+    _call(timeout_s=30, deadline=time.monotonic() + 2.0)
+
+    assert len(calls) == 1
+    passed = calls[0]["timeout_s"]
+    assert 0 < passed <= 2, f"传给 provider 的 timeout_s 是 {passed}，没有被剩余预算收住"
+
+
+def test_R19_退避时长不会超过剩余预算(
+    monkeypatch: pytest.MonkeyPatch, sleeps: List[float]
+) -> None:
+    """退避上限 8 秒，而预算只剩 0.5 秒——不许睡过点。"""
+    _set_retry_constants(monkeypatch, server, base=8.0, cap=8.0)
+    _stub_provider(monkeypatch, [_provider_http_error("boom", 503)])
+
+    with pytest.raises(RuntimeError):
+        _call(max_retries=3, deadline=time.monotonic() + 0.5)
+
+    assert sleeps, "预算还没用完，这一轮该退避"
+    assert max(sleeps) <= 0.5, f"睡了 {max(sleeps)}s，超出了 0.5s 的剩余预算"
+
+
+def test_R20_进第一次调用之前就已到点则一次都不发(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """线程池排队期间预算就用光了——那就别再拨这一次。
+
+    `run_in_threadpool` 只是把函数排进线程池，真正开始跑可能是几百毫秒之后。
+    这段窗口里客户端可能已经断了、队列可能已经 504 了；此时发出去的是一次
+    **没有任何人会读的、可能计费的**调用。
+    """
+    _no_backoff(monkeypatch)
+    calls = _stub_provider(monkeypatch, [_response()])
+
+    with pytest.raises(TimeoutError):
+        _call(max_retries=3, deadline=_expired())
+
+    assert calls == [], "预算已经用完，却还是拨了一次 provider"

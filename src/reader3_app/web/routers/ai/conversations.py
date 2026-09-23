@@ -13,7 +13,6 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field
 
-from ... import server as _server
 from ...schemas import AIMessage
 from ....ai.conversations import (
     ConversationMessage as DiskConversationMessage,
@@ -233,4 +232,5 @@ async def api_ai_export_conversation(book_uuid: str, conversation_id: str, forma
         return Response(content=body, media_type="text/markdown; charset=utf-8")
     raise HTTPException(status_code=400, detail="Invalid format (use json|text|md)")
 
-
+# 017 WI-1（审计 #7）：必须留在文件末尾。理由见 `routers/__init__.py` 的 docstring。
+from ... import server as _server  # noqa: E402

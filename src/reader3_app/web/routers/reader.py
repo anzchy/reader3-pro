@@ -16,7 +16,6 @@ import os
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
 
-from .. import server as _server
 
 router: APIRouter = APIRouter()
 
@@ -124,3 +123,6 @@ async def serve_image(book_id: str, image_name: str):
         raise HTTPException(status_code=404, detail="Image not found")
 
     return FileResponse(img_path)
+
+# 017 WI-1（审计 #7）：必须留在文件末尾。理由见 `routers/__init__.py` 的 docstring。
+from .. import server as _server  # noqa: E402

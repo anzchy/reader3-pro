@@ -625,6 +625,14 @@ PROBE_PATHS = (
 )
 PROBE_ENV = "READER3_EGRESS_TEARDOWN_PROBE"
 
+#: 探针模块里**出网**的那条用例的名字。C14 断的是「这一条的 teardown 红了」，
+#: 不是「这一轮有一个 error」——阶段和主体都要点名，否则 setup 炸了也算数（审计 #18）。
+_PROBE_BODY = "test_the_probe_swallows_its_own_egress_and_leaves_no_trace_in_the_body"
+
+#: 武装那次应有的 passed 数：探针体（它自己是通过的，红在 teardown）＋ 那条永远跑、
+#: 不出网的用例。
+_ARMED_PASSED = 2
+
 _SUMMARY_TOKEN_RE = re.compile(r"(\d+) (passed|failed|errors?|skipped|xfailed|xpassed|deselected)")
 
 
@@ -696,12 +704,53 @@ def test_the_lane_conftest_itself_reddens_at_teardown(probe_path: str) -> None:
         "里那一行存在，没证明 conftest 的注册真的走到它——C1-C10 全都在用例体里 clear 过，"
         f"这两件事在它们眼里一模一样：\n{armed.stdout[-2000:]}\n{armed.stderr[-2000:]}"
     )
-    assert failed_or_errored(armed.stdout) == 1, (
-        f"武装之后失败/错误数不是 1（摘要={summary_counts(armed.stdout)}）：\n{armed.stdout[-2000:]}"
+    # 017 WI-10（审计 #18）：原来这里是 `failed_or_errored(...) == 1`，把三种完全不同的
+    # 结局算成同一个 1——「用例体自己红了」（1 failed）、「setup 就炸了、用例体根本没跑」
+    # （1 error at setup）、以及唯一想要的那种「用例体通过、teardown 判红」。前两种下
+    # teardown 那行断言一次都没求值，而 C14 存在的全部理由就是求值它。所以分阶段断。
+    armed_counts = summary_counts(armed.stdout)
+    assert armed_counts.get("failed", 0) == 0, (
+        f"武装那次有 failed（摘要={armed_counts}）：用例体自己红了，teardown 那行没轮到求值。"
+        f"C14 要的是「体通过、收尾判红」：\n{armed.stdout[-2000:]}"
+    )
+    assert armed_counts.get("passed") == _ARMED_PASSED, (
+        f"武装那次 passed={armed_counts.get('passed')}，期望 {_ARMED_PASSED}（探针体 + 那条不出网的）。"
+        f"探针体没跑到 passed，就谈不上「被吞掉的出网只剩 teardown 这一条路」：\n{armed.stdout[-2000:]}"
+    )
+    assert armed_counts.get("error") == 1, (
+        f"武装那次 error 数不是 1（摘要={armed_counts}）。注意 teardown 断言在 pytest 眼里是 "
+        f"error 不是 failed：\n{armed.stdout[-2000:]}"
+    )
+    assert f"ERROR at teardown of {_PROBE_BODY}" in armed.stdout, (
+        f"红的不是**探针体的 teardown**。阶段错了这条就没有意义：setup 阶段的 error 同样"
+        f"计入 1 个 error，而那时用例体一行都没执行：\n{armed.stdout[-2000:]}"
+    )
+    assert "ERROR at setup of" not in armed.stdout, (
+        f"出现了 setup 阶段的 error——围栏是在装闸的时候炸的，不是在结账的时候："
+        f"\n{armed.stdout[-2000:]}"
     )
     assert BLOCKED_ADDR in armed.stdout, (
         f"红了，但失败信息里没有地址，定位不到是谁在出网：\n{armed.stdout[-2000:]}"
     )
-    assert disarmed.returncode == 0 and "1 skipped" in disarmed.stdout, (
-        f"未武装时探针本该只是一条 skip：\n{disarmed.stdout[-2000:]}\n{disarmed.stderr[-2000:]}"
+
+    # 未武装的对照：**围栏必须真的跑过**。原来整个模块挂 pytestmark.skipif，skip 掉的
+    # 模块连 autouse 围栏都不装，于是这个对照对「围栏坏没坏」完全瞎——一道每轮都在
+    # teardown 判红的闸在这里照样 rc=0。现在探针模块里多了一条永远跑、且不出网的用例，
+    # 所以这个对照要求的是 1 passed（围栏跑完且没判红）+ 1 skipped（探针体没武装）。
+    disarmed_counts = summary_counts(disarmed.stdout)
+    assert disarmed.returncode == 0, (
+        f"未武装时也红了：围栏在没有任何出网的情况下判了红，那么武装那次的红说明不了"
+        f"任何事：\n{disarmed.stdout[-2000:]}\n{disarmed.stderr[-2000:]}"
+    )
+    assert disarmed_counts.get("skipped") == 1, (
+        f"未武装时探针体本该是一条 skip（摘要={disarmed_counts}）：\n{disarmed.stdout[-2000:]}"
+    )
+    assert disarmed_counts.get("passed") == 1, (
+        f"未武装时 passed={disarmed_counts.get('passed')}，期望 1。那条永远跑、不出网的用例"
+        "是这个对照的全部内容——它不跑，对照就退化回「模块被 skip 了」，而那句话对围栏"
+        f"的死活一个字都没说：\n{disarmed.stdout[-2000:]}"
+    )
+    assert "ERROR at" not in disarmed.stdout, (
+        f"未武装那次出现了 error：没有出网却判红的围栏，会让武装那次的红不可归因："
+        f"\n{disarmed.stdout[-2000:]}"
     )

@@ -15,7 +15,6 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from .. import server as _server
 
 router: APIRouter = APIRouter()
 
@@ -30,5 +29,5 @@ async def api_health():
     """
     return {"status": "ok", "version": _server._package_version()}
 
-
-
+# 017 WI-1（审计 #7）：必须留在文件末尾。理由见 `routers/__init__.py` 的 docstring。
+from .. import server as _server  # noqa: E402

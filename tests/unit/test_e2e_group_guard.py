@@ -146,8 +146,21 @@ CANONICAL_ACCEPTANCE_ITEMS = 17
 # 该模块 29 → 36 条，**+7 为实测值**（`pytest tests/e2e --collect-only -q` 全量 128）。
 # 43 → 44 / 128 → 129：2026-09-22 同一欠账的 WI-7（成功路径护栏，不装路由）落地，
 # 该模块 36 → 37 条，**+1 为实测值**（`pytest tests/e2e --collect-only -q` 全量 129）。
-CANONICAL_UNGROUPED_ITEMS = 44
-CANONICAL_E2E_ITEMS = 129
+# 44 → 47 / 129 → 132：2026-09-23 017 WI-5（审计 #3 / #9）新增
+# `tests/e2e/test_stored_cfi_must_agree_with_quote.py`，**实测 3 条 item**，不参数化。
+# 它按内容属于 `baseline_1b`，落白名单同样是为了不动 `suite_hash` 的覆盖面——理由与
+# 到期动作写在 `scripts/lint_e2e_groups.py` 的白名单注释里，本文件不复述。
+# 47 → 51 / 132 → 136：2026-09-23 017 WI-6（审计 #5）新增
+# `tests/e2e/test_conflict_resolution_single_flight.py`，**实测 4 条 item**，不参数化。
+# 它与 `acceptance_2a/test_deg_s5_write_conflict.py` 共用 DEG-S5 对话框，但判据不重叠
+# （那一条是激活阶段验收，这一条是同一上下文里两次点击之间的并发），因此不并进那个组。
+# 落白名单的理由与到期动作写在 `scripts/lint_e2e_groups.py` 的白名单注释里，本文件不复述。
+# 51 → 55 / 136 → 140：2026-09-23 017 WI-7（审计 #4）新增
+# `tests/e2e/test_conflict_settled_text_keeps_its_base_etag.py`，**实测 4 条 item**，不参数化。
+# 它与上一条同住 DEG-S5 对话框，但问的是收尾之后那次保存带的是哪一版令牌，判据不重叠。
+# 落白名单的理由与到期动作写在 `scripts/lint_e2e_groups.py` 的白名单注释里，本文件不复述。
+CANONICAL_UNGROUPED_ITEMS = 55
+CANONICAL_E2E_ITEMS = 140
 
 #: **已激活**的 acceptance 组，与 `scripts/lint_e2e_groups.py` 的
 #: `ACTIVATED_ACCEPTANCE_DIRS` 各写一份——本文件是守卫的独立 oracle，不从被测脚本 import
@@ -320,6 +333,16 @@ def test_real_tree_collection_is_a_partition_and_counts_match() -> None:
         f"{E2E_REL}/test_harness_smoke.py",
         f"{E2E_REL}/test_testid_dom_uniqueness.py",
         f"{E2E_REL}/test_notes_write_failure_is_attributable.py",
+        # 017 WI-5（审计 #3 / #9）：盘上 cfi 与 quote 对不上时 quote 说了算。
+        # 内容上属于 `baseline_1b`，落白名单是为了不动 `suite_hash` 的覆盖面——
+        # 理由与到期动作写在 `scripts/lint_e2e_groups.py` 的白名单注释里。
+        f"{E2E_REL}/test_stored_cfi_must_agree_with_quote.py",
+        # 017 WI-6（审计 #5）：冲突对话框同一时刻只许有一次收尾在飞。
+        # 同上，理由与到期动作在 `scripts/lint_e2e_groups.py` 的白名单注释里。
+        f"{E2E_REL}/test_conflict_resolution_single_flight.py",
+        # 017 WI-7（审计 #4）：收尾放进编辑器的那一版，必须连着它自己的基准令牌。
+        # 同上，理由与到期动作在 `scripts/lint_e2e_groups.py` 的白名单注释里。
+        f"{E2E_REL}/test_conflict_settled_text_keeps_its_base_etag.py",
     }, f"白名单的内容变了：{sorted(whitelist)}（加项要写理由，且它必须真的贡献 item）"
 
     # (1) 划分：恰好一个组 marker，或模块在白名单里。双 marker 也红。

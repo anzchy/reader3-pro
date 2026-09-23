@@ -9,7 +9,6 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from fastapi.concurrency import run_in_threadpool
 
-from ... import server as _server
 from ...schemas import AIRagRequest
 
 router: APIRouter = APIRouter()
@@ -34,4 +33,5 @@ async def api_ai_rag_retrieve(body: AIRagRequest):
     except RuntimeError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-
+# 017 WI-1（审计 #7）：必须留在文件末尾。理由见 `routers/__init__.py` 的 docstring。
+from ... import server as _server  # noqa: E402

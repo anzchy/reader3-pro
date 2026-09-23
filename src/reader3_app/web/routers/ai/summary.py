@@ -17,8 +17,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 
-from ... import server as _server
 from ...schemas import AISummaryRequest
+from ....ai.queue import QueueBudget
 from ....ai.routing import (
     provider_context_window,
     unique_chapter_orders_from_passages,
@@ -94,7 +94,7 @@ async def api_ai_summary(
     provider_name, api_key, base_url, model, timeout_s = _server._get_provider_runtime(body.provider, body.model)
     queue_key = f"{book_uuid}:{provider_name}"
 
-    async def _do() -> dict:
+    async def _do(budget: QueueBudget) -> dict:
         book = await run_in_threadpool(_server.load_book_cached, book_folder)
         if not book:
             raise HTTPException(status_code=404, detail="Book not found")
@@ -161,6 +161,8 @@ async def api_ai_summary(
                 messages=[{"role": "user", "content": user}],
                 max_tokens=body.max_tokens,
                 timeout_s=timeout_s,
+                deadline=budget.deadline,
+                should_stop=budget.should_stop,
             )
         except Exception as e:
             if decision.mode in ("full_book", "multi_chapter"):
@@ -182,6 +184,8 @@ async def api_ai_summary(
                     messages=[{"role": "user", "content": rag_user}],
                     max_tokens=body.max_tokens,
                     timeout_s=timeout_s,
+                    deadline=budget.deadline,
+                    should_stop=budget.should_stop,
                 )
                 routing_meta["mode"] = "rag_fallback"
             else:
@@ -210,4 +214,5 @@ async def api_ai_summary(
         fn=_do,
     )
 
-
+# 017 WI-1（审计 #7）：必须留在文件末尾。理由见 `routers/__init__.py` 的 docstring。
+from ... import server as _server  # noqa: E402

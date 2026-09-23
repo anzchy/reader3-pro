@@ -30,7 +30,6 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-from .. import server as _server
 
 router: APIRouter = APIRouter()
 
@@ -350,3 +349,6 @@ async def api_ollama_models():
         return {"models": out, "base_url": root}
     except Exception as e:  # noqa: BLE001 - 第 2 档：HTTP 边界，转译成 503 且 detail 带上原因
         raise HTTPException(status_code=503, detail=str(e))
+
+# 017 WI-1（审计 #7）：必须留在文件末尾。理由见 `routers/__init__.py` 的 docstring。
+from .. import server as _server  # noqa: E402

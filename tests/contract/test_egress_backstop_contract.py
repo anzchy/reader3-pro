@@ -145,4 +145,30 @@ def test_egress_from_a_real_threadpool_worker_is_recorded_with_its_address(
     assert recorded[0][0] != "MainThread", (
         f"这条本该跑在工作线程上，实际记到 {recorded[0][0]}"
     )
+
+    # 017 WI-10（审计 #16）：上面三条只证明「闸记下了那次出网」，对**这条路径本身**
+    # 一个字都没证。而这条用例的全部价值在于「吞异常的是生产代码」——那句话只有在
+    # full_book 回退分支真的跑完、并且真的换成 RAG 重发了一次的时候才成立。
+    # 少了下面这四条，一个 500、一次调用、或者压根没走回退的实现照样全绿：闸那边
+    # 一样只会记到一次出网。四条各证一个阶段，别合并：
+    resp_body = resp.json() if resp.status_code == 200 else {}
+    assert resp.status_code == 200, (
+        f"路由没有 200，而是 {resp.status_code} {resp.text[:200]}。"
+        "「生产代码吞掉了闸的 AssertionError 并重试」这句话的可观测形式就是这个 200——"
+        "非 200 说明异常一路抛了出去，那和本用例要证的性质相反"
+    )
+    assert calls == ["anthropic", "anthropic"], (
+        f"provider 被调用了 {len(calls)} 次（{calls}），期望恰好两次。"
+        "一次＝没重试（那第一次的异常去哪了？），三次以上＝回退分支自己也在转圈"
+    )
+    assert resp_body.get("answer") == "fallback", (
+        f"answer 是 {resp_body.get('answer')!r}，不是第二次调用返回的 'fallback'。"
+        "200 只说明没抛，这一条才说明返回的确实是**重试那次**的结果"
+    )
+    assert resp_body.get("metadata", {}).get("routing", {}).get("mode") == "rag_fallback", (
+        f"routing.mode 是 {resp_body.get('metadata', {}).get('routing', {}).get('mode')!r}，"
+        "不是 'rag_fallback'。走的不是 full_book → RAG 那条回退分支，"
+        "那这次出网就不是本用例描述的那一次"
+    )
+
     recorded.clear()

@@ -177,18 +177,40 @@ def test_the_teardown_assertion_actually_fails_the_run(tmp_path: Path) -> None:
         "要么读的不是 _boom 写的那个 list。C1-C10 全都在用例体里 clear 过，"
         f"把这行删掉它们一条都不会红：\n{dirty.stdout[-2000:]}\n{dirty.stderr[-2000:]}"
     )
-    assert failed_or_errored(dirty.stdout) == 1, (
-        f"失败+错误数不是 1（摘要={summary_counts(dirty.stdout)}）。注意 teardown 断言在 pytest "
+    # 017 WI-10（审计 #18）：原来这里是 `failed_or_errored(...) == 1`，把三种结局算成
+    # 同一个 1——「用例体自己红了」（1 failed）、「setup 就炸了、体根本没跑」（error at
+    # setup）、以及唯一想要的「体通过、teardown 判红」。前两种下最后那行 assert 一次都
+    # 没求值，而这条用例存在的全部理由就是求值它。所以阶段与主体都要点名。
+    dirty_counts = summary_counts(dirty.stdout)
+    assert dirty_counts.get("failed", 0) == 0, (
+        f"脏那轮有 failed（摘要={dirty_counts}）：用例体自己红了，teardown 那行没轮到求值。"
+        f"这条要的是「体通过、收尾判红」：\n{dirty.stdout[-2000:]}"
+    )
+    assert dirty_counts.get("passed") == 2, (
+        f"脏那轮 passed={dirty_counts.get('passed')}，期望 2（脏的那条自己是通过的，红在 "
+        f"teardown；干净的那条本来就通过）：\n{dirty.stdout[-2000:]}"
+    )
+    assert dirty_counts.get("error") == 1, (
+        f"脏那轮 error 数不是 1（摘要={dirty_counts}）。注意 teardown 断言在 pytest "
         f"眼里是 error 不是 failed：\n{dirty.stdout[-2000:]}"
+    )
+    assert "ERROR at teardown of test_dirty_swallows_the_connect" in dirty.stdout, (
+        f"红的不是**那条脏用例的 teardown**。阶段错了这条就没有意义：setup 阶段的 error "
+        f"同样计入 1 个 error，而那时用例体一行都没执行：\n{dirty.stdout[-2000:]}"
+    )
+    assert "ERROR at setup of" not in dirty.stdout, (
+        f"出现了 setup 阶段的 error——闸是在装的时候炸的，不是在结账的时候："
+        f"\n{dirty.stdout[-2000:]}"
     )
     assert BLOCKED_ADDR in dirty.stdout, (
         f"红了，但失败信息里没有地址，定位不到是谁在出网：\n{dirty.stdout[-2000:]}"
     )
-    assert "test_dirty_swallows_the_connect" in dirty.stdout, (
-        f"红的不是那条脏用例：\n{dirty.stdout[-2000:]}"
-    )
     assert clean.returncode == 0 and summary_counts(clean.stdout).get("passed") == 1, (
         f"干净的用例也被 teardown 判红：\n{clean.stdout[-2000:]}\n{clean.stderr[-2000:]}"
+    )
+    assert "ERROR at" not in clean.stdout, (
+        f"干净那轮出现了 error：一道没有出网也判红的闸，会让脏那轮的红不可归因："
+        f"\n{clean.stdout[-2000:]}"
     )
 
 

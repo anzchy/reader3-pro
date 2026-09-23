@@ -34,7 +34,23 @@
   // （ADR-0011），所以「页面还没读过任何 ETag 就先写」不会被误判成冲突。
   let notesEtag = null;
 
-  function rememberNotesEtag(resp) {
+  // 017 WI-7（审计 #4）：`notesEtag` 跟着**读**走，而屏幕上那一版跟着**收尾**走，两者会分家。
+  //
+  // `settleConflict()` 把某一版正文放回编辑器，紧接着 `loadAndRender()` 去读一次 notes ——
+  // 那次读会把 `notesEtag` 换成服务端此刻的版本。若 409 之后、用户点下出口之前别处又写了
+  // 一版，编辑器里就是**旧那版的正文**配上**新那版的令牌**：用户在它上面接着改、保存，
+  // 服务端一看令牌是最新的就收下了，中间那一版无声无息地没了 —— 乐观并发被绕了过去。
+  //
+  // 所以「正在编辑的这一版是从哪个版本长出来的」要单独记：`notesEditBaseEtag`。它由收尾
+  // 时设定（正文从哪一版来，就钉哪一版），只被**本客户端自己**提交成功的写推进，读路径
+  // 一律不碰；一轮编辑结束就清空 —— 不清的话，这一页此后每一次笔记编辑都会撞 409。
+  let notesEditBaseEtag = null;
+
+  function setNotesEditBase(etag) {
+    notesEditBaseEtag = etag || null;
+  }
+
+  function rememberNotesEtag(resp, options) {
     // 009 欠账 #43 (i) WI-5 / 修订 A1：`notesEtag` 只经服务端**真提交过**的版本前进。失败响应
     // （`null`，或非 2xx）带回来的 ETag 不是那样的版本，吸收它会毒化此后每一次写的 `If-Match`；
     // 这里**原样返回、不清空**——清空等于让之后的写全变成无条件写，DEG-S5 的丢写保护就没了。
@@ -42,12 +58,18 @@
     // 是对 `notesEtag` 的直接赋值，刻意不经过这个函数，也就不受这道守卫约束。
     if (!resp || !resp.ok) return;
     const tag = resp?.headers?.get?.("ETag");
-    if (tag) notesEtag = tag;
+    if (!tag) return;
+    notesEtag = tag;
+    // 017 WI-7：**自己**写成功了，说明这一版正文与服务端仍然同源，钉子跟着前进。别人的
+    // 写没有这条理由，读回来的版本更没有 —— 那正是钉子要拦下的东西。
+    if (options?.isOurWrite && notesEditBaseEtag) notesEditBaseEtag = tag;
   }
 
-  function notesWriteHeaders(extra) {
+  function notesWriteHeaders(extra, options) {
     const headers = Object.assign({}, extra || {});
-    if (notesEtag) headers["If-Match"] = notesEtag;
+    // 017 WI-7：编辑一条已有笔记时，基准是「编辑器里这一版从哪来」，不是「刚才读到了什么」。
+    const base = options?.useEditBase && notesEditBaseEtag ? notesEditBaseEtag : notesEtag;
+    if (base) headers["If-Match"] = base;
     return headers;
   }
 
@@ -69,7 +91,7 @@
       resp = await send();
     }
     // 009 欠账 #43 (i) WI-4：失败响应带回来的 ETag 不是服务端提交过的版本，不吸收（W4-C5）。
-    if (resp && resp.ok) rememberNotesEtag(resp);
+    if (resp && resp.ok) rememberNotesEtag(resp, { isOurWrite: true });
     return resp;
   }
 
@@ -403,6 +425,28 @@
     return null;
   }
 
+  /**
+   * 这条 cfi 解析出来的 Range，与这条标注自己存的 `quote` 对得上吗？（017 WI-5，审计 #3）
+   *
+   * `render()` 让 CFI 分支跑在文本匹配**之前**，所以一条解析得出来的 cfi 就是最终答案，
+   * 从此没有第二次机会。而 cfi 与 quote 是**两个独立写进去的锚点**，它们可以不一致：
+   * 旧数据、别的客户端、以及 `createAnnotation` 里那条今天还没接通的 cfi 生成路径
+   * （见那里的注释）都能产出一条指向别处、或者塌成一点的 cfi。
+   *
+   * 不一致时信谁，是这里唯一要定的事：**信 quote**。quote 是用户真正选中的那段字，
+   * cfi 只是指向它的一条路；路错了就重新按字找，而不是把线划在错的地方——
+   * 「划在错的地方」和「划不出来」对用户不是同一件事，前者更坏：它看起来是对的。
+   *
+   * 没有 quote 可对照时（理论上的旧记录；`createAnnotation` 拒发空 quote），
+   * 只挡住**证明无用**的那一种——零宽 Range 只会插进去一个空的 `<mark>`。
+   */
+  function cfiRangeAgreesWithQuote(range, ann) {
+    if (!range || range.collapsed) return false;
+    const quote = String(ann?.quote || "");
+    if (!quote) return true;
+    return range.toString() === quote;
+  }
+
   function applySegments(container, index, segments) {
     const nodes = index.nodes;
     const doc = container?.ownerDocument || document;
@@ -489,7 +533,8 @@
       const cfiAnnotations = annotations.filter((ann) => ann?.cfi);
       for (const ann of cfiAnnotations) {
         const range = rangeFromCfi(String(ann.cfi || ""), contents, doc);
-        if (!range) {
+        if (!cfiRangeAgreesWithQuote(range, ann)) {
+          // 解析不出来、塌成一点、或者指向了别的文字——一律退回文本匹配。
           textAnnotations.push(ann);
           continue;
         }
@@ -570,6 +615,8 @@
       this.conflictKeepMine = qs("note-conflict-keep-mine");
       this.conflictTakeRemote = qs("note-conflict-take-remote");
       this.pendingConflict = null;
+      // 017 WI-6（审计 #5）：有没有一次「保留我的」的写还在飞。见 `setConflictBusy`。
+      this.conflictSubmitting = false;
 
       this.currentRange = null;
       //【#44】选区落定那一刻算好的偏移快照。存在的理由是 currentRange 会被一次
@@ -773,6 +820,11 @@
 
       // Store the annotation IDs being edited
       this.editingNoteId = noteId;
+      // 017 WI-7：`editingNoteId` 与基准令牌**成对**出现 —— 谁让编辑分支变得可达，谁就得
+      // 说清这一版正文是从哪个版本长出来的。这一轮的正文是刚从页面上读来的，基准就是全局
+      // 那个值，上一轮冲突留下的钉子到此为止（另一处成对赋值在 `settleConflict()`）。
+      // 不清它，这一页此后每一次保存都会拿一个过期版本去撞 409。
+      setNotesEditBase(null);
 
       // Set the existing note text
       this.noteTextarea.value = noteText;
@@ -1213,6 +1265,9 @@
         noteId: pending.noteId,
         localText: pending.localText,
         remoteText,
+        // 017 WI-7：远端那版正文与这个版本号是同一次读的产物。「采用远端」把正文放进
+        // 编辑器时必须把它一起带上，否则正文是这一版、令牌却是收尾时读到的更新那一版。
+        remoteEtag: body?.etag || null,
       };
       this.showConflictDialog();
     }
@@ -1235,7 +1290,32 @@
     }
 
     /**
+     * 提交期间把两个出口一起锁上，写回来之后一起放开（017 WI-6，审计 #5）。
+     *
+     * 这是**给人看的**那一层：用户得看见「正在保存，别再点了」，而不是点下去没反应。
+     * 它不是唯一一层，也不该是——`disabled` 是一条 DOM 属性，一次重绘、一段外部脚本、
+     * 或者任何绕过按钮直接调 `Reader3AnnotationUI.resolveConflict(...)` 的路径都能越过它。
+     * 真正挡住并发的是 `resolveConflict()` 开头那道 `conflictSubmitting` 守卫。
+     */
+    setConflictBusy(busy) {
+      const on = !!busy;
+      this.conflictSubmitting = on;
+      if (this.conflictKeepMine) this.conflictKeepMine.disabled = on;
+      if (this.conflictTakeRemote) this.conflictTakeRemote.disabled = on;
+      this.conflictDialog?.setAttribute?.("aria-busy", on ? "true" : "false");
+    }
+
+    /**
      * 两个出口。`keepLocal` 为真 = 「保留我的」，为假 = 「采用远端」。
+     *
+     * **同一时刻只许有一次收尾在飞**（017 WI-6，审计 #5）。原先不是这样：「保留我的」
+     * 的 PUT 还在飞时两个按钮都还能点，点「采用远端」会当场 `settleConflict()` 收尾，
+     * 而那个在飞的写回来之后仍会 `settleConflict(c, c.localText)` —— 用户看见自己最后
+     * 作出的选择被反了过来，再点一次「保留我的」还会再发一次写。
+     *
+     * 守卫分两个方向，谁也替不了谁：进门那道（`conflictSubmitting`）挡的是「新的调用
+     * 进不来」；回来之后那道（`this.pendingConflict !== c`）挡的是「回来的这一次还算不算
+     * 数」—— 一次回调只能收尾它出发时的那一场冲突。
      */
     async resolveConflict(keepLocal) {
       const c = this.pendingConflict;
@@ -1249,20 +1329,54 @@
         return;
       }
 
+      // 017 WI-6（审计 #5）：上一次选择还在写，这一次一律拒掉 —— 两个出口都拒。
+      // 「采用远端」也要拒：它不发请求，却会**当场**把冲突收掉，于是在飞的那次写回来时
+      // 用户的选择已经被换过一轮了。两条通道照记（ring ＋ console），因为这两种拒绝都
+      // 不改屏幕，只看 DOM 分不出「守卫挡住了」和「代码压根没跑到」。
+      if (this.conflictSubmitting) {
+        reportNotesWriteFailure({
+          op: "conflict-busy",
+          requested: false,
+          id: c.noteId,
+          message: "上一次选择还在保存，请稍候",
+        });
+        return;
+      }
+
       if (!keepLocal) {
         // 「采用远端」：本地那版是用户**主动放弃**的，不是要再写一遍 ——
         // 这一支一条带本地正文的写都不许发。盘上已经是远端那版，什么都不用做。
-        this.settleConflict(c, c.remoteText);
+        this.settleConflict(c, c.remoteText, c.remoteEtag);
         return;
       }
 
       // 「保留我的」：必须**真的**写到服务端。只关对话框、只改前端内存的实现，会在下一次
       // 刷新时把用户的字变回远端那版 —— 那正是这条降级要消灭的静默丢写。
-      const resp = await fetch(c.url, {
-        method: "PUT",
-        headers: notesWriteHeaders({ "Content-Type": "application/json" }),
-        body: JSON.stringify({ note_text: c.localText }),
-      }).catch(() => null);
+      this.setConflictBusy(true);
+      let resp;
+      try {
+        resp = await fetch(c.url, {
+          method: "PUT",
+          headers: notesWriteHeaders({ "Content-Type": "application/json" }),
+          body: JSON.stringify({ note_text: c.localText }),
+        }).catch(() => null);
+      } finally {
+        // 任何出口都要放开：失败要能重试，409 之后那一场新冲突也要能点。
+        this.setConflictBusy(false);
+      }
+
+      // 回来的这一次，还是当初点下去的那一场冲突吗？不是就只记账、不收尾 ——
+      // 写本身可能已经落地了（下面盘上就是本地那版），我们拒绝的是**替它宣告收尾**：
+      // 那会拿一份过期的 `localText` 盖掉用户此刻正在看、正在编辑的那一格。
+      if (this.pendingConflict !== c) {
+        reportNotesWriteFailure({
+          op: "conflict-stale",
+          resp,
+          id: c.noteId,
+          message: "这条冲突已经被别的操作收掉了，这次保存不再改动界面",
+        });
+        return;
+      }
 
       if (resp && resp.status === 409) {
         // 重试的这一瞬间又被人改了。换上新的两版继续问，仍然不许静默丢。
@@ -1282,7 +1396,10 @@
         return;
       }
       rememberNotesEtag(resp);
-      this.settleConflict(c, c.localText);
+      // 017 WI-7：这一支放进编辑器的正文就是刚写上去的那一版，基准自然是那次写的版本号
+      // —— 不是 409 体里报来的那一版（它已经被我们自己这次写顶掉了，钉它会让下一次保存
+      // 撞上自己刚写出去的版本）。
+      this.settleConflict(c, c.localText, resp?.headers?.get?.("ETag") || null);
     }
 
     /**
@@ -1291,8 +1408,11 @@
      * 为什么要当场写回 textarea 而不是等下一次刷新：编辑器此刻还开着，里面躺的是刚被判
      * 出局的那一版。放着不管，用户下一次按保存就会把它又推上去 —— 而他以为自己早放弃了。
      */
-    settleConflict(conflict, settledText) {
+    settleConflict(conflict, settledText, baseEtag) {
       this.pendingConflict = null;
+      // 必须钉在 `loadAndRender()` **之前**：那次读会把全局版本换成服务端此刻的值，
+      // 而编辑器里这一版未必是从那儿来的（017 WI-7）。
+      setNotesEditBase(baseEtag);
       if (this.conflictDialog?.open) this.conflictDialog.close();
       if (this.noteTextarea) this.noteTextarea.value = settledText;
       this.editingNoteId = conflict.noteId;
@@ -1322,7 +1442,8 @@
           const url = `/api/notes/${encodeURIComponent(ctx.bookId)}/${encodeURIComponent(String(ctx.chapterIndex))}/${encodeURIComponent(noteId)}`;
           const resp = await fetch(url, {
             method: "PUT",
-            headers: notesWriteHeaders({ "Content-Type": "application/json" }),
+            // 017 WI-7：拿「编辑器里这一版的出处」当基准，而不是最近一次读到的版本。
+            headers: notesWriteHeaders({ "Content-Type": "application/json" }, { useEditBase: true }),
             body: JSON.stringify({ note_text: text }),
           }).catch(() => null);
 
@@ -1347,7 +1468,7 @@
             });
             return;
           }
-          rememberNotesEtag(resp);
+          rememberNotesEtag(resp, { isOurWrite: true });
 
           this.editingNoteId = null;
           this.closeNoteEditorIfOpen();
@@ -1507,9 +1628,30 @@
         return;
       }
 
+      // cfi 只在它和上面那段 `quote` **对得上**的时候才写（017 WI-5，审计 #3）。
+      //
+      // 原来这里直接拿 `this.currentRange` 去算。问题在于：走到这一行时，那个 Range
+      // 可能刚刚被 `resolveOffsets` 判定为不可信——重绘把端点顶到了父元素上，于是
+      // 偏移取的是快照。拿一个已经作废的 Range 算 cfi，写进盘的就是一条与
+      // `quote`／`position` 自相矛盾的锚点，而读侧**优先信 cfi**，用户看见的是一道
+      // 划在别处（或者空）的线。#3 给的两条处方是「用回落后的偏移重建 Range」或
+      // 「回落时就别写 cfi」；这里取后者，因为它与读侧那道
+      // `cfiRangeAgreesWithQuote` 是**同一条规矩**——对不上就不写、不信——
+      // 而不是又多一套只在这一处成立的说法。
+      //
+      // **这段今天一次都没执行过，是明账不是疏漏。** `getContents()`
+      // （`epub-renderer.js`）返回的是 epub.js 的 **View**，不是 `Contents`；View 上
+      // 没有 `cfiFromRange`，所以下面那个条件恒假、`cfi` 恒为 `null`，新建的标注全靠
+      // quote/position 重锚。真正的 `Contents` 挂在 `view.contents` 上。**没有在这条
+      // 分支里顺手接通它**：接通之后每条新标注都带 cfi，渲染会从「文本匹配 ＋ 相邻
+      // 段合并」整体切到「一条标注一个 mark」，重叠标注、`data-annotation-ids`、
+      // 孤儿判定全部换一条路——那是另一件事的代价，而 `baseline_1b` 是冻结的，
+      // 兜不住。记在 017 的任务文件里，单独立项。
       let cfi = null;
       const contents = window.Reader3Epub?.getContents?.();
-      if (contents && typeof contents.cfiFromRange === "function") {
+      const rangeIsStillTheQuote =
+        !!this.currentRange && this.currentRange.toString() === quote;
+      if (rangeIsStillTheQuote && contents && typeof contents.cfiFromRange === "function") {
         try {
           cfi = contents.cfiFromRange(this.currentRange);
         } catch {

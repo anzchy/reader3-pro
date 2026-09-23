@@ -541,3 +541,108 @@ def test_a_rule_with_no_thresholds_at_all_fails(gate, tmp_path, monkeypatch, cap
     code, out = run_gate(gate, capsys)
 
     assert code != 0, f"一条什么都不判的 criticalPath 是一条永远绿的门槛，应当拦下：{out}"
+
+
+# --------------------------------------------------------------------------
+# G14: lines 与 statements 各要有一条**真的低于门槛**的用例（017 WI-11｜审计 #17）
+#
+# 这个文件此前只有 branches 有过一条低于门槛的用例（G9）。lines / statements 两项
+# 从头到尾只在「满分照样放行」和「输出里出现过这两个词」里出现过 —— 后者正是 G12
+# 那两行 `"lines" in out and "statements" in out`，它们查的是**文案**，不是判决。
+#
+# 代价是可度量的：把 `_check_critical()` 里 lines / statements 两支换成无条件放行
+# （`continue`），这个文件在改之前**全绿**，同时把 `book_store.py` 那种 0% 的模块
+# 一路放过。一个只有 branches 被真正判过的门禁，在 CI 侧等于只守三分之一。
+#
+# 逐指标参数化而不是合成一条：两项在 `METRICS` 里**共用同一对计数键**
+# （`covered_lines` / `num_statements`），所以它们唯一的区别就是键名那一步查表。
+# 合成一条就分不出「两项都判了」和「判了一项、另一项名字写错但恰好没人看」。
+# --------------------------------------------------------------------------
+@pytest.mark.parametrize("metric", ["lines", "statements"])
+def test_a_per_file_line_floor_actually_binds(gate, tmp_path, monkeypatch, capsys, metric):
+    cfg = {
+        "coverageMode": "absolute",
+        "coverageThresholds": {},
+        "criticalPaths": [
+            {"glob": "src/reader3_app/book_store.py", "thresholds": {metric: 90}}
+        ],
+    }
+    report = {
+        # 总量满分：这条必须因为**逐文件**那条门槛而红，不是被总量顺带拖红的。
+        "totals": {
+            "covered_lines": 100,
+            "num_statements": 100,
+            "covered_branches": 100,
+            "num_branches": 100,
+        },
+        "files": {
+            "src/reader3_app/book_store.py": {
+                "summary": {
+                    # 12% —— 远低于配的 90%
+                    "covered_lines": 12,
+                    "num_statements": 100,
+                    "covered_branches": 100,
+                    "num_branches": 100,
+                }
+            }
+        },
+    }
+    write_config(tmp_path, monkeypatch, gate, cfg)
+    write_report(tmp_path, monkeypatch, gate, report)
+
+    code, out = run_gate(gate, capsys)
+
+    assert code != 0, (
+        f"{metric}: 90 写在 rule['thresholds'] 里，实测 12% 却放行 —— "
+        f"这一项根本没被判过；实得：{out}"
+    )
+    # 三样缺一不可：是谁没过、实得多少、跟谁比。少任何一样，看报告的人都得回去读脚本
+    # 才知道该改什么。
+    assert metric in out, f"失败信息里没有点名指标 {metric}，看不出是哪一项没过：{out}"
+    assert "12.00" in out, f"失败信息里没有实际值 12.00%，看不出差多少：{out}"
+    assert "90" in out, f"失败信息里没有门槛值 90，看不出是跟谁比的：{out}"
+
+
+# --------------------------------------------------------------------------
+# G14 的边界对照：恰好踩在门槛上必须**通过**。
+#
+# 没有这条，「一律判 FAIL」也能让上面两条变绿，而那是一道谁都过不去的闸。
+# --------------------------------------------------------------------------
+@pytest.mark.parametrize("metric", ["lines", "statements"])
+def test_a_per_file_line_floor_passes_exactly_at_the_floor(
+    gate, tmp_path, monkeypatch, capsys, metric
+):
+    cfg = {
+        "coverageMode": "absolute",
+        "coverageThresholds": {},
+        "criticalPaths": [
+            {"glob": "src/reader3_app/book_store.py", "thresholds": {metric: 90}}
+        ],
+    }
+    report = {
+        "totals": {
+            "covered_lines": 100,
+            "num_statements": 100,
+            "covered_branches": 100,
+            "num_branches": 100,
+        },
+        "files": {
+            "src/reader3_app/book_store.py": {
+                "summary": {
+                    # 恰好 90%
+                    "covered_lines": 90,
+                    "num_statements": 100,
+                    "covered_branches": 100,
+                    "num_branches": 100,
+                }
+            }
+        },
+    }
+    write_config(tmp_path, monkeypatch, gate, cfg)
+    write_report(tmp_path, monkeypatch, gate, report)
+
+    code, out = run_gate(gate, capsys)
+
+    assert code == 0, (
+        f"{metric} 恰好达到门槛 90% 却被拦下 —— 比较写成了严格大于；实得：{out}"
+    )

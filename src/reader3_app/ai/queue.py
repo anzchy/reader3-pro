@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -19,6 +20,28 @@ class _QueueItem:
     ready: asyncio.Event
     enqueued_at: float
     request_label: str
+
+
+@dataclass(frozen=True)
+class QueueBudget:
+    """这次请求**还剩多久**、**还有没有人要它的结果**——两件事都是队列自己的事实。
+
+    `deadline` 就是 `run()` 用来判 504 的那一个（`item.enqueued_at + timeout_s`），
+    不是调用方另算的近似值。`stopped` 由 `run()` 在**任何**出口翻起来，而且翻在
+    `q.exit()` 放行下一个请求**之前**——顺序即语义：队列一放行，下一个请求就开始打
+    同一个 provider，此时上一个请求的重试循环必须已经收到叫停。
+
+    为什么是 `threading.Event` 而不是 `asyncio.Event`：读它的是
+    `_call_provider`，它跑在 `run_in_threadpool` 的线程里。`set()` 从事件循环线程
+    调用、`is_set()` 从工作线程读，`threading.Event` 两边都安全。
+    """
+
+    deadline: float
+    stopped: threading.Event
+
+    def should_stop(self) -> bool:
+        """给 `_call_provider(should_stop=...)` 用的 `() -> bool`。"""
+        return self.stopped.is_set()
 
 
 @dataclass(frozen=True)
@@ -123,7 +146,7 @@ class AIRequestQueueManager:
         request: Optional[Request],
         timeout_s: float,
         request_label: str,
-        fn: Callable[[], Awaitable[T]],
+        fn: Callable[[QueueBudget], Awaitable[T]],
     ) -> T:
         q = await self._get_queue(key)
         try:
@@ -133,7 +156,8 @@ class AIRequestQueueManager:
             raise HTTPException(status_code=504, detail="AI request timed out") from e
 
         deadline = item.enqueued_at + max(0.1, float(timeout_s))
-        task = asyncio.create_task(fn())
+        budget = QueueBudget(deadline=deadline, stopped=threading.Event())
+        task = asyncio.create_task(fn(budget))
         try:
             while True:
                 now = time.monotonic()
@@ -154,6 +178,11 @@ class AIRequestQueueManager:
             logger.info("cancelled key=%s label=%s", key, request_label)
             raise
         finally:
+            # 顺序即语义：先叫停，再放行下一个请求。反过来会留一个窗口——下一个请求
+            # 已经获准开跑，上一个的 provider 线程还没收到叫停，两个「本该串行」的
+            # 调用同时打同一个 provider（审计 #2）。`tests/unit/test_ai_queue_budget.py`
+            # 的 B3 拿「放行那一刻旗是什么状态」钉住这个偏序。
+            budget.stopped.set()
             if not task.done():
                 task.cancel()
             await q.exit(item)

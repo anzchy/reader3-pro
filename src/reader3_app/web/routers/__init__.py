@@ -28,9 +28,23 @@ resp = _server._call_provider(...)       #   调用时才解析属性，monkeypa
 | `from ..server import _call_provider` | `{'_call_provider'}` → 红 | `{}` |
 | `_server._call_provider(...)` | `{}` | `{}` |
 
-**绑模块、不绑属性，顺带解决了循环导入**：`server.py` 在文件末尾 include 这些 router，
-router 在导入期只绑定 `server` 这个模块对象（那时它还没执行完，但对象已经在
-`sys.modules` 里），真正取属性要等到请求进来。
+**绑模块、不绑属性**：router 在导入期只绑定 `server` 这个模块对象（那时它可能还没执行完，
+但对象已经在 `sys.modules` 里），真正取属性要等到请求进来。
+
+**这条规矩解决的是 router 这一侧，不解决 `server` 那一侧——本 docstring 曾经声称
+「顺带解决了循环导入」，那句话是错的**（017 WI-1，审计 #7 判红）。`server.py` 在它自己的
+文件末尾要取 `routers.X.router` 这个**属性**，于是谁先被导入就决定了成败：
+
+| 进程里第一个导入的 | 结果 |
+|---|---|
+| `server`（console 脚本、绝大多数测试） | 正常 |
+| 任意一个 router（`python -c`、单独跑某个测试文件、排查用 REPL） | 曾经必炸 |
+
+炸法是 `AttributeError: partially initialized module ... has no attribute 'router'`。
+**现在的修法**：每个 router 把 `from .. import server as _server` 放在**文件末尾**，
+在 `router` 与所有路由都定义完之后。这样无论谁先导入，`server` 去取 `.router` 时它都已经存在。
+新加 router 时照抄这个位置；`tests/unit/test_router_import_independence.py` 会逐个模块
+起子进程验，并且有一条守卫盯着「清单与 `server.py` 的 include 列表一致」。
 
 非接缝的东西（`notes_service` 的函数、`models.annotations.Annotation`、各服务层模块）
 照常直接 import —— 规矩只管 `OWNERSHIP` 里那 20 个名字和 `server` 自己的私有 helper。

@@ -60,7 +60,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterator, List
+from typing import Any, Awaitable, Callable, Iterator, List
 
 import pytest
 from fastapi.concurrency import run_in_threadpool
@@ -299,6 +299,50 @@ def test_Q2_正常完成之后租约也释放(lease_env: LeaseEnv) -> None:
 # 断连用例的公共装置
 # --------------------------------------------------------------------------
 
+class _ObservableGate:
+    """一把闸，外加「它是怎么被等的」这件事本身。
+
+    017 WI-9（审计 #14）：原来这里是一个裸 `threading.Event`。于是「卡住」这件事
+    **只能从外面按时长观察**——测试看得见「第二次 readline 还没返回」，看不见
+    「它是因为等这把闸才没返回」。两者的差别不是文字游戏：把假流的阻塞换成无条件
+    `time.sleep(3)`、完全不碰闸，那条本该钉住「不许用墙钟冒充卡住」的用例照样全绿，
+    因为它断的两件事（0.5s 内没返回、放行后返回了）一个 sleep 也都满足。
+    守着 #46 的闸自己就是用墙钟做的。
+
+    所以把「进了 `wait()`」和「进去时带的 timeout 实参」记下来，让它们可断：
+
+    * `wait_until_entered()` —— 真的有人进到这把闸里等了。这是**正面**证据，
+      sleep 之类根本不碰闸的实现给不出它。
+    * `wait_timeouts` —— 每次 `wait()` 的 timeout 实参。必须是 `[None]`：
+      一旦带上秒数，「卡住」就又变成了「最多卡这么久」，#46 原样长回来。
+    * `waiter_thread` —— 谁在这把闸里等。收尾要 join 的就是它（审计 #13）；
+      不留这个句柄就只能把一个阻塞中的线程丢给后面的用例。
+    """
+
+    def __init__(self) -> None:
+        self._event = threading.Event()
+        self._entered = threading.Event()
+        self.wait_timeouts: List[Any] = []
+        self.waiter_thread: threading.Thread | None = None
+
+    def wait(self, timeout: float | None = None) -> bool:
+        # 记在**阻塞之前**：等进去了才记就永远记不上，那正是要观察的那一刻。
+        self.wait_timeouts.append(timeout)
+        self.waiter_thread = threading.current_thread()
+        self._entered.set()
+        return self._event.wait(timeout)
+
+    def set(self) -> None:
+        self._event.set()
+
+    def is_set(self) -> bool:
+        return self._event.is_set()
+
+    def wait_until_entered(self, timeout: float) -> bool:
+        """阻塞到有人进了这把闸为止。上界是防挂死的保险，不是判据。"""
+        return self._entered.wait(timeout)
+
+
 class _FakeOllamaStream:
     """一个**永不结束**的 ollama 响应：只有停止事件能让 worker 走出 with 块。
 
@@ -310,14 +354,18 @@ class _FakeOllamaStream:
     「整段 scenario 在 stuck_delay 内跑完」这个对运行器速度的假设，慢 runner 上
     假 worker 自己醒了，前提自毁（欠账 #46，三次 CI 里红了两次）。换成 Event 之后
     「卡住」不再有时长，只有状态：**没放行就是没放行**，机器快慢与它无关。
-    谁把它设上，谁负责在收尾时 ``set()`` 放行——worker 线程是 daemon
-    （``routers/ai/chat.py:320``），但不该把一个永远阻塞的线程留给后面的用例。
+    谁把它设上，谁负责在收尾时 ``set()`` 放行**并 join 那个线程**——worker 线程是
+    daemon（``routers/ai/chat.py:320``），daemon 只保证它拦不住解释器退出，不保证它
+    在下一条用例开始前已经结束。放行而不 join，等于把一个刚被唤醒、还要再走一圈
+    循环的线程丢给后面的用例（审计 #13）。
+
+    闸的类型是 `_ObservableGate` 而不是 `threading.Event`：见它的 docstring。
     """
 
     def __init__(self, order: List[str], *, line_delay: float) -> None:
         self.order = order
         self.line_delay = line_delay
-        self.stuck_gate: threading.Event | None = None
+        self.stuck_gate: _ObservableGate | None = None
         self.lines_served = 0
         self.exited = False
 
@@ -356,6 +404,11 @@ _STUCK_OBSERVE_S = 0.5
 #: Event，其 wait() 返回所需的时间与任何合理的调度延迟都差着几个数量级。
 _STUCK_RELEASE_BOUND_S = 10.0
 
+#: 「有人进到闸里等了」的上界。同样是**防挂死的保险，不是判据**——判据是
+#: 「进没进」，不是「多快进的」：假流交出第一行之后紧接着就是第二次 readline，
+#: 中间只有一次 json.dumps，与这个上界差着几个数量级。
+_GATE_ENTRY_BOUND_S = 10.0
+
 
 def test_假流的卡住由放行闸决定而不由墙钟决定() -> None:
     """Q4 的前提「worker 停不下来」不得依赖运行器跑多快。
@@ -369,14 +422,25 @@ def test_假流的卡住由放行闸决定而不由墙钟决定() -> None:
     Q4 把秒数挪进了 fixture，假设仍在，只是看不见了。这条用例钉的就是
     「那个秒数不许再长回来」：第二次 ``readline`` 必须一直阻塞到闸被放行为止。
 
-    两个方向分开断，性质不同，别合并：
+    **017 WI-9（审计 #14）：上面这套还不够，它自己也是用墙钟做的。** 原来这条用例
+    只断两件事——0.5s 内没返回、放行后返回了——而一个无条件 `time.sleep(3)`、
+    从头到尾不碰闸的假流**两件都满足**：3 秒内它当然没返回，3 秒后它当然返回了，
+    跟谁放不放行毫无关系。也就是说，守着「不许用墙钟冒充卡住」的这道闸，验的却
+    只是墙钟本身。于是加上正面证据：那次阻塞必须**真的发生在这把闸里**，而且
+    进去时不带 timeout。
 
+    四个方向分开断，性质不同，别合并：
+
+    * **阻塞发生在闸里** —— 正面证据。不碰闸的实现根本给不出它，`sleep` 冒充的
+      「卡住」在这一条上立刻现形。这是判据。
+    * **进闸时不带 timeout** —— `wait(3.0)` 也会进闸，但那是「最多卡 3 秒」，
+      #46 就是这么长回来的。所以实参本身要断。这是判据。
     * **放行前一直阻塞** —— 慢机器只会让它更成立，不可能假红。这是判据。
     * **放行后能返回** —— 这个方向对慢机器敏感，所以用一个远大于任何合理调度
       延迟的上界兜底。它只是防止实现写挂时把整条 lane 吊死，不承担判断。
     """
     order: List[str] = []
-    gate = threading.Event()
+    gate = _ObservableGate()
     stream = _FakeOllamaStream(order, line_delay=0.01)
     stream.stuck_gate = gate
 
@@ -391,6 +455,11 @@ def test_假流的卡住由放行闸决定而不由墙钟决定() -> None:
     thread = threading.Thread(target=_second_readline, daemon=True)
     thread.start()
     try:
+        assert gate.wait_until_entered(_GATE_ENTRY_BOUND_S), (
+            f"第二次 readline 在 {_GATE_ENTRY_BOUND_S}s 内没有进到这把闸里等——"
+            "那它是被别的什么挡住的（一个 sleep？），而那正是 #46 的形状。"
+            "「卡住」必须是「在等这把闸」，不能只是「还没返回」"
+        )
         assert not returned.wait(_STUCK_OBSERVE_S), (
             f"第二次 readline 在 {_STUCK_OBSERVE_S}s 内自己返回了：假流又在靠墙钟"
             "「醒过来」。这会让 Q4 的前提重新变成一场对运行器速度的赌，"
@@ -405,6 +474,12 @@ def test_假流的卡住由放行闸决定而不由墙钟决定() -> None:
         "把自己也锁死了，这样的假流没法用来收尾"
     )
     thread.join(_STUCK_RELEASE_BOUND_S)
+    assert not thread.is_alive(), "放行并 join 之后线程还活着：这样的假流会漏到下一条用例"
+
+    assert gate.wait_timeouts == [None], (
+        f"进闸时带了 timeout 实参: {gate.wait_timeouts}；带上秒数之后「卡住」就变回了"
+        "「最多卡这么久」，Q4 的前提重新变成一场对运行器速度的赌——#46 就是这么来的"
+    )
 
 
 class _ControllableRequest(Request):
@@ -452,7 +527,11 @@ async def _drive_until_first_chunk(agen) -> List[bytes]:
 
 
 async def _disconnect_after_first_chunk(
-    env: LeaseEnv, fake_stream: _FakeOllamaStream, monkeypatch: pytest.MonkeyPatch
+    env: LeaseEnv,
+    fake_stream: _FakeOllamaStream,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    before_disconnect: Callable[[], Awaitable[None]] | None = None,
 ) -> None:
     # WI-30 把 ollama 出网从 `urllib.request.urlopen` 挪到了 `_http.post_stream`
     # （scheme 白名单 + no-redirect opener），所以注入点跟着挪。**断言一字未动**：
@@ -472,6 +551,15 @@ async def _disconnect_after_first_chunk(
     agen = response.body_iterator
 
     await _drive_until_first_chunk(agen)
+
+    # 拿到第一个 chunk **不等于** worker 已经开始读第二行。worker 那边是
+    # `call_soon_threadsafe(push, chunk)` → 回到循环 → `stop_event.is_set()` →
+    # `readline()`（`routers/ai/chat.py:248-253`），而我们这边一收到 chunk 就可以
+    # 断连。夹在中间那一小段里如果先翻起了 stop_event，worker 会在**循环顶上**
+    # 干干净净地 return——对 Q3 来说那正是要的，对 Q4 来说前提当场自毁。
+    # 需要那个时点的用例在这里给一个同步点（审计 #13）。
+    if before_disconnect is not None:
+        await before_disconnect()
 
     request.disconnected = True
 
@@ -517,6 +605,21 @@ def test_Q4_worker停不下来时仍释放租约并留ERROR(
 
     两条一起断。只断日志会被「记了日志但仍不释放」骗过；只断释放会让一个
     悄悄吞掉跑飞 worker 的实现看起来完全正常。
+
+    **017 WI-9（审计 #13）：这条用例的前提原来是赌出来的。** 「worker 停不下来」
+    要成立，worker 必须已经**进到**第二次 `readline()` 里——只有进去了，它才会
+    错过循环顶上那次 `stop_event.is_set()`。而原来的写法拿到第一个 chunk 就直接
+    断连，中间没有任何同步：worker 若还卡在 `call_soon_threadsafe` 到下一次循环
+    顶之间（纯调度，几微秒，但在有负载的 runner 上就是会发生），它会读到刚翻起的
+    stop_event 然后**干净地 return**，`assert not stuck_stream.exited` 当场自毁。
+    那和 #46 是同一种病：前提靠时序碰运气，红起来还不可归因。
+
+    现在断连之前等一个**正面**事件：worker 真的在闸里等着了（`_ObservableGate`）。
+    这不是把窗口调大，是把窗口取消——等不到就直接红，且红得说得清原因。
+
+    收尾也一并改：放行之后 **join** 那个线程并断言它真的结束了。放行而不 join，
+    等于把一个刚被唤醒的线程丢给后面的用例；而 join 不上就说明假流把自己锁死了，
+    那是下一条用例会莫名其妙红掉的来源。
     """
     lease_env.runtime["provider"] = "ollama"
     lease_env.runtime["base_url"] = "http://localhost:11434"
@@ -526,12 +629,25 @@ def test_Q4_worker停不下来时仍释放租约并留ERROR(
 
     # 「停不下来」用一把只有本用例能放行的闸表达，不用秒数——理由见
     # `_FakeOllamaStream` 的 docstring 与 `test_假流的卡住由放行闸决定而不由墙钟决定`。
-    stuck_gate = threading.Event()
+    stuck_gate = _ObservableGate()
     stuck_stream = _FakeOllamaStream(lease_env.order, line_delay=0.02)
     stuck_stream.stuck_gate = stuck_gate
 
+    async def _park_worker_in_the_gate() -> None:
+        # 在线程里等，别把事件循环堵住：断连分支、`_stop_stream_worker` 的有界等待
+        # 都还要在这个循环上跑。
+        entered = await run_in_threadpool(stuck_gate.wait_until_entered, _GATE_ENTRY_BOUND_S)
+        assert entered, (
+            f"{_GATE_ENTRY_BOUND_S}s 内 worker 没进到第二次 readline 的闸里。"
+            "这条用例的前提是「worker 已经错过了循环顶上的 stop 检查」，前提不成立时"
+            "断连测到的是「一个还没起跑的 worker 被干净地叫停了」——那是 Q3 的性质，"
+            "不是 Q4 的"
+        )
+
     async def scenario() -> None:
-        await _disconnect_after_first_chunk(lease_env, stuck_stream, monkeypatch)
+        await _disconnect_after_first_chunk(
+            lease_env, stuck_stream, monkeypatch, before_disconnect=_park_worker_in_the_gate
+        )
 
         # 「下一个请求拿得到租约」才是「已释放」的可观测形式。
         lease = await asyncio.wait_for(
@@ -545,6 +661,7 @@ def test_Q4_worker停不下来时仍释放租约并留ERROR(
         )
         await server.ai_queue.release(lease)
 
+    worker_alive_after_release: List[bool] = []
     try:
         with caplog.at_level(logging.ERROR, logger="reader3.ai"):
             _run(scenario)
@@ -559,8 +676,20 @@ def test_Q4_worker停不下来时仍释放租约并留ERROR(
             "调用就这样无声无息了"
         )
     finally:
-        # 放行，别把 worker 线程永远堵在 readline 里。
+        # 放行并 join，别把 worker 线程堵在 readline 里留给后面的用例。
+        # join 的结果先记下来、出了 finally 再断——finally 里 assert 会把 try 体里
+        # 真正的失败盖掉，而那条才是要看的。
         stuck_gate.set()
+        worker = stuck_gate.waiter_thread
+        if worker is not None:
+            worker.join(_STUCK_RELEASE_BOUND_S)
+            worker_alive_after_release.append(worker.is_alive())
+
+    assert worker_alive_after_release == [False], (
+        f"收尾之后 worker 线程的状态: {worker_alive_after_release}（期望 [False]）。"
+        "`[]` 是「根本没人进过闸」——前提没成立；`[True]` 是「放行了也没结束」，"
+        "那个线程会带着 monkeypatch 拆掉之后的全局状态活到下一条用例里"
+    )
 
 
 # --------------------------------------------------------------------------

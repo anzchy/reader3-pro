@@ -1,24 +1,17 @@
 """`/api/ai/question/{book_uuid}` —— 问答，含 SSE 流式那条路。
 
-拆自 `web/server.py`（011 WI-4）。路由正文一字未改。
+拆自 `web/server.py`（011 WI-4），只有本路由用得上的 SSE 机件跟着搬了过来：
+`_sse_event`、`_stop_stream_worker`。`_push_event` 没跟过来，留在 `server`：
+`tests/unit/test_exception_stream_push.py` 有 4 处直接调用它，钉的是队列背压语义，
+不是本路由的行为。
 
-**这个文件带着 011 §5 那条唯一的、具名的、会到期的行数豁免**（上限 560 行，
-判据与到期条件在 011 §5，机器执行者是 `scripts/check_router_size.py`）。
-豁免存在的原因就在这个文件里：`api_ai_question` 是一个 433 行的**单函数**，
-里面 6 个嵌套闭包，按职责再怎么搬也搬不散——拆它是行为变更，不属于本 WI。
-跟它一起搬过来的是只有它用的 SSE 机件：`_sse_event`、`_stop_stream_worker`。
-**豁免只许下调不许上调**：等哪天 `api_ai_question` 真被分解了，把 560 改小，
-`check_router_size.py` 会因为「豁免不再被挣得」自己报红，要求删掉这条豁免。
+**本文件带着全仓唯一一条具名的、会到期的行数豁免。** 上限、到期条件与理由全文只写在
+`scripts/check_router_size.py` 的 `EXEMPTIONS` 里（裁定见 011 §5）——这里不抄第二份数字
+（上一版抄了，2026-09-19 上限下调时没跟着改，文件里于是躺着两个互相矛盾的上限）。
 
-`_push_event` 没有跟过来，留在 `server`：它有 4 处 `server._push_event(...)` 的直接
-测试调用点（tests/unit/test_exception_stream_push.py），那些用例钉的是队列背压语义，
-不是本路由的行为。这是个判断，不是规避——它和 `_sse_event` 只差一层，
-搬它也对，只是要顺手改 4 个调用点而换不来什么。
-
-**这个文件里有全进程唯一的 provider 出口**：`_server._call_provider` 与
-`_server._egress_post_stream`（ADR-0006）。两者都必须走 `_server.` 属性访问，
-形状一旦退化成导入期绑定，「保证零真实外发」的测试会一边全绿、一边把明文 API key
-打到真 provider 上。实测哪道闸抓哪种形状，见 011 WI-4/4 的 commit message。
+**全进程唯一的 provider 出口在这里**：`_server._call_provider` 与
+`_server._egress_post_stream`（ADR-0006）。两者都必须走 `_server.` 属性访问——规矩、
+为什么、以及哪道闸抓哪种形状，见 `routers/__init__.py` 的 docstring。
 """
 from __future__ import annotations
 
@@ -33,15 +26,37 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 
-from ... import server as _server
 from ...schemas import AIQuestionRequest
 from ....ai.conversations import ConversationMessage as DiskConversationMessage
+from ....ai.queue import QueueBudget
 from ....ai.routing import (
     provider_context_window,
     unique_chapter_orders_from_passages,
 )
 
 router: APIRouter = APIRouter()
+
+
+_SYSTEM_PROMPT = (
+    "你是 Reader3 的 AI 阅读助手。"
+    "只基于提供的书籍内容回答与书相关的问题；如果内容不足以回答，请明确说明需要更多上下文。"
+    "回答要清晰、简洁。"
+)
+
+
+def _chat_history(history: list) -> list[dict]:
+    """把对话历史过滤成 provider 认的 `{role, content}`：丢掉空正文与非法角色。
+
+    流式与非流式两条分支从前各抄一份，逐字相同。同一个文件里的同一段逻辑抄两遍，
+    改一处忘一处只是时间问题——`routing_meta` 那处已经这么分叉过一次了。
+    """
+    out: list[dict] = []
+    for m in history:
+        role = (m.role or "").strip().lower()
+        content = (m.content or "").strip()
+        if role in ("user", "assistant") and content:
+            out.append({"role": role, "content": content})
+    return out
 
 
 def _sse_event(event: str, data: Any) -> bytes:
@@ -196,21 +211,8 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
             else:
                 context = "\n\n".join([f"[{p['chapter_order'] + 1}] {p['chapter_title']}\n{p['text']}" for p in passages])
             history = (body.conversation_history or [])[-50:]
-            chat_history = []
-            for m in history:
-                role = (m.role or "").strip().lower()
-                if role not in ("user", "assistant"):
-                    continue
-                content = (m.content or "").strip()
-                if not content:
-                    continue
-                chat_history.append({"role": role, "content": content})
-
-            system = (
-                "你是 Reader3 的 AI 阅读助手。"
-                "只基于提供的书籍内容回答与书相关的问题；如果内容不足以回答，请明确说明需要更多上下文。"
-                "回答要清晰、简洁。"
-            )
+            chat_history = _chat_history(history)
+            system = _SYSTEM_PROMPT
             user = f"书籍内容（用于回答）：\n{context}\n\n问题：{question}\n"
 
             message_id = str(__import__("uuid").uuid4())
@@ -284,6 +286,7 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
 
                 async def worker_non_stream() -> None:
                     try:
+                        # 017 WI-2（审计 #2）：为什么非传预算不可，见 `_call_provider`。
                         resp = await run_in_threadpool(
                             _server._call_provider,
                             provider_name,
@@ -294,6 +297,8 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
                             messages=[*chat_history, {"role": "user", "content": user}],
                             max_tokens=body.max_tokens,
                             timeout_s=timeout_s,
+                            deadline=lease.deadline,
+                            should_stop=stop_event.is_set,
                         )
                     except Exception as e:  # noqa: BLE001 - 第 2 档：worker 协程的最外层，失败经 error 事件送到客户端，痕迹在 SSE 流里
                         await q.put({"type": "error", "message": str(e)})
@@ -398,7 +403,7 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
             # 最后一步：在它之前抛的任何异常都还由这里负责释放。
             return StreamingResponse(event_gen(lease_stack.pop_all()), media_type="text/event-stream")
 
-    async def _do() -> dict:
+    async def _do(budget: QueueBudget) -> dict:
         book = await run_in_threadpool(_server.load_book_cached, book_folder)
         if not book:
             raise HTTPException(status_code=404, detail="Book not found")
@@ -444,21 +449,8 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
             context = "\n\n".join([f"[{p['chapter_order'] + 1}] {p['chapter_title']}\n{p['text']}" for p in passages])
 
         history = (body.conversation_history or [])[-50:]
-        anthropic_history = []
-        for m in history:
-            role = (m.role or "").strip().lower()
-            if role not in ("user", "assistant"):
-                continue
-            content = (m.content or "").strip()
-            if not content:
-                continue
-            anthropic_history.append({"role": role, "content": content})
-
-        system = (
-            "你是 Reader3 的 AI 阅读助手。"
-            "只基于提供的书籍内容回答与书相关的问题；如果内容不足以回答，请明确说明需要更多上下文。"
-            "回答要清晰、简洁。"
-        )
+        anthropic_history = _chat_history(history)
+        system = _SYSTEM_PROMPT
         user = f"书籍内容（用于回答）：\n{context}\n\n问题：{question}\n"
 
         started = time.perf_counter()
@@ -473,6 +465,8 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
                 messages=[*anthropic_history, {"role": "user", "content": user}],
                 max_tokens=body.max_tokens,
                 timeout_s=timeout_s,
+                deadline=budget.deadline,
+                should_stop=budget.should_stop,
             )
         except Exception as e:
             if decision.mode in ("full_book", "multi_chapter"):
@@ -494,6 +488,8 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
                     messages=[*anthropic_history, {"role": "user", "content": rag_user}],
                     max_tokens=body.max_tokens,
                     timeout_s=timeout_s,
+                    deadline=budget.deadline,
+                    should_stop=budget.should_stop,
                 )
                 routing_meta["mode"] = "rag_fallback"
             else:
@@ -545,3 +541,6 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
         request_label="question",
         fn=_do,
     )
+
+# 017 WI-1（审计 #7）：必须留在文件末尾。理由见 `routers/__init__.py` 的 docstring。
+from ... import server as _server  # noqa: E402

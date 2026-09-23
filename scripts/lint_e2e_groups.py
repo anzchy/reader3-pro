@@ -227,6 +227,28 @@ UNGROUPED_E2E_MODULES = {
     # 目录就要清零 soak 计数。到期条件：下一次**本来就要**动 `baseline_1b/`、`suite_hash`
     # 无论如何都要变的改动里，把本文件一并迁入并撤掉这一条（`EXPECTED_BASELINE_ITEMS` 同批加）。
     "tests/e2e/test_notes_write_failure_is_attributable.py",
+    # 017 WI-5（审计 #3、#9）：快照回落写下的 `cfi` 不得是一条失效 Range 算出来的。
+    # 内容上它是 W-8a 家族（写路径、同一个「重绘作废选区」现场），但判据问的是**屏幕**
+    # 而不是盘。落白名单的理由与上面那条一字不差：迁进 `baseline_1b/` 会改 `suite_hash`
+    # 并把 soak 计数清零。到期条件也一样——下一次本来就要动 `baseline_1b/` 的改动里
+    # 一并迁入，同批撤掉这一条并给 `EXPECTED_BASELINE_ITEMS` 加上去。
+    "tests/e2e/test_stored_cfi_must_agree_with_quote.py",
+    # 017 WI-6（审计 #5）：冲突对话框同一时刻只许有一次收尾在飞。它驱动的是 DEG-S5
+    # 对话框，与 `acceptance_2a/test_deg_s5_write_conflict.py` 同一块 UI，但那一条是
+    # **激活阶段**的验收（两个真上下文、服务端会不会 409、两支的去向），本条是单个
+    # 上下文里两次点击之间的并发，两者判据不重叠，也就不该并进那个组、改它的
+    # `EXPECTED_ACCEPTANCE_PER_DIR`。落白名单的理由与上面两条一字不差：迁进
+    # `baseline_1b/` 会改 `suite_hash` 并把 soak 计数清零；到期条件同样是「下一次本来
+    # 就要动 `baseline_1b/` 的改动里一并迁入，同批撤条目并给 `EXPECTED_BASELINE_ITEMS`
+    # 加上去」。
+    "tests/e2e/test_conflict_resolution_single_flight.py",
+    # 017 WI-7（审计 #4）：收尾放进编辑器的那一版，必须连着它自己的基准令牌。与上一条
+    # 同住 DEG-S5 对话框，但问的是**收尾之后**那次保存带的是哪一版令牌，不是两次点击之间
+    # 的并发；和 `acceptance_2a` 那条激活验收同样不重叠。落白名单的理由与上面三条一字不差：
+    # 迁进 `baseline_1b/` 会改 `suite_hash` 并把 soak 计数清零；到期条件同样是「下一次本来
+    # 就要动 `baseline_1b/` 的改动里一并迁入，同批撤条目并给 `EXPECTED_BASELINE_ITEMS`
+    # 加上去」。
+    "tests/e2e/test_conflict_settled_text_keeps_its_base_etag.py",
 }
 
 # 上面几个白名单模块在一次 `tests/e2e --collect-only` 里贡献的 item 数。
@@ -264,7 +286,23 @@ UNGROUPED_E2E_MODULES = {
 # 43 → **44**（2026-09-22，欠账 #43 part (i) WI-7 = 成功路径护栏 建 → 改 → 删，不装路由）：
 # 该模块 36 → 37 条，**+1 是执行过的 `--collect-only` 实测值**（W7-C1；全量 129）。
 # 矩阵 §10 预测的 37 条至此全部落地，与实测一致。
-EXPECTED_UNGROUPED_ITEMS = 44
+#
+# 44 → **47**（2026-09-23，017 WI-5 = 审计 #3 / #9）：新增
+# `tests/e2e/test_stored_cfi_must_agree_with_quote.py`，**+3 是执行过的
+# `--collect-only` 实测值**（当场一次、刷新一次、外加一条「没有重绘介入时照旧写得出
+# 能重锚的 cfi」的退化护栏）。三条都不参数化。#
+# 47 → **51**（2026-09-23，017 WI-6 = 审计 #5）：新增
+# `tests/e2e/test_conflict_resolution_single_flight.py`，**+4 是执行过的
+# `--collect-only` 实测值**。四条对应三层防线各一条（按钮 `disabled`、
+# `conflictSubmitting` 单飞守卫、写回来之后的冲突身份核对）外加一条「没有并发干扰时
+# 照旧写盘收尾并放开按钮」的退化护栏；三层各自被逐一注掉验证过只红对应的那一条。
+#
+# 51 → **55**（2026-09-23，017 WI-7 = 审计 #4）：新增
+# `tests/e2e/test_conflict_settled_text_keeps_its_base_etag.py`，**+4 是执行过的
+# `--collect-only` 实测值**。一条钉住静默覆盖本身，两条钉住这枚基准令牌的另外两条边界
+# （跟着自己的写前进、随编辑会话结束而清空），外加一条「没有第三方时照旧保存成功」的
+# 退化护栏；三条边界各自被逐一破坏验证过只红对应的那一条。
+EXPECTED_UNGROUPED_ITEMS = 55
 
 # 派生值，不是字面量。见文件头「为什么必须派生」。
 EXPECTED_E2E_ITEMS = (

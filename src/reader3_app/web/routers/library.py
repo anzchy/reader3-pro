@@ -25,7 +25,6 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
-from .. import server as _server
 from ... import collections_service
 from ...search_service import list_book_ids
 
@@ -331,3 +330,5 @@ async def api_library_stats(scope: str = "all", fresh: bool = False):
     _server._stats_cache[cache_key] = (now, stats)
     return stats
 
+# 017 WI-1（审计 #7）：必须留在文件末尾。理由见 `routers/__init__.py` 的 docstring。
+from .. import server as _server  # noqa: E402

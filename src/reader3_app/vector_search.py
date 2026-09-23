@@ -29,20 +29,54 @@ def _current_model_name() -> str:
     return os.environ.get("READER3_EMBED_MODEL", MODEL_NAME)
 
 
+#: 补救动作的唯一写法。文案必须指向 **extra**，不是 `uv add chromadb sentence-transformers`
+#: 也不是 `pip install sentence_transformers`：那两种都会把包装回主依赖（或装在 extra 之外），
+#: 照做的人修好了语义搜索，同时无声撤销了「语义依赖可选」这件事（011 WI-7）。
+_EXTRA_HINT = (
+    "Install the optional extra: `uv sync --extra semantic` "
+    "(or `pip install 'reader3[semantic]'`)."
+)
+
+
 def _require_semantic_deps() -> Tuple[Any, Any]:
     try:
         import chromadb  # type: ignore
         from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction  # type: ignore
     except Exception as e:  # noqa: BLE001 - 第 2 档：唯一的 import 点，把任何 import 期故障统一转译成调用方（路由 / CLI）认得的 RuntimeError；原因留在 __cause__ 里
-        # 文案必须指向 **extra**，不是 `uv add chromadb sentence-transformers`：后者
-        # 会把两个包写回 [project] dependencies，照做的人修好了语义搜索，同时无声
-        # 撤销了「语义依赖可选」这件事（011 WI-7）。
-        raise RuntimeError(
-            "Semantic search dependencies are not installed. "
-            "Install the optional extra: `uv sync --extra semantic` "
-            "(or `pip install 'reader3[semantic]'`)."
-        ) from e
+        raise RuntimeError("Semantic search dependencies are not installed. " + _EXTRA_HINT) from e
     return chromadb, SentenceTransformerEmbeddingFunction
+
+
+def _build_embedding_function(factory: Any) -> Any:
+    """构造嵌入函数，并把「依赖不全」在这里转译成 RuntimeError。
+
+    017 WI-14（审计 #25）：`_require_semantic_deps()` **不是**唯一的依赖检查点，尽管本文件
+    此前是这么被描述的。`chromadb` 装了而 `sentence-transformers` 没装时，那个函数一路通过
+    ——`SentenceTransformerEmbeddingFunction` 只是个类对象，import 它不需要底层包——真正的
+    失败推迟到**构造**这一刻，而 chromadb 在那里抛的是 `ValueError`：
+
+        ValueError: The sentence_transformers python package is not installed.
+                    Please install it with `pip install sentence_transformers`
+
+    两个调用方都接不住它：CLI（`reader3.main` 的 `except RuntimeError`）漏成一屏裸
+    traceback，HTTP（`routers/search.py`）落到兜底的 `except Exception` 给 500——而缺一个
+    可选依赖不是服务端故障，前端据此没法把它渲染成「可补救」。半装状态不是臆造的：
+    `uv sync --extra semantic` 装到一半被打断、或有人手工 `pip uninstall sentence-transformers`
+    就是它。
+
+    捕获收得很窄（`ImportError` / `ValueError`），不是 `Exception`：模型名写错、权重下载失败
+    是**别的**毛病，把它们也说成「依赖没装」会把人指向错误的修法。它们照常往上抛。
+
+    chromadb 那句 `pip install sentence_transformers` 刻意**不**转给用户：它把包装在 extra
+    之外，正是 `_EXTRA_HINT` 存在要防的那件事。原文留在 `__cause__` 里，开发者查得到。
+    """
+    try:
+        return factory(model_name=_current_model_name())
+    except (ImportError, ValueError) as e:
+        raise RuntimeError(
+            "Semantic search dependencies are incomplete: the embedding model could not be "
+            "initialised. " + _EXTRA_HINT
+        ) from e
 
 
 @dataclass
@@ -82,7 +116,7 @@ class BookVectorIndex:
         ``os.makedirs`` 并建集合，在 rmtree 之前跑它会让集合句柄指向一个随后被删掉的目录。
         """
         chromadb, SentenceTransformerEmbeddingFunction = _require_semantic_deps()
-        embed_fn = SentenceTransformerEmbeddingFunction(model_name=_current_model_name())
+        embed_fn = _build_embedding_function(SentenceTransformerEmbeddingFunction)
         deps = (chromadb, embed_fn)
         self._deps = deps
         return deps

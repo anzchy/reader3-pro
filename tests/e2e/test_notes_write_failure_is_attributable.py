@@ -1277,7 +1277,20 @@ def test_w4_c3_multi_id_partial_failure_keeps_progress_and_reports_per_id(
         match=lambda route: fail_id in route.request.url,
     )
     base_updated = _updated(page)
-    page.get_by_test_id("rd-anno-delete").click()
+    # WI-15（审计 #8）：`wait_for_notes` 是纯 Python 的 sleep 轮询，期间同步 route 回调——
+    # 包括 conftest 给每个 context 挂的那道 `**/*` 出网闸——一个都跑不了。下面那个
+    # `_wait_until` 只等到**失败**那条的诊断条目，对成功那条（other_id）的 DELETE 什么都没
+    # 说：它可能还卡在出网闸的回调上。点完直接轮盘，正确的产品行为也会等到超时。
+    try:
+        with page.expect_response(
+            lambda r: r.request.method == "DELETE" and other_id in r.url
+        ):
+            page.get_by_test_id("rd-anno-delete").click()
+    except PlaywrightError as exc:
+        raise AssertionError(
+            f"[{fail_position}] 成功那条 {other_id!r} 的 DELETE 响应没等到"
+            f"（{type(exc).__name__}）——它要么没发出去，要么卡在路由层"
+        ) from None
     _wait_until(page, _DELETE_ENTRY_JS, f"[{fail_position}] 一条 op == 'delete' 的失败条目")
 
     wait_for_notes(e2e_books_dir, BOOK_ID, 1)

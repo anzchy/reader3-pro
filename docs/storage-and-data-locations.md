@@ -124,4 +124,37 @@ Persistent highlights/underlines/notes are stored per book as JSON.
 - `GET /api/notes/{book_id}` (all notes for a book, grouped by chapter)
 - `GET /api/notes/{book_id}/{chapter_index}` (notes for one chapter)
 - `POST /api/notes/{book_id}/{chapter_index}` (create annotation)
+- `PUT /api/notes/{book_id}/{chapter_index}/{note_id}` (update a note's `note_text`)
 - `DELETE /api/notes/{book_id}/{chapter_index}/{note_id}` (delete annotation; optional in v1)
+
+### Write contract: optimistic concurrency (011 WI-5a)
+
+Versions travel in headers: `ETag` out, `If-Match` in.
+
+- **The version is per book, not per note or per chapter.** It is computed over the whole
+  `annotations` list, so *any* write to the book advances it. Both GET routes return the same
+  value; a client only ever needs to keep one.
+- **Every route that touches notes returns an `ETag`** — both GETs, `POST` (201), `PUT` (200)
+  and `DELETE` (204, header only). It is a strong ETag: the bare version quoted, e.g. `"7f3a…"`.
+  Clients echo it back verbatim.
+- **`If-Match` is optional.** A request without it is byte-for-byte what it was before optimistic
+  concurrency existed — same status, same body. That is how ADR-0011 (API v1 freeze) is honoured
+  here, and why `tests/contract` did not change. A request *with* it buys a real
+  compare-and-swap, performed inside the book-level write lock — never in the route, or two
+  requests would both pass the check and then overwrite each other in turn.
+- **409 on a stale `If-Match`**, with a body the conflict UI needs:
+
+  ```json
+  { "detail": "Annotation version conflict", "etag": "\"<current version>\"", "annotation": { … } }
+  ```
+
+  `annotation` is the server's **current** copy of that note, with `note_text` HTML-unescaped
+  the same way GET returns it — the dialog has to show the user what someone actually typed.
+  It is `null` when there is no such single record to show (creating an annotation via `POST`).
+  Without it the client can only display its own version, and the user would be choosing blind.
+
+The browser half of this contract lives in `static/js/annotations.js`: the last seen `ETag`
+is remembered and sent on every write; a conflict raises the DEG-S5 dialog (keep mine / take
+remote) instead of silently discarding either version. Note that the text currently *shown* in
+the editor is pinned to the version it came from, separately from the last `ETag` merely read —
+otherwise a settled conflict could be saved against a newer version and silently overwrite it.

@@ -20,7 +20,6 @@ from fastapi import APIRouter, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
-from .. import server as _server
 from ...search_service import (
     SearchMode,
     SearchQuery,
@@ -219,3 +218,6 @@ async def api_index_status(book_id: str):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:  # noqa: BLE001 - 第 2 档：HTTP 边界，转译成 500 且 detail 带上原因
         raise HTTPException(status_code=500, detail=str(e))
+
+# 017 WI-1（审计 #7）：必须留在文件末尾。理由见 `routers/__init__.py` 的 docstring。
+from .. import server as _server  # noqa: E402
