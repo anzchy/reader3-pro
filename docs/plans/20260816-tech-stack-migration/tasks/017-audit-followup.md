@@ -505,7 +505,7 @@ sentence-transformers），分别断 `_prepare_deps` 的异常类型、**CLI 的
 `test_book_store.py` **21 passed in 0.38s**；unit lane **1642 passed, 2 skipped in 64.10s**
 （WI-13 后是 1632，+10 正是新增条数）；`ruff check` 干净；冻结集 8 条路径 `git diff` 为空。
 
-### WI-15 🧪 e2e 先等响应再轮询磁盘（#8 的非冻结调用点，should）
+### WI-15 ✅ e2e 先等响应再轮询磁盘（#8 的非冻结调用点，should）
 
 `wait_for_notes()` 用 Python `time.sleep` 轮询，期间 Playwright 的同步 route 回调跑不了——
 正确的产品行为也会超时。这正是 #43 那族 flake 的机制。
@@ -515,6 +515,53 @@ sentence-transformers），分别断 `_prepare_deps` 的异常类型、**CLI 的
 **冻结的 `baseline_1b/test_w8a_selection_survives_rerender.py:132` 不动**（见 §5）。
 
 **验收**：这两处先用 Playwright 等到相关写请求的响应，再轮询磁盘。
+
+**机制**：`wait_for_notes()` / `wait_for_note_text()` 整个窗口里一次都没调进 Playwright，而
+同步 Playwright 的 route 回调是 Python 函数，只在主协程调进 Playwright 时才被派发。
+`tests/e2e/conftest.py` 给每个 context 都挂了一道 `**/*` 的出网闸，于是**每一个**请求都要过
+这样一个回调。点完按钮直接轮盘 ⇒ 这次写卡在回调上跑不动，轮询等满超时，**产品行为完全
+正确也会红**；谁先被调度是随机的，这就是「红出来的用例每次不同、却全挂在同一族断言上」。
+
+**实际范围比点名的两处多两处**。用 `ast` 扫这两个文件，18 处盘上轮询里有 16 处的最近一次
+点击没被响应等待裹住。**没有**全改：其中多数中间隔着 `_wait_until` / `expect(...)` /
+`settle_marks` 这类**会泵事件**的等待，够不够取决于那个等待的条件与这次写的关系，逐个判定是
+#8 之外的工作。改的是点名的两处，**加上 `_run_conflict_round()` 里同形且同样无遮挡的另外
+两处**（`:217` A 改 A1、`:316` 清场删除）——同一个函数里三处一模一样、只修一处讲不通。
+
+**`:264` 刻意不改，并写进豁免表**：那一处前面是 `dialog.get_by_test_id(branch.exit_testid)`，
+而「采用远端」那一支按契约**一个字节都不往服务端写**（同函数 (d) 段正是断言它没有写）。给它
+挂 `expect_response` 会在那一支上等到超时——那是把一条真实的分支语义改成挂死，不是修好。
+
+**冻结的 `baseline_1b/test_w8a_selection_survives_rerender.py:132` 是同一个毛病，不动**；
+护栏有一条用例专门钉「登记表里不许出现冻结路径」。
+
+**改法**：
+- `test_notes_write_failure_is_attributable.py` W4-C3：把删除点击裹进
+  `page.expect_response(method == "DELETE" and other_id in r.url)`。这里**必须点名
+  `other_id`**：紧随其后的 `_wait_until` 只等到**失败**那条的诊断条目，对成功那条什么都没说。
+- `test_deg_s5_write_conflict.py`：新增 `_click_awaiting_write()`，三处调用点各换一处。
+  谓词**刻意不写死方法名**（`method in WRITE_METHODS`）——写死成 POST/PUT 只会在实现换方法时
+  把一条真断言变成挂死。两处都用 `try/except PlaywrightError -> AssertionError`，照
+  `test_notes_write_failure_is_attributable.py:1968` 已有的先例。
+
+**护栏**：新增 `tests/unit/test_e2e_disk_poll_waits_for_response.py`（unit lane，14 条）。用
+`ast` 而不是字符串匹配：登记函数里每一次盘上轮询之前，最近的那个「点击步骤」必须裹在
+`with ...expect_response(...)` 里。三处静默失效各有一条用例挡着——函数被改名、轮询被换名字
+（「一处受检的轮询都没有」判**红**，不判绿）、以及**封装说了不算**：`_click_awaiting_write`
+这种名字被当成等待用时，检查器会去读它的定义，确认体内真的有 `.click()` 裹在
+`expect_response` 里，否则登记一个名字就能绕过整条护栏。豁免表另有两条用例钉「豁免的点击在
+源码里真的存在」与「每条豁免都写了理由」。
+
+**红→绿**：护栏先写，对着未改的源码 ⇒ **2 failed**，失败信息逐行点名那 4 处
+（`attributable:1283`、`deg_s5:203/:217/:316`），`:264` 正确地没有被点名。改完 ⇒ **14 passed**。
+强化过检查器（认封装）之后**重新**对着两份原始源码跑了一遍，仍是 1 + 3 = 4 处判红——红不是
+只在弱版本检查器下成立。检查器自身另有 7 条变异用例，每条都要求红**且理由对**。
+
+**绿**：两个 e2e 文件 **38 passed in 45.34s**（`--browser chromium`）；
+`scripts/lint_e2e_groups.py` **rc=0**，收集 **140** 条、`baseline_1b` **68/68**（新护栏落在
+unit lane，e2e 收集数不变）；unit lane **1656 passed, 2 skipped in 66.88s**（WI-14 后是
+1642，+14 正是新增条数）；冻结集 8 条路径 `git diff --stat master...` 为空，`suite_hash`
+仍是 `1e868c7bf811`、23 个 blob。
 
 ## 3. 退出门槛
 
