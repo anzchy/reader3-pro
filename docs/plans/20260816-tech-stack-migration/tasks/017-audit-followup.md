@@ -31,7 +31,7 @@ severity（Codex 给的是主张不是判决），再按「正常单进程是否
 每项的「验收」必须是可执行的断言，不是「看起来对了」。标 🔴 的是产品缺陷，标 🧪 的是
 「测试在实现坏掉时也能通过」——后者同样是缺陷，因为 011 宣称这些行为「已经有测试盯着」。
 
-### WI-1 🔴 打断 routers 的导入环（#7、#20，must）
+### WI-1 ✅ 打断 routers 的导入环（#7、#20，must）
 
 `routers/{notes,library,health,search,settings}` 都先 `import server`，而 `server` 立刻去取那个
 尚未初始化完的模块的 `.router`。
@@ -44,7 +44,31 @@ severity（Codex 给的是主张不是判决），再按「正常单进程是否
 - 上述三条各有一条常驻测试盯着，且测试必须**起新进程**——同一进程里的导入顺序会把问题盖住。
 - `routers/` 导入铁律不变：`from .. import server as _server` 然后 `_server.X`。
 
-### WI-2 🔴 给 AI 重试循环装上截止时间与取消（#2，must）
+**✅ 已修（2026-09-23，`5e60bd8`）**。#7 与 #20 原样成立。
+
+`routers/__init__.py` 的 docstring 写着「绑模块、不绑属性，顺带解决了循环导入」——前半句
+对，后半句是错的：它只管住了 router 这一侧，而 `server.py` 在文件末尾要取
+`routers.X.router` 这个**属性**。于是谁先被导入就决定成败，六个顶层 router 全中：
+
+```
+python -c "import reader3_app.web.routers.notes"
+AttributeError: partially initialized module 'reader3_app.web.server' has no attribute 'router'
+```
+
+`python -m reader3_app.web.server` 也走不到自己的参数解析。平时看不见，是因为 console
+脚本和绝大多数测试都从 `server` 进。
+
+**修法**：把 `from .. import server as _server` 挪到每个 router 的**文件末尾**，在 `router`
+与所有路由定义完之后。先用 AST 确认十个模块里没有任何模块级 `_server` 引用，所以挪下去是
+安全的；打桩接缝不受影响——`_server.X` 仍是调用时解析属性。顺带把那两段声称「环已解开」的
+注释改成实话：**改的是导入位置，不是说法**。
+
+**红→绿：22 failed / 1 passed → 23 passed**。每个模块起**独立子进程**先导入它自己，再断言
+整个 app 装配得出来（`/api/health` 在路由表里、`len(app.routes) > 40`）——堵掉「try/except
+把 AttributeError 吞掉」这种假绿。另有一条守卫比对模块清单与 `server.py` 的 include 列表，
+新增 router 漏配会红。
+
+### WI-2 ✅ 给 AI 重试循环装上截止时间与取消（#2，must）
 
 `server.py:643-704` `_call_provider`：每次尝试都拿到完整 `timeout_s`，循环既无请求级 deadline
 也无取消信号。实测 504 返回之后，第 2、3 次尝试照发——多付钱，且会和下一个排队请求重叠。
@@ -55,7 +79,30 @@ severity（Codex 给的是主张不是判决），再按「正常单进程是否
 - 退避等待可被打断（不是裸 `time.sleep(backoff)` 睡到底）。
 - `chat.py` 与 `summary.py` 两条调用路径都覆盖到。
 
-### WI-3 🔴 先复现再修「旧记录 ETag 不稳定」（#6，must-pending-repro）
+**✅ 已修（2026-09-23，`cb7c2e6`）**。#2 原样成立。
+
+`ai_queue.run()` 到点会 cancel 掉等结果的协程并给客户端 504，但 `_call_provider` 跑在
+`run_in_threadpool` 的线程里——**取消一个等它的协程停不下那个线程**。客户端断连同理：连接
+已经拆了，钱还在烧，而且新一轮请求可能和它并发打同一个 provider。
+
+**修法**：`_call_provider` 新增两个**可选**参数，两个都不传 = 今天的行为逐字不变（R17 那条
+护栏专门盯着这一点，因为一旦默认值成了真值，6 个调用点和全部既有打桩会一起改行为）。
+- `deadline`：`time.monotonic()` 的**绝对时刻**。它同时收住单次调用的传输超时
+  （`_provider_attempt_timeout_s`，下界 1 秒）和退避时长——不收的话「总预算」只是个说法，
+  一次 30 秒的 connect 就能把 2 秒的剩余预算整个盖过去。
+- `should_stop`：返回 bool 的可调用对象。
+
+退避改成**边睡边看**（`PROVIDER_RETRY_STOP_POLL_S` = 0.05s）：只在进入退避前查一次，等于给
+跑飞的重试一整个 8 秒窗口去发下一次请求。停下来时抛的仍是**最后那个异常对象本身**
+（R4／ADR-0011：`str(e)` 是 SSE 与自测响应的内容）；一次都还没发就到点，才抛我们自己的
+`TimeoutError`。`routers/settings.py` 的连通性自测豁免：它显式 `max_retries=0`。
+
+**红→绿：6 failed / 1 passed → 45 passed**。R14–R20 守「收到预算之后的行为」；另新增
+`test_provider_call_budget_wiring.py` 用 AST 扫 `routers/` 下每一处出口**有没有带预算出门**
+——删掉某个调用点的 `deadline=`，R14–R20 一条都不会红。定向破坏验证过（`summary.py:165`
+缺 ⇒ 1 failed），已还原。
+
+### WI-3 ✅ 先复现再修「旧记录 ETag 不稳定」（#6，must-pending-repro）
 
 `models/annotations.py:84` 在 `created_at` 缺失时填 `now()`，而 ETag 的 hash 含 `created_at`。
 若属实，缺时间戳的旧笔记每次加载 ETag 都不同，紧跟着的条件更新必然 409——**旧笔记没法编辑**。
@@ -66,7 +113,40 @@ severity（Codex 给的是主张不是判决），再按「正常单进程是否
   条件更新成功」的用例。
 - 复现失败 ⇒ 把复现过程与结论记在本文件，findings 降为 `should`，本分支不再修它。两种结果都算完成。
 
-### WI-4 🔴 GET 的孤儿刷新要进锁（#1，should）
+**复现结论（2026-09-23，必须写在这里）——复现成功，#6 维持 `must`。**
+
+构造一条无 `created_at` 的 `notes.json` 记录连读两次，两次 ETag **不同**；紧跟的条件更新
+以 `NotesVersionConflict` 挂掉。成因比 #6 说的还宽一格——`Annotation.from_dict` 对缺字段的
+兜底是「现编一个」，而 `annotations_version()`（对外的 ETag）哈希的正是每条 `to_dict()` 后的
+规范 JSON，`id` 和 `created_at` 都在里面：
+
+```
+id=str(data.get("id") or str(uuid4()))
+created_at=str(data.get("created_at") or datetime.now(timezone.utc).isoformat())
+```
+
+```
+GET  → ETag: X       （这次 load 现编了一个时间戳）
+PUT  If-Match: X     → 写锁里重新 load，算成 Y ≠ X → 409
+```
+
+客户端拿 409 里带回的「当前版本」重试，下一次 load 又是一个新值：**它永远追不上**，这本书
+从此一个字也写不进去，界面上只剩一个点什么都没用的冲突对话框。
+
+**✅ 已修（`bf09174`）**。规范化改成确定值，且只在**反序列化**这一侧：
+- `created_at` 缺失 → `""`。不知道就说不知道，不要补一个「刚刚」。它只作排序次级键
+  （`routers/notes.py:125` `:186`），`web/server.py:921` 早就在用同一个值。
+- `id` 缺失 → 对「序号 ＋ 本条记录的规范 JSON」取 `uuid5`。**只取内容不够**：两条逐字节
+  相同的无 id 记录会塌成同一个 id，而 delete 按 `a.id != note_id` 过滤，删一条会把两条
+  一起删掉；序号把它们分开。
+
+新建标注走 `Annotation(...)` 构造器，`default_factory` 逐字不变——本次改动碰不到它。
+
+**红→绿**：`test_notes_legacy_record_etag_stability.py`（新，10 例）红 **6 failed / 4 passed**
+（L3 真的以 `NotesVersionConflict` 挂掉，就是那条死循环），绿 **10 passed**；
+unit lane **1601 passed, 2 skipped**，TOTAL 83%；ruff 干净；冻结集 8 条路径 diff 为空。
+
+### WI-4 ✅ GET 的孤儿刷新要进锁（#1，should）
 
 `routers/notes.py:91` 在不持 `_book_write_lock` 的情况下整份写回。跨进程（CLI 写入或第二个
 worker）时，GET 能用旧快照覆盖掉一次已经提交成功的 `If-Match` PUT。
@@ -75,7 +155,35 @@ worker）时，GET 能用旧快照覆盖掉一次已经提交成功的 `If-Match
 - 读 / 刷新 / 写回三步在 `notes_service` 的同一把锁内完成。
 - 确定性单元回归：GET 的孤儿刷新不得覆盖已提交的条件写。用事件同步，不用 sleep。
 
-### WI-5 🔴 先复现再修「快照恢复仍存旧 CFI」（#3，must-pending-repro；顺带覆盖 #9）
+**✅ 已修（2026-09-23，`d071b53`）**。#1 原样成立。
+
+`GET /api/notes/{book_id}` 与它的章级兄弟**看上去是读，实际上会写盘**：孤儿刷新发现某条标注
+在正文里找不到了，就标成 `orphaned` 并重写整份 `notes.json`。那是一次货真价实的
+load → 改 → save，和 add/delete/update 一模一样，唯独它不进 `_book_write_lock`：
+
+```
+GET  load → [ann1 活, ann2 "旧"]          （不在锁里）
+PUT  load → 改 ann2 → save → 200 OK       （在锁里，If-Match 也对得上）
+GET  save → [ann1 orphaned, ann2 "旧"]    （把 T0 的快照拍下去）
+```
+
+PUT 提交的那一版无声消失，而客户端手里拿着一个 **200**。011 WI-5a 的乐观并发看不见这件事
+——比较只在写口里做，**而这个写者不是写口**。这是它所依赖的前提上的一个后门。
+
+**修法**：`notes_service.refresh_annotations_and_version()` 把 load → 让调用者改 → 改了才
+save **整段**放进同一把书级锁。**load 也搬进锁里是关键**：只包 save 仍然会拿锁外读到的陈旧
+快照去覆盖。`routers/notes.py` 里 `_refresh_orphaned_annotations` 拆成纯内存的 `_mark_orphans`
+（在锁里跑，不许碰盘）＋ 一次服务层事务；两条 GET 的 ETag 改用事务返回的版本，不再在锁外
+重算一遍。响应体一个字段都没动（ADR-0011）。
+
+**红→绿**：`test_notes_get_refresh_lock.py`（新，7 例＝4 交错 ＋ 3 护栏）在「refresh 算完、
+save 未落盘」处下闸做确定交错，两个世界靠**不对称**判定——无锁时写者 B 毫秒级跑完被盖掉，
+有锁时 B 堵在队里、等不到。红 **4 failed / 3 passed**（`assert '…旧正文' == '…提交成功的正文'`），
+绿 **7 passed**；把锁去掉重跑，那 4 条如数变红。`fired == 1` 是**守卫的守卫**：谁把存盘挪回
+路由的导入绑定（即绕开锁的那个改法），闸插不进去，测试会红着说「我没插进去」而不是悄悄变绿。
+unit lane **1608 passed, 2 skipped**，TOTAL 83%；ruff 干净；冻结集 8 条路径 diff 为空。
+
+### WI-5 ✅ 先复现再修「快照恢复仍存旧 CFI」（#3，must-pending-repro；顺带覆盖 #9）
 
 `annotations.js:1514` 即便走了 `resolveOffsets`（:1433）的快照回退分支，`cfi` 仍由那个已失效的
 `currentRange` 生成；渲染又优先用 CFI（:486-516）⇒ 正确存下的 quote 可能渲染成空高亮。
@@ -121,7 +229,7 @@ cfi 指第 21 次、文本匹配必落第 1 次）在把 CFI 分支整个失效�
 「一条标注一个 mark」，重叠标注、`data-annotation-ids`、孤儿判定全部换一条路——而
 `baseline_1b` 是冻结的，兜不住这个代价。
 
-### WI-6 🔴 冲突解决同时只许有一个在飞（#5，must）
+### WI-6 ✅ 冲突解决同时只许有一个在飞（#5，must）
 
 `resolveConflict()`（:1261）在「保留我的」PUT 还没回来时，两个按钮都还能点。点「采用远端」会
 立刻 settle，而那个在飞的 PUT 回来后仍会 `settleConflict(c, c.localText)`，把用户最后的选择反掉。
@@ -584,6 +692,23 @@ unit lane，e2e 收集数不变）；unit lane **1656 passed, 2 skipped in 66.88
 5. **每个修复都有一条先红后绿的测试**。红必须是断言失败，不是导入错误或零用例。
 6. **不得设 `TDD_GUARD_BYPASS`**。
 7. **CI 全绿**（`tests.yml` 与 `lint.yml`），然后开 PR 到 `master`。
+
+### 3.1 核验结果（2026-09-23，`348e057` 之后）
+
+| # | 门槛 | 结果 |
+|---|---|---|
+| 1 | 22 条逐条有交代 | ✅ findings 文件里 22 条全部 `fixed`，`Round` 列带 WI 与 commit；两条 `must-pending-repro` 的复现结论写在 WI-3 / WI-5 段内 |
+| 2 | 三条 lane 全绿 | ✅ unit **1656 passed, 2 skipped**（TOTAL 83%）；e2e **124 passed, 16 skipped**（`--browser chromium`）；packaging **1 passed, 1 deselected** |
+| 3 | 冻结集零改动 | ✅ 8 条路径 `git diff --stat master...` 输出为空；`suite_hash` = `1e868c7bf811`、**23** 个 blob |
+| 4 | 分组守卫 | ✅ `lint_e2e_groups.py` rc=0；收集 **140**、`baseline_1b` **68/68**、白名单 55/55；`EXPECTED_BASELINE_ITEMS` 仍是 **68** |
+| 5 | 每个修复先红后绿 | ✅ 15 个工作项各自记了红的**条数与断言**；没有一条的红是导入错误或零用例 |
+| 6 | 未设 `TDD_GUARD_BYPASS` | ✅ 分支 diff 里 0 处出现，进程环境里也没有 |
+| 7 | CI 全绿后开 PR | 见下方 §3.2 |
+
+**三条 lane 的命令全部带 `env -u FORCE_COLOR`**（欠账 #47）。
+
+**注意 soak 计数**：本分支自始至终没往 `soak-log.md` 添行（011 §8 门槛 4：分支上不落账）。
+冻结集一个字节没动，所以计数与三道机制闸的状态**不受本分支影响**。
 
 ## 4. 硬约束
 
