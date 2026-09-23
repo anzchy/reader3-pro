@@ -1020,11 +1020,15 @@ def resolve_port(argv: list[str], env: dict[str, str]) -> int:
 
 
 # ---------------------------------------------------------------------------
-# 按关切拆开的 router。**必须在文件末尾 include**：router 模块在导入期会
-# `from .. import server as _server` 绑定本模块对象，放在文件开头 include 会让它
-# 在本模块的名字都还没定义时就被导入。绑的是模块不是属性，所以这里只要求
-# 「server 这个对象已经在 sys.modules 里」，不要求它已经执行完。
-# 规矩与实测依据见 `routers/__init__.py` 的 docstring。
+# 按关切拆开的 router。**必须在文件末尾 include**：放在文件开头会让 router 在本模块的
+# 名字都还没定义时就被导入。
+#
+# 这里取的是 `.router` **属性**，所以要求「那个 router 模块已经执行到定义 router 之后」。
+# 对称的一半在 router 那边：每个 router 把 `from .. import server as _server` 放在它
+# 自己的文件末尾，于是无论进程里谁先被导入，这两个要求都能同时满足（017 WI-1，审计 #7；
+# 在那之前，先导入任何一个 router 都会 AttributeError）。
+# 规矩与实测依据见 `routers/__init__.py` 的 docstring，守卫在
+# `tests/unit/test_router_import_independence.py`。
 # ---------------------------------------------------------------------------
 from .routers import library as _library_router  # noqa: E402
 from .routers import reader as _reader_router  # noqa: E402

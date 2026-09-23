@@ -25,7 +25,6 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
-from .. import server as _server
 from ... import collections_service
 from ...search_service import list_book_ids
 
@@ -331,3 +330,16 @@ async def api_library_stats(scope: str = "all", fresh: bool = False):
     _server._stats_cache[cache_key] = (now, stats)
     return stats
 
+# ---------------------------------------------------------------------------
+# 017 WI-1（审计 #7）——**这一行必须留在文件末尾**，在 `router` 与所有路由都定义完之后。
+#
+# `server` 在它自己的文件末尾要取 `routers.<本模块>.router` 这个**属性**来 include。
+# 如果本模块在顶部就导入 `server`，而本进程又是从本模块开始导入的，那么 `server` 会在
+# 本模块只执行到第 1 行的时候跑完整个文件体，然后去取一个还不存在的 `router`：
+#     AttributeError: partially initialized module ... has no attribute 'router'
+# 把导入挪到末尾，`router` 就已经在模块命名空间里，`server` 取得到，环自己解开。
+#
+# 这不影响打桩接缝：`_server.X` 仍是**调用时**解析属性，`monkeypatch.setattr(server, …)`
+# 照常生效。绑的依旧是模块对象，不是属性——规矩见 `routers/__init__.py` 的 docstring。
+# ---------------------------------------------------------------------------
+from .. import server as _server  # noqa: E402
