@@ -23,10 +23,8 @@ from ...notes_service import (
     NOTES_SCHEMA_VERSION,
     NotesVersionConflict,
     add_annotation_and_version as add_note_annotation,
-    annotations_version,
     delete_annotation_and_version as delete_note_annotation,
-    load_annotations as load_note_annotations,
-    save_annotations as save_note_annotations,
+    refresh_annotations_and_version,
     update_annotation_and_version as update_note_annotation,
 )
 from ...reader3 import Book
@@ -69,7 +67,12 @@ def _conflict(exc: NotesVersionConflict) -> JSONResponse:
     )
 
 
-def _refresh_orphaned_annotations(book_id: str, book: Book, annotations: list[Annotation]) -> list[Annotation]:
+def _mark_orphans(book: Book, annotations: list[Annotation]) -> bool:
+    """把正文里找不到的标注标成 orphaned，返回「改没改」。
+
+    纯内存、不碰盘：它在书级写锁里跑（见 `refresh_annotations_and_version`），
+    这里做的任何 I/O 都是在加长其他写者的排队时间。
+    """
     changed = False
     chapter_text_by_index: dict[int, str] = {}
 
@@ -86,10 +89,20 @@ def _refresh_orphaned_annotations(book_id: str, book: Book, annotations: list[An
             ann.orphaned = True
             changed = True
 
-    if changed:
-        save_note_annotations(_server.BOOKS_DIR, book_id, annotations)
+    return changed
 
-    return [a for a in annotations if not a.orphaned]
+
+def _refresh_orphaned_annotations(book_id: str, book: Book) -> tuple[list[Annotation], list[Annotation], str]:
+    """读路由的 load → 刷新 → 存盘，**整段在书级锁里**（017 WI-4，审计 #1）。
+
+    load 也搬进了锁里，这是关键：只把 save 包起来，GET 依旧会拿着一份锁外读到的陈旧
+    快照覆盖别人在这期间提交成功的写。返回 `(全部, 活着的, 版本)` —— ETag 算的是整本书
+    的全部标注，读结果里只出现活着的那些。
+    """
+    annotations, version = refresh_annotations_and_version(
+        _server.BOOKS_DIR, book_id, lambda anns: _mark_orphans(book, anns)
+    )
+    return annotations, [a for a in annotations if not a.orphaned], version
 
 
 class CreateAnnotationRequest(BaseModel):
@@ -114,8 +127,7 @@ async def api_get_book_notes(book_id: str, response: Response):
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
 
-    annotations = load_note_annotations(_server.BOOKS_DIR, safe_book_id)
-    active = _refresh_orphaned_annotations(safe_book_id, book, annotations)
+    annotations, active, version = _refresh_orphaned_annotations(safe_book_id, book)
 
     by_chapter: dict[int, list[Annotation]] = {}
     for ann in active:
@@ -161,7 +173,7 @@ async def api_get_book_notes(book_id: str, response: Response):
     # 书级汇总也带版本，且与章级那条是同一个值 —— 版本的粒度是「一本书的全部标注」，两条读
     # 路由读的是同一份状态。笔记面板只走这一条，不给它 ETag 等于逼它为了拿版本号多读一次章级
     # 路由。只加 header，响应体一个字段都没动。
-    response.headers["ETag"] = _etag(annotations_version(annotations))
+    response.headers["ETag"] = _etag(version)
 
     return {
         "schema_version": NOTES_SCHEMA_VERSION,
@@ -180,8 +192,7 @@ async def api_get_chapter_notes(book_id: str, chapter_index: int, response: Resp
     if chapter_index < 0 or chapter_index >= len(book.spine):
         raise HTTPException(status_code=400, detail="Invalid chapter_index")
 
-    annotations = load_note_annotations(_server.BOOKS_DIR, safe_book_id)
-    active = _refresh_orphaned_annotations(safe_book_id, book, annotations)
+    annotations, active, version = _refresh_orphaned_annotations(safe_book_id, book)
     items = [a for a in active if a.chapter_index == chapter_index]
     items.sort(key=lambda a: (a.position is None, a.position or 0, a.created_at, a.id))
 
@@ -195,7 +206,7 @@ async def api_get_chapter_notes(book_id: str, chapter_index: int, response: Resp
     # 版本算的是**整本书**的标注（`annotations`，含 orphaned 的那些），不是本章过滤后的
     # `items`：写路由的比较对象是整份文件，读回来的版本若只覆盖一章，客户端拿它去写就会在
     # 另一章的改动上撞出假冲突，或者更糟 —— 漏掉真冲突。
-    response.headers["ETag"] = _etag(annotations_version(annotations))
+    response.headers["ETag"] = _etag(version)
 
     return {
         "book_id": safe_book_id,

@@ -7,7 +7,7 @@ import json
 import os
 import tempfile
 import threading
-from typing import Iterator, List, Optional, Tuple
+from typing import Callable, Iterator, List, Optional, Tuple
 
 from .models.annotations import Annotation
 from .safe_paths import safe_book_folder
@@ -345,6 +345,35 @@ def _require_version(
                 current_annotation = ann
                 break
     raise NotesVersionConflict(current, current_annotation)
+
+
+def refresh_annotations_and_version(
+    books_dir: str,
+    book_id: str,
+    refresh: Callable[[List[Annotation]], bool],
+) -> Tuple[List[Annotation], str]:
+    """load → 让调用者改 → 改动了就 save，**全程握着同一把书级锁**。
+
+    这里存在的理由，是读路由也会写盘。`GET /api/notes/{book_id}` 的孤儿刷新发现某条
+    标注在正文里找不到了，就把它标成 ``orphaned`` 并重写整份文件——那是一次货真价实的
+    load → 改 → save，和 add/delete/update 一模一样，唯独它从前不进队（017 WI-4，审计 #1）：
+
+        GET  load → [ann1 活, ann2 "旧"]          （不在锁里）
+        PUT  load → 改 ann2 → save → 200 OK       （在锁里，If-Match 也对得上）
+        GET  save → [ann1 orphaned, ann2 "旧"]    （把 T0 的快照拍下去）
+
+    PUT 提交的那一版无声消失，而客户端手里拿着一个 200。乐观并发看不见这件事，因为比较
+    只在写口里做，而这个写者不是写口。**任何 read-modify-write 都必须在这把锁里**，
+    「它是个 GET」不是例外。
+
+    ``refresh`` 必须是纯粹的「改这份列表，返回改没改」：它在锁里跑，做的任何 I/O 都在
+    加长别人的等待。返回的是**整份**标注（含 orphaned 的那些），因为 ETag 算的是整本书。
+    """
+    with _book_write_lock(books_dir, book_id):
+        annotations = load_annotations(books_dir, book_id)
+        if refresh(annotations):
+            save_annotations(books_dir, book_id, annotations)
+        return annotations, annotations_version(annotations)
 
 
 def add_annotation_and_version(
