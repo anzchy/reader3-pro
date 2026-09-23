@@ -86,6 +86,41 @@ worker）时，GET 能用旧快照覆盖掉一次已经提交成功的 `If-Match
 - 复现成功 ⇒ 用恢复出的 offsets 重建 Range 再生成 CFI，或在快照路径上干脆不写 CFI。
 - 这条同时把 #9 要求的「渲染文本断言」买到手，**而冻结的 `baseline_1b` 一个字节不动**。
 
+**复现结论（2026-09-23，必须写在这里）——#3 的现场只对了一半。**
+
+推断本身成立，但 `annotations.js` 里那段算 `cfi` 的代码**一次都没执行过**：写侧取的是
+`window.Reader3Epub.getContents()`，而 `epub-renderer.js:378` 把它实现成返回 epub.js 的
+**View**，不是 `Contents`。View 上没有 `cfiFromRange`，于是
+`typeof contents.cfiFromRange === "function"` 恒假、`cfi` 恒为 `null`。浏览器里实测：
+View 原型链上只有 `highlight/mark/locationOf/…`，真正的 `Contents` 挂在 `view.contents`
+上，它才有 `cfiFromRange` 与 `range`。所以**这套 UI 新建的标注从来不带 cfi**，
+「快照回落写下一条陈旧 cfi」今天无法当场发生。
+
+于是缺陷分两层，**能当场咬人的是第二层**：
+
+- *潜伏的*（写侧）：哪天有人把 `getContents()` 接到真 `Contents` 上、或换一版 epub.js，
+  那条「拿失效 Range 算 cfi」的路当天就活过来。
+- *现役的*（读侧）：`render()`（:489-516）对带 `cfi` 的标注**无条件优先**用 CFI 重锚，
+  `rangeFromCfi` 只要解析得出来就用，从不与 `quote` 对照。一条指向别处或塌成一点的
+  `cfi`——旧数据、别的客户端写的、将来那条潜伏路径写的——当场让用户看见一道划在错地方
+  的线，或者一道空的，而盘上 `quote` 完全正确。**这一层实测复现，见下。**
+
+**修法：一条对称的规矩，两侧各执行一次**——*一条 `cfi` 只有在它和 `quote` 对得上时，
+才值得写、才值得信*。读侧新增 `cfiRangeAgreesWithQuote()`，解析出来的 Range 与 `quote`
+不一致（含塌成零宽）就退回文本匹配；写侧在算 `cfi` 之前先要求活 Range 取出来的文字
+**正是**要存的那段 `quote`，否则不写（即 #3 给的第二条处方）。
+
+**实测**（`tests/e2e/test_stored_cfi_must_agree_with_quote.py`，3 条，非冻结白名单模块）：
+修复前 2 红 1 绿——「cfi 指向别处」屏幕上罩住的是 `'Alph'` 而不是 `'prose'`；
+「cfi 塌成一点」罩住的是空串。修复后 3 绿。护栏那条（`repeat_data` 同句重复 25 遍，
+cfi 指第 21 次、文本匹配必落第 1 次）在把 CFI 分支整个失效时当场红（偏移 1596 → 36），
+所以「删掉 CFI 重锚」换不到绿。
+
+**新欠账（本分支不做，单独立项）**：`getContents()` 返回 View 导致 CFI 写路径全程是
+死代码。接通它意味着每条新标注都带 cfi，渲染从「文本匹配 ＋ 相邻段合并」整体切到
+「一条标注一个 mark」，重叠标注、`data-annotation-ids`、孤儿判定全部换一条路——而
+`baseline_1b` 是冻结的，兜不住这个代价。
+
 ### WI-6 🔴 冲突解决同时只许有一个在飞（#5，must）
 
 `resolveConflict()`（:1261）在「保留我的」PUT 还没回来时，两个按钮都还能点。点「采用远端」会

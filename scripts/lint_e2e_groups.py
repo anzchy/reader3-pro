@@ -227,6 +227,12 @@ UNGROUPED_E2E_MODULES = {
     # 目录就要清零 soak 计数。到期条件：下一次**本来就要**动 `baseline_1b/`、`suite_hash`
     # 无论如何都要变的改动里，把本文件一并迁入并撤掉这一条（`EXPECTED_BASELINE_ITEMS` 同批加）。
     "tests/e2e/test_notes_write_failure_is_attributable.py",
+    # 017 WI-5（审计 #3、#9）：快照回落写下的 `cfi` 不得是一条失效 Range 算出来的。
+    # 内容上它是 W-8a 家族（写路径、同一个「重绘作废选区」现场），但判据问的是**屏幕**
+    # 而不是盘。落白名单的理由与上面那条一字不差：迁进 `baseline_1b/` 会改 `suite_hash`
+    # 并把 soak 计数清零。到期条件也一样——下一次本来就要动 `baseline_1b/` 的改动里
+    # 一并迁入，同批撤掉这一条并给 `EXPECTED_BASELINE_ITEMS` 加上去。
+    "tests/e2e/test_stored_cfi_must_agree_with_quote.py",
 }
 
 # 上面几个白名单模块在一次 `tests/e2e --collect-only` 里贡献的 item 数。
@@ -264,7 +270,12 @@ UNGROUPED_E2E_MODULES = {
 # 43 → **44**（2026-09-22，欠账 #43 part (i) WI-7 = 成功路径护栏 建 → 改 → 删，不装路由）：
 # 该模块 36 → 37 条，**+1 是执行过的 `--collect-only` 实测值**（W7-C1；全量 129）。
 # 矩阵 §10 预测的 37 条至此全部落地，与实测一致。
-EXPECTED_UNGROUPED_ITEMS = 44
+#
+# 44 → **47**（2026-09-23，017 WI-5 = 审计 #3 / #9）：新增
+# `tests/e2e/test_stored_cfi_must_agree_with_quote.py`，**+3 是执行过的
+# `--collect-only` 实测值**（当场一次、刷新一次、外加一条「没有重绘介入时照旧写得出
+# 能重锚的 cfi」的退化护栏）。三条都不参数化。
+EXPECTED_UNGROUPED_ITEMS = 47
 
 # 派生值，不是字面量。见文件头「为什么必须派生」。
 EXPECTED_E2E_ITEMS = (

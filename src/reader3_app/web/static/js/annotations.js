@@ -403,6 +403,28 @@
     return null;
   }
 
+  /**
+   * 这条 cfi 解析出来的 Range，与这条标注自己存的 `quote` 对得上吗？（017 WI-5，审计 #3）
+   *
+   * `render()` 让 CFI 分支跑在文本匹配**之前**，所以一条解析得出来的 cfi 就是最终答案，
+   * 从此没有第二次机会。而 cfi 与 quote 是**两个独立写进去的锚点**，它们可以不一致：
+   * 旧数据、别的客户端、以及 `createAnnotation` 里那条今天还没接通的 cfi 生成路径
+   * （见那里的注释）都能产出一条指向别处、或者塌成一点的 cfi。
+   *
+   * 不一致时信谁，是这里唯一要定的事：**信 quote**。quote 是用户真正选中的那段字，
+   * cfi 只是指向它的一条路；路错了就重新按字找，而不是把线划在错的地方——
+   * 「划在错的地方」和「划不出来」对用户不是同一件事，前者更坏：它看起来是对的。
+   *
+   * 没有 quote 可对照时（理论上的旧记录；`createAnnotation` 拒发空 quote），
+   * 只挡住**证明无用**的那一种——零宽 Range 只会插进去一个空的 `<mark>`。
+   */
+  function cfiRangeAgreesWithQuote(range, ann) {
+    if (!range || range.collapsed) return false;
+    const quote = String(ann?.quote || "");
+    if (!quote) return true;
+    return range.toString() === quote;
+  }
+
   function applySegments(container, index, segments) {
     const nodes = index.nodes;
     const doc = container?.ownerDocument || document;
@@ -489,7 +511,8 @@
       const cfiAnnotations = annotations.filter((ann) => ann?.cfi);
       for (const ann of cfiAnnotations) {
         const range = rangeFromCfi(String(ann.cfi || ""), contents, doc);
-        if (!range) {
+        if (!cfiRangeAgreesWithQuote(range, ann)) {
+          // 解析不出来、塌成一点、或者指向了别的文字——一律退回文本匹配。
           textAnnotations.push(ann);
           continue;
         }
@@ -1507,9 +1530,30 @@
         return;
       }
 
+      // cfi 只在它和上面那段 `quote` **对得上**的时候才写（017 WI-5，审计 #3）。
+      //
+      // 原来这里直接拿 `this.currentRange` 去算。问题在于：走到这一行时，那个 Range
+      // 可能刚刚被 `resolveOffsets` 判定为不可信——重绘把端点顶到了父元素上，于是
+      // 偏移取的是快照。拿一个已经作废的 Range 算 cfi，写进盘的就是一条与
+      // `quote`／`position` 自相矛盾的锚点，而读侧**优先信 cfi**，用户看见的是一道
+      // 划在别处（或者空）的线。#3 给的两条处方是「用回落后的偏移重建 Range」或
+      // 「回落时就别写 cfi」；这里取后者，因为它与读侧那道
+      // `cfiRangeAgreesWithQuote` 是**同一条规矩**——对不上就不写、不信——
+      // 而不是又多一套只在这一处成立的说法。
+      //
+      // **这段今天一次都没执行过，是明账不是疏漏。** `getContents()`
+      // （`epub-renderer.js`）返回的是 epub.js 的 **View**，不是 `Contents`；View 上
+      // 没有 `cfiFromRange`，所以下面那个条件恒假、`cfi` 恒为 `null`，新建的标注全靠
+      // quote/position 重锚。真正的 `Contents` 挂在 `view.contents` 上。**没有在这条
+      // 分支里顺手接通它**：接通之后每条新标注都带 cfi，渲染会从「文本匹配 ＋ 相邻
+      // 段合并」整体切到「一条标注一个 mark」，重叠标注、`data-annotation-ids`、
+      // 孤儿判定全部换一条路——那是另一件事的代价，而 `baseline_1b` 是冻结的，
+      // 兜不住。记在 017 的任务文件里，单独立项。
       let cfi = null;
       const contents = window.Reader3Epub?.getContents?.();
-      if (contents && typeof contents.cfiFromRange === "function") {
+      const rangeIsStillTheQuote =
+        !!this.currentRange && this.currentRange.toString() === quote;
+      if (rangeIsStillTheQuote && contents && typeof contents.cfiFromRange === "function") {
         try {
           cfi = contents.cfiFromRange(this.currentRange);
         } catch {
