@@ -34,7 +34,23 @@
   // （ADR-0011），所以「页面还没读过任何 ETag 就先写」不会被误判成冲突。
   let notesEtag = null;
 
-  function rememberNotesEtag(resp) {
+  // 017 WI-7（审计 #4）：`notesEtag` 跟着**读**走，而屏幕上那一版跟着**收尾**走，两者会分家。
+  //
+  // `settleConflict()` 把某一版正文放回编辑器，紧接着 `loadAndRender()` 去读一次 notes ——
+  // 那次读会把 `notesEtag` 换成服务端此刻的版本。若 409 之后、用户点下出口之前别处又写了
+  // 一版，编辑器里就是**旧那版的正文**配上**新那版的令牌**：用户在它上面接着改、保存，
+  // 服务端一看令牌是最新的就收下了，中间那一版无声无息地没了 —— 乐观并发被绕了过去。
+  //
+  // 所以「正在编辑的这一版是从哪个版本长出来的」要单独记：`notesEditBaseEtag`。它由收尾
+  // 时设定（正文从哪一版来，就钉哪一版），只被**本客户端自己**提交成功的写推进，读路径
+  // 一律不碰；一轮编辑结束就清空 —— 不清的话，这一页此后每一次笔记编辑都会撞 409。
+  let notesEditBaseEtag = null;
+
+  function setNotesEditBase(etag) {
+    notesEditBaseEtag = etag || null;
+  }
+
+  function rememberNotesEtag(resp, options) {
     // 009 欠账 #43 (i) WI-5 / 修订 A1：`notesEtag` 只经服务端**真提交过**的版本前进。失败响应
     // （`null`，或非 2xx）带回来的 ETag 不是那样的版本，吸收它会毒化此后每一次写的 `If-Match`；
     // 这里**原样返回、不清空**——清空等于让之后的写全变成无条件写，DEG-S5 的丢写保护就没了。
@@ -42,12 +58,18 @@
     // 是对 `notesEtag` 的直接赋值，刻意不经过这个函数，也就不受这道守卫约束。
     if (!resp || !resp.ok) return;
     const tag = resp?.headers?.get?.("ETag");
-    if (tag) notesEtag = tag;
+    if (!tag) return;
+    notesEtag = tag;
+    // 017 WI-7：**自己**写成功了，说明这一版正文与服务端仍然同源，钉子跟着前进。别人的
+    // 写没有这条理由，读回来的版本更没有 —— 那正是钉子要拦下的东西。
+    if (options?.isOurWrite && notesEditBaseEtag) notesEditBaseEtag = tag;
   }
 
-  function notesWriteHeaders(extra) {
+  function notesWriteHeaders(extra, options) {
     const headers = Object.assign({}, extra || {});
-    if (notesEtag) headers["If-Match"] = notesEtag;
+    // 017 WI-7：编辑一条已有笔记时，基准是「编辑器里这一版从哪来」，不是「刚才读到了什么」。
+    const base = options?.useEditBase && notesEditBaseEtag ? notesEditBaseEtag : notesEtag;
+    if (base) headers["If-Match"] = base;
     return headers;
   }
 
@@ -69,7 +91,7 @@
       resp = await send();
     }
     // 009 欠账 #43 (i) WI-4：失败响应带回来的 ETag 不是服务端提交过的版本，不吸收（W4-C5）。
-    if (resp && resp.ok) rememberNotesEtag(resp);
+    if (resp && resp.ok) rememberNotesEtag(resp, { isOurWrite: true });
     return resp;
   }
 
@@ -798,6 +820,11 @@
 
       // Store the annotation IDs being edited
       this.editingNoteId = noteId;
+      // 017 WI-7：`editingNoteId` 与基准令牌**成对**出现 —— 谁让编辑分支变得可达，谁就得
+      // 说清这一版正文是从哪个版本长出来的。这一轮的正文是刚从页面上读来的，基准就是全局
+      // 那个值，上一轮冲突留下的钉子到此为止（另一处成对赋值在 `settleConflict()`）。
+      // 不清它，这一页此后每一次保存都会拿一个过期版本去撞 409。
+      setNotesEditBase(null);
 
       // Set the existing note text
       this.noteTextarea.value = noteText;
@@ -1238,6 +1265,9 @@
         noteId: pending.noteId,
         localText: pending.localText,
         remoteText,
+        // 017 WI-7：远端那版正文与这个版本号是同一次读的产物。「采用远端」把正文放进
+        // 编辑器时必须把它一起带上，否则正文是这一版、令牌却是收尾时读到的更新那一版。
+        remoteEtag: body?.etag || null,
       };
       this.showConflictDialog();
     }
@@ -1316,7 +1346,7 @@
       if (!keepLocal) {
         // 「采用远端」：本地那版是用户**主动放弃**的，不是要再写一遍 ——
         // 这一支一条带本地正文的写都不许发。盘上已经是远端那版，什么都不用做。
-        this.settleConflict(c, c.remoteText);
+        this.settleConflict(c, c.remoteText, c.remoteEtag);
         return;
       }
 
@@ -1366,7 +1396,10 @@
         return;
       }
       rememberNotesEtag(resp);
-      this.settleConflict(c, c.localText);
+      // 017 WI-7：这一支放进编辑器的正文就是刚写上去的那一版，基准自然是那次写的版本号
+      // —— 不是 409 体里报来的那一版（它已经被我们自己这次写顶掉了，钉它会让下一次保存
+      // 撞上自己刚写出去的版本）。
+      this.settleConflict(c, c.localText, resp?.headers?.get?.("ETag") || null);
     }
 
     /**
@@ -1375,8 +1408,11 @@
      * 为什么要当场写回 textarea 而不是等下一次刷新：编辑器此刻还开着，里面躺的是刚被判
      * 出局的那一版。放着不管，用户下一次按保存就会把它又推上去 —— 而他以为自己早放弃了。
      */
-    settleConflict(conflict, settledText) {
+    settleConflict(conflict, settledText, baseEtag) {
       this.pendingConflict = null;
+      // 必须钉在 `loadAndRender()` **之前**：那次读会把全局版本换成服务端此刻的值，
+      // 而编辑器里这一版未必是从那儿来的（017 WI-7）。
+      setNotesEditBase(baseEtag);
       if (this.conflictDialog?.open) this.conflictDialog.close();
       if (this.noteTextarea) this.noteTextarea.value = settledText;
       this.editingNoteId = conflict.noteId;
@@ -1406,7 +1442,8 @@
           const url = `/api/notes/${encodeURIComponent(ctx.bookId)}/${encodeURIComponent(String(ctx.chapterIndex))}/${encodeURIComponent(noteId)}`;
           const resp = await fetch(url, {
             method: "PUT",
-            headers: notesWriteHeaders({ "Content-Type": "application/json" }),
+            // 017 WI-7：拿「编辑器里这一版的出处」当基准，而不是最近一次读到的版本。
+            headers: notesWriteHeaders({ "Content-Type": "application/json" }, { useEditBase: true }),
             body: JSON.stringify({ note_text: text }),
           }).catch(() => null);
 
@@ -1431,7 +1468,7 @@
             });
             return;
           }
-          rememberNotesEtag(resp);
+          rememberNotesEtag(resp, { isOurWrite: true });
 
           this.editingNoteId = null;
           this.closeNoteEditorIfOpen();

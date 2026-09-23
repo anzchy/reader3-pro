@@ -242,6 +242,13 @@ UNGROUPED_E2E_MODULES = {
     # 就要动 `baseline_1b/` 的改动里一并迁入，同批撤条目并给 `EXPECTED_BASELINE_ITEMS`
     # 加上去」。
     "tests/e2e/test_conflict_resolution_single_flight.py",
+    # 017 WI-7（审计 #4）：收尾放进编辑器的那一版，必须连着它自己的基准令牌。与上一条
+    # 同住 DEG-S5 对话框，但问的是**收尾之后**那次保存带的是哪一版令牌，不是两次点击之间
+    # 的并发；和 `acceptance_2a` 那条激活验收同样不重叠。落白名单的理由与上面三条一字不差：
+    # 迁进 `baseline_1b/` 会改 `suite_hash` 并把 soak 计数清零；到期条件同样是「下一次本来
+    # 就要动 `baseline_1b/` 的改动里一并迁入，同批撤条目并给 `EXPECTED_BASELINE_ITEMS`
+    # 加上去」。
+    "tests/e2e/test_conflict_settled_text_keeps_its_base_etag.py",
 }
 
 # 上面几个白名单模块在一次 `tests/e2e --collect-only` 里贡献的 item 数。
@@ -289,7 +296,13 @@ UNGROUPED_E2E_MODULES = {
 # `--collect-only` 实测值**。四条对应三层防线各一条（按钮 `disabled`、
 # `conflictSubmitting` 单飞守卫、写回来之后的冲突身份核对）外加一条「没有并发干扰时
 # 照旧写盘收尾并放开按钮」的退化护栏；三层各自被逐一注掉验证过只红对应的那一条。
-EXPECTED_UNGROUPED_ITEMS = 51
+#
+# 51 → **55**（2026-09-23，017 WI-7 = 审计 #4）：新增
+# `tests/e2e/test_conflict_settled_text_keeps_its_base_etag.py`，**+4 是执行过的
+# `--collect-only` 实测值**。一条钉住静默覆盖本身，两条钉住这枚基准令牌的另外两条边界
+# （跟着自己的写前进、随编辑会话结束而清空），外加一条「没有第三方时照旧保存成功」的
+# 退化护栏；三条边界各自被逐一破坏验证过只红对应的那一条。
+EXPECTED_UNGROUPED_ITEMS = 55
 
 # 派生值，不是字面量。见文件头「为什么必须派生」。
 EXPECTED_E2E_ITEMS = (
