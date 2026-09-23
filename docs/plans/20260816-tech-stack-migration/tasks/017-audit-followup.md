@@ -292,12 +292,42 @@ unit lane **1610 passed, 2 skipped**（TOTAL 83%）；`ruff check tests/` 干净
 复现**——那个窗口是纯调度（`call_soon_threadsafe` 到下一次 `stop_event.is_set()` 之间几微秒）。
 所以这里不假造一次红，而是把前提从「赌它成立」换成「等到它成立，等不到就红且说得清原因」。
 
-### WI-10 🧪 egress 两处证据要分阶段（#16、#18，should）
+### WI-10 ✅ egress 两处证据要分阶段（#16、#18，should）
 
 - **#16**：断言 status 200、provider 恰好被调用两次、`answer == "fallback"`、以及既有的
   `rag_fallback` 路由元数据，然后再清 ledger。
 - **#18**：C11／C14 必须要求「探针体通过 **且** 恰好一次 teardown 错误 **且** setup 零错误」；
   C14 的 disarmed 对照现在整个跳过了 fixture 执行，要让它真的跑。
+
+**#16 的改法**：C4 原来只看 ledger 里记了什么，没人问过那次请求到底成没成。四条断言补在
+`recorded.clear()` **之前**（顺序是审计点的名）：`status_code == 200`、
+`calls == ["anthropic", "anthropic"]`、`answer == "fallback"`、
+`metadata.routing.mode == "rag_fallback"`。两次变异各钉一条：让兜底那次调用抛异常 ⇒ status
+断言变红；把兜底返回的正文改成 `"MUTATION-M2"` ⇒ `AssertionError: answer 是 'MUTATION-M2'…`。
+
+**#18 的改法**：`failed_or_errored(out) == 1` 把**三种结局**算成同一个 1——「用例体自己红了」
+（1 failed）、「setup 就炸了、体一行没跑」（error at setup）、以及唯一想要的「体通过、teardown
+判红」。前两种下最后那行 `assert egress_violations == []` **一次都没被求值**，而这两条用例存在
+的全部理由就是求值它。C11 与 C14 的驱动器都换成点名阶段与主体：`failed == 0`、`passed ==` 预期
+条数、`error == 1`、`"ERROR at teardown of <探针体名>" in stdout`、`"ERROR at setup of" not in
+stdout`；干净／disarmed 那轮另加 `"ERROR at" not in stdout`——一道没出网也判红的闸，会让脏那轮
+的红不可归因。
+
+**C14 的 disarmed 对照原来是假的**：模块级 `pytestmark = skipif` 会把 autouse fixture 一起跳过，
+于是「没装闸所以不红」和「装了闸但闸坏了」在它眼里一模一样。改成把 skipif 降成**单条**装饰器，
+另加一条**永远运行**的用例，直接断言此刻 `socket.socket.connect.__qualname__` 收尾于
+`no_real_egress.<locals>._boom`——闸装没装从此是正面事实，不是缺省推断。
+
+**红→绿**（C11 的变异 M2，一道「只抛不记」的闸 ＋ 一条不吞异常的脏用例）：脏那轮
+`1 failed / 1 passed / 0 error`，`failed_or_errored` 算出来**正好是 1**，旧断言全绿——尽管
+teardown 那行从头到尾没被求值。新断言在 `failed == 0` 上变红，报文里带着摘要
+`{'failed': 1, 'passed': 1, 'error': 1}`。
+
+**绿**：`tests/unit/test_egress_backstop_subprocess.py` **2 passed**；
+`tests/unit/test_egress_backstop_unit.py` **27 passed**；探针实测行为与断言逐字对上——
+disarmed `1 passed, 1 skipped`，armed `2 passed, 1 error` 且
+`ERROR at teardown of test_the_probe_swallows_its_own_egress_and_leaves_no_trace_in_the_body`。
+unit lane **1612 passed, 2 skipped**（TOTAL 83%；较 WI-9 的 1610 多出的两条，正是两个探针模块里那条「闸真的装上了」的常驻用例）；`ruff check tests/` 干净。
 
 ### WI-11 🧪 覆盖率闸门每个指标都要有失败用例（#17，should）
 
