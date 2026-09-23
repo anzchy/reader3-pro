@@ -1,8 +1,13 @@
 """`/api/notes/*` —— 标注的读写。
 
-拆自 `web/server.py`（011 WI-4）。**路由正文一字未改**，改的只有三类引用：
+拆自 `web/server.py`（011 WI-4）。**拆分那一次**路由正文一字未改，改的只有三类引用：
 `@app.x` → `@router.x`，以及 `server` 私有 helper 与打桩接缝改走 `_server.` 属性访问。
 为什么必须是属性访问而不是 `from ..server import …`，见 `routers/__init__.py` 的 docstring。
+此后路由正文**已经改过**（011 WI-5a 的乐观并发、017 WI-3/WI-4 的审计修复），所以这句话
+只描述搬家那一步，不是本文件此刻与 `server.py` 旧版的关系——把它当成后者会读错代码。
+
+对外的写入契约（`ETag` 出、可选 `If-Match` 入、书级版本、409 载荷的形状）写在
+`docs/storage-and-data-locations.md`「Write contract」一节，那里是它的定义处。
 
 本组用到的两个接缝：`load_book_cached`、`BOOKS_DIR`（都在 `OWNERSHIP` 名单里）。
 留在 `server` 的 helper：`_validate_book_id`、`_annotation_matches_chapter_text`

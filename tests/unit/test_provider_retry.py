@@ -510,6 +510,61 @@ def test_R10b_settings读不出来时失败的调用也只调一次(
     assert len(calls) == 1, "读不出配置 ⇒ 退化成 0，不是退化成某个默认重试次数"
 
 
+def test_R10c_配置数据坏成别的类型时同样退化为0次重试(
+    monkeypatch: pytest.MonkeyPatch, sleeps: List[float]
+) -> None:
+    """坏配置不只有 `AiSettingsError` 一种形状。
+
+    `get_provider_settings()` 读的是用户手写的 JSON：`max_retries: "很多"` 会在
+    `int()` 上抛 `ValueError`，`timeout_s: []` 抛 `TypeError`，缺 `model_name` 也是
+    `ValueError`。这些全是**数据**坏了，与 `AiSettingsError` 同一档——退化成 0 次重试、
+    调用照常发出。只认 `AiSettingsError` 会让这几种坏配置直接把 LLM 调用打挂。
+    """
+    _no_backoff(monkeypatch)
+
+    for exc in (ValueError("invalid literal for int()"), TypeError("int() argument must be str")):
+        def _boom(*a: Any, __exc: BaseException = exc, **kw: Any) -> Dict[str, Any]:
+            raise __exc
+
+        monkeypatch.setattr(server, "load_ai_settings", _boom)
+        calls = _stub_provider(monkeypatch, [_response()])
+
+        resp = _call()
+
+        assert resp.text == ANSWER_SENTINEL, f"{type(exc).__name__} 把调用打挂了"
+        assert len(calls) == 1
+    assert sleeps == []
+
+
+def test_R10d_查配置时的编程错误必须原样抛出(
+    monkeypatch: pytest.MonkeyPatch, sleeps: List[float]
+) -> None:
+    """「配置读不出来」这条退路只给配置，不给我们自己写错的代码。
+
+    `except Exception` 把两者收成一类：一个拼错的属性名、一个 `None` 解引用，都会被
+    记成一条 WARNING 然后当作「这份配置没说重试几次」继续跑下去。于是重试静默消失，
+    而真正的 bug 一声不吭地活在生产里——`AGENTS.md` 禁止新增 `BLE001` 豁免，禁的正是
+    这个。`AttributeError`（拼错的名字、`None` 解引用）是编程错误最典型的形状，它必须
+    穿过这层退路，让 500 和堆栈把位置指出来。
+    """
+    _no_backoff(monkeypatch)
+
+    boom = AttributeError("'NoneType' object has no attribute 'get'")
+
+    def _typo(*a: Any, **kw: Any) -> Dict[str, Any]:
+        raise boom
+
+    monkeypatch.setattr(server, "load_ai_settings", _typo)
+    calls = _stub_provider(monkeypatch, [_response()])
+
+    with pytest.raises(AttributeError) as excinfo:
+        _call()
+
+    assert excinfo.value is boom, "编程错误被换成了别的异常，堆栈指不回出事的地方"
+    assert calls == [], "吞掉编程错误之后还把调用发了出去——错误就此没有任何痕迹"
+    assert sleeps == []
+
+
 # ==========================================================================
 # R11 / R13：`str(e)` 一个字节都不许变
 # ==========================================================================

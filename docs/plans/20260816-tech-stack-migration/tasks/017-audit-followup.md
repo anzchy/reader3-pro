@@ -220,7 +220,7 @@ cfi 指第 21 次、文本匹配必落第 1 次）在把 CFI 分支整个失效�
 `scripts/lint_e2e_groups.py` rc=0（收集 140；`baseline_1b` 68/68；白名单 55/55）；
 选择器 lint 0 违规；八条冻结路径 `git diff --stat master` 为空。
 
-### WI-8 异常策略与写入契约文档（#32、#33，should）
+### WI-8 ✅ 异常策略与写入契约文档（#32、#33，should）
 
 - **#32**：`_provider_retry_budget()`（`server.py:633`）新增了 `except Exception  # noqa: BLE001`。
   `AGENTS.md:68-72` 允许既有豁免、**明确禁止新增**。改成捕获具体的配置读取／解析异常，
@@ -230,6 +230,30 @@ cfi 指第 21 次、文本匹配必落第 1 次）在把 CFI 分支整个失效�
   「路由体未变」——它现在是假的。
 
 **验收**：`rg 'noqa: BLE001' src/` 不含本次新增的那一处；技术文档里能查到 409 载荷形状。
+
+**#32 的改法**：异常元组是**照着调用链数出来的**，不是猜的宽口径——`_read_settings_file` 已经把
+`json.JSONDecodeError` 与 `OSError` 包成了 `AiSettingsError`，`get_provider_settings` 自己会因为
+缺 `model_name` 或 `int()` 解析失败抛 `ValueError`／`TypeError`。于是 `except` 收窄成这四类，并在
+注释里逐条写明它们各自从哪来。`AttributeError`／`KeyError`／`NameError` **故意不收**：那是编程错误
+的签名，吞掉它正是 #32 反对的事。
+
+**#32 的测试**：`tests/unit/test_provider_retry.py` 新增两条——R10c（配置坏成别的类型时照样退化成
+0 次重试，`ValueError`／`TypeError` 各跑一遍）、R10d（查配置时的 `AttributeError` 必须**原样**抛出，
+断言 `excinfo.value is boom`，且请求一次都没发出去）。R10d 在收窄之前是红的，这正是它存在的理由。
+
+**#33 的落址**：`docs/technical-detail.md` 是索引（Contents／Recent updates／Update Rule），契约本身
+不该写在索引里。所以写进 `docs/storage-and-data-locations.md` §「Book notes & annotations (003)」下新开的
+「Write contract: optimistic concurrency (011 WI-5a)」，那里已经是笔记落盘格式的定义处；
+`technical-detail.md` 只加一行指路，`routers/notes.py` 的头注释也改成指向那里而不是复述。
+顺带补上「Related API endpoints」里**一直缺席**的 `PUT /api/notes/{book_id}/{chapter_index}/{note_id}`。
+
+**「路由正文一字未改」那句**：没有删，而是限定到它当初描述的那一步（011 WI-4 的搬家），并明写
+此后 011 WI-5a 与 017 WI-3／WI-4 都改过路由正文。删掉会丢掉「搬家那次确实没动逻辑」这条信息，
+那是当初写它的全部用意。
+
+**红→绿**：R10d 先红（`DID NOT RAISE`）→ 收窄 `except` 后
+`uv run pytest tests/unit/test_provider_retry.py tests/unit/test_provider_call_budget_wiring.py -q` **50 passed**；
+`ruff check src/` 干净；`grep 'noqa: BLE001' src/reader3_app/web/server.py` 只剩两处既有豁免（:314、:439）。
 
 ### WI-9 🧪 AI 队列租约测试（#13、#14，should）
 

@@ -634,7 +634,13 @@ def _provider_retry_budget(provider_name: str, max_retries: Optional[int]) -> in
         return max(0, min(int(max_retries), 10))
     try:
         return get_provider_settings(provider_name, settings=load_ai_settings()).max_retries
-    except Exception as e:  # noqa: BLE001 - 第 3 档：读不出配置就当 0 次重试，调用照常发出；痕迹是下面这条 WARNING
+    # 收窄到**配置读坏了**这一族，不是 `except Exception`（`AGENTS.md` 禁止新增 BLE001
+    # 豁免，017 审计 #32）。四类各有出处：`AiSettingsError` 是文件读不出／不是 JSON／
+    # 不是对象；`OSError` 是 `load_ai_settings` 被换成别的实现时裸穿出来的同一件事；
+    # `ValueError`／`TypeError` 是用户手写的值转不成数（`max_retries: "很多"`、缺
+    # `model_name`）。`AttributeError`、`KeyError`、`NameError` **刻意不在**列——它们是
+    # 编程错误最典型的形状，吞掉它们等于让重试静默消失、真正的 bug 一声不吭地活着。
+    except (AiSettingsError, OSError, ValueError, TypeError) as e:
         ai_logger.warning(
             "provider %s: could not read max_retries (%s: %s); continuing with no retries",
             provider_name,

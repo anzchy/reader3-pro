@@ -16,6 +16,7 @@ This directory collects implementation notes and “where things live” referen
 - EPUB renderer now stores the original file at `books/{book_id}/book.epub` (details in storage & data locations).
 - Reader rendering now uses epub.js in an iframe (`/static/js/epub-renderer.js`), with `book.pkl` reserved for metadata/TOC/search.
 - Annotations now support an optional `cfi` anchor field and color for underline/wavy (details in storage & data locations).
+- Notes writes carry optimistic-concurrency headers (`ETag` out, optional `If-Match` in) with a 409 payload the conflict dialog consumes — contract in storage & data locations.
 
 ## Update Rule (project convention)
 
