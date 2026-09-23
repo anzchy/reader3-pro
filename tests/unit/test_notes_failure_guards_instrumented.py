@@ -34,6 +34,8 @@ import re
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ANNOTATIONS_JS = REPO_ROOT / "src" / "reader3_app" / "web" / "static" / "js" / "annotations.js"
 REL_PATH = ANNOTATIONS_JS.relative_to(REPO_ROOT).as_posix()
@@ -242,6 +244,29 @@ def _check_guard(
         return _contract_message(
             function, guard, f"guard block calls reportNotesWriteFailure {inner.count('reportNotesWriteFailure(')} times, expected 1"
         )
+    # 017 WI-13（审计 #21）：上报之前不许有任何可执行语句。
+    #
+    # 只看块**尾部**是「上报 ＋ return」的话，`{ return; 上报…; return; }` 逐字满足尾部
+    # 形状——而那条上报是死代码，一次也不会执行。这条护栏自称查的就是这个（模块文档：
+    # 「把上报挪到 `return` 之后变成死代码，这里当场红」），却恰恰漏掉了同一件事的另一种
+    # 写法：不是把上报挪到后面，而是把 `return` 挪到前面。2026-09-23 实测，插一句
+    # `return;` 之后整条护栏照样 1 passed。
+    #
+    # 判据取「上报必须是块里的第一条语句」：`no_comments` 已经把注释抹成空格，所以正确的
+    # 八个登记位在这里都是纯空白。比逐个点名 `return` / `throw` / `break` 强的地方在于，
+    # 它不需要预先想全所有能让下一行变成死代码的写法。代价是以后若真有登记位需要先算一
+    # 个值再上报，这里会红——那是 fail-closed 的一侧，且失败信息直接把拦下的那段文本抄给
+    # 你看。
+    head = inner[: inner.index("reportNotesWriteFailure(")]
+    if head.strip():
+        lineno, _ = _line_of(no_comments, block_open)
+        return _contract_message(
+            function,
+            guard,
+            f"guard block at line {lineno} runs {head.strip()!r} before reporting; "
+            "reportNotesWriteFailure must be the block's first statement, otherwise an early "
+            "exit in front of it makes the report dead code that never runs",
+        )
     tail = _BLOCK_TAIL_RE.search(inner)
     if not tail:
         return _contract_message(function, guard, "reportNotesWriteFailure(...) is not the statement immediately before the block's terminal return")
@@ -296,3 +321,157 @@ def test_known_notes_failure_guards_retain_reporting() -> None:
             problems.append(f"P4: slice {function} must contain no {REMEMBER_CALL}…) call; found {calls}")
 
     assert not problems, "\n".join(problems)
+
+
+# ---------------------------------------------------------------------------
+# 017 WI-13（审计 #21）：检查器自身的变异用例
+# ---------------------------------------------------------------------------
+#
+# 上面那条测试只在 `annotations.js` **当前**这一版上跑。它绿，可能是因为八个登记位真的
+# 守着契约，也可能是因为检查器根本不会红——二者在那条测试里不可区分。审计 #21 命中的正是
+# 后者：`_BLOCK_TAIL_RE` 只看块尾，于是「把 `return` 挪到上报前面」这种把上报变成死代码的
+# 写法，逐字满足尾部形状，整条护栏照样 `1 passed`。
+#
+# 所以这里把检查器本身放到台上：喂它一份合成的、结构与真文件同形的 JS，逐个注入已知的破坏
+# 写法，要求每一条都被拒、且拒绝理由指名道姓。每个用例都对应检查器里的一段判据——删掉那段
+# 判据，对应的用例立刻红。合成源而不是改真文件，是因为真文件里八个登记位共用两个逐字相同的
+# 守卫条件，在那上面注入会同时惊动别的登记位，红的原因就说不清了。
+
+_SYNTHETIC_GUARD_PATTERN = r"if\s*\(\s*!text\s*\)"
+_SYNTHETIC_OP = "save-empty-text"
+
+_SYNTHETIC_TEMPLATE = """(function () {
+  const app = {
+    async saveNote() {
+      const text = String(this.noteTextarea?.value || "").trim();
+__GUARD__
+      await this.write(text);
+    },
+  };
+})();
+"""
+
+#: 正确写法：上报是块里的第一条语句，紧跟着块的终结 `return`。
+_CORRECT_GUARD = """      if (!text) {
+        reportNotesWriteFailure({ op: "save-empty-text", requested: false });
+        return;
+      }"""
+
+
+def _run_checker(guard_source: str) -> Optional[str]:
+    """把一段守卫源码塞进合成模块，走完整条真实路径（切视图 → 切函数 → 查契约）。"""
+    src = _SYNTHETIC_TEMPLATE.replace("__GUARD__", guard_source)
+    no_comments, skeleton = _views(src)
+    span = _slice_function(no_comments, skeleton, "saveNote")
+    return _check_guard(
+        no_comments, skeleton, span, "saveNote", "synthetic", _SYNTHETIC_GUARD_PATTERN, _SYNTHETIC_OP
+    )
+
+
+def test_the_checker_accepts_the_shape_it_is_meant_to_accept() -> None:
+    """阳性对照。没有它，「一律拒绝」也能让下面每一条变异用例变绿。"""
+    assert _run_checker(_CORRECT_GUARD) is None, "检查器拒绝了它自己要求的正确写法"
+
+
+def test_the_checker_ignores_comments_before_the_report() -> None:
+    """边界：注释不是可执行语句，不许被「上报必须是第一条语句」误伤。
+
+    八个真登记位里有几处在块里写了说明性注释，`_views` 会把它们抹成空格；这条用例把那个
+    依赖钉死——若有人把 head 判据改成直接看原始源码，这里当场红，而真文件那条测试也会跟着
+    红得莫名其妙。
+    """
+    guard = """      if (!text) {
+        // 说明：这里只是解释，不产生任何可执行语句。
+        /* 块注释同理 */
+        reportNotesWriteFailure({ op: "save-empty-text", requested: false });
+        return;
+      }"""
+    assert _run_checker(guard) is None, "注释被当成了上报之前的可执行语句"
+
+
+#: （用例名，注入的守卫写法，拒绝理由里必须出现的字样）。每一行对应检查器里的一段判据。
+_CHECKER_MUTANTS: Tuple[Tuple[str, str, str], ...] = (
+    (
+        # 审计 #21 命中的那一条：旧检查器在这里是绿的。
+        "early_return_before_the_report",
+        """      if (!text) {
+        return;
+        reportNotesWriteFailure({ op: "save-empty-text", requested: false });
+      }""",
+        "first statement",
+    ),
+    (
+        # 同一件事的另一种写法：`return` 不是唯一能让下一行变成死代码的东西。
+        "early_throw_before_the_report",
+        """      if (!text) {
+        throw new Error("nope");
+        reportNotesWriteFailure({ op: "save-empty-text", requested: false });
+      }""",
+        "first statement",
+    ),
+    (
+        "report_pushed_after_the_return",
+        """      if (!text) {
+        return;
+      }
+      if (false) {
+        reportNotesWriteFailure({ op: "save-empty-text", requested: false });
+      }""",
+        "expected 1",
+    ),
+    (
+        "report_deleted_entirely",
+        """      if (!text) {
+        return;
+      }""",
+        "expected 1",
+    ),
+    (
+        "guard_is_not_a_braced_block",
+        """      if (!text) return;
+      reportNotesWriteFailure({ op: "save-empty-text", requested: false });""",
+        "not a braced block",
+    ),
+    (
+        "report_carries_the_wrong_op",
+        """      if (!text) {
+        reportNotesWriteFailure({ op: "save-something-else", requested: false });
+        return;
+      }""",
+        "does not carry op",
+    ),
+    (
+        # `requested: true` 会让诊断声称「请求发出去了」，而这一族守卫的全部意义就是没发。
+        "report_claims_a_request_was_made",
+        """      if (!text) {
+        reportNotesWriteFailure({ op: "save-empty-text", requested: true });
+        return;
+      }""",
+        "requested: false",
+    ),
+    (
+        "report_is_not_the_statement_before_the_return",
+        """      if (!text) {
+        reportNotesWriteFailure({ op: "save-empty-text", requested: false });
+        this.closeEditor();
+        return;
+      }""",
+        "immediately before",
+    ),
+)
+
+
+@pytest.mark.parametrize(
+    ("guard_source", "expected_detail"),
+    [pytest.param(guard, detail, id=name) for name, guard, detail in _CHECKER_MUTANTS],
+)
+def test_the_checker_rejects_every_known_way_to_break_the_contract(
+    guard_source: str, expected_detail: str
+) -> None:
+    message = _run_checker(guard_source)
+    assert message is not None, (
+        "检查器放过了一个已知的破坏写法——上面那条护栏测试的绿色因此不作数：\n" + guard_source
+    )
+    assert expected_detail in message, (
+        f"拒绝理由里没有 {expected_detail!r}，说明红是别的判据顺手撞出来的，不是这一条：\n{message}"
+    )

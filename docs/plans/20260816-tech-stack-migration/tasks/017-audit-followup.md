@@ -394,13 +394,62 @@ FAIL」也能让上面两条变绿，而那是一道谁都过不去的闸。
 （`tests/fixtures/notes_concurrency.py` 不在冻结集里——冻的是 `epub_corpus` / `epub_zip` /
 `ai_stub` 三个）。
 
-### WI-13 🧪 两条「实现坏了也能过」的护栏（#21、#29，should）
+### WI-13 ✅ 两条「实现坏了也能过」的护栏（#21、#29，should）
 
 - **#21**：`_BLOCK_TAIL_RE` 只看尾部序列。在 `saveNote` 的上报调用前插一句 `return;`，整条护栏
   测试照样全绿——它自称能查死代码。改成拒绝上报之前出现可执行语句（尤其是提前 return），
   并补针对检查器本身的变异用例。
 - **#29**：子进程 rc=0 且没出现 `BrowserType.launch`，并不证明测试跑过。注入 `1 skipped` 的子进程
   结果，这条测试照样通过。改成要求恰好 1 passed、0 skipped/xfail，并加一条 skipped 的负对照。
+
+**先复现，再改**。#21：在 `annotations.js:1427` 的 `reportNotesWriteFailure({op:
+"save-empty-text"…})` 前插一句 `return;`，那条上报从此是死代码——
+`test_notes_failure_guards_instrumented.py` 实测 **1 passed**。#29：写一个整条 `pytest.skip`
+的子进程，退出码 **0**、输出里没有 `BrowserType.launch`——旧的两条断言一条也拦不住。两个洞
+同形：**都在用否定去推一个正面事实**。「上报是活代码」不等于「块尾有上报」，「那条用例跑过
+并通过」也不等于「没红、没见浏览器」。
+
+**#21 的改法**：`_check_guard` 在算出 `inner` 之后多一段——上报调用之前的文本必须是纯空白，
+否则报「`runs 'return;' before reporting`」并把拦下的那段原样抄进失败信息。判据取「上报必须
+是块里的第一条语句」，而不是逐个点名 `return` / `throw` / `break`：后者要求我预先想全所有能让
+下一行变成死代码的写法，而这正是 #21 已经证明想不全的那件事。注释不受影响——`_views` 早把它们
+抹成了空格。代价写明：以后若真有登记位需要先算一个值再上报，这里会红，那是 fail-closed 的一侧。
+
+**#21 的变异用例**：新增 10 条，喂合成 JS 走完整条真路径（`_views` → `_slice_function` →
+`_check_guard`）。不在真文件上注入，是因为八个登记位共用两个逐字相同的守卫条件，在那上面动手
+会同时惊动别的登记位，红的原因就说不清了。一条阳性对照（正确写法必须判绿）、一条注释边界
+（注释不是可执行语句，不许被误伤）、八条破坏写法各自要求失败信息里出现指定字样——**红得对不对
+和红不红一样重要**，否则某一条红可能是别的判据顺手撞出来的。
+
+**#29 的改法**：判据搬进 `_lane_problems(returncode, out)`，读 pytest 摘要计数，要求**恰好
+1 passed**，且 skipped / xfailed / xpassed / failed / error / deselected 全为 0；摘要行解析
+不出来也判红（fail-closed）。单拎成函数是为了让它**可被打**——不然要证明这套判据有效，唯一
+的办法就是去破坏被守护的那条真用例。
+
+**#29 的负对照**：5 条，每条都真跑一个子进程，**不用手搓字符串**——手搓 `"1 skipped in 0.01s"`
+只能证明解析器认得我写的那行字。四条坏结局（整条 skip、xfail、跑一条跳一条、跑了两条）
+**逐条都满足旧的两条断言**，所以它们是 #29 的复现而不是「随便一个红」；第五条是阳性对照。
+「跑一条跳一条」只有「逐种结局单独点名」那段拦得住（passed 确实是 1），「跑了两条」只有
+「恰好 1」那段拦得住——两段判据各有一条对照盯着。「一条都没收集到」刻意不在这一族里：pytest
+对空收集给 rc=5，压根满足不了旧断言的前提，放进来只会把主张稀释成「某些坏结果会红」；那条
+分支另由 `test_the_verdict_refuses_output_it_cannot_parse` 单独盯着。
+
+**红→绿，四次变异**：
+- **M1**（`annotations.js` 里在上报前插 `return;`）⇒ 红，`guard block at line 1427 runs
+  'return;' before reporting`。改之前这同一个变异是 **1 passed**。
+- **M2**（把新加的 head 判据整条摘掉，等价于回到审计之前的检查器）⇒ **恰好 2 failed**
+  （`early_return_before_the_report`、`early_throw_before_the_report`），其余 9 条全绿。变异用例
+  打的是它该打的那段，没有株连。
+- **M3**（head 判据改成看**原始**源码而不是 `no_comments`）⇒ **恰好 1 failed**
+  （`the_checker_ignores_comments_before_the_report`）。注释边界那条不是摆设。
+- **M4**（#29 的四条坏结局子进程）⇒ 逐条被 `_lane_problems` 判红，且理由里点名了对应的那一种
+  结局；阳性对照判绿。
+
+**绿**：`test_notes_failure_guards_instrumented.py` **11 passed in 0.15s**（原 1 条）；
+`test_unit_lane_has_no_browser_dependency.py` **7 passed in 1.83s**（原 1 条）；unit lane
+**1632 passed, 2 skipped in 68.84s**（WI-12 后是 1616，+16 正是新增条数）；`ruff check` 干净。
+本项只动 `tests/unit/` 两个文件，`annotations.js` 与冻结集 8 条路径 `git diff` 均为空，
+`tests/e2e` 收集数不变。
 
 ### WI-14 🧪 子进程要有超时；语义依赖要逐个缺（#19、#25，should）
 
