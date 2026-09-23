@@ -37,13 +37,14 @@ Assertion levels（本 lane 既有约定，见 tests/unit/conftest.py）:
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import pickle
 import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, Iterator, List, Optional
+from typing import Callable, Dict, Iterator, List, Optional, Tuple
 
 import pytest
 from fastapi.testclient import TestClient
@@ -421,4 +422,224 @@ def test_c9b_解析走的是真TOML而不是兜底(pyproject_tables: Dict[str, L
     text = (Path(__file__).resolve().parents[2] / "pyproject.toml").read_text(encoding="utf-8")
     assert _load_pyproject_tables(text) is not None, (
         "tomllib 与 tomli 都不可用，静态闸退化成了文本解析"
+    )
+
+
+# ---------------------------------------------------------------------------
+# C10 / C11 / C12 —— 017 WI-14（审计 #25）：三种依赖不全，走的是三条路
+# ---------------------------------------------------------------------------
+#
+# 上面 C1–C6 的 `deps_blocked` 把**两个**包一起挡掉，于是每一条都停在同一个地方：
+# `_require_semantic_deps()` 里的 `import chromadb`。那证明的是「两个都没装时不许炸」，
+# 不是「依赖不全时不许炸」——而这两句话在代码上不是一回事。
+#
+# `chromadb` 装着、`sentence-transformers` 没装时（`uv sync --extra semantic` 装到一半被
+# 打断、或有人手工 `pip uninstall sentence-transformers`），`_require_semantic_deps()`
+# **通过**：`SentenceTransformerEmbeddingFunction` 只是个类对象，import 它不需要底层包。
+# 失败推迟到构造那一刻，抛的是 `ValueError`。2026-09-23 实测：
+#
+#     B) _prepare_deps raised ValueError : The sentence_transformers python package is not
+#        installed. Please install it with `pip install sentence_transformers`
+#
+# CLI 的 `except RuntimeError` 接不住它（裸 traceback），HTTP 落到兜底的 `except Exception`
+# 给 500。修法在 `vector_search._build_embedding_function`；这里三种形态各自把 CLI 与 HTTP
+# 的**实际出口**钉住。
+
+#: 补救文案的黑名单。除了 `uv add`（会把包写回主依赖），还要挡 chromadb 自己那句
+#: `pip install sentence_transformers`——它把包装在 extra 之外，同样撤销 011 WI-7。
+FORBIDDEN_HINTS = ("uv add", "pip install sentence_transformers", "pip install chromadb")
+
+#: （形态名，要挡的顶级包，预期在哪一层失败）。第三列是这一族的要害：没有它，三条用例
+#: 可能全都停在 `_require_semantic_deps`，「逐个依赖单独测」就成了三份同样的测试。
+_DEP_SCENARIOS: Tuple[Tuple[str, Tuple[str, ...], str], ...] = (
+    ("两个都没装", ("chromadb", "sentence_transformers"), "import"),
+    ("只缺chromadb", ("chromadb",), "import"),
+    ("只缺sentence_transformers", ("sentence_transformers",), "construct"),
+)
+
+_SCENARIO_PARAMS = [
+    pytest.param(roots, stage, id=name) for name, roots, stage in _DEP_SCENARIOS
+]
+
+
+@pytest.fixture
+def block_roots(monkeypatch: pytest.MonkeyPatch) -> Callable[[Tuple[str, ...]], None]:
+    """按需屏蔽任意一组顶级包（`deps_blocked` 的可参数化版本）。"""
+
+    def _block(roots: Tuple[str, ...]) -> None:
+        for name in list(sys.modules):
+            if name.split(".")[0] in roots:
+                monkeypatch.delitem(sys.modules, name, raising=False)
+        monkeypatch.setattr(sys, "meta_path", [_AbsentPackageFinder(roots), *sys.meta_path])
+
+    return _block
+
+
+def _skip_if_unconstructible(roots: Tuple[str, ...]) -> None:
+    """「只缺 X」这种形态，前提是**另一个**包真的装着。
+
+    没装 `[semantic]` extra 的机器上 `只缺sentence_transformers` 不可构造：那里 chromadb
+    本来就没有，屏蔽与否都停在 import。跳过并说明，而不是让它变成一条名不副实的绿。
+    """
+    for pkg in ("chromadb", "sentence_transformers"):
+        if pkg in roots:
+            continue
+        if importlib.util.find_spec(pkg) is None:
+            pytest.skip(f"本机没装 {pkg}：屏蔽 {roots} 构造不出这一形态（需要 `[semantic]` extra）")
+
+
+@pytest.mark.parametrize(("roots", "stage"), _SCENARIO_PARAMS)
+def test_c10_三种依赖不全都在预期的那一层变成RuntimeError(
+    tmp_path: Path,
+    block_roots: Callable[[Tuple[str, ...]], None],
+    monkeypatch: pytest.MonkeyPatch,
+    roots: Tuple[str, ...],
+    stage: str,
+) -> None:
+    """既断**抛什么**，也断**在哪一层抛**。
+
+    只断 `RuntimeError` 的话，三条用例可能全都停在 `_require_semantic_deps`——那样「逐个
+    依赖单独测」就是三份同样的测试，而审计 #25 指的恰恰是第三种形态走的是另一条路。所以
+    这里正面观察构造器有没有被调用：`import` 形态下它必须**没被调到**（import 就先失败了），
+    `construct` 形态下它必须**被调到**且由它抛。
+    """
+    _skip_if_unconstructible(roots)
+
+    calls: List[str] = []
+    real_builder = vector_search._build_embedding_function
+
+    def _spy(factory: object):  # noqa: ANN202 - 透传真实实现，只记一笔
+        calls.append("called")
+        return real_builder(factory)
+
+    monkeypatch.setattr(vector_search, "_build_embedding_function", _spy)
+    block_roots(roots)
+
+    books_dir = tmp_path / "books"
+    _seed_book_dir(books_dir)
+    idx = BookVectorIndex(BOOK_ID, books_dir=str(books_dir))
+
+    with pytest.raises(RuntimeError) as excinfo:
+        idx._prepare_deps()
+
+    if stage == "import":
+        assert calls == [], (
+            f"屏蔽 {roots} 时 import 就该失败，构造器不该被调到——这一形态与 `construct` "
+            "形态没有区分开，那么这一族的三条用例是重复的"
+        )
+    else:
+        assert calls == ["called"], (
+            f"屏蔽 {roots} 时 `_require_semantic_deps()` 应当通过、由构造器失败，"
+            f"实际构造器调用记录为 {calls}——审计 #25 的那条路径没有被走到"
+        )
+        assert isinstance(excinfo.value.__cause__, (ImportError, ValueError)), (
+            f"构造失败的原文该留在 __cause__ 里，实际是 {excinfo.value.__cause__!r}"
+        )
+
+    msg = str(excinfo.value)
+    for bad in FORBIDDEN_HINTS:
+        assert bad not in msg, f"补救文案把依赖指到了 extra 之外（{bad!r}）：{msg!r}"
+    assert re.search(r"reader3\[semantic\]|--extra semantic|extra\s+[\"'`]?semantic", msg), (
+        f"补救文案没给出 extra 的装法：{msg!r}"
+    )
+
+
+@pytest.mark.parametrize(("roots", "stage"), _SCENARIO_PARAMS)
+def test_c11_三种依赖不全下CLI都以SystemExit收场(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    block_roots: Callable[[Tuple[str, ...]], None],
+    roots: Tuple[str, ...],
+    stage: str,
+) -> None:
+    """断的是 CLI 的**实际出口**，不是「某个函数抛了 RuntimeError」。
+
+    `reader3.main()` 只 `except RuntimeError`。构造器那条路原本抛 `ValueError`，于是这一
+    形态下用户拿到的是一屏裸 traceback——`main()` 里其它每一个失败出口都是 `SystemExit(msg)`。
+    """
+    _skip_if_unconstructible(roots)
+    block_roots(roots)
+
+    monkeypatch.chdir(tmp_path)
+    books_dir = tmp_path / "books"
+    _seed_book_dir(books_dir)
+    monkeypatch.setenv("READER3_BOOKS_DIR", str(books_dir))
+
+    with pytest.raises(BaseException) as excinfo:  # noqa: PT011 - 就是要看到底抛的是哪个类型
+        reader3.main(["--index", BOOK_ID])
+
+    assert isinstance(excinfo.value, SystemExit), (
+        f"屏蔽 {roots} 时 CLI 抛的是 {type(excinfo.value).__name__}，不是 SystemExit"
+        "——用户看到的第一行会是 `Traceback`"
+    )
+    msg = str(excinfo.value)
+    assert "Traceback" not in msg
+    for bad in FORBIDDEN_HINTS:
+        assert bad not in msg, f"CLI 文案把依赖指到了 extra 之外（{bad!r}）：{msg!r}"
+    assert re.search(r"reader3\[semantic\]|--extra semantic|extra\s+[\"'`]?semantic", msg), (
+        f"CLI 文案没给出 extra 的装法：{msg!r}"
+    )
+
+
+@pytest.mark.parametrize(("roots", "stage"), _SCENARIO_PARAMS)
+def test_c12_三种依赖不全下POST_index都回400(
+    client: TestClient,
+    block_roots: Callable[[Tuple[str, ...]], None],
+    roots: Tuple[str, ...],
+    stage: str,
+) -> None:
+    """400 而不是 500：缺一个可选依赖是用户自己能修的配置问题，不是服务端故障。
+
+    构造器那条路原本落到兜底的 `except Exception` 给 500，前端据此没法把它渲染成「可补救」。
+    """
+    _skip_if_unconstructible(roots)
+    block_roots(roots)
+
+    resp = client.post(f"/api/index/{BOOK_ID}", json={"force_reindex": False})
+
+    assert resp.status_code == 400, (
+        f"屏蔽 {roots} 时期望 400，实际 {resp.status_code}: {resp.text[:400]}"
+    )
+    detail = resp.json().get("detail", "")
+    assert "Traceback" not in detail
+    for bad in FORBIDDEN_HINTS:
+        assert bad not in detail, f"400 的 detail 把依赖指到了 extra 之外（{bad!r}）：{detail!r}"
+    assert re.search(r"reader3\[semantic\]|--extra semantic|extra\s+[\"'`]?semantic", detail), (
+        f"400 的 detail 没给出补救动作：{detail!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# C13 —— 转译收得窄：只有「依赖不全」才改说法
+# ---------------------------------------------------------------------------
+
+
+def test_c13_构造器转译只收依赖不全不收别的毛病() -> None:
+    """`_build_embedding_function` 的捕获是 `(ImportError, ValueError)`，不是 `Exception`。
+
+    这条边界有代价，所以要钉：把捕获放宽成 `Exception`，模型名写错、权重下载失败、磁盘满
+    ——全都会被说成「依赖没装，去装 extra」，而照着那句话做的人装完发现还是不行，且真正的
+    原因已经被换掉了。窄捕获的代价在另一侧：将来 chromadb 换个异常类型来表示「包没装」，
+    这里会漏。那一侧由 C10 的 `只缺sentence_transformers` 形态盯着——它跑的是真 chromadb。
+
+    直接喂假 factory，不碰真依赖：这条要问的是「转译的边界画在哪」，不是「真依赖什么行为」。
+    """
+
+    def _missing_package(model_name: str):  # noqa: ANN202, ARG001
+        raise ValueError("The sentence_transformers python package is not installed.")
+
+    with pytest.raises(RuntimeError) as excinfo:
+        vector_search._build_embedding_function(_missing_package)
+    assert re.search(r"reader3\[semantic\]|--extra semantic|extra\s+[\"'`]?semantic", str(excinfo.value))
+
+    class _ModelDownloadFailed(OSError):
+        pass
+
+    def _bad_model(model_name: str):  # noqa: ANN202, ARG001
+        raise _ModelDownloadFailed("could not download weights for 'typo-model-name'")
+
+    with pytest.raises(_ModelDownloadFailed) as oops:
+        vector_search._build_embedding_function(_bad_model)
+    assert "typo-model-name" in str(oops.value), (
+        "模型下载失败被转译成了「依赖没装」——真正的原因被换掉了，照着新文案做的人修不好"
     )

@@ -45,6 +45,11 @@ from hypothesis import strategies as st
 
 from synthetic_library import make_book, make_synthetic_library
 
+#: import 探针子进程的墙钟上限（秒）。裸解释器起来 ＋ 一次 `import reader3_app.book_store`
+#: 本地实测在百毫秒量级；60s 留足冷启动与 CI 上的慢盘，同时远低于 unit lane 的上限，好让
+#: 回归以**红**而不是**挂**呈现。
+IMPORT_PROBE_TIMEOUT_S = 60.0
+
 #: Same alphabet as `test_process_epub_staging.py:28`. A book id that reaches
 #: `_book_pkl_path` in production is `listdir` output already filtered by
 #: `_validate_book_id_path_safe`, i.e. `[A-Za-z0-9_-]+` ending in `_data`.
@@ -672,6 +677,13 @@ def test_book_store_imports_without_fastapi_or_the_web_package():
     lane has already imported `fastapi` by the time this runs. `book_store`
     reaching for `server.BOOKS_DIR` would be simultaneously an import cycle and
     a Check-C capture in `test_server_patch_seam_ownership.py`.
+
+    017 WI-14（审计 #19）：子进程带显式墙钟上限。这一条正是为了在 import 期抓问题而存在，
+    而 import 期最难看的那种问题——模块级取锁、`__init__` 里起线程再 join——表现就是**卡住**，
+    不是报错。无上限的 `subprocess.run()` 会把这种回归呈现成「unit lane 还在跑」，而挂住的
+    lane 没有人读得懂，也没人会去 kill 它来看看是哪一条。超时判红时把子进程已经吐出来的
+    东西原样打出来：`TimeoutExpired` 在 `capture_output=True` 下带着 `stdout`/`stderr`，
+    丢掉它等于把唯一的线索扔了。
     """
     book_store()  # precondition: the module exists at all, asserted before the child runs
 
@@ -683,7 +695,25 @@ def test_book_store_imports_without_fastapi_or_the_web_package():
         "print(json.dumps(bad))\n"
     )
 
-    proc = subprocess.run([sys.executable, "-c", snippet], capture_output=True, text=True)
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-c", snippet],
+            capture_output=True,
+            text=True,
+            timeout=IMPORT_PROBE_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired as exc:  # pragma: no cover - 回归时才走到
+        def _tail(stream: object) -> str:
+            if stream is None:
+                return "(空)"
+            text = stream.decode("utf-8", "replace") if isinstance(stream, bytes) else str(stream)
+            return text or "(空)"
+
+        pytest.fail(
+            f"`import reader3_app.book_store` 在子进程里 {IMPORT_PROBE_TIMEOUT_S}s 内没有结束"
+            "——import 期卡住了（模块级取锁、`__init__` 里起线程再 join 之类）。\n"
+            f"子进程 stdout：\n{_tail(exc.stdout)}\n子进程 stderr：\n{_tail(exc.stderr)}"
+        )
 
     assert proc.returncode == 0, proc.stderr
     assert json.loads(proc.stdout) == []

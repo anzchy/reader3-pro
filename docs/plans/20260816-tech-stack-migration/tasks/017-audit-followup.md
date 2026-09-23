@@ -451,13 +451,59 @@ FAIL」也能让上面两条变绿，而那是一道谁都过不去的闸。
 本项只动 `tests/unit/` 两个文件，`annotations.js` 与冻结集 8 条路径 `git diff` 均为空，
 `tests/e2e` 收集数不变。
 
-### WI-14 🧪 子进程要有超时；语义依赖要逐个缺（#19、#25，should）
+### WI-14 ✅ 子进程要有超时；语义依赖要逐个缺（#19、#25，should）
 
 - **#19**：`test_book_store.py:686` 的 `subprocess.run()` 无 timeout，导入死锁会把测试挂到天荒地老。
   加有限超时，`TimeoutExpired` 时打印捕获输出。
 - **#25**：所有依赖失败用例都停在 `import chromadb`。只屏蔽 `sentence_transformers` 时
   `_require_semantic_deps()` 会通过，然后构造 embedding 时抛 `ValueError`——而 CLI 新加的
   `except RuntimeError` 接不住。逐个依赖单独测，含构造器路径，并断言 CLI/HTTP 的实际出口。
+
+**#19 的改法**：`IMPORT_PROBE_TIMEOUT_S = 60.0`，超时走 `pytest.fail` 并把
+`TimeoutExpired.stdout` / `.stderr` 原样打出来。这一条正是为了在 import 期抓问题而存在，而
+import 期最难看的那种问题——模块级取锁、`__init__` 里起线程再 join——表现就是**卡住**，不是
+报错；无上限的 `subprocess.run()` 会把它呈现成「unit lane 还在跑」。变异（子进程先打一行
+`PROBE-STARTED` 再 `sleep(3600)`，上限调到 3s）⇒ **3.19s 判红**，失败信息里带着那行
+`PROBE-STARTED`。改之前这个变异是**挂住**。
+
+**#25 是产品缺陷，不只是测试缺口**，先复现再改。`chromadb` 装着、`sentence-transformers`
+没装时（`uv sync --extra semantic` 装到一半被打断，或手工 `pip uninstall`），
+`_require_semantic_deps()` **通过**——`SentenceTransformerEmbeddingFunction` 只是个类对象，
+import 它不需要底层包——失败推迟到构造那一刻，实测：
+
+```
+A) _require_semantic_deps OK -> _ProtocolMeta
+B) _prepare_deps raised ValueError : The sentence_transformers python package is not installed.
+   isinstance RuntimeError: False
+```
+
+于是 CLI 的 `except RuntimeError` 漏成裸 traceback，HTTP 落到兜底的 `except Exception` 给
+**500**——而缺一个可选依赖是用户自己能修的配置问题，500 让前端没法把它渲染成「可补救」。
+本文件此前把 `_require_semantic_deps()` 描述成「唯一的 import 点，也是唯一的转译点」，
+第二个半句是错的。
+
+**改法**：新增 `vector_search._build_embedding_function()`，把构造期的
+`(ImportError, ValueError)` 转译成 RuntimeError，原文留 `__cause__`。补救文案抽成
+`_EXTRA_HINT` 一处定义。**捕获刻意收窄**，不是 `Exception`：模型名写错、权重下载失败是别的
+毛病，把它们也说成「依赖没装」会把人指向错误的修法。chromadb 那句
+`pip install sentence_transformers` 刻意不转给用户——它把包装在 extra 之外，正是 011 WI-7
+要防的那件事，所以黑名单从 `uv add` 扩成三条。
+
+**测试**：C10/C11/C12 各按三种形态参数化（两个都没装 / 只缺 chromadb / 只缺
+sentence-transformers），分别断 `_prepare_deps` 的异常类型、**CLI 的实际出口**（SystemExit
+而非 traceback）、**HTTP 的实际状态码**（400 而非 500）。C10 还正面观察构造器**有没有被调到**
+——不然三条用例可能全停在 `_require_semantic_deps`，「逐个依赖单独测」就成了三份同样的测试。
+「只缺 X」形态在没装 `[semantic]` extra 的机器上不可构造，`_skip_if_unconstructible()` 跳过
+并说明，不让它变成名不副实的绿。C13 单独钉转译的边界（喂假 factory，不碰真依赖）。
+
+**红→绿，两次变异**：
+- **M1**（撤掉构造器转译，回到审计之前）⇒ **恰好 3 failed**，全是 `只缺sentence_transformers`
+  那一支（C10/C11/C12 各一），其余 21 条全绿。新增的形态打的正是它该打的那条路。
+- **M2**（捕获放宽成 `except Exception`）⇒ **恰好 1 failed**（C13）。窄捕获不是摆设。
+
+**绿**：`test_semantic_extra_optional.py` **25 passed in 1.48s**（原 15）；
+`test_book_store.py` **21 passed in 0.38s**；unit lane **1642 passed, 2 skipped in 64.10s**
+（WI-13 后是 1632，+10 正是新增条数）；`ruff check` 干净；冻结集 8 条路径 `git diff` 为空。
 
 ### WI-15 🧪 e2e 先等响应再轮询磁盘（#8 的非冻结调用点，should）
 
