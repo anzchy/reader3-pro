@@ -191,7 +191,7 @@ def load_annotations(books_dir: str, book_id: str) -> List[Annotation]:
     out: List[Annotation] = []
     for index, raw in enumerate(items):
         try:
-            out.append(Annotation.from_dict(raw))
+            out.append(Annotation.from_dict(raw, index=index))
         except Exception as e:  # noqa: BLE001 - Annotation.from_dict raises ValueError / TypeError / AttributeError depending on which field is wrong; the point here is that *no* failure mode may be dropped
             # Deliberate trade-off, and it is not the comfortable one: a single
             # malformed record now 500s every notes endpoint for this book,
