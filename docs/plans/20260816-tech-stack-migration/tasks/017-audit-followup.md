@@ -671,6 +671,57 @@ unit lane，e2e 收集数不变）；unit lane **1656 passed, 2 skipped in 66.88
 1642，+14 正是新增条数）；冻结集 8 条路径 `git diff --stat master...` 为空，`suite_hash`
 仍是 `1e868c7bf811`、23 个 blob。
 
+### WI-16 ✅ 预算归队列所有，叫停要先于放行（CI `lint.yml` 红）
+
+**不是审计条目，是 §3 门槛 7 自己逼出来的。** `4d65265` 上 `lint.yml` 红在 router 体量闸：
+`FAIL src/reader3_app/web/routers/ai/chat.py 583 行 > 550`。
+
+**上限没动，也动不了**：`scripts/check_router_size.py` 那条具名豁免的 docstring 写着
+「只许下调，不许上调」，而 `tests/unit/test_router_size_gate.py` 末尾的
+`assert only.max_lines <= 550, "011 §5：N 只许下调，不许上调"` 把这句话钉成了机器约束。
+另一头也有界：`min_function_lines=400`，`api_ai_question` 掉到 400 行以下豁免就该删掉。
+所以只能找**本来就该删**的东西，不能为压线而搬。
+
+**三种压线的捷径都否掉了，各有理由**：搬走 `_stop_stream_worker`——豁免自己的正文说它不可
+搬走，R1 正是为堵这个而把 `routers/` 下每个 `.py` 都纳入测量；用一个 `_ask()` 闭包合并
+chat 的两处 `_call_provider`——`tests/unit/test_provider_call_budget_wiring.py` 断言
+`len(sites) >= 5`，全仓正好 6 处，合并后**恰好压在地板上**，等于给下一个人埋一个雷；
+删 `_stop_stream_worker` 那 19 行理由 docstring——纯粹的散文损失。
+
+**真正该删的那块，同时是一个设计缺陷。** WI-2 让路由自己算 deadline、自己开
+`provider_stopped` 旗，两处路由各抄一份：
+
+1. **deadline 抄的是近似值**。路由算 `time.monotonic() + timeout_s`，队列算
+   `item.enqueued_at + timeout_s`——**判 504 的是后者**。WI-2 自己的注释承认「只差一次进队
+   的毫秒级开销」，但差多少不是重点：同一个事实有两个来源，只有一个作数。
+2. **旗翻得太晚**。路由的 `finally: provider_stopped.set()` 跑在 `run()` 返回**之后**，而
+   `run()` 的 `finally` 已经先做了 `await q.exit(item)`——**下一个请求已获准开跑，上一个的
+   provider 线程还没收到叫停**，两个「本该串行」的调用同时打同一个 provider。顺序即语义，
+   这个窗口才是审计 #2 要关的东西；WI-2 关了一半。
+
+**改法**：`ai/queue.py` 新增 `QueueBudget`（`deadline` ＋ `threading.Event`），由 `run()`
+构造并传给 `fn`；叫停翻在 `q.exit()` **之前**。用 `threading.Event` 而不是 `asyncio.Event`，
+因为读它的 `_call_provider` 跑在 `run_in_threadpool` 的线程里——`set()` 从事件循环线程调用、
+`is_set()` 从工作线程读，只有 `threading.Event` 两边都安全。
+
+**顺带把三处「抄，不搬」收成指针**（CLAUDE.md：复述是两份副本走散的方式）：WI-1 的 13 行块
+在 **10 个路由**里逐字重复，内容本就定义在 `routers/__init__.py` 的 docstring；WI-2 的 7 行块
+在 2 个路由里重复，内容定义在 `_call_provider` 的 docstring；`chat.py` 的模块 docstring 复述
+豁免的数字，**而且已经过期**——上限下调到 550 之后它还写着 560，文件里躺着两个互相矛盾的
+上限。这正是「复述」的代价，不是假想的。再去掉 `chat.py` 里流式与非流式各抄一份的 system
+prompt 与历史过滤（`routing_meta` 那处已经这么分叉过一次）。
+
+**红→绿**：先只加 `QueueBudget` 并**故意**把 `set()` 留在 `q.exit()` 之后 ⇒ `test_B3` 四个
+参数化全红（「队列放行下一个请求的那一刻，上一个请求的叫停旗还没翻」），**4 failed, 2 passed**。
+把 `set()` 挪到 `q.exit()` 之前 ⇒ **6 passed**。红是断言失败，不是导入错误——第一版拿到的
+`ImportError: cannot import name 'QueueBudget'` 不算数，先把类加上才取到真红。
+
+**绿**：`check_router_size.py` **PASS**，`chat.py` **546 行**（master 是 547——本分支交还时
+比接手时还小 1 行，且留了 4 行余量）；`ruff` 干净；unit lane **1662 passed, 2 skipped in
+64.52s**（WI-15 后是 1656，+6 正是新增条数）；packaging **1 passed, 1 deselected**；
+e2e **124 passed, 16 skipped**；`lint_e2e_groups.py` rc=0，收集 140、`baseline_1b` **68/68**；
+冻结集 8 条路径 `git diff` 为空。
+
 ## 3. 退出门槛
 
 全部满足才算完，缺一条就不是完成：
@@ -693,15 +744,15 @@ unit lane，e2e 收集数不变）；unit lane **1656 passed, 2 skipped in 66.88
 6. **不得设 `TDD_GUARD_BYPASS`**。
 7. **CI 全绿**（`tests.yml` 与 `lint.yml`），然后开 PR 到 `master`。
 
-### 3.1 核验结果（2026-09-23，`348e057` 之后）
+### 3.1 核验结果（2026-09-23，`255b63a`）
 
 | # | 门槛 | 结果 |
 |---|---|---|
 | 1 | 22 条逐条有交代 | ✅ findings 文件里 22 条全部 `fixed`，`Round` 列带 WI 与 commit；两条 `must-pending-repro` 的复现结论写在 WI-3 / WI-5 段内 |
-| 2 | 三条 lane 全绿 | ✅ unit **1656 passed, 2 skipped**（TOTAL 83%）；e2e **124 passed, 16 skipped**（`--browser chromium`）；packaging **1 passed, 1 deselected** |
+| 2 | 三条 lane 全绿 | ✅ unit **1662 passed, 2 skipped**（TOTAL 83%）；e2e **124 passed, 16 skipped**（`--browser chromium`）；packaging **1 passed, 1 deselected** |
 | 3 | 冻结集零改动 | ✅ 8 条路径 `git diff --stat master...` 输出为空；`suite_hash` = `1e868c7bf811`、**23** 个 blob |
 | 4 | 分组守卫 | ✅ `lint_e2e_groups.py` rc=0；收集 **140**、`baseline_1b` **68/68**、白名单 55/55；`EXPECTED_BASELINE_ITEMS` 仍是 **68** |
-| 5 | 每个修复先红后绿 | ✅ 15 个工作项各自记了红的**条数与断言**；没有一条的红是导入错误或零用例 |
+| 5 | 每个修复先红后绿 | ✅ 16 个工作项各自记了红的**条数与断言**；没有一条的红是导入错误或零用例 |
 | 6 | 未设 `TDD_GUARD_BYPASS` | ✅ 分支 diff 里 0 处出现，进程环境里也没有 |
 | 7 | CI 全绿后开 PR | 见下方 §3.2 |
 
@@ -709,6 +760,17 @@ unit lane，e2e 收集数不变）；unit lane **1656 passed, 2 skipped in 66.88
 
 **注意 soak 计数**：本分支自始至终没往 `soak-log.md` 添行（011 §8 门槛 4：分支上不落账）。
 冻结集一个字节没动，所以计数与三道机制闸的状态**不受本分支影响**。
+
+### 3.2 CI 与 PR（门槛 7）
+
+| 工作流 | Run | commit | 结论 |
+|---|---|---|---|
+| `lint.yml` | [35827418587](https://github.com/anzchy/reader3-pro/actions/runs/35827418587) | `255b63a` | ✅ success |
+| `tests.yml` | [35827429249](https://github.com/anzchy/reader3-pro/actions/runs/35827429249) | `255b63a` | ✅ success |
+
+**前一轮（`4d65265`）`lint.yml` 是红的**，红在 router 体量闸上，`tests.yml` 同一 commit 绿。
+修它的过程是 **WI-16**；这里不复述理由。两条工作流在 `255b63a` 上重新派发后同时转绿，
+`tests.yml` 里的 `e2e baseline_1b（干净 Linux ＋ 冻结 lock，68/68 首次通过）` 一并通过。
 
 ## 4. 硬约束
 
