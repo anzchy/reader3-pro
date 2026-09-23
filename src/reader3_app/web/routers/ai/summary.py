@@ -12,14 +12,13 @@ provider 出口）。它和排队、上下文预算相关的接缝一律走 `_se
 from __future__ import annotations
 
 import json
-import threading
-import time
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 
 from ...schemas import AISummaryRequest
+from ....ai.queue import QueueBudget
 from ....ai.routing import (
     provider_context_window,
     unique_chapter_orders_from_passages,
@@ -95,17 +94,7 @@ async def api_ai_summary(
     provider_name, api_key, base_url, model, timeout_s = _server._get_provider_runtime(body.provider, body.model)
     queue_key = f"{book_uuid}:{provider_name}"
 
-    # 017 WI-2（审计 #2）：把**总预算**与**叫停信号**一路交到 provider 调用手里。
-    # `ai_queue.run()` 到点会 cancel 掉等结果的协程并给客户端 504——但 provider 调用跑在
-    # `run_in_threadpool` 的线程里，取消协程**停不下那个线程**，重试会在 504 之后继续发车
-    # （审计用桩复现过：第 2、3 次调用在 504 之后才发出）。
-    # `provider_deadline` 与队列自己的 deadline 同源（都是「进队时刻 ＋ timeout_s」，只差
-    # 一次进队的毫秒级开销）；`provider_stopped` 由下面的 finally 在**任何**出口翻起来——
-    # 正常返回、504、客户端断连，一个不漏。
-    provider_stopped = threading.Event()
-    provider_deadline = time.monotonic() + float(timeout_s)
-
-    async def _do() -> dict:
+    async def _do(budget: QueueBudget) -> dict:
         book = await run_in_threadpool(_server.load_book_cached, book_folder)
         if not book:
             raise HTTPException(status_code=404, detail="Book not found")
@@ -172,8 +161,8 @@ async def api_ai_summary(
                 messages=[{"role": "user", "content": user}],
                 max_tokens=body.max_tokens,
                 timeout_s=timeout_s,
-                deadline=provider_deadline,
-                should_stop=provider_stopped.is_set,
+                deadline=budget.deadline,
+                should_stop=budget.should_stop,
             )
         except Exception as e:
             if decision.mode in ("full_book", "multi_chapter"):
@@ -195,8 +184,8 @@ async def api_ai_summary(
                     messages=[{"role": "user", "content": rag_user}],
                     max_tokens=body.max_tokens,
                     timeout_s=timeout_s,
-                    deadline=provider_deadline,
-                    should_stop=provider_stopped.is_set,
+                    deadline=budget.deadline,
+                    should_stop=budget.should_stop,
                 )
                 routing_meta["mode"] = "rag_fallback"
             else:
@@ -217,27 +206,13 @@ async def api_ai_summary(
             },
         }
 
-    try:
-        return await _server.ai_queue.run(
-            queue_key,
-            request=request,
-            timeout_s=float(timeout_s),
-            request_label="summary",
-            fn=_do,
-        )
-    finally:
-        provider_stopped.set()
+    return await _server.ai_queue.run(
+        queue_key,
+        request=request,
+        timeout_s=float(timeout_s),
+        request_label="summary",
+        fn=_do,
+    )
 
-# ---------------------------------------------------------------------------
-# 017 WI-1（审计 #7）——**这一行必须留在文件末尾**，在 `router` 与所有路由都定义完之后。
-#
-# `server` 在它自己的文件末尾要取 `routers.<本模块>.router` 这个**属性**来 include。
-# 如果本模块在顶部就导入 `server`，而本进程又是从本模块开始导入的，那么 `server` 会在
-# 本模块只执行到第 1 行的时候跑完整个文件体，然后去取一个还不存在的 `router`：
-#     AttributeError: partially initialized module ... has no attribute 'router'
-# 把导入挪到末尾，`router` 就已经在模块命名空间里，`server` 取得到，环自己解开。
-#
-# 这不影响打桩接缝：`_server.X` 仍是**调用时**解析属性，`monkeypatch.setattr(server, …)`
-# 照常生效。绑的依旧是模块对象，不是属性——规矩见 `routers/__init__.py` 的 docstring。
-# ---------------------------------------------------------------------------
+# 017 WI-1（审计 #7）：必须留在文件末尾。理由见 `routers/__init__.py` 的 docstring。
 from ... import server as _server  # noqa: E402
