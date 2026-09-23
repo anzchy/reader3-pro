@@ -283,6 +283,10 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
 
                 async def worker_non_stream() -> None:
                     try:
+                        # 017 WI-2（审计 #2）：这两个参数本来就在手边，之前没往下传。
+                        # `stop_event` 由 `_stop_stream_worker` 在断连／收尾时翻起来，
+                        # `lease.deadline` 是这条流的总预算——而 `task.cancel()` 停不下
+                        # 已经进了线程池的 provider 调用，重试会在流关掉之后继续发车。
                         resp = await run_in_threadpool(
                             _server._call_provider,
                             provider_name,
@@ -293,6 +297,8 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
                             messages=[*chat_history, {"role": "user", "content": user}],
                             max_tokens=body.max_tokens,
                             timeout_s=timeout_s,
+                            deadline=lease.deadline,
+                            should_stop=stop_event.is_set,
                         )
                     except Exception as e:  # noqa: BLE001 - 第 2 档：worker 协程的最外层，失败经 error 事件送到客户端，痕迹在 SSE 流里
                         await q.put({"type": "error", "message": str(e)})
@@ -397,6 +403,16 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
             # 最后一步：在它之前抛的任何异常都还由这里负责释放。
             return StreamingResponse(event_gen(lease_stack.pop_all()), media_type="text/event-stream")
 
+    # 017 WI-2（审计 #2）：把**总预算**与**叫停信号**一路交到 provider 调用手里。
+    # `ai_queue.run()` 到点会 cancel 掉等结果的协程并给客户端 504——但 provider 调用跑在
+    # `run_in_threadpool` 的线程里，取消协程**停不下那个线程**，重试会在 504 之后继续发车
+    # （审计用桩复现过：第 2、3 次调用在 504 之后才发出）。
+    # `provider_deadline` 与队列自己的 deadline 同源（都是「进队时刻 ＋ timeout_s」，只差
+    # 一次进队的毫秒级开销）；`provider_stopped` 由下面的 finally 在**任何**出口翻起来——
+    # 正常返回、504、客户端断连，一个不漏。
+    provider_stopped = threading.Event()
+    provider_deadline = time.monotonic() + float(timeout_s)
+
     async def _do() -> dict:
         book = await run_in_threadpool(_server.load_book_cached, book_folder)
         if not book:
@@ -472,6 +488,8 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
                 messages=[*anthropic_history, {"role": "user", "content": user}],
                 max_tokens=body.max_tokens,
                 timeout_s=timeout_s,
+                deadline=provider_deadline,
+                should_stop=provider_stopped.is_set,
             )
         except Exception as e:
             if decision.mode in ("full_book", "multi_chapter"):
@@ -493,6 +511,8 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
                     messages=[*anthropic_history, {"role": "user", "content": rag_user}],
                     max_tokens=body.max_tokens,
                     timeout_s=timeout_s,
+                    deadline=provider_deadline,
+                    should_stop=provider_stopped.is_set,
                 )
                 routing_meta["mode"] = "rag_fallback"
             else:
@@ -537,13 +557,16 @@ async def api_ai_question(request: Request, book_uuid: str, body: AIQuestionRequ
             },
         }
 
-    return await _server.ai_queue.run(
-        queue_key,
-        request=request,
-        timeout_s=float(timeout_s),
-        request_label="question",
-        fn=_do,
-    )
+    try:
+        return await _server.ai_queue.run(
+            queue_key,
+            request=request,
+            timeout_s=float(timeout_s),
+            request_label="question",
+            fn=_do,
+        )
+    finally:
+        provider_stopped.set()
 
 # ---------------------------------------------------------------------------
 # 017 WI-1（审计 #7）——**这一行必须留在文件末尾**，在 `router` 与所有路由都定义完之后。

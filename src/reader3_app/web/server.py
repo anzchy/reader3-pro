@@ -584,6 +584,10 @@ def _get_provider_runtime(
 PROVIDER_RETRY_BASE_S = 0.5
 PROVIDER_RETRY_CAP_S = 8.0
 
+#: 退避途中多久回头看一眼叫停信号（秒）。退避最长 `PROVIDER_RETRY_CAP_S` = 8 秒，
+#: 一觉睡到头就等于把叫停信号丢掉 8 秒——而那 8 秒正是下一次「没人会读的」调用的发车窗口。
+PROVIDER_RETRY_STOP_POLL_S = 0.05
+
 #: 值得再试一次的状态码：限流与服务端故障。其余 4xx（400/401/403/404/422）不在里面，
 #: 因为 key 填错、模型名写错、请求体非法重试三次拿到的还是同一条错误，只是让用户多等几秒。
 PROVIDER_RETRY_STATUS_CODES = frozenset({408, 429, 500, 502, 503, 504})
@@ -640,6 +644,61 @@ def _provider_retry_budget(provider_name: str, max_retries: Optional[int]) -> in
         return 0
 
 
+def _provider_call_stop_reason(
+    deadline: Optional[float],
+    should_stop: Optional[Callable[[], bool]],
+) -> Optional[str]:
+    """还该不该继续？返回停下来的理由，`None` 表示继续。
+
+    两个信号都是**可选**的：一个都不传 = 没有总预算、没人叫停 = 今天的行为逐字不变。
+    这条默认值是承重的（tests/unit/test_provider_retry.py R17 盯着它）：它一旦默认成
+    某个真值，6 个调用点与全部既有打桩的行为会一起改变。
+    """
+    if should_stop is not None and should_stop():
+        return "cancelled"
+    if deadline is not None and time.monotonic() >= deadline:
+        return "deadline exceeded"
+    return None
+
+
+def _provider_attempt_timeout_s(timeout_s: int, deadline: Optional[float]) -> int:
+    """这一次调用最多能用几秒。
+
+    不收的话「总预算」只是个说法：预算只剩 2 秒时，一次 30 秒的 connect 就能把它整个
+    盖过去。下界钉在 1 秒——把 0 传给底层等于「立刻超时」，那会把「预算快用完了」
+    变成「这次必然失败」，是另一种坏。
+    """
+    if deadline is None:
+        return timeout_s
+    remaining = deadline - time.monotonic()
+    return max(1, min(int(timeout_s), int(remaining)))
+
+
+def _provider_backoff_sleep(
+    delay: float,
+    deadline: Optional[float],
+    should_stop: Optional[Callable[[], bool]],
+) -> Optional[str]:
+    """退避，但**边睡边看**叫停信号。返回停下来的理由，`None` 表示睡满了。
+
+    两个信号都没有时走一次 `time.sleep(delay)` 的老路——不是优化，是为了让「不传参数
+    时行为逐字不变」这句话连 `sleep` 的调用次数都成立。
+    """
+    if deadline is None and should_stop is None:
+        time.sleep(delay)
+        return None
+
+    slept = 0.0
+    while slept < delay:
+        chunk = min(PROVIDER_RETRY_STOP_POLL_S, delay - slept)
+        time.sleep(chunk)
+        slept += chunk
+        reason = _provider_call_stop_reason(deadline, should_stop)
+        if reason is not None:
+            return reason
+    return None
+
+
 def _call_provider(
     provider_name: str,
     *,
@@ -651,6 +710,8 @@ def _call_provider(
     max_tokens: int,
     timeout_s: int,
     max_retries: Optional[int] = None,
+    deadline: Optional[float] = None,
+    should_stop: Optional[Callable[[], bool]] = None,
 ):
     """ADR-0006 的唯一 LLM 出口，外加 WI-6 接上的重试。
 
@@ -663,10 +724,42 @@ def _call_provider(
     **流式路径不在这道闸上**：ollama 的流式 chat 走 `_egress_post_stream`，不经过这里，
     因此拿不到重试。那是有意的——SSE 已经把前半段正文推给客户端了，重试会让用户看到
     重复的文本。
+
+    **`deadline` 与 `should_stop`（017 WI-2，审计 #2）**：这个循环从前只知道「还能再试
+    几次」，不知道「还有多久」，也不知道「还有没有人要这个结果」。两件事都在调用方手上：
+    `ai_queue.run()` 到点会 `task.cancel()` 并给客户端 504，但本函数跑在
+    `run_in_threadpool` 的线程里，**取消一个等它的协程停不下这个线程**——审计用桩复现过
+    「504 已经返回，第 2、3 次调用在那之后才发出」。客户端断连同理：连接已经拆了，
+    钱还在烧。所以：
+
+    * `deadline` —— `time.monotonic()` 的**绝对时刻**，不是时长。它同时收住单次调用的
+      传输超时（`_provider_attempt_timeout_s`）和退避时长，否则总预算只是个说法。
+    * `should_stop` —— 一个返回 bool 的可调用对象（典型是 `threading.Event.is_set`）。
+
+    两个都不传 = 没有总预算、没人叫停 = 今天的行为逐字不变。
     """
     attempts_allowed = _provider_retry_budget(provider_name, max_retries)
     attempt = 0
+    last_error: Optional[BaseException] = None
     while True:
+        stop_reason = _provider_call_stop_reason(deadline, should_stop)
+        if stop_reason is not None:
+            if last_error is not None:
+                # 已经发出去过，且那一次带回了一个真实的失败原因。抛它，不抛我们自己
+                # 造的超时——`str(e)` 是 SSE 与自测响应的内容（ADR-0011 冻结）。
+                ai_logger.warning(
+                    "provider %s: %s after %d attempt(s); not starting another",
+                    provider_name,
+                    stop_reason,
+                    attempt,
+                )
+                raise last_error
+            # 一次都还没发。`run_in_threadpool` 只是把函数排进线程池，真正开始跑可能
+            # 是几百毫秒之后；这段窗口里客户端可能已经断了、队列可能已经 504 了。
+            # 此时发出去的是一次**没有任何人会读的、可能计费的**调用。
+            raise TimeoutError(
+                f"provider {provider_name}: {stop_reason} before the first attempt"
+            )
         try:
             return _provider_call_once(
                 provider_name,
@@ -676,9 +769,10 @@ def _call_provider(
                 system=system,
                 messages=messages,
                 max_tokens=max_tokens,
-                timeout_s=timeout_s,
+                timeout_s=_provider_attempt_timeout_s(timeout_s, deadline),
             )
         except _PROVIDER_RETRY_CANDIDATES as e:
+            last_error = e
             if attempt >= attempts_allowed or not _provider_error_is_retryable(e):
                 # 抛**最后一次**那个异常对象本身，不包一层：包一层就改了 str(e)，
                 # 而它是 SSE 与自测响应的内容（ADR-0011 冻结）。
@@ -686,6 +780,8 @@ def _call_provider(
             delay = random.uniform(
                 0, min(PROVIDER_RETRY_CAP_S, PROVIDER_RETRY_BASE_S * (2**attempt))
             )
+            if deadline is not None:
+                delay = min(delay, max(0.0, deadline - time.monotonic()))
             # 只记 provider 名、第几次、异常类型/状态码。**不记 api_key、不记 base_url、
             # 不记请求体**——这条日志会进用户的终端和日志文件。
             ai_logger.warning(
@@ -697,7 +793,17 @@ def _call_provider(
                 f" status={e.status}" if isinstance(e, ProviderHTTPError) else "",
                 delay,
             )
-            time.sleep(delay)
+            backoff_stop = _provider_backoff_sleep(delay, deadline, should_stop)
+            if backoff_stop is not None:
+                # 叫停信号是在**睡着的时候**翻的。只在进入退避前查一次，等于给跑飞的
+                # 重试一整个退避窗口去发下一次请求。
+                ai_logger.warning(
+                    "provider %s: %s during backoff after attempt %d; not starting another",
+                    provider_name,
+                    backoff_stop,
+                    attempt + 1,
+                )
+                raise
             attempt += 1
 
 
