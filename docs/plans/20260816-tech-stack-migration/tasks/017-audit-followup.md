@@ -329,12 +329,29 @@ disarmed `1 passed, 1 skipped`，armed `2 passed, 1 error` 且
 `ERROR at teardown of test_the_probe_swallows_its_own_egress_and_leaves_no_trace_in_the_body`。
 unit lane **1612 passed, 2 skipped**（TOTAL 83%；较 WI-9 的 1610 多出的两条，正是两个探针模块里那条「闸真的装上了」的常驻用例）；`ruff check tests/` 干净。
 
-### WI-11 🧪 覆盖率闸门每个指标都要有失败用例（#17，should）
+### WI-11 ✅ 覆盖率闸门每个指标都要有失败用例（#17，should）
 
 `test_coverage_gate_failclosed.py` 的 G12 用 100% 覆盖只校验输出文案。内存里把 `lines` /
 `statements` 改成无条件接受，22 条断言全绿，同时放行 `book_store.py` 的 0%。
 
 **验收**：`lines` 与 `statements` 各有低于门槛的参数化用例，失败信息必须点名指标、实际值、门槛值。
+
+**改法**：这个文件此前**只有 `branches`** 有过一条真的低于门槛的用例（G9）。`lines` /
+`statements` 从头到尾只出现在「满分照样放行」和 G12 那两行 `"lines" in out and "statements"
+in out` 里——后者查的是**文案**，不是判决。新增 G14：逐指标参数化（两项在 `METRICS` 里**共用
+同一对计数键** `covered_lines` / `num_statements`，唯一的区别就是键名那一步查表，合成一条就分
+不出「两项都判了」和「判了一项、另一项名字写错但恰好没人看」），配 90% 门槛、喂 12% 实测，断
+退出码非零并**三样都要**：点名指标、实际值 `12.00`、门槛值 `90`——少任何一样，看报告的人都得
+回去读脚本才知道该改什么。另配一条边界对照：恰好踩在 90% 上必须**通过**；没有它，「一律判
+FAIL」也能让上面两条变绿，而那是一道谁都过不去的闸。
+
+**红→绿**：第一次变异（两项直接 `continue`）太粗——它把 `checked` 也清成 0，于是撞上「一条门
+槛都没配」那道无关的闸，改之前的 22 条里就有 2 条变红，不构成审计说的那个局面。换成 M2：照常
+`checked += 1`、照常打印 PASS，只把判决翻掉。结果与审计原文逐字对上——**改之前 22 passed 全绿**，
+而 `book_store.py` 的 12% 一路放行；**改之后 2 failed / 24 passed**，红的恰好是新增那两条。
+
+**绿**：`tests/unit/test_coverage_gate_failclosed.py` **26 passed**（原 22 ＋ 新 4）；
+真实配置下 `uv run python scripts/check_coverage_gate.py` 仍 **PASS**（rc=0）；`ruff` 干净。
 
 ### WI-12 🧪 并发测试去抖、去挂（#23、#24，should）
 
