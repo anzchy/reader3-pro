@@ -76,7 +76,7 @@ Do not invent a new number without updating that table.
 | M1b-债 — settings apply order | `016-settings-apply-order` | migration | ✅ Merged (PR #21) |
 | MD — design degradation states | `010-design-degradation-states` | **frontend** | WI-1 – WI-8 |
 | M2 — backend refactor | `011-backend-refactor` | migration | ✅ Merged (PR #22) **— merged 2026-09-22 with 9 ✅ ＋ 1 ⚠️: gate #7 was partial, its blocking formally revoked rather than passed. CI on `4af73cc` was green (tests 35733667011, lint 35733681164), which retired the earlier "green only on the local profile" qualifier.** |
-| M2-债 — audit follow-up | `017-audit-followup` | migration | 🚧 In progress — the 22 must/should findings from the post-merge audit of PR #22; branches off `master`, not off 011 |
+| M2-债 — audit follow-up | `017-audit-followup` | migration | ✅ Merged (PR #23) **— merged 2026-09-23, merge commit `6df5026`. The 22 must/should findings from the post-merge audit of PR #22. Three lanes re-run green on the merge head before merging. This does NOT retire 011's ⚠️: that gate is #7 (bench C1), whose remaining half is debt #35 and lands in 012.** |
 | M3 — storage migration | `012-storage-format` | migration | Allocated |
 | M4a — TS shell + settings + library | `013-ts-frontend-shell` | **frontend** | WI-9 – WI-13 |
 | M4b — TS reader | `014-ts-frontend-reader` | **frontend** | WI-14 – WI-19 |
