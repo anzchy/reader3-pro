@@ -590,21 +590,32 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 | M4b | Phase 4B 阅读器 | `014-ts-frontend-reader` | **B**（WI-14 – WI-19） |
 | M5 | Phase 5 launch + PWA | `015-launch-experience` | A（`reader3 launch`）＋ **B**（PWA，WI-20） |
 | M1b-债 | 欠账 #22 字号/间距慢一拍（合入 009 后、冻结 G2 前的一条独立小分支） | `016-settings-apply-order` | A（兑付记在 [`tasks/009` 欠账表 #22](./tasks/009-e2e-annotations.md)，不另开 task 文件） |
+| M2-债 | 011 合入后的全量审计欠账：44 条 findings 中判为 must / should 的 22 条 | `017-audit-followup` | A（任务展开写在 [`tasks/017-audit-followup.md`](./tasks/017-audit-followup.md)） |
 
 M1b 与 MD 可与 M1/M2 交错推进；M4a 可与 M2/M3 交错推进；**M3 与 M4b 严格串行**。
 
 `016` 不是新里程碑，是 M1b 的欠账兑付：它必须排在 **009 合入之后、G2 冻结之前**，因为修好 #22 会让 `baseline_1b` 的 R-6a 转红、`suite_hash` 再变一次——顺序理由见 [进度盘](../20260824-frontend-backend-plan-progress.md)。**已于 2026-09-06 合入（PR #21，合并 commit `770e5ca`），当天冻结 G2，这条顺序兑付完毕。**
 
-**后端分支**的任务清单放在本文件夹的 `tasks/{分支名}.md`，不写进本文。今天存在三个：
+`017` 与 `016` 同类：不是新里程碑，是 **M2 的欠账兑付**。011 于 2026-09-22 合入 master
+（PR #22，合并 commit `4128221`）之后对该 PR 做了一次全量审计，44 条 findings 按
+[`audit-findings-triage`](../../../.claude/skills/audit-findings-triage/SKILL.md) 复核并分桶，
+must / should 两桶共 22 条落在本分支。**它从 `master` 开、不回 011**——分支已经合了，
+再往上加提交只会让 master 与它分叉。分桶结果与逐条理由在 `.cc-suite/audits/` 下的 findings 文件里，
+而那个目录在 `.gitignore:62` 上、不进版本库，所以**能进仓库的那一份事实写在
+[`tasks/017-audit-followup.md`](./tasks/017-audit-followup.md)**，不要只依赖 findings 文件。
+
+**后端分支**的任务清单放在本文件夹的 `tasks/{分支名}.md`，不写进本文。今天存在五个：
 [`007-hygiene-and-contracts.md`](./tasks/007-hygiene-and-contracts.md)、
 [`008-test-safety-net.md`](./tasks/008-test-safety-net.md)、
-[`009-e2e-annotations.md`](./tasks/009-e2e-annotations.md)。
+[`009-e2e-annotations.md`](./tasks/009-e2e-annotations.md)、
+[`011-backend-refactor.md`](./tasks/011-backend-refactor.md)、
+[`017-audit-followup.md`](./tasks/017-audit-followup.md)。
 
 **前端分支（010 / 013 / 014 与 015 的 PWA 部分）不再有独立任务文件**——它们的工作项以
 `### WI-N:` 的形式直接写在 [前端计划正文](../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) 里，
 这样 `/tdd-guardian:workflow` 能把整份计划当成单一输入来跑。
 
-其余三个（011 / 012 / 015 的后端部分）**故意还没写**。评审第 9 条要求补齐骨架，
+其余两个（012 / 015 的后端部分）**故意还没写**。评审第 9 条要求补齐骨架，
 处置方式是**领先一个分支即时补**，不是现在一次写完：骨架的价值来自它写下的
 事实（哪些代码还在、哪些已经被上一个分支改掉了），而 011 的事实要等 008 落地才成立。
 提前写只会得到一份开工时已经过期的清单。开某个分支前补它自己那份。

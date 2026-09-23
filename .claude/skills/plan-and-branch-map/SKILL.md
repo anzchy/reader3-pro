@@ -75,7 +75,8 @@ Do not invent a new number without updating that table.
 | M1b — Playwright E2E | `009-e2e-annotations` | migration | ✅ Merged (PR #20) |
 | M1b-债 — settings apply order | `016-settings-apply-order` | migration | ✅ Merged (PR #21) |
 | MD — design degradation states | `010-design-degradation-states` | **frontend** | WI-1 – WI-8 |
-| M2 — backend refactor | `011-backend-refactor` | migration | 🔨 Done on branch, not merged **(9 ✅ ＋ 1 ⚠️ — gate #7 is partial, its blocking formally revoked, not passed; and gate #3's green holds only on the local profile — unit lane was red on clean Linux CI (debt #45, introduced by 011's own WI-5b). #45 was fixed 2026-09-20 and **confirmed dead on CI** by run 35512654210 @ `5056614`; the qualifier still stands because that same run is red on #44 (`baseline_1b` W-8a, now 3 CI runs, 3 reds — deterministic) and #46 (flaky), so gate #3's green still holds only on the local profile)** |
+| M2 — backend refactor | `011-backend-refactor` | migration | ✅ Merged (PR #22) **— merged 2026-09-22 with 9 ✅ ＋ 1 ⚠️: gate #7 was partial, its blocking formally revoked rather than passed. CI on `4af73cc` was green (tests 35733667011, lint 35733681164), which retired the earlier "green only on the local profile" qualifier.** |
+| M2-债 — audit follow-up | `017-audit-followup` | migration | 🚧 In progress — the 22 must/should findings from the post-merge audit of PR #22; branches off `master`, not off 011 |
 | M3 — storage migration | `012-storage-format` | migration | Allocated |
 | M4a — TS shell + settings + library | `013-ts-frontend-shell` | **frontend** | WI-9 – WI-13 |
 | M4b — TS reader | `014-ts-frontend-reader` | **frontend** | WI-14 – WI-19 |
