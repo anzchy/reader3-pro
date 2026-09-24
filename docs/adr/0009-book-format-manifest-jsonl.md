@@ -64,7 +64,9 @@ Reader3 Pro 今天用 `pickle.dump`/`pickle.load` 序列化整本书（`reader3.
 
 ### Neutral
 - 目录布局不变：仍是 `books/{book_id}_data/` 一书一目录，变的只是目录里那份主文件的格式（ADR-0001 Neutral 已经这样定义了两者边界，且已提前指向本 ADR）。
-- `storage_format(book_id) -> Literal["json","pkl"]` 成为 `book_store.py` 公开接口契约的一部分（`plan-tech-stack-migration.md:732-733`）。
+- `storage_format(book_id) -> Literal["missing","corrupt","valid"]` 成为 `book_store.py` 公开接口契约的一部分（`plan-tech-stack-migration.md` A5）。**签名由 [ADR-0007](0007-crash-safe-publish-protocol.md) 的「读取状态机」小节定义，那里是唯一定义处，本行只引用。**
+
+  > ⚠️ **2026-09-23 订正：本行此前写的是 `Literal["json","pkl"]`。** 那是 ADR-0007 粗体点名否掉的二态签名——它把「没迁移」（`missing`，正常，走 pkl，不告警）和「迁移坏了」（`corrupt`，必须大声失败、**不许**静默回退 pkl）归成同一件事。本 ADR 的 Consequences 本来就写着「必须与 ADR-0007 一起读」，而这一行恰好没有跟它读。**本 ADR 仍是 `Proposed`、compliance 为 `None`，尚未生效，故为直接订正而非 supersede。** 发现路径见 `docs/plans/20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md` 的 2026-09-23 「010 退出门槛逐条实测」小节（门槛 D-6）。
 - `ai_meta.json` 里的 `book_uuid` 是否并入 `manifest.json`，留给 012 冻结字段集合时决定，不是本 ADR 现在要回答的问题（ADR-0003 Revisit When）。
 
 ## Migration Strategy

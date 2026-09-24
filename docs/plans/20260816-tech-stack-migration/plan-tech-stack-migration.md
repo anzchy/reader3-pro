@@ -755,7 +755,13 @@ Phase 1b 从 Phase 1 中拆出并降级为「仅阻塞 Phase 4」，使 Phase 2/
 - **A3 `static/dist/` 提交进 git**，Node/Vite 仅作构建期工具。须配 lockfile、固定 Node/Vite 版本、可重复构建 CI 检查，以及 wheel 内容测试（见 P0-2）。
 - **A4 PWA 缓存策略写死**：HTML 与 `/api/*` 一律 network-first 不缓存；只缓存内容哈希过的 `dist/` 资源与 vendor bundle；SW 内嵌 build version。**`skipWaiting()` + `clients.claim()` + activate 立即清旧缓存三者同用会撕裂版本**——仍打开的旧页面加载旧 hash chunk 会失败；改为保留前一代缓存（清 N-2），或强制提示并刷新全部 client。
 - **A5 `book_store.py` 先定接口契约再写实现**：
-  `load_book(book_id) -> Book`、`load_book_metadata(book_id)`、`load_chapter(book_id, order)`、`iter_chapters(book_id)`、`chapter_count(book_id)`、`book_fingerprint(book_id) -> str`、`storage_format(book_id) -> Literal["json","pkl"]`。
+  `load_book(book_id) -> Book`、`load_book_metadata(book_id)`、`load_chapter(book_id, order)`、`iter_chapters(book_id)`、`chapter_count(book_id)`、`book_fingerprint(book_id) -> str`、`storage_format(book_id) -> Literal["missing","corrupt","valid"]`。
+
+  > ⚠️ **2026-09-23 订正：此处此前写的是 `Literal["json","pkl"]`，与上面 A2 那条（「三态判定见 ADR-0007」）自相矛盾，两行只隔四行。** [ADR-0007](../../adr/0007-crash-safe-publish-protocol.md)（**Accepted**）的「读取状态机」小节粗体裁定 `missing` / `corrupt` / `valid` **三态、禁止二态**，并点名否掉「只回答新格式还是旧格式」——理由是二态把「没迁移」和「迁移坏了」归成同一件事，而后者必须大声失败、不许静默回退 pkl。二态签名正是它点名的那个 bug，故按 ADR-0007 订正。
+  >
+  > 同一处错误也在 [ADR-0009](../../adr/0009-book-format-manifest-jsonl.md) 的 Neutral 小节里（它引的就是本行），一并订正。**没有写 supersede ADR**：ADR-0009 的 Status 是 `Proposed`、Current compliance 是 `None`，它是待定稿不是已生效裁定，与 Accepted 的 ADR-0007 之间不构成「两份裁定冲突」，直接订正即可。发现路径是 `010` 退出门槛 D-6（书卡的 `storage_format` 角标该渲染几个值），记于 [`plan-frontend-ui-refactor.md`](../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) 的 2026-09-23 实测小节。
+  >
+  > **`storage_format()` 的三态不等于书卡角标的取值域**：角标问的是「旧格式还是新格式」，而 `corrupt` 是健康度不是格式。角标自己的取值域由 `010` 另行定义，不要直接把这三个值渲染上去。
   只暴露全量 `load_book()` 会让 Phase 3 的 JSONL 随机读取与 Phase 2b 的性能优化无处落脚——JSONL 将退化为「换扩展名的 pickle」。`manifest.json` 为每章记录 `offset_bytes` / `length_bytes` / hash，`chapters.jsonl` 二进制 seek 读取；书库页只读 manifest，单章阅读只读一行。
   **合并范围（2026-09-07 实测订正，此前写的「三处 `_Reader3Unpickler` / cached-loader」三个部分全不成立）**：
   今天的答案是 **两处同名 loader ＋ 一处建在其上的 index 缓存**——
