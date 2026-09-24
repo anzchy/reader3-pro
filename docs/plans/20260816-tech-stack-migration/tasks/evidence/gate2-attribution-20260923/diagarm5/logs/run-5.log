@@ -1,0 +1,200 @@
+.....................................F..........................F...     [100%]
+=================================== FAILURES ===================================
+_________ test_w4_new_note_reads_back_through_both_channels[chromium] __________
+
+page = <Page url='http://127.0.0.1:56466/read/smoke_data/0'>
+live_server = 'http://127.0.0.1:56466'
+e2e_books_dir = PosixPath('/private/var/folders/_k/kf42wzb57vl8c_1vcs01hp7c0000gn/T/pytest-of-jackcheng/pytest-447/e2e0/books')
+
+    def test_w4_new_note_reads_back_through_both_channels(
+        page: Page, live_server: str, e2e_books_dir: Path
+    ) -> None:
+        """W-4（S5，往返不变式）：新建笔记 → 刷新 → **两条读回渠道**都拿到同一段正文。
+    
+        链路：选区 → `rd-anno-note` → `openNoteEditor()` → `rd-note-editor-input` →
+        `rd-note-editor-primary` → `saveNote()` 的**新建**分支 → `createAnnotation`
+        → `POST /api/notes/{book}/{chapter}`。
+    
+        **为什么两条渠道要在同一条用例里断，而不是拆成两条。** 它们共享全部前置动作（建选区、
+        开编辑器、填字、保存、刷新），拆开等于把最贵的一段（一次冷加载 + 一次刷新）付两遍；
+        而两条断言不会互相掩盖失败——各自的失败消息会点名是哪条渠道断的。
+    
+        **为什么必须两条都断。** 它们是 `note_text` 的两个**独立消费方**，走的是两条不相交
+        的代码路径：
+    
+          * iframe 内的 `<mark data-note-text>` → `onHover` → `showTooltip` → `rd-note-tooltip`
+            （`annotations.js`，数据来自 `GET /api/notes/{book}/{chapter}`）；
+          * 外层 Notes 面板的 `rd-notes-item` → `notes-panel.js` 的 `loadAndRender`
+            （数据来自 `GET /api/notes/{book}`，另一个端点、另一套摘要逻辑、另一处
+            `html.unescape`）。
+    
+        只断面板会放过「tooltip 整条通路坏掉」；只断 tooltip 会放过「面板整条通路坏掉」。
+    
+        **tooltip 断的是内容，不是可见性。** `expect(...).to_be_visible()` 单独**不构成
+        通过条件**——`showTooltip` 先 `textContent = text` 再 `classList.add("is-visible")`，
+        把 `textContent` 那行删掉之后浮层照样可见，只是空的。这与 §0「几何断言」纪律是同一条
+        要求的两种形态：断「元素存在/可见」等于没断。
+        """
+        assert read_notes(e2e_books_dir, BOOK_ID) == [], "隔离 fixture 没生效：起点不是空的"
+    
+        frame = open_reader(page, live_server, BOOK_ID, 0, CH0_ANCHOR)
+    
+        select_in_frame(frame, CH0_QUOTE)
+        page.get_by_test_id("rd-anno-note").click()
+    
+        # 编辑器开了才有地方填字。这一断不是凑数：`openNoteEditor()` 首行是
+        # `if (!this.currentRange || !this.noteEditor) return;`，静默 return 之后
+        # 下面的 fill 会以「元素不可见」超时，报出来的是 Playwright 的超时而不是「编辑器没开」。
+        expect(page.get_by_test_id("rd-note-editor")).to_be_visible()
+        page.get_by_test_id("rd-note-editor-input").fill(W4_NOTE_TEXT)
+        page.get_by_test_id("rd-note-editor-primary").click()
+    
+        # 往返收尾：落库 → 刷新 → `<mark>` 覆盖的文本回到选中的那一段 → 终态仍是恰好 1 条。
+        # `expected_type="note"` 而不是 "marker"：`saveNote` 的新建分支写死了 type=note，
+        # 这一条同时钉住「Add Note 按钮没有退化成一次普通高亮」。
+>       record = assert_roundtrip(
+            page, e2e_books_dir, BOOK_ID, CH0_QUOTE, CH0_ANCHOR, expected_type="note"
+        )
+
+tests/e2e/baseline_1b/test_write_note_editor.py:171: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/e2e/helpers.py:986: in assert_roundtrip
+    records = wait_for_notes(books_dir, book_id, expected_count)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+books_dir = PosixPath('/private/var/folders/_k/kf42wzb57vl8c_1vcs01hp7c0000gn/T/pytest-of-jackcheng/pytest-447/e2e0/books')
+book_id = 'smoke_data', count = 1
+
+    def wait_for_notes(books_dir: PathLike, book_id: str, count: int) -> List[Dict[str, Any]]:
+        """等 `notes.json` 稳定到 `count` 条，超时即红并把实际内容打出来。
+    
+        这不是「重试掩盖 flaky」：落库是异步的（fetch → 服务端原子写），不等就是在断言一个
+        还没发生的事件。等的是**一个确定的终态**，不是「多试几次也许就成了」——终态不对时它
+        照样红，且把实际条目原样贴出来。
+    
+        ⚠️ 它一观察到 `len == count` 就返回，所以读到的可能是**中间态**：若一次动作写了两次，
+        50ms 的轮询有一定概率正好落在两次写之间的窗口里。要断「恰好 N 条」必须在一个确定的
+        终态上再断一次（`assert_roundtrip` 就是在刷新之后补的那一次）。
+        """
+        deadline = time.monotonic() + NOTES_WAIT_S
+        seen: List[Dict[str, Any]] = []
+        while time.monotonic() < deadline:
+            seen = read_notes(books_dir, book_id)
+            if len(seen) == count:
+                return seen
+            time.sleep(0.05)
+>       raise AssertionError(
+            f"{NOTES_WAIT_S}s 内 notes.json 没有稳定到 {count} 条，实际 {len(seen)} 条：{seen}"
+        )
+E       AssertionError: 8.0s 内 notes.json 没有稳定到 1 条，实际 0 条：[]
+
+tests/e2e/helpers.py:823: AssertionError
+--------------------------- Captured stdout teardown ---------------------------
+
+[e2e] 已拦下的外部请求域：['https://fonts.googleapis.com']
+_ test_w5a0_same_color_repress_removes_only_the_selected_one[chromium-underline] _
+
+page = <Page url='http://127.0.0.1:56466/read/smoke_data/0'>
+live_server = 'http://127.0.0.1:56466'
+e2e_books_dir = PosixPath('/private/var/folders/_k/kf42wzb57vl8c_1vcs01hp7c0000gn/T/pytest-of-jackcheng/pytest-447/e2e0/books')
+action_testid = 'rd-anno-type-underline'
+
+    @pytest.mark.parametrize(
+        "action_testid",
+        [
+            pytest.param("rd-anno-type-marker", id="marker"),
+            pytest.param("rd-anno-type-wavy", id="wavy"),
+            pytest.param("rd-anno-type-underline", id="underline"),
+        ],
+    )
+    def test_w5a0_same_color_repress_removes_only_the_selected_one(
+        page: Page, live_server: str, e2e_books_dir: Path, action_testid: str
+    ) -> None:
+        """W-5a-⓪（S5，**差集律** `S'_章 = S_章 \\ S_选区`）：同色重按只撤销选区上的那一条。
+    
+        走的是 `toggleMarkerAnnotation` 里 `getExistingMarkerIds(selected)` 非空的那一支
+        （marker），以及 `toggleAnnotation` 里 `getExistingAnnotationIds(type, color)` 非空的
+        那一支（wavy / underline）。**两份独立实现**，所以参数化 ×3 而不是挑一个代表。
+    
+        **它的判别力全部来自「同章还剩下什么」这一半。** 只 seed 一条标注时，「章内所有同
+        (type, color) 的条目全删」与「只删选区命中的那一条」**是同一个函数**——两个语义完全
+        不同的实现在那个构造上不可区分。而 4B.2 的一个自然重构恰好会把两者分开：
+        `getExistingAnnotationIds(type, color)` 若不再查 DOM、改为按 type + color 过滤整章的
+        `loadedAnnotations`，`currentRange` 就完全不参与，用户在第 9 段重按 Marker 会**静默
+        删掉第 1–8 段的同色标注**。差集形式把「没被选中的那些必须一字不动」写进了律本身。
+    
+        三条构造理由，缺一条本用例就会稳定假红或失去判别力：
+    
+        * **全程不点色板。** 每次刷新都会把 `selectedColor` 复位为默认色；中途手动点一次色板
+          去「凑」颜色，一旦默认色与所点色不同就落进**异色**分支，本条测的就变成 W-5a-②/③ 了。
+          不碰 = 三次创建/重按必然同色 = 必然走命中的那一支。
+        * **颜色与 type 从落库记录里读、并在动作前断两条相等，不写字面量 `"yellow"`。**
+          默认色是实现细节，写死它会让一次无关的默认值调整把本条打红；而**不断它相等**则会让
+          本条在一个「两条恰好不同色」的世界里悄悄退化回「只 seed 一条」的旧形态。
+          落不进同一 (type, color) 时以 `pytest.fail` 立刻停，**不是 skip**——默认色是确定的，
+          落不进说明实现或语料变了，那是要修的事。
+        * **每一步之间都刷新，且刷新后先等 `<mark>` 数量到位再建选区**（理由见模块 docstring）。
+    
+        **【4B.1 配对】本条是四支里唯一在 4B.1 之后仍应保持绿的一支。** 4B.1 改的是**异色**
+        分支（W-5b「改色不删不建，id 不变」），同色分支的 toggle-off 语义不变。若 4B.1 顺手把
+        候选集从「选区命中」放宽成「整章同 type 同 color」，本条会红——**那是正确的红**，
+        修法是改回实现，不是改本条。
+    
+        **【交叉指针 · 兑付任务书 §0.6 跨波欠账 #1】本条的旁观条与 WI-5 的
+        `test_w7_editing_a_note_changes_its_body_and_nothing_else`（W-7）是同一个构造
+        （`quote="One"`、同章、与目标条不相邻不重叠），两条都不是冗余：**
+    
+          * **W-7 守服务端**：`PUT /api/notes/{book}/{chapter}/{id}` →
+            `notes_service.update_annotation`，那条链是 load 整章 → 改一条 → 整章回写；
+            回写少带一条，同章别的标注就没了，而 HTTP 200 照样返回。
+          * **本条守客户端**：`toggleMarkerAnnotation` / `toggleAnnotation` →
+            `getExistingAnnotationIds` 的**候选集**，退化方向是「选区命中」被放宽。
+    
+        把 W-7 删了，服务端整章回写漏条没人管；把本条删了，客户端候选集放宽没人管。
+        两条各自能红在对方绿的地方。
+        """
+        assert read_notes(e2e_books_dir, BOOK_ID) == [], "隔离 fixture 没生效：起点不是空的"
+    
+        # --- 1. 在 "Alpha prose" 上建目标条 ---------------------------------------
+        frame = open_ch0(page, live_server, expected_marks=0)
+        select_in_frame(frame, CH0_QUOTE)
+        page.get_by_test_id(action_testid).click()
+>       wait_for_notes(e2e_books_dir, BOOK_ID, 1)
+
+tests/e2e/baseline_1b/test_write_recolor_and_delete.py:282: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+books_dir = PosixPath('/private/var/folders/_k/kf42wzb57vl8c_1vcs01hp7c0000gn/T/pytest-of-jackcheng/pytest-447/e2e0/books')
+book_id = 'smoke_data', count = 1
+
+    def wait_for_notes(books_dir: PathLike, book_id: str, count: int) -> List[Dict[str, Any]]:
+        """等 `notes.json` 稳定到 `count` 条，超时即红并把实际内容打出来。
+    
+        这不是「重试掩盖 flaky」：落库是异步的（fetch → 服务端原子写），不等就是在断言一个
+        还没发生的事件。等的是**一个确定的终态**，不是「多试几次也许就成了」——终态不对时它
+        照样红，且把实际条目原样贴出来。
+    
+        ⚠️ 它一观察到 `len == count` 就返回，所以读到的可能是**中间态**：若一次动作写了两次，
+        50ms 的轮询有一定概率正好落在两次写之间的窗口里。要断「恰好 N 条」必须在一个确定的
+        终态上再断一次（`assert_roundtrip` 就是在刷新之后补的那一次）。
+        """
+        deadline = time.monotonic() + NOTES_WAIT_S
+        seen: List[Dict[str, Any]] = []
+        while time.monotonic() < deadline:
+            seen = read_notes(books_dir, book_id)
+            if len(seen) == count:
+                return seen
+            time.sleep(0.05)
+>       raise AssertionError(
+            f"{NOTES_WAIT_S}s 内 notes.json 没有稳定到 {count} 条，实际 {len(seen)} 条：{seen}"
+        )
+E       AssertionError: 8.0s 内 notes.json 没有稳定到 1 条，实际 0 条：[]
+
+tests/e2e/helpers.py:823: AssertionError
+--------------------------- Captured stdout teardown ---------------------------
+
+[e2e] 已拦下的外部请求域：['https://fonts.googleapis.com']
+=========================== short test summary info ============================
+FAILED tests/e2e/baseline_1b/test_write_note_editor.py::test_w4_new_note_reads_back_through_both_channels[chromium]
+FAILED tests/e2e/baseline_1b/test_write_recolor_and_delete.py::test_w5a0_same_color_repress_removes_only_the_selected_one[chromium-underline]
+2 failed, 66 passed, 72 deselected in 126.88s (0:02:06)

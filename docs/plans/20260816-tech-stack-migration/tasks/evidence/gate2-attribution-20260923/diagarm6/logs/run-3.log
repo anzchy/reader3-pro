@@ -1,0 +1,102 @@
+.................................F..................................     [100%]
+=================================== FAILURES ===================================
+_ test_w9a_cjk_marker_keeps_quote_prefix_suffix_on_codepoint_boundaries[chromium] _
+
+page = <Page url='http://127.0.0.1:59507/read/cjk_data/0'>
+live_server = 'http://127.0.0.1:59507'
+e2e_books_dir = PosixPath('/private/var/folders/_k/kf42wzb57vl8c_1vcs01hp7c0000gn/T/pytest-of-jackcheng/pytest-451/e2e0/books')
+
+    def test_w9a_cjk_marker_keeps_quote_prefix_suffix_on_codepoint_boundaries(
+        page: Page, live_server: str, e2e_books_dir: Path
+    ) -> None:
+        """W-9a（S2，多字节边界等价类）：CJK 书上创建 marker → 刷新 → 逐码点往返。
+    
+        链路与 W-1 同构（选区 → `rd-anno-type-marker` → `createAnnotation` →
+        `POST /api/notes/{book}/{chapter}` → 刷新 → `<mark>`），换的只有语料与判据口径。
+        W-1 走真实鼠标拖选、本条走 `select_in_frame` 的程序化路径：拖选全表只留 W-1 那一条
+        smoke（任务书 §1），而本条要断的是编码，与选区**怎么产生**无关。
+    
+        四条判据，缺一条就有一个具体的坏实现能全绿：
+    
+          1. `quote` 逐码点相等 ＋ 字符数 == 4  ⇒ 缺了，按字节切的实现（切出 12 字节 / 半个
+             字符）在 quote 这一侧不显形；
+          2. `position == 2`                    ⇒ 缺了，偏移量按字节算（6）照样绿——落库的
+             quote 是对的，错的是它自称在哪；
+          3. `prefix == "他在"` 且**非空**       ⇒ 缺了，本条与 W-1 同构（`build_cjk` 每章
+             只有一句，章首选区的 prefix 天然为空）；
+          4. `suffix == "等了很久。"` 且**非空** ⇒ 同上，且全角句号的往返没人管。
+    
+        第 5 条在 `assert_roundtrip` 里：刷新后 `<mark>` 覆盖的文本逐字等于选中的那一段，
+        且终态恰好 1 条。本条在它之外再显式比一次**码点序列**——`==` 在 Python 里对
+        NFC/NFD 不同规范化形式的字符串会判不等，而 `list(...)` 的失败消息会把是哪一个码点
+        不同直接指出来，这在 CJK 上比一条「两个看起来一样的串不相等」有用得多。
+        """
+        assert_corpus_unchanged(*CORPUS_CHECKS)
+        assert read_notes(e2e_books_dir, BOOK_ID_CJK) == [], "隔离 fixture 没生效：起点不是空的"
+    
+        # 期望值本身的元断言：字符数与字节数必须不同，否则第 1 条判据分辨不出两种口径。
+        assert len(CJK_CH0_QUOTE.encode("utf-8")) != CJK_CH0_QUOTE_CHARS, (
+            f"{CJK_CH0_QUOTE!r} 的 UTF-8 字节数与字符数相同，选它测不出「字节 vs 码点」——"
+            "换一段真正的多字节文本"
+        )
+        # 上面那条只劈开「字节 vs 码点」。把 BMP 语料的三个口径全量到手，钉死后两个**相等**：
+        # 这不是一条会红的判据，是一条**说明**——它当场写出「本段语料分辨不了 code unit 与
+        # 码点」这件事，从而说明为什么本条后半段非补星平面不可（009 审计 F1）。
+        assert _counts(CJK_CH0_QUOTE) == (12, 4, 4), (
+            f"{CJK_CH0_QUOTE!r} 的三个口径实测是 {_counts(CJK_CH0_QUOTE)}，不是记录在案的 (12, 4, 4)。"
+            "语料换过了？换之前先确认新语料在 BMP 之内——本条的整段注释建立在「后两者相等」上"
+        )
+    
+        frame = open_reader(page, live_server, BOOK_ID_CJK, 0, CJK_CH0_ANCHOR)
+    
+        select_in_frame(frame, CJK_CH0_QUOTE)
+        page.get_by_test_id("rd-anno-type-marker").click()
+    
+>       record = assert_roundtrip(
+            page,
+            e2e_books_dir,
+            BOOK_ID_CJK,
+            CJK_CH0_QUOTE,
+            CJK_CH0_ANCHOR,
+            expected_type="marker",
+        )
+
+tests/e2e/baseline_1b/test_write_cjk_boundary.py:388: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/e2e/helpers.py:986: in assert_roundtrip
+    records = wait_for_notes(books_dir, book_id, expected_count)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+books_dir = PosixPath('/private/var/folders/_k/kf42wzb57vl8c_1vcs01hp7c0000gn/T/pytest-of-jackcheng/pytest-451/e2e0/books')
+book_id = 'cjk_data', count = 1
+
+    def wait_for_notes(books_dir: PathLike, book_id: str, count: int) -> List[Dict[str, Any]]:
+        """等 `notes.json` 稳定到 `count` 条，超时即红并把实际内容打出来。
+    
+        这不是「重试掩盖 flaky」：落库是异步的（fetch → 服务端原子写），不等就是在断言一个
+        还没发生的事件。等的是**一个确定的终态**，不是「多试几次也许就成了」——终态不对时它
+        照样红，且把实际条目原样贴出来。
+    
+        ⚠️ 它一观察到 `len == count` 就返回，所以读到的可能是**中间态**：若一次动作写了两次，
+        50ms 的轮询有一定概率正好落在两次写之间的窗口里。要断「恰好 N 条」必须在一个确定的
+        终态上再断一次（`assert_roundtrip` 就是在刷新之后补的那一次）。
+        """
+        deadline = time.monotonic() + NOTES_WAIT_S
+        seen: List[Dict[str, Any]] = []
+        while time.monotonic() < deadline:
+            seen = read_notes(books_dir, book_id)
+            if len(seen) == count:
+                return seen
+            time.sleep(0.05)
+>       raise AssertionError(
+            f"{NOTES_WAIT_S}s 内 notes.json 没有稳定到 {count} 条，实际 {len(seen)} 条：{seen}"
+        )
+E       AssertionError: 8.0s 内 notes.json 没有稳定到 1 条，实际 0 条：[]
+
+tests/e2e/helpers.py:823: AssertionError
+--------------------------- Captured stdout teardown ---------------------------
+
+[e2e] 已拦下的外部请求域：['https://fonts.googleapis.com']
+=========================== short test summary info ============================
+FAILED tests/e2e/baseline_1b/test_write_cjk_boundary.py::test_w9a_cjk_marker_keeps_quote_prefix_suffix_on_codepoint_boundaries[chromium]
+1 failed, 67 passed, 72 deselected in 63.24s (0:01:03)

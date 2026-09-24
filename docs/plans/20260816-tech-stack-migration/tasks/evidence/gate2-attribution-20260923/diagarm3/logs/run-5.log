@@ -1,0 +1,121 @@
+...............................................F....................     [100%]
+=================================== FAILURES ===================================
+_________ test_w6_delete_removes_only_the_clicked_annotation[chromium] _________
+
+page = <Page url='http://127.0.0.1:53224/read/smoke_data/0'>
+live_server = 'http://127.0.0.1:53224'
+e2e_books_dir = PosixPath('/private/var/folders/_k/kf42wzb57vl8c_1vcs01hp7c0000gn/T/pytest-of-jackcheng/pytest-442/e2e0/books')
+
+    def test_w6_delete_removes_only_the_clicked_annotation(
+        page: Page, live_server: str, e2e_books_dir: Path
+    ) -> None:
+        """W-6（S5，**差集律** `S'_章 = S_章 \\ {target}`）：删掉被点名的那一条，别的一字不动。
+    
+        链路：点 iframe 内目标 `<mark>` → `onAnnotationClick`（把该 mark 上的 metadata 收进
+        `currentAnnotationMeta`）→ `rd-anno-delete` → `deleteCurrentAnnotation` →
+        `deleteAnnotations(ids)` → 逐 id `DELETE /api/notes/{book}/{chapter}/{id}`。
+    
+        **反向断言不可省**（任务书 §3）：删除是唯一会破坏用户数据的操作，「删对了一条」和
+        「顺手删掉了别的」在 UI 上看不出来。只有正向断言时，一个「清空整章标注」的实现全绿；
+        加上反向与基数断言之后它必红。
+    
+        ⚠️ **旁观条必须落在与目标条不同的文字上，这是构造前提不是随手选的。**
+        `deleteCurrentAnnotation()` 取的是 `currentAnnotationMeta` 上的**全部** id 然后一次性
+        `deleteAnnotations(ids)`，而点击一个 `<mark>` 会把该 mark 上的所有 metadata 收进
+        current。把旁观条放在与目标条**重叠**的同一段文字上，两条会渲染进同一个 `<mark>`，
+        今天的实现会把它们一起删掉——那不是抓到了缺陷，那是夹具选错了，反向断言会**假红**。
+    
+        **【与 W-5a-⓪ 的分工，两条都不是重复】** 本条走 `deleteCurrentAnnotation`
+        （读的是点击产生的 `currentAnnotationMeta`），W-5a-⓪ 走 `toggle*` 的同色分支
+        （读的是 `currentRange` 命中的集合）。**两条路径各自独立地能把别人的数据删掉**，
+        所以两条用例各自都带旁观条断言。
+    
+        **基数基准写字面量。** `EXPECTED_BEFORE_DELETE = 2` / `EXPECTED_AFTER_DELETE = 1`
+        ——`> 0` 这类弱断言对「把整章删光」和「一条都没删」都绿（§0 第五条纪律）。
+    
+        **文件形状断的是「对象」，不是「数组」。** `notes_service.save_annotations` 写的是
+        `{"schema_version": …, "book_id": …, "annotations": [...]}`；任务书原文「删完后仍是
+        合法 JSON **数组**」按字面实现会稳定假红。012 若改 payload 形状，本条是那次改动的
+        第一个红灯。
+        """
+        seed_notes(
+            e2e_books_dir,
+            BOOK_ID,
+            [
+                {
+                    "id": W6_TARGET_ID,
+                    "chapter_index": CH0_INDEX,
+                    "type": "marker",
+                    "color": "yellow",
+                    "quote": CH0_QUOTE,
+                    "created_at": "2026-01-01T00:00:00+00:00",
+                },
+                {
+                    "id": W6_BYSTANDER_ID,
+                    "chapter_index": CH0_INDEX,
+                    "type": "marker",
+                    "color": "blue",
+                    "quote": BYSTANDER_QUOTE,
+                    "created_at": "2026-01-01T00:00:01+00:00",
+                },
+            ],
+        )
+        before = read_notes(e2e_books_dir, BOOK_ID)
+        assert _ids(before) == [W6_TARGET_ID, W6_BYSTANDER_ID], f"预置没落对：{before}"
+        assert len(before) == EXPECTED_BEFORE_DELETE, (
+            f"删除前应当恰好 {EXPECTED_BEFORE_DELETE} 条，实际 {len(before)} 条：{before}"
+        )
+        bystander_before = dict(before[1])
+    
+        frame = open_ch0(page, live_server, expected_marks=EXPECTED_BEFORE_DELETE)
+    
+        target_mark = frame.locator(
+            f'[data-testid="rd-anno-span"][data-annotation-id="{W6_TARGET_ID}"]'
+        )
+        expect(target_mark).to_have_text(CH0_QUOTE)
+        target_mark.click()
+    
+        # 工具条开了才有 Delete 可点。这一断不是凑数：`onAnnotationClick` 首行遇到非
+        # `mark.annotation` 就 return，静默 return 之后下面的 click 会以「元素不可见」超时，
+        # 报出来的是 Playwright 的超时而不是「点击没落在标注上」。
+        expect(page.get_by_test_id("rd-anno-toolbar")).to_be_visible()
+        page.get_by_test_id("rd-anno-delete").click()
+    
+>       wait_for_notes(e2e_books_dir, BOOK_ID, EXPECTED_AFTER_DELETE)
+
+tests/e2e/baseline_1b/test_write_recolor_and_delete.py:740: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+books_dir = PosixPath('/private/var/folders/_k/kf42wzb57vl8c_1vcs01hp7c0000gn/T/pytest-of-jackcheng/pytest-442/e2e0/books')
+book_id = 'smoke_data', count = 1
+
+    def wait_for_notes(books_dir: PathLike, book_id: str, count: int) -> List[Dict[str, Any]]:
+        """等 `notes.json` 稳定到 `count` 条，超时即红并把实际内容打出来。
+    
+        这不是「重试掩盖 flaky」：落库是异步的（fetch → 服务端原子写），不等就是在断言一个
+        还没发生的事件。等的是**一个确定的终态**，不是「多试几次也许就成了」——终态不对时它
+        照样红，且把实际条目原样贴出来。
+    
+        ⚠️ 它一观察到 `len == count` 就返回，所以读到的可能是**中间态**：若一次动作写了两次，
+        50ms 的轮询有一定概率正好落在两次写之间的窗口里。要断「恰好 N 条」必须在一个确定的
+        终态上再断一次（`assert_roundtrip` 就是在刷新之后补的那一次）。
+        """
+        deadline = time.monotonic() + NOTES_WAIT_S
+        seen: List[Dict[str, Any]] = []
+        while time.monotonic() < deadline:
+            seen = read_notes(books_dir, book_id)
+            if len(seen) == count:
+                return seen
+            time.sleep(0.05)
+>       raise AssertionError(
+            f"{NOTES_WAIT_S}s 内 notes.json 没有稳定到 {count} 条，实际 {len(seen)} 条：{seen}"
+        )
+E       AssertionError: 8.0s 内 notes.json 没有稳定到 1 条，实际 2 条：[{'id': 'wi6-w6-target-marker', 'book_id': 'smoke_data', 'chapter_index': 0, 'type': 'marker', 'color': 'yellow', 'quote': 'Alpha prose', 'prefix': '', 'suffix': '', 'position': None, 'cfi': None, 'note_text': None, 'created_at': '2026-01-01T00:00:00+00:00', 'orphaned': False}, {'id': 'wi6-w6-bystander-marker', 'book_id': 'smoke_data', 'chapter_index': 0, 'type': 'marker', 'color': 'blue', 'quote': 'One', 'prefix': '', 'suffix': '', 'position': None, 'cfi': None, 'note_text': None, 'created_at': '2026-01-01T00:00:01+00:00', 'orphaned': False}]
+
+tests/e2e/helpers.py:823: AssertionError
+--------------------------- Captured stdout teardown ---------------------------
+
+[e2e] 已拦下的外部请求域：['https://fonts.googleapis.com']
+=========================== short test summary info ============================
+FAILED tests/e2e/baseline_1b/test_write_recolor_and_delete.py::test_w6_delete_removes_only_the_clicked_annotation[chromium]
+1 failed, 67 passed, 72 deselected in 63.75s (0:01:03)

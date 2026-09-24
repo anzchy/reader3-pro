@@ -1,0 +1,61 @@
+{
+  "test": "tests/e2e/baseline_1b/test_kernel_actions_and_url.py::test_k6a_direct_entry_stamps_the_chapter_from_the_url[chromium-cjk-ch1]",
+  "fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data/1",
+      "sent": 298244,
+      "settled": null,
+      "status": null,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data/1",
+      "sent": 298327,
+      "settled": null,
+      "status": null,
+      "error": null
+    }
+  ],
+  "perf": [],
+  "diag": [],
+  "url": "http://127.0.0.1:60863/read/cjk_data/1",
+  "late_fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data/1",
+      "sent": 298244,
+      "settled": 298341,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data/1",
+      "sent": 298327,
+      "settled": 298343,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "late_perf": [
+    {
+      "name": "/api/notes/cjk_data/1",
+      "start": 192,
+      "reqStart": 280,
+      "respStart": 288,
+      "respEnd": 288,
+      "dur": 96
+    },
+    {
+      "name": "/api/notes/cjk_data/1",
+      "start": 275,
+      "reqStart": 280,
+      "respStart": 290,
+      "respEnd": 291,
+      "dur": 15
+    }
+  ],
+  "late_diag": []
+}

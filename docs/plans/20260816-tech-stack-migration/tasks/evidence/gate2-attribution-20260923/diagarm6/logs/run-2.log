@@ -1,0 +1,218 @@
+...................................FF...............................     [100%]
+=================================== FAILURES ===================================
+_____ test_w1_real_mouse_drag_creates_marker_and_survives_reload[chromium] _____
+
+page = <Page url='http://127.0.0.1:58877/read/smoke_data/0'>
+live_server = 'http://127.0.0.1:58877'
+e2e_books_dir = PosixPath('/private/var/folders/_k/kf42wzb57vl8c_1vcs01hp7c0000gn/T/pytest-of-jackcheng/pytest-450/e2e0/books')
+
+    def test_w1_real_mouse_drag_creates_marker_and_survives_reload(
+        page: Page, live_server: str, e2e_books_dir: Path
+    ) -> None:
+        """W-1（S5，往返不变式）：**真实鼠标拖选** → Marker → 刷新 → 高亮回到同一段文字。
+    
+        **全表唯一一条拖选 smoke。** 拖选是 CI 头号 flaky 源，而 flaky 会把 Phase 3 的 soak
+        计数清零，所以其余 30 余条一律走 `select_in_frame` 的程序化路径。留这一条，是因为
+        程序化路径绕开了浏览器原生的 selection 生成：`mouseup` 是我们自己 dispatch 的，
+        `Selection` 是我们自己 `addRange` 的。真实拖选是唯一能证明「用户真的这么操作时这条链
+        也通」的动作——它坏掉而程序化路径还绿，恰恰是这套 E2E 最该报警的一天。
+    
+        **坐标怎么来的，以及为什么这不违反「全程无 `page.evaluate` 建选区」。**
+        用 `_quote_viewport_rect` 量出那段文字的视口矩形，再用 `page.mouse` 在矩形上拖一遍。
+        量矩形走的是一个**游离 `Range`**（`createRange` 之后只读 `getBoundingClientRect`，从不
+        `addRange`），所以它不派发 `selectionchange`、不惊动 epub.js 的 `selected`、不跑
+        `onSelection`——被断言的那个选区**完全由 `page.mouse` 产生**。矩阵禁的是「用 evaluate
+        造出被断言的那个选区」，不是禁用 evaluate 读坐标；这一段写在这里，免得后来者照着它去
+        写第二条「拖选」用例。
+    
+        **拖之前那两条断言不是仪式。** 本条曾经先跑一次 `select_in_frame` 取几何、再
+        `clear_selection_and_drain` 清场。那个写法有个洞：`clear_selection_and_drain` 只清
+        iframe 里的 `Selection`，`Reader3AnnotationUI.currentRange` 和已经 `is-visible` 的工具条
+        **都留着**，而它们恰好就是 `handleAction("marker")` 真正读的东西。于是「`onSelection`
+        整个不再被调用」这种把真实拖选彻底打断的实现，在旧写法下照样全绿——W-1 想证的那件事
+        一个字都没测到（该洞由 009 审计 F3 报出）。现在几何改从游离 Range 取，并在按下鼠标前
+        显式断言 `currentRange is None`、工具条不可见：这两条把「被断言的选区完全由 `page.mouse`
+        产生」从一句注释变成了一个判据。
+    
+        自检：把 `annotations.js` 的 `createAnnotation` 换成空函数，刷新后没有 `<mark>` → 红；
+        后端接了请求但不落盘，刷新后同样没有 `<mark>` → 红。没有任何「返回预期值」的捷径能让
+        它绿——判据落在**另一个进程写下的文件**与**刷新后重建的 DOM**上。
+    
+        flaky 预案（矩阵写死）：若 G2 的三次零 flaky 因本条不过，动作是把它移出 `baseline_1b`
+        （另挂一个不计入 soak 的 marker），**不是加重试也不是加等待**。
+        """
+        assert read_notes(e2e_books_dir, BOOK_ID) == [], "隔离 fixture 没生效：起点不是空的"
+    
+        frame = open_reader(page, live_server, BOOK_ID, 0, CH0_ANCHOR)
+    
+        rect = _quote_viewport_rect(page, frame, CH0_QUOTE)
+    
+        # 拖之前的初态判据：没有它，一条「onSelection 根本没跑」的实现也能靠残留状态蒙混过关。
+        before = page.evaluate(_UI_STATE_JS)
+        assert before["hasUi"], (
+            "window.Reader3AnnotationUI 不存在——annotations.js 没挂上，下面全部判据都是空的"
+        )
+        assert before["currentRange"] is None, (
+            f"按下鼠标之前 currentRange 已经是 {before['currentRange']!r}。"
+            "量矩形那一步惊动了选区链路，本条就退化成「读残留状态」，测不到真实拖选"
+        )
+        expect(page.get_by_test_id("rd-anno-toolbar")).not_to_be_visible()
+    
+        # 起点 left+1 / 终点 right-1：矩形的两个竖边正落在 "A" 的左沿与 "e" 的右沿上，
+        # 往内缩 1px 仍在同一个字形内，而浏览器的插入点吸附取的是**离得最近的字符边界**
+        # ——1px 远小于半个字宽，所以吸附结果与压在边上一致，且不会因为亚像素舍入越到隔壁字符。
+        y = (rect["top"] + rect["bottom"]) / 2
+        page.mouse.move(rect["left"] + 1, y)
+        page.mouse.down()
+        # 中途多走一步：一次性从起点跳到终点，某些平台上会被当成没有移动过的点击。
+        page.mouse.move((rect["left"] + rect["right"]) / 2, y)
+        page.mouse.move(rect["right"] - 1, y)
+        page.mouse.up()
+    
+        expect(page.get_by_test_id("rd-anno-toolbar")).to_be_visible()
+        page.get_by_test_id("rd-anno-type-marker").click()
+    
+>       assert_roundtrip(page, e2e_books_dir, BOOK_ID, CH0_QUOTE, CH0_ANCHOR, expected_type="marker")
+
+tests/e2e/baseline_1b/test_write_create_annotations.py:214: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/e2e/helpers.py:986: in assert_roundtrip
+    records = wait_for_notes(books_dir, book_id, expected_count)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+books_dir = PosixPath('/private/var/folders/_k/kf42wzb57vl8c_1vcs01hp7c0000gn/T/pytest-of-jackcheng/pytest-450/e2e0/books')
+book_id = 'smoke_data', count = 1
+
+    def wait_for_notes(books_dir: PathLike, book_id: str, count: int) -> List[Dict[str, Any]]:
+        """等 `notes.json` 稳定到 `count` 条，超时即红并把实际内容打出来。
+    
+        这不是「重试掩盖 flaky」：落库是异步的（fetch → 服务端原子写），不等就是在断言一个
+        还没发生的事件。等的是**一个确定的终态**，不是「多试几次也许就成了」——终态不对时它
+        照样红，且把实际条目原样贴出来。
+    
+        ⚠️ 它一观察到 `len == count` 就返回，所以读到的可能是**中间态**：若一次动作写了两次，
+        50ms 的轮询有一定概率正好落在两次写之间的窗口里。要断「恰好 N 条」必须在一个确定的
+        终态上再断一次（`assert_roundtrip` 就是在刷新之后补的那一次）。
+        """
+        deadline = time.monotonic() + NOTES_WAIT_S
+        seen: List[Dict[str, Any]] = []
+        while time.monotonic() < deadline:
+            seen = read_notes(books_dir, book_id)
+            if len(seen) == count:
+                return seen
+            time.sleep(0.05)
+>       raise AssertionError(
+            f"{NOTES_WAIT_S}s 内 notes.json 没有稳定到 {count} 条，实际 {len(seen)} 条：{seen}"
+        )
+E       AssertionError: 8.0s 内 notes.json 没有稳定到 1 条，实际 0 条：[]
+
+tests/e2e/helpers.py:823: AssertionError
+--------------------------- Captured stdout teardown ---------------------------
+
+[e2e] 已拦下的外部请求域：['https://fonts.googleapis.com']
+__ test_w2_w3_programmatic_selection_creates_typed_annotation[chromium-wavy] ___
+
+page = <Page url='http://127.0.0.1:58877/read/smoke_data/1'>
+live_server = 'http://127.0.0.1:58877'
+e2e_books_dir = PosixPath('/private/var/folders/_k/kf42wzb57vl8c_1vcs01hp7c0000gn/T/pytest-of-jackcheng/pytest-450/e2e0/books')
+action_testid = 'rd-anno-type-wavy', expected_type = 'wavy'
+
+    @pytest.mark.parametrize(
+        "action_testid,expected_type",
+        [
+            pytest.param("rd-anno-type-wavy", "wavy", id="wavy"),
+            pytest.param("rd-anno-type-underline", "underline", id="underline"),
+        ],
+    )
+    def test_w2_w3_programmatic_selection_creates_typed_annotation(
+        page: Page,
+        live_server: str,
+        e2e_books_dir: Path,
+        action_testid: str,
+        expected_type: str,
+    ) -> None:
+        """W-2 / W-3（S2，取值域等价类）：`toggleAnnotation` 那一支的两个 type 各走一次。
+    
+        `handleAction` 把三个按钮分成两支：`marker` 走 `toggleMarkerAnnotation`（W-1 已覆盖），
+        `wavy` / `underline` 走 `toggleAnnotation`。本条参数化的是**后一支的取值域**——两个值
+        各一次，不多不少。第三个值（`note`）不在这里，它走 `openNoteEditor`，是 W-4。
+    
+        条数断言写 `== 1` 而不是 `>= 1`：`toggleAnnotation` 的新建分支之前有一段「同类型异色
+        就先删旧」的逻辑，写成 `>=` 时那段逻辑退化成「只建不删」也不会红。
+    
+        ------------------------------------------------------------------------
+        **那条 ~250ms 自持循环，在本条里的实测表现**（2026-09-02，chromium 1234）
+        ------------------------------------------------------------------------
+        任务书 §1 警告：`select_in_frame` 返回后循环会重新起来并重置 `currentRange`，
+        「点工具条按钮必须够快」。**循环确实存在**——探针（本章 `Beta prose`，每 30ms 采一次
+        `Reader3AnnotationUI.lastSelectionAt`）测到它在 `select_in_frame` 返回后的
+        **269 / 509 / 773 / 1033 / 1270 / 1536ms** 各刷新一次，即约 260ms 一拍，1.6s 内不收敛。
+    
+        但**「够快」这个要求在创建路径上是宽松的，宽松到不需要任何特殊写法**，两个实测支撑：
+    
+          1. `select_in_frame` 返回到 `click()` 返回之间实测 **30ms**，而循环的第一拍在 269ms
+             ——点击整个落在第一拍之前，`currentRange` 根本还没被碰过；
+          2. 更重要的是，即使落在拍子之后也无妨：整段 1.6s 采样里 `currentRange.toString()`
+             的取值集合恒为 `{'Beta prose'}`。那次重置写回的是**同一段文字**解析出来的等价
+             range（`handleRenditionSelection` 拿的是 epub.js 给的 `cfiRange`，而选区没变），
+             所以 `createAnnotation` 算出的 start/end 不变。
+    
+        会被那条循环真正打坏的是**编辑态**（`handleRenditionSelection` 把 `editingNoteId`
+        清成 null），也就是 W-4 / W-7 那类「建好选区后还要再操作一步」的用例；创建路径只读
+        `currentRange`，对重置免疫。
+    
+        所以这里**不加任何 sleep、不加重试**——`select_in_frame` 返回即点击，是最短路径。
+        若将来这条真的间歇红了，正解仍是缩短选区与点击之间的间隔或在点击前确认 `currentRange`，
+        不是往这里塞等待。
+        """
+        assert read_notes(e2e_books_dir, BOOK_ID) == [], "隔离 fixture 没生效：起点不是空的"
+    
+        frame = open_reader(page, live_server, BOOK_ID, 1, CH1_ANCHOR)
+    
+        select_in_frame(frame, CH1_QUOTE)
+        page.get_by_test_id(action_testid).click()
+    
+>       assert_roundtrip(
+            page, e2e_books_dir, BOOK_ID, CH1_QUOTE, CH1_ANCHOR, expected_type=expected_type
+        )
+
+tests/e2e/baseline_1b/test_write_create_annotations.py:272: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/e2e/helpers.py:986: in assert_roundtrip
+    records = wait_for_notes(books_dir, book_id, expected_count)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+books_dir = PosixPath('/private/var/folders/_k/kf42wzb57vl8c_1vcs01hp7c0000gn/T/pytest-of-jackcheng/pytest-450/e2e0/books')
+book_id = 'smoke_data', count = 1
+
+    def wait_for_notes(books_dir: PathLike, book_id: str, count: int) -> List[Dict[str, Any]]:
+        """等 `notes.json` 稳定到 `count` 条，超时即红并把实际内容打出来。
+    
+        这不是「重试掩盖 flaky」：落库是异步的（fetch → 服务端原子写），不等就是在断言一个
+        还没发生的事件。等的是**一个确定的终态**，不是「多试几次也许就成了」——终态不对时它
+        照样红，且把实际条目原样贴出来。
+    
+        ⚠️ 它一观察到 `len == count` 就返回，所以读到的可能是**中间态**：若一次动作写了两次，
+        50ms 的轮询有一定概率正好落在两次写之间的窗口里。要断「恰好 N 条」必须在一个确定的
+        终态上再断一次（`assert_roundtrip` 就是在刷新之后补的那一次）。
+        """
+        deadline = time.monotonic() + NOTES_WAIT_S
+        seen: List[Dict[str, Any]] = []
+        while time.monotonic() < deadline:
+            seen = read_notes(books_dir, book_id)
+            if len(seen) == count:
+                return seen
+            time.sleep(0.05)
+>       raise AssertionError(
+            f"{NOTES_WAIT_S}s 内 notes.json 没有稳定到 {count} 条，实际 {len(seen)} 条：{seen}"
+        )
+E       AssertionError: 8.0s 内 notes.json 没有稳定到 1 条，实际 0 条：[]
+
+tests/e2e/helpers.py:823: AssertionError
+--------------------------- Captured stdout teardown ---------------------------
+
+[e2e] 已拦下的外部请求域：['https://fonts.googleapis.com']
+=========================== short test summary info ============================
+FAILED tests/e2e/baseline_1b/test_write_create_annotations.py::test_w1_real_mouse_drag_creates_marker_and_survives_reload[chromium]
+FAILED tests/e2e/baseline_1b/test_write_create_annotations.py::test_w2_w3_programmatic_selection_creates_typed_annotation[chromium-wavy]
+2 failed, 66 passed, 72 deselected in 70.72s (0:01:10)

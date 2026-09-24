@@ -1,0 +1,91 @@
+{
+  "test": "tests/e2e/baseline_1b/test_write_recolor_and_delete.py::test_w6_delete_removes_only_the_clicked_annotation[chromium]",
+  "requests": [
+    {
+      "at": 0.155,
+      "method": "GET",
+      "url": "http://127.0.0.1:53224/api/notes/smoke_data/0"
+    },
+    {
+      "at": 0.237,
+      "method": "GET",
+      "url": "http://127.0.0.1:53224/api/notes/smoke_data/0"
+    },
+    {
+      "at": 8.88,
+      "method": "DELETE",
+      "url": "http://127.0.0.1:53224/api/notes/smoke_data/0/wi6-w6-target-marker"
+    }
+  ],
+  "responses": [
+    {
+      "at": 0.161,
+      "status": 200,
+      "method": "GET",
+      "url": "http://127.0.0.1:53224/api/notes/smoke_data/0"
+    },
+    {
+      "at": 0.24,
+      "status": 200,
+      "method": "GET",
+      "url": "http://127.0.0.1:53224/api/notes/smoke_data/0"
+    }
+  ],
+  "failed": [
+    {
+      "at": 0.083,
+      "method": "GET",
+      "url": "https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600&display=swap",
+      "error": "net::ERR_FAILED"
+    },
+    {
+      "at": 0.161,
+      "method": "GET",
+      "url": "https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600&display=swap",
+      "error": "net::ERR_FAILED"
+    }
+  ],
+  "console": [
+    "[0.083] error: Failed to load resource: net::ERR_FAILED @https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600&display=swap:0",
+    "[0.161] error: Failed to load resource: net::ERR_FAILED @https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600&display=swap:0"
+  ],
+  "t0": 1790178180.509669,
+  "diag": [],
+  "url": "http://127.0.0.1:53224/read/smoke_data/0",
+  "late": {
+    "at": 8.905,
+    "requests": 3,
+    "responses": [
+      {
+        "at": 0.161,
+        "status": 200,
+        "method": "GET",
+        "url": "http://127.0.0.1:53224/api/notes/smoke_data/0"
+      },
+      {
+        "at": 0.24,
+        "status": 200,
+        "method": "GET",
+        "url": "http://127.0.0.1:53224/api/notes/smoke_data/0"
+      }
+    ],
+    "failed": [
+      {
+        "at": 0.083,
+        "method": "GET",
+        "url": "https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600&display=swap",
+        "error": "net::ERR_FAILED"
+      },
+      {
+        "at": 0.161,
+        "method": "GET",
+        "url": "https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600&display=swap",
+        "error": "net::ERR_FAILED"
+      }
+    ],
+    "console": [
+      "[0.083] error: Failed to load resource: net::ERR_FAILED @https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600&display=swap:0",
+      "[0.161] error: Failed to load resource: net::ERR_FAILED @https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600&display=swap:0"
+    ]
+  }
+}

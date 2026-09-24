@@ -1,0 +1,197 @@
+..................................................F.........F.......     [100%]
+=================================== FAILURES ===================================
+___ test_k6a_direct_entry_stamps_the_chapter_from_the_url[chromium-cjk-ch1] ____
+
+page = <Page url='http://127.0.0.1:60863/read/cjk_data/1'>
+live_server = 'http://127.0.0.1:60863'
+e2e_books_dir = PosixPath('/private/var/folders/_k/kf42wzb57vl8c_1vcs01hp7c0000gn/T/pytest-of-jackcheng/pytest-453/e2e0/books')
+book_id = 'cjk_data', chapter_index = 1, quote = '喫茶店'
+anchor = '彼女は喫茶店で本を読んでいた。'
+
+    @pytest.mark.parametrize(
+        "book_id,chapter_index,quote,anchor",
+        [
+            pytest.param(BOOK_ID, 1, CH1_QUOTE, CH1_ANCHOR, id="epub2-ch1"),
+            pytest.param(BOOK_ID_CJK, 1, CJK_CH1_QUOTE, CJK_CH1_ANCHOR, id="cjk-ch1"),
+            pytest.param(BOOK_ID_CJK, 2, CJK_CH2_QUOTE, CJK_CH2_ANCHOR, id="cjk-ch2"),
+        ],
+    )
+    def test_k6a_direct_entry_stamps_the_chapter_from_the_url(
+        page: Page,
+        live_server: str,
+        e2e_books_dir: Path,
+        book_id: str,
+        chapter_index: int,
+        quote: str,
+        anchor: str,
+    ) -> None:
+        """K-6a（S2，取值域 · L5）：直接进入 `/read/{book}/{N}` 建标注，落库的 `chapter_index == N`。
+    
+        **三组参数为什么全是非零章。** `Annotation.chapter_index` 的默认值是 `0`
+        （`src/reader3_app/models/annotations.py`），`getReaderContext()` 的回退分支也解析不出
+        章号时给 0。在第 0 章上做这条断言，等于「默认值恰好等于期望值」——`chapter_index`
+        整条传递链断掉也照样绿。取 1 / 1 / 2 三组，把这个空转堵死。
+    
+        **两本书为什么都要。** `smoke_data` 是 EPUB2 两章，`cjk_data` 是三章且正文全是多字节
+        ——章号解析走的是 URL 路径而不是正文，但 `getReaderContext()` 的另一条支路读的是
+        `Reader3Ctx`，那是模板渲染出来的。两本不同结构的书各走一遍，才覆盖到「第二章」与
+        「第三章」两个不同的 spine 位置。
+    
+        **为什么还要问一次服务端。** 盘上的字段对，和服务端按章过滤的结果对，是两件事：
+        K6 有一种失效形态是字段写对了但 `GET /api/notes/{book}/{N}` 按别的键筛，只读盘看不出来。
+        反向那一问（第 0 章必须是空的）是这条断言的另一半——只问「第 N 章有」的话，
+        一个「无论问哪章都把全书交出来」的实现照样绿。
+    
+        什么改动会让它红：`getReaderContext()` 的 pathname 解析写错、`Reader3Ctx.chapterIndex`
+        不再由模板注入、`POST /api/notes/{book}/{chapter}` 的路径参数被忽略而改用请求体里的值。
+        """
+        assert read_notes(e2e_books_dir, book_id) == [], "隔离 fixture 没生效：起点不是空的"
+    
+>       frame = open_reader(page, live_server, book_id, chapter_index, anchor)
+
+tests/e2e/baseline_1b/test_kernel_actions_and_url.py:479: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/e2e/helpers.py:191: in open_reader
+    return reader_frame(page, expect_text)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+page = <Page url='http://127.0.0.1:60863/read/cjk_data/1'>
+expect_text = '彼女は喫茶店で本を読んでいた。'
+
+    def reader_frame(page: "Page", expect_text: str) -> "FrameLocator":
+        """**已经在阅读器页面上**时，等到 iframe 里真的有正文，产出 `FrameLocator`。
+    
+        先等外层壳，再等 iframe：壳都没有的话，下面的等待会白等满超时，报出来的是
+        「找不到 frame」而不是「页面根本没渲染」——smoke 里已经付过一次这个学费。
+    
+        **与 `open_reader` 的区别只有一处：它不 `goto`。** 凡是「点进来」的用例（R-1 从书库点
+        书卡）或站内导航的用例（R-2 的 `rd-chapter-next` 与 TOC 行两支）都必须走这一半：再
+        `goto` 一次就把被测的那次导航冲掉了——用例会绿，但它证明的是 `goto` 能用，不是那个按钮
+        能用。`open_reader` 反过来**委托给本函数**，等 iframe 的逻辑因此只有一份。
+        """
+        from playwright.sync_api import expect
+    
+        expect(page.get_by_test_id("rd-shell")).to_be_visible()
+        frame = page.frame_locator('[data-testid="rd-viewport"] iframe')  # lint-e2e-selectors: allow —— iframe 元素由 epub.js 运行时创建，插不进 testid
+>       expect(frame.locator("body")).to_contain_text(expect_text)  # lint-e2e-selectors: allow —— iframe 内是用户那本书自己的 XHTML，不是我们的模板
+E       AssertionError: Locator expected to contain text '彼女は喫茶店で本を読んでいた。'
+E       Actual value: None
+E       Error: element(s) not found 
+E       Call log:
+E         - Expect "to_contain_text" with timeout 5000ms
+E         - waiting for locator("[data-testid=\"rd-viewport\"] iframe").content_frame.locator("body")
+E       
+E       Aria snapshot:
+E       - link "Previous":
+E         - /url: /read/cjk_data/0
+E       - text: Section 2 of 3
+E       - link "Next":
+E         - /url: /read/cjk_data/2
+E       - text: 当前阅读至 0%
+E       - link "Back to Library":
+E         - /url: /
+E         - img
+E       - button "Table of Contents":
+E         - img
+E       - button "Search":
+E         - img
+E       - button "AI Assistant":
+E         - img
+E       - button "Font Settings":
+E         - img: Aa
+E       - button "Notes":
+E         - img
+
+tests/e2e/helpers.py:178: AssertionError
+--------------------------- Captured stdout teardown ---------------------------
+
+[e2e] 已拦下的外部请求域：['https://fonts.googleapis.com']
+___ test_k6a_direct_entry_stamps_the_chapter_from_the_url[chromium-cjk-ch2] ____
+
+page = <Page url='http://127.0.0.1:60863/read/cjk_data/2'>
+live_server = 'http://127.0.0.1:60863'
+e2e_books_dir = PosixPath('/private/var/folders/_k/kf42wzb57vl8c_1vcs01hp7c0000gn/T/pytest-of-jackcheng/pytest-453/e2e0/books')
+book_id = 'cjk_data', chapter_index = 2, quote = '커피', anchor = '커피를 마시며 기다렸다.'
+
+    @pytest.mark.parametrize(
+        "book_id,chapter_index,quote,anchor",
+        [
+            pytest.param(BOOK_ID, 1, CH1_QUOTE, CH1_ANCHOR, id="epub2-ch1"),
+            pytest.param(BOOK_ID_CJK, 1, CJK_CH1_QUOTE, CJK_CH1_ANCHOR, id="cjk-ch1"),
+            pytest.param(BOOK_ID_CJK, 2, CJK_CH2_QUOTE, CJK_CH2_ANCHOR, id="cjk-ch2"),
+        ],
+    )
+    def test_k6a_direct_entry_stamps_the_chapter_from_the_url(
+        page: Page,
+        live_server: str,
+        e2e_books_dir: Path,
+        book_id: str,
+        chapter_index: int,
+        quote: str,
+        anchor: str,
+    ) -> None:
+        """K-6a（S2，取值域 · L5）：直接进入 `/read/{book}/{N}` 建标注，落库的 `chapter_index == N`。
+    
+        **三组参数为什么全是非零章。** `Annotation.chapter_index` 的默认值是 `0`
+        （`src/reader3_app/models/annotations.py`），`getReaderContext()` 的回退分支也解析不出
+        章号时给 0。在第 0 章上做这条断言，等于「默认值恰好等于期望值」——`chapter_index`
+        整条传递链断掉也照样绿。取 1 / 1 / 2 三组，把这个空转堵死。
+    
+        **两本书为什么都要。** `smoke_data` 是 EPUB2 两章，`cjk_data` 是三章且正文全是多字节
+        ——章号解析走的是 URL 路径而不是正文，但 `getReaderContext()` 的另一条支路读的是
+        `Reader3Ctx`，那是模板渲染出来的。两本不同结构的书各走一遍，才覆盖到「第二章」与
+        「第三章」两个不同的 spine 位置。
+    
+        **为什么还要问一次服务端。** 盘上的字段对，和服务端按章过滤的结果对，是两件事：
+        K6 有一种失效形态是字段写对了但 `GET /api/notes/{book}/{N}` 按别的键筛，只读盘看不出来。
+        反向那一问（第 0 章必须是空的）是这条断言的另一半——只问「第 N 章有」的话，
+        一个「无论问哪章都把全书交出来」的实现照样绿。
+    
+        什么改动会让它红：`getReaderContext()` 的 pathname 解析写错、`Reader3Ctx.chapterIndex`
+        不再由模板注入、`POST /api/notes/{book}/{chapter}` 的路径参数被忽略而改用请求体里的值。
+        """
+        assert read_notes(e2e_books_dir, book_id) == [], "隔离 fixture 没生效：起点不是空的"
+    
+        frame = open_reader(page, live_server, book_id, chapter_index, anchor)
+        select_in_frame(frame, quote)
+        page.get_by_test_id("rd-anno-type-marker").click()
+    
+>       records = wait_for_notes(e2e_books_dir, book_id, K2_EXPECTED_AFTER_CREATE)
+
+tests/e2e/baseline_1b/test_kernel_actions_and_url.py:483: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+books_dir = PosixPath('/private/var/folders/_k/kf42wzb57vl8c_1vcs01hp7c0000gn/T/pytest-of-jackcheng/pytest-453/e2e0/books')
+book_id = 'cjk_data', count = 1
+
+    def wait_for_notes(books_dir: PathLike, book_id: str, count: int) -> List[Dict[str, Any]]:
+        """等 `notes.json` 稳定到 `count` 条，超时即红并把实际内容打出来。
+    
+        这不是「重试掩盖 flaky」：落库是异步的（fetch → 服务端原子写），不等就是在断言一个
+        还没发生的事件。等的是**一个确定的终态**，不是「多试几次也许就成了」——终态不对时它
+        照样红，且把实际条目原样贴出来。
+    
+        ⚠️ 它一观察到 `len == count` 就返回，所以读到的可能是**中间态**：若一次动作写了两次，
+        50ms 的轮询有一定概率正好落在两次写之间的窗口里。要断「恰好 N 条」必须在一个确定的
+        终态上再断一次（`assert_roundtrip` 就是在刷新之后补的那一次）。
+        """
+        deadline = time.monotonic() + NOTES_WAIT_S
+        seen: List[Dict[str, Any]] = []
+        while time.monotonic() < deadline:
+            seen = read_notes(books_dir, book_id)
+            if len(seen) == count:
+                return seen
+            time.sleep(0.05)
+>       raise AssertionError(
+            f"{NOTES_WAIT_S}s 内 notes.json 没有稳定到 {count} 条，实际 {len(seen)} 条：{seen}"
+        )
+E       AssertionError: 8.0s 内 notes.json 没有稳定到 1 条，实际 0 条：[]
+
+tests/e2e/helpers.py:823: AssertionError
+--------------------------- Captured stdout teardown ---------------------------
+
+[e2e] 已拦下的外部请求域：['https://fonts.googleapis.com']
+=========================== short test summary info ============================
+FAILED tests/e2e/baseline_1b/test_kernel_actions_and_url.py::test_k6a_direct_entry_stamps_the_chapter_from_the_url[chromium-cjk-ch1]
+FAILED tests/e2e/baseline_1b/test_kernel_actions_and_url.py::test_k6a_direct_entry_stamps_the_chapter_from_the_url[chromium-cjk-ch2]
+2 failed, 66 passed, 72 deselected in 66.03s (0:01:06)

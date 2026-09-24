@@ -1,0 +1,107 @@
+.......................................................F............     [100%]
+=================================== FAILURES ===================================
+_ test_w2_w3_programmatic_selection_creates_typed_annotation[chromium-underline] _
+
+page = <Page url='http://127.0.0.1:58353/read/smoke_data/1'>
+live_server = 'http://127.0.0.1:58353'
+e2e_books_dir = PosixPath('/private/var/folders/_k/kf42wzb57vl8c_1vcs01hp7c0000gn/T/pytest-of-jackcheng/pytest-449/e2e0/books')
+action_testid = 'rd-anno-type-underline', expected_type = 'underline'
+
+    @pytest.mark.parametrize(
+        "action_testid,expected_type",
+        [
+            pytest.param("rd-anno-type-wavy", "wavy", id="wavy"),
+            pytest.param("rd-anno-type-underline", "underline", id="underline"),
+        ],
+    )
+    def test_w2_w3_programmatic_selection_creates_typed_annotation(
+        page: Page,
+        live_server: str,
+        e2e_books_dir: Path,
+        action_testid: str,
+        expected_type: str,
+    ) -> None:
+        """W-2 / W-3（S2，取值域等价类）：`toggleAnnotation` 那一支的两个 type 各走一次。
+    
+        `handleAction` 把三个按钮分成两支：`marker` 走 `toggleMarkerAnnotation`（W-1 已覆盖），
+        `wavy` / `underline` 走 `toggleAnnotation`。本条参数化的是**后一支的取值域**——两个值
+        各一次，不多不少。第三个值（`note`）不在这里，它走 `openNoteEditor`，是 W-4。
+    
+        条数断言写 `== 1` 而不是 `>= 1`：`toggleAnnotation` 的新建分支之前有一段「同类型异色
+        就先删旧」的逻辑，写成 `>=` 时那段逻辑退化成「只建不删」也不会红。
+    
+        ------------------------------------------------------------------------
+        **那条 ~250ms 自持循环，在本条里的实测表现**（2026-09-02，chromium 1234）
+        ------------------------------------------------------------------------
+        任务书 §1 警告：`select_in_frame` 返回后循环会重新起来并重置 `currentRange`，
+        「点工具条按钮必须够快」。**循环确实存在**——探针（本章 `Beta prose`，每 30ms 采一次
+        `Reader3AnnotationUI.lastSelectionAt`）测到它在 `select_in_frame` 返回后的
+        **269 / 509 / 773 / 1033 / 1270 / 1536ms** 各刷新一次，即约 260ms 一拍，1.6s 内不收敛。
+    
+        但**「够快」这个要求在创建路径上是宽松的，宽松到不需要任何特殊写法**，两个实测支撑：
+    
+          1. `select_in_frame` 返回到 `click()` 返回之间实测 **30ms**，而循环的第一拍在 269ms
+             ——点击整个落在第一拍之前，`currentRange` 根本还没被碰过；
+          2. 更重要的是，即使落在拍子之后也无妨：整段 1.6s 采样里 `currentRange.toString()`
+             的取值集合恒为 `{'Beta prose'}`。那次重置写回的是**同一段文字**解析出来的等价
+             range（`handleRenditionSelection` 拿的是 epub.js 给的 `cfiRange`，而选区没变），
+             所以 `createAnnotation` 算出的 start/end 不变。
+    
+        会被那条循环真正打坏的是**编辑态**（`handleRenditionSelection` 把 `editingNoteId`
+        清成 null），也就是 W-4 / W-7 那类「建好选区后还要再操作一步」的用例；创建路径只读
+        `currentRange`，对重置免疫。
+    
+        所以这里**不加任何 sleep、不加重试**——`select_in_frame` 返回即点击，是最短路径。
+        若将来这条真的间歇红了，正解仍是缩短选区与点击之间的间隔或在点击前确认 `currentRange`，
+        不是往这里塞等待。
+        """
+        assert read_notes(e2e_books_dir, BOOK_ID) == [], "隔离 fixture 没生效：起点不是空的"
+    
+        frame = open_reader(page, live_server, BOOK_ID, 1, CH1_ANCHOR)
+    
+        select_in_frame(frame, CH1_QUOTE)
+        page.get_by_test_id(action_testid).click()
+    
+>       assert_roundtrip(
+            page, e2e_books_dir, BOOK_ID, CH1_QUOTE, CH1_ANCHOR, expected_type=expected_type
+        )
+
+tests/e2e/baseline_1b/test_write_create_annotations.py:272: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/e2e/helpers.py:986: in assert_roundtrip
+    records = wait_for_notes(books_dir, book_id, expected_count)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+books_dir = PosixPath('/private/var/folders/_k/kf42wzb57vl8c_1vcs01hp7c0000gn/T/pytest-of-jackcheng/pytest-449/e2e0/books')
+book_id = 'smoke_data', count = 1
+
+    def wait_for_notes(books_dir: PathLike, book_id: str, count: int) -> List[Dict[str, Any]]:
+        """等 `notes.json` 稳定到 `count` 条，超时即红并把实际内容打出来。
+    
+        这不是「重试掩盖 flaky」：落库是异步的（fetch → 服务端原子写），不等就是在断言一个
+        还没发生的事件。等的是**一个确定的终态**，不是「多试几次也许就成了」——终态不对时它
+        照样红，且把实际条目原样贴出来。
+    
+        ⚠️ 它一观察到 `len == count` 就返回，所以读到的可能是**中间态**：若一次动作写了两次，
+        50ms 的轮询有一定概率正好落在两次写之间的窗口里。要断「恰好 N 条」必须在一个确定的
+        终态上再断一次（`assert_roundtrip` 就是在刷新之后补的那一次）。
+        """
+        deadline = time.monotonic() + NOTES_WAIT_S
+        seen: List[Dict[str, Any]] = []
+        while time.monotonic() < deadline:
+            seen = read_notes(books_dir, book_id)
+            if len(seen) == count:
+                return seen
+            time.sleep(0.05)
+>       raise AssertionError(
+            f"{NOTES_WAIT_S}s 内 notes.json 没有稳定到 {count} 条，实际 {len(seen)} 条：{seen}"
+        )
+E       AssertionError: 8.0s 内 notes.json 没有稳定到 1 条，实际 0 条：[]
+
+tests/e2e/helpers.py:823: AssertionError
+--------------------------- Captured stdout teardown ---------------------------
+
+[e2e] 已拦下的外部请求域：['https://fonts.googleapis.com']
+=========================== short test summary info ============================
+FAILED tests/e2e/baseline_1b/test_write_create_annotations.py::test_w2_w3_programmatic_selection_creates_typed_annotation[chromium-underline]
+1 failed, 67 passed, 72 deselected in 63.49s (0:01:03)

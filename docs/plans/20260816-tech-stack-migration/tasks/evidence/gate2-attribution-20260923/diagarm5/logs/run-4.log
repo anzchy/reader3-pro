@@ -1,0 +1,94 @@
+.......F............................................................     [100%]
+=================================== FAILURES ===================================
+___ test_k2_delete_action_removes_the_clicked_annotation_from_disk[chromium] ___
+
+page = <Page url='http://127.0.0.1:55926/read/smoke_data/0'>
+live_server = 'http://127.0.0.1:55926'
+e2e_books_dir = PosixPath('/private/var/folders/_k/kf42wzb57vl8c_1vcs01hp7c0000gn/T/pytest-of-jackcheng/pytest-446/e2e0/books')
+
+    def test_k2_delete_action_removes_the_clicked_annotation_from_disk(
+        page: Page, live_server: str, e2e_books_dir: Path
+    ) -> None:
+        """K-2 `delete`（S1 · L5 落库判据）：点中 `<mark>` → 按 Delete → 刷新后盘上一条不剩。
+    
+        `delete` 是七个取值里唯一**要求先有标注**的那个，所以起点用 `seed_notes` 预置一条，
+        而不是先按 marker 再按 delete——后者会把「创建这一支坏了」与「删除这一支坏了」混成
+        同一个红。
+    
+        **为什么收尾要刷新。** `deleteCurrentAnnotation` 末尾会 `loadAndRender()` 重绘，那次
+        重绘用的是服务端返回后重新拉的列表，但页面 JS 状态从未清零。刷新是唯一能把
+        「JS 里已经忘了」与「盘上真的没了」分开的动作（任务书 §0 把「断言 DELETE 请求发生过」
+        列为反例）。
+    
+        什么改动会让它红：`delete` 这个 `data-action` 改名、`onAnnotationClick` 不再把
+        metadata 收进 `currentAnnotationMeta`（Delete 拿不到 id，静默 return）、
+        或者服务端 204 了但没落盘。
+        """
+        seed_notes(
+            e2e_books_dir,
+            BOOK_ID,
+            [
+                {
+                    "id": K2_DELETE_TARGET_ID,
+                    "chapter_index": 0,
+                    "type": "marker",
+                    "color": "yellow",
+                    "quote": CH0_QUOTE,
+                    "created_at": "2026-01-01T00:00:00+00:00",
+                }
+            ],
+        )
+        before = read_notes(e2e_books_dir, BOOK_ID)
+        assert [a["id"] for a in before] == [K2_DELETE_TARGET_ID], f"预置没落对：{before}"
+    
+        frame = open_reader(page, live_server, BOOK_ID, 0, CH0_ANCHOR)
+        target = frame.locator(
+            f'[data-testid="rd-anno-span"][data-annotation-id="{K2_DELETE_TARGET_ID}"]'
+        )
+        expect(target).to_have_text(CH0_QUOTE)
+        target.click()
+    
+        # 工具条开了才有 Delete 可点。这一断不是凑数：`onAnnotationClick` 首行遇到非
+        # `mark.annotation` 就静默 return，之后的 click 报出来的会是 Playwright 的
+        # actionability 超时，而不是「点击没落在标注上」。
+        expect(page.get_by_test_id("rd-anno-toolbar")).to_be_visible()
+        page.get_by_test_id("rd-anno-delete").click()
+    
+>       wait_for_notes(e2e_books_dir, BOOK_ID, K2_EXPECTED_AFTER_DELETE)
+
+tests/e2e/baseline_1b/test_kernel_actions_and_url.py:376: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+books_dir = PosixPath('/private/var/folders/_k/kf42wzb57vl8c_1vcs01hp7c0000gn/T/pytest-of-jackcheng/pytest-446/e2e0/books')
+book_id = 'smoke_data', count = 0
+
+    def wait_for_notes(books_dir: PathLike, book_id: str, count: int) -> List[Dict[str, Any]]:
+        """等 `notes.json` 稳定到 `count` 条，超时即红并把实际内容打出来。
+    
+        这不是「重试掩盖 flaky」：落库是异步的（fetch → 服务端原子写），不等就是在断言一个
+        还没发生的事件。等的是**一个确定的终态**，不是「多试几次也许就成了」——终态不对时它
+        照样红，且把实际条目原样贴出来。
+    
+        ⚠️ 它一观察到 `len == count` 就返回，所以读到的可能是**中间态**：若一次动作写了两次，
+        50ms 的轮询有一定概率正好落在两次写之间的窗口里。要断「恰好 N 条」必须在一个确定的
+        终态上再断一次（`assert_roundtrip` 就是在刷新之后补的那一次）。
+        """
+        deadline = time.monotonic() + NOTES_WAIT_S
+        seen: List[Dict[str, Any]] = []
+        while time.monotonic() < deadline:
+            seen = read_notes(books_dir, book_id)
+            if len(seen) == count:
+                return seen
+            time.sleep(0.05)
+>       raise AssertionError(
+            f"{NOTES_WAIT_S}s 内 notes.json 没有稳定到 {count} 条，实际 {len(seen)} 条：{seen}"
+        )
+E       AssertionError: 8.0s 内 notes.json 没有稳定到 0 条，实际 1 条：[{'id': 'k2-delete-target', 'book_id': 'smoke_data', 'chapter_index': 0, 'type': 'marker', 'color': 'yellow', 'quote': 'Alpha prose', 'prefix': '', 'suffix': '', 'position': None, 'cfi': None, 'note_text': None, 'created_at': '2026-01-01T00:00:00+00:00', 'orphaned': False}]
+
+tests/e2e/helpers.py:823: AssertionError
+--------------------------- Captured stdout teardown ---------------------------
+
+[e2e] 已拦下的外部请求域：['https://fonts.googleapis.com']
+=========================== short test summary info ============================
+FAILED tests/e2e/baseline_1b/test_kernel_actions_and_url.py::test_k2_delete_action_removes_the_clicked_annotation_from_disk[chromium]
+1 failed, 67 passed, 72 deselected in 64.02s (0:01:04)

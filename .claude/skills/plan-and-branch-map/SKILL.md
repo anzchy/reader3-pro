@@ -74,7 +74,7 @@ Do not invent a new number without updating that table.
 | M1 — tests + CI + API freeze | `008-test-safety-net` | migration | ✅ Merged (PR #19) |
 | M1b — Playwright E2E | `009-e2e-annotations` | migration | ✅ Merged (PR #20) |
 | M1b-债 — settings apply order | `016-settings-apply-order` | migration | ✅ Merged (PR #21) |
-| MD — design degradation states | `010-design-degradation-states` | **frontend** | WI-1 – WI-8 |
+| MD — design degradation states | `010-design-degradation-states` | **frontend** | 🔨 Done on branch, not merged **— all nine exit gates green at `4fb33c9` (2026-09-24, after rulings D-2 / D-5 / D-6 / D-8). Not pushed, not merged; verify with `git log --oneline master..010-design-degradation-states`. Work items are still WI-1 – WI-8 in the frontend plan.** |
 | M2 — backend refactor | `011-backend-refactor` | migration | ✅ Merged (PR #22) **— merged 2026-09-22 with 9 ✅ ＋ 1 ⚠️: gate #7 was partial, its blocking formally revoked rather than passed. CI on `4af73cc` was green (tests 35733667011, lint 35733681164), which retired the earlier "green only on the local profile" qualifier.** |
 | M2-债 — audit follow-up | `017-audit-followup` | migration | ✅ Merged (PR #23) **— merged 2026-09-23, merge commit `6df5026`. The 22 must/should findings from the post-merge audit of PR #22. Three lanes re-run green on the merge head before merging. This does NOT retire 011's ⚠️: that gate is #7 (bench C1), whose remaining half is debt #35 and lands in 012.** |
 | M3 — storage migration | `012-storage-format` | migration | Allocated |
@@ -91,13 +91,18 @@ missing until 2026-09-01, which is how 009 kept reading as "Tasks drafted" with 
 M1b's two gates are both met: **G1** on 2026-09-05 (unlocks Phase 4A / 013) and **G2** on
 2026-09-06. `suite_hash` was **re-frozen** at `1e868c7bf811` on 2026-09-21 (prior value
 `2747100dadf6` is void). Two consequences you need before touching anything: **Phase 3 / 012 is
-still blocked, and as of 2026-09-21 it is blocked by everything at once again.** Fixing a real
-data-loss bug (009 debt #9) required re-judging a frozen test, so the ledger's 10 green runs and
-**all three** of §7's **mechanism-challenge gates** — including the one that had PASSED — were
-reset together. The count is back to **0**, the gates to **0 / 3** (results, the reset entry, and
-repro commands live only in `soak-log.md` — do not restate them). That reset was a deliberate,
-recorded trade, not an accident; read the change-history entry before assuming a number here is
-stale. Waiting will not clear any of it. And **any byte changed under
+still blocked — now only by the soak count (≥10 runs / ≥5 workdays).** History, condensed: on
+2026-09-21 fixing a real data-loss bug (009 debt #9) required re-judging a frozen test, so the
+ledger and all three of §7's **mechanism-challenge gates** were reset together — a deliberate,
+recorded trade. Against the new hash, items 1 (clean Linux) and 3 (random collection order)
+re-passed; item 2 (CPU pressure) measured FAIL on 2026-09-23, was attributed to a test-fixture
+fault in frozen `helpers.py` (not a product defect), and on **2026-09-24 was downgraded by
+maintainer ruling to non-blocking / record-only** — downgraded, not passed (its fix is 009 debt
+#49). So the mechanism gates no longer block 012; the soak ledger was **not** reset by that ruling.
+The ruling lives in §7 of `plan-tech-stack-migration.md` (below discipline 3); results, the
+attribution evidence ("第 2 项归因"), and the current count live only in `soak-log.md` — do not
+restate them. Waiting alone will not clear the count: it needs `soak --append` runs on `master`.
+And **any byte changed under
 `tests/e2e/baseline_1b/**`, `tests/e2e/conftest.py`, `helpers.py`, `test_harness_smoke.py`, or the
 four `tests/fixtures/` files resets that count to zero** — docstrings included. Progress and the
 frozen value are defined only in

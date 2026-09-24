@@ -1,0 +1,94 @@
+{
+  "test": "tests/e2e/baseline_1b/test_write_create_annotations.py::test_w2_w3_programmatic_selection_creates_typed_annotation[chromium-underline]",
+  "fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/1",
+      "sent": 79,
+      "settled": 84,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "POST",
+      "url": "/api/notes/smoke_data/1",
+      "sent": 134,
+      "settled": null,
+      "status": null,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/1",
+      "sent": 160,
+      "settled": null,
+      "status": null,
+      "error": null
+    }
+  ],
+  "perf": [
+    {
+      "name": "/api/notes/smoke_data/1",
+      "start": 85,
+      "reqStart": 89,
+      "respStart": 90,
+      "respEnd": 90,
+      "dur": 5
+    }
+  ],
+  "diag": [],
+  "url": "http://127.0.0.1:60138/read/smoke_data/1",
+  "late_fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/1",
+      "sent": 79,
+      "settled": 84,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "POST",
+      "url": "/api/notes/smoke_data/1",
+      "sent": 134,
+      "settled": 8173,
+      "status": 201,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/1",
+      "sent": 160,
+      "settled": 8174,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/1",
+      "sent": 8174,
+      "settled": null,
+      "status": null,
+      "error": null
+    }
+  ],
+  "late_perf": [
+    {
+      "name": "/api/notes/smoke_data/1",
+      "start": 85,
+      "reqStart": 89,
+      "respStart": 90,
+      "respEnd": 90,
+      "dur": 5
+    },
+    {
+      "name": "/api/notes/smoke_data/1",
+      "start": 166,
+      "reqStart": 8173,
+      "respStart": 8176,
+      "respEnd": 8176,
+      "dur": 8010
+    }
+  ],
+  "late_diag": []
+}

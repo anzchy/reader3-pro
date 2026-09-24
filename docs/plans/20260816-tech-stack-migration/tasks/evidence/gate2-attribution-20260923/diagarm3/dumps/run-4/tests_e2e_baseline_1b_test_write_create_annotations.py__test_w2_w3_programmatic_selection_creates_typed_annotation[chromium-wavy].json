@@ -1,0 +1,79 @@
+{
+  "test": "tests/e2e/baseline_1b/test_write_create_annotations.py::test_w2_w3_programmatic_selection_creates_typed_annotation[chromium-wavy]",
+  "requests": [
+    {
+      "at": 0.088,
+      "method": "GET",
+      "url": "http://127.0.0.1:52647/api/notes/smoke_data/1"
+    },
+    {
+      "at": 0.142,
+      "method": "POST",
+      "url": "http://127.0.0.1:52647/api/notes/smoke_data/1"
+    },
+    {
+      "at": 8.188,
+      "method": "GET",
+      "url": "http://127.0.0.1:52647/api/notes/smoke_data/1"
+    }
+  ],
+  "responses": [
+    {
+      "at": 0.091,
+      "status": 200,
+      "method": "GET",
+      "url": "http://127.0.0.1:52647/api/notes/smoke_data/1"
+    }
+  ],
+  "failed": [
+    {
+      "at": 0.018,
+      "method": "GET",
+      "url": "https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600&display=swap",
+      "error": "net::ERR_FAILED"
+    },
+    {
+      "at": 0.088,
+      "method": "GET",
+      "url": "https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600&display=swap",
+      "error": "net::ERR_FAILED"
+    }
+  ],
+  "console": [
+    "[0.018] error: Failed to load resource: net::ERR_FAILED @https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600&display=swap:0",
+    "[0.089] error: Failed to load resource: net::ERR_FAILED @https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600&display=swap:0"
+  ],
+  "t0": 1790178101.61235,
+  "diag": [],
+  "url": "http://127.0.0.1:52647/read/smoke_data/1",
+  "late": {
+    "at": 8.212,
+    "requests": 3,
+    "responses": [
+      {
+        "at": 0.091,
+        "status": 200,
+        "method": "GET",
+        "url": "http://127.0.0.1:52647/api/notes/smoke_data/1"
+      }
+    ],
+    "failed": [
+      {
+        "at": 0.018,
+        "method": "GET",
+        "url": "https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600&display=swap",
+        "error": "net::ERR_FAILED"
+      },
+      {
+        "at": 0.088,
+        "method": "GET",
+        "url": "https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600&display=swap",
+        "error": "net::ERR_FAILED"
+      }
+    ],
+    "console": [
+      "[0.018] error: Failed to load resource: net::ERR_FAILED @https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600&display=swap:0",
+      "[0.089] error: Failed to load resource: net::ERR_FAILED @https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600&display=swap:0"
+    ]
+  }
+}

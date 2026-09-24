@@ -1,0 +1,72 @@
+.............................................F......................     [100%]
+=================================== FAILURES ===================================
+______ test_w5a2_recolor_then_repress_marker_adds_a_second_one[chromium] _______
+
+page = <Page url='http://127.0.0.1:55391/read/smoke_data/0'>
+live_server = 'http://127.0.0.1:55391'
+e2e_books_dir = PosixPath('/private/var/folders/_k/kf42wzb57vl8c_1vcs01hp7c0000gn/T/pytest-of-jackcheng/pytest-445/e2e0/books')
+
+    def test_w5a2_recolor_then_repress_marker_adds_a_second_one(
+        page: Page, live_server: str, e2e_books_dir: Path
+    ) -> None:
+        """W-5a-②（S5，**真超集律** `S ⊂ S'`、`|S'| = |S| + 1`）：旧黄条保留，另加一条绿的。
+    
+        依据的方法名是 `toggleMarkerAnnotation`：它调 `getExistingMarkerIds(selected)`，而后者
+        **按颜色过滤**。同一段文字上已有的是默认色那条，按下绿色之后过滤结果为空 ⇒ 走创建分支
+        ⇒ 两条并存，id 各自独立。**「改色」今天不是一个操作**，它是「换一支笔，再画一遍」。
+    
+        **两条完全重合的标注在 DOM 上合并成一个 `<mark>`。** `render()` 的文本路径
+        （`buildSegments` → `applySegments`）按边界切段，两条同起同止 ⇒ 一段 ⇒ 一个 `<mark>`，
+        其 `data-annotation-ids` 携带两个 id。所以 DOM 侧的判据是「恰好一个 `<mark>`，
+        它携带的 id 集合等于两条的 id 集合」，不是「两个 `<mark>`」。
+    
+        **为什么断 id 集合而不是「有两条」。** `|S'| == 2` 对「删了旧的、建了两条新的」也绿；
+        `S ⊂ S'` 把「旧那条还是原来那条」钉住。两个判据都要。
+    
+        **【4B.1 配对（Gap 10）】本条与 `acceptance_4b1` 的 W-5b[marker] 是同一操作的相反
+        断言。** 4B.1 落地的**同一个 commit** 里：解开 W-5b[marker] 的 skip，并把本条改判/转出。
+        单边记录迟早漂移，所以这条配对关系同时写在两边的 docstring 里。
+        """
+        assert read_notes(e2e_books_dir, BOOK_ID) == [], "隔离 fixture 没生效：起点不是空的"
+    
+        frame = open_ch0(page, live_server, expected_marks=0)
+        select_in_frame(frame, CH0_QUOTE)
+        page.get_by_test_id("rd-anno-type-marker").click()
+>       before = wait_for_notes(e2e_books_dir, BOOK_ID, 1)
+
+tests/e2e/baseline_1b/test_write_recolor_and_delete.py:451: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+books_dir = PosixPath('/private/var/folders/_k/kf42wzb57vl8c_1vcs01hp7c0000gn/T/pytest-of-jackcheng/pytest-445/e2e0/books')
+book_id = 'smoke_data', count = 1
+
+    def wait_for_notes(books_dir: PathLike, book_id: str, count: int) -> List[Dict[str, Any]]:
+        """等 `notes.json` 稳定到 `count` 条，超时即红并把实际内容打出来。
+    
+        这不是「重试掩盖 flaky」：落库是异步的（fetch → 服务端原子写），不等就是在断言一个
+        还没发生的事件。等的是**一个确定的终态**，不是「多试几次也许就成了」——终态不对时它
+        照样红，且把实际条目原样贴出来。
+    
+        ⚠️ 它一观察到 `len == count` 就返回，所以读到的可能是**中间态**：若一次动作写了两次，
+        50ms 的轮询有一定概率正好落在两次写之间的窗口里。要断「恰好 N 条」必须在一个确定的
+        终态上再断一次（`assert_roundtrip` 就是在刷新之后补的那一次）。
+        """
+        deadline = time.monotonic() + NOTES_WAIT_S
+        seen: List[Dict[str, Any]] = []
+        while time.monotonic() < deadline:
+            seen = read_notes(books_dir, book_id)
+            if len(seen) == count:
+                return seen
+            time.sleep(0.05)
+>       raise AssertionError(
+            f"{NOTES_WAIT_S}s 内 notes.json 没有稳定到 {count} 条，实际 {len(seen)} 条：{seen}"
+        )
+E       AssertionError: 8.0s 内 notes.json 没有稳定到 1 条，实际 0 条：[]
+
+tests/e2e/helpers.py:823: AssertionError
+--------------------------- Captured stdout teardown ---------------------------
+
+[e2e] 已拦下的外部请求域：['https://fonts.googleapis.com']
+=========================== short test summary info ============================
+FAILED tests/e2e/baseline_1b/test_write_recolor_and_delete.py::test_w5a2_recolor_then_repress_marker_adds_a_second_one[chromium]
+1 failed, 67 passed, 72 deselected in 65.09s (0:01:05)

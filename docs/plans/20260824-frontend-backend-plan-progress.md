@@ -43,7 +43,7 @@
 | **2.5** | `016-settings-apply-order` | M1b 欠账兑付 | 后端 | **✅ 已合入 `master`**（2026-09-06，PR #21，合并 commit `770e5ca`）。欠账 **#22** 已修（`applyThemeSettings` 收参数，渲染器不再回读 localStorage），并修掉同一病根的第二个入口（越界值只被外层挡住：面板 17px / 正文 **99px**、行高 **891px**）；审计 **#51** 的可失败性证据改用 `page.route` 重做，`src/` 一行未动。`baseline_1b` **67 条**、`tests/e2e` **91 条**、三条 lint rc=0；`suite_hash` `e7e0f9626df5` → `8f39737ca0c6` → **`2747100dadf6`**。**这是 G2 冻结前的最后一次覆盖面变更，冻结值即此** | [tasks/009 欠账 #22](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
 | **3** | `011-backend-refactor` | Phase 2a+2b | 后端 | **✅ 已合入 `master`**（2026-09-22，PR #22，合并 commit `4128221`；CI 在 `4af73cc` 上全绿：tests 35733667011、lint 35733681164。**门槛 #7 仍是「部分达成、阻塞被撤销」，不是通过**——合并没有把它变绿，只是不再由它挡路）。以下为分支期间的逐次追记，保留原样（2026-09-19：分支上 **21 个 commit（截至 `f8a6204`）** —— 数字锚在 SHA 上而不是裸写，因为裸写的计数在下一次 commit 就过期了（这份文件已经这么坏过一次：`17` 是 `a61f6c7` 时点的实测值）；复核用 `git rev-list --count master..011-backend-refactor`。WI-0 / WI-1 / WI-2 / WI-3 / WI-T7 / WI-T8 已兑付。**WI-4 拆 router 已兑付 ✅**：七个 commit（`6afc3fb` → `a61f6c7`）把 43 条路由全搬出去，`server.py` 2,979 → **942 行**，`routes.snapshot` 与冻结 8 路径全程零 diff，`scripts/check_router_size.py` 已接入 `lint.yml` 并 12 个文件全 PASS。开工前那道选择题**已裁定走 A**（`ai` 拆成 `routers/ai/` 子包四个文件 ＋ `chat.py` 一条具名可到期豁免 ≤ 550 行，实测 547）；代价照记：`api_ai_question` 那 433 行**一行没变**，降的是单文件行数不是复杂度。`baseline_1b` 于 2026-09-19 由维护者本人在 `c0ec1cb` 上跑出 **67 passed / 24 deselected / 56.14s**，`suite_hash` 仍是 `2747100dadf6`（未加 `--append`，分支上的运行按门槛 4 不进台账）。**WI-5 拆成 5a / 5b，5a 已兑付 ✅**：notes 乐观并发的后端半边落地 —— `ETag` 出、`If-Match` 入、冲突返 409，版本号是标注列表规范化 JSON 的 sha256，**盘上零改动**（`notes.json` 没加字段，`NOTES_SCHEMA_VERSION` 仍是 1，不欠 012 与 R10 任何东西）。`If-Match` 是**可选** header，不带它时三条写路由逐字节是老行为 —— 这是 ADR-0011「不得改变任何响应形状」的守法方式，代价是 `tests/contract` 一行没改仍 180 passed、`routes.snapshot` 零 diff。compare-and-swap 落在 `notes_service.py` 的 `_book_write_lock` **之内**，并用一次定向破坏称过重：把校验挪到锁外，并发用例转红、破坏后 `cmp` 校验还原。unit lane 1291 passed / 51.07s（+20 条 / +3.1s）。**⚠️ 2026-09-19 更正：本格上一版写的「9 条退出门槛仍剩 1 条未兑付」是错的。** 写它的时候只看了 unit lane 的绿，就把它当成了三条 lane 的绿——而 `e2e` / `packaging` 上一次绿是 2026-09-06 的 `6165e1b`，落后当时的 HEAD **29 个 commit**，其间 `src/` 改了 17 文件 +3017/−2114。**同日补跑 `gate push` 三条 lane（在 `53a823f` 上）全绿**：unit **1291 passed / 2 skipped / 50.91s**；e2e **91 collected → 74 passed / 17 skipped / 60.64s**（其中 `baseline_1b` **67 条全绿**，`--collect-only` 复核为 67）；packaging **1 passed / 26.77s**。覆盖率门禁 PASS（lines 84.67% / branches 68.29%，8 条 criticalPaths 全 PASS，`notes_service.py [branches] 100.00% >= 83%`）。**门槛 #3（三条 lane 全绿）与 #4（`baseline_1b` 67 绿）由此兑付 ✅**。九条实测为 **7 兑付 / 2 未兑付**，剩下的两条是：**#7 bench C1/C2 相对基准改善**（WI-8 / WI-9 未做，`array('I')` 在 `src/` 里搜不到）与 **#8 DEG-S5 解禁 ＝ WI-5b**（`ConflictDialog` ＋ 解禁那条 Playwright 用例；它是浏览器用例、不在 unit lane 里，兑付要一次 `pytest tests/e2e/acceptance_2a -k deg_s5`）。**顺带记一条方法论债**：#3 的「复核方式」栏写的是 `/tdd-guardian:gate commit`，但 `.claude/tdd-guardian/config.json` 里只有 `unit` 的 `gateOn` 含 `commit`，`e2e` / `packaging` 都挂在 `push` 上——**那条命令跑不出它要验的东西**，该写 `gate push`。**⬛ 2026-09-20 续：WI-5b 已兑付 ✅（`cc6bb18`），门槛 #8 转绿，九条实测变成 8 兑付 / 1 未兑付，只剩 #7。** `ConflictDialog` 用 **vanilla JS 做在 011 里**，没推到 014 等 TS 外壳——ADR-0008 不允许为一个对话框引框架，而推迟等于把一条门槛挂到别的分支上。DEG-S5 那条 Playwright 用例**没有被重写**，diff 实测只有 `0 7`（就是模块级 skip 那一块）；实测 `1 passed`，e2e lane 整体 **75 passed / 16 skipped / 66.24s**（此前 74 / 17，多的一条就是它），unit lane **1296 passed / 2 skipped / 57.94s**，`baseline_1b` **67 passed**，覆盖率门禁 PASS，冻结 8 路径零 diff。**真正的成本不在对话框，在解禁撞上的一条不变式**：`acceptance_2a` 是本仓**第一个**被激活的 acceptance 组，而 `scripts/lint_e2e_groups.py` 的两条 skip 轴把「未激活组以 skip 形态存在」硬编码在了**每一个** acceptance item 上——删掉那 7 行的瞬间，守卫判红（lint rc=1、unit lane 4 条红）。选的是**加 `ACTIVATED_ACCEPTANCE_DIRS` 登记表、两条轴对表内目录反向判定**（静态轴要求整组零 skip、动态轴要求不带生效 skip marker），不是放宽闸——它反过来把闸用成了「说激活了就得真的绿」。**并且第一版的牙没称住**：只补一条走 `check_tree` 的用例时，把静态轴的已激活分支整个掏空，整份 oracle **38 passed 全绿**（两条轴一起判时互相掩护）；拆成两条只调单轴的用例后，两次定向破坏各自 1 failed，破坏后按 `cmp` 还原字节一致。**另记一条空防守**：对话框自己的 `cancel` ＋ `preventDefault()` 今天**没有被任何用例执行到**——删掉它 DEG-S5 仍绿，因为 `toolbar.js:148` 的**捕获阶段** keydown 先把 Escape 吃掉了，Escape 根本到不了 `<dialog>`。那条「Esc 关不掉」的断言今天为一个与对话框无关的理由而绿。**下一步：#7 是 011 唯一剩下的退出门槛**——兑付要 WI-8（C1）/ WI-9（C2）与 `bench.py` 的 before/after 存档，而 `array('I')` 今天在 `src/` 里搜不到，即 after 还不存在。WI-6 / WI-7 是可选项，不挡门槛。）。**⬛ 2026-09-20 续二：WI-9 与 WI-8 都已落地（`b69a568` / `a4e5f49`），分支上 30 个 commit（截至 `c4a4ff4`）。门槛 #7 的裁定是「部分达成，经范围变更关闭其对 011 的阻塞」，不是勾成通过。** 三项里两项兑付：`bench.py` 跑通（rc=0）、反序列化计数不为零（95）；**C2 ✅ 决定性兑付** —— `bench/011-iso-*.json` 三份逐提交隔离（`04a6839` → `b69a568` → `a4e5f49`，同机同参数、相隔 55 秒连跑）实测 WI-9 单独拿下 `after_library_search_bytes` **237.7 → 114.1 MiB（−123.6）**、`after_huge_search_bytes` **331.7 → 195.4 MiB（−136.3）**，spread 0.0/0.1%；**C1 ✗ 没兑付** —— `unpickle_grand_total` 95 → 95 一次没少，`normalize_calls` 549 → 541 只省 8 次（＝一本书 8 章），WI-8 抬上限只花 ＋0.7 MiB 也只换来这 8 次。**根因不是缓存容量**：`search_library()`（`search_service.py:620`）为取 `title`/`author` 无条件先反序列化整本书，索引缓存扩到多大都绕不开 —— 已立为**欠账 #35**，兑付方 **012**，012 开工时重新裁定优先级。**WI-8 实际交付的是正确性而非性能**（pickle 重发布后旧写法一直返回陈旧索引；7 条新用例 ＋ 三次定向破坏 12/24/3 红），而门槛 #7 量的是次数，量不到正确性。裁定过程与四条路的取舍记在 [011 §8](20260816-tech-stack-migration/tasks/011-backend-refactor.md)；（d）这条路是维护者把裁定委托 Codex 评审后由它提出的，我复核了它同批六条可核查项，全部成立，其中两条打到我自己已提交的文字上，已在 `c4a4ff4` 改正。**011 至此九条门槛的状态是 8 ✅ ＋ 1 ⚠️，没有 ❌**；未做的 WI-6 / WI-7 不挡门槛。合并前仍欠：29→30 个 commit 未 push、011 未并 master。原记录（2026-09-07，WI-0 – WI-9）：实测发现计划的 Phase 2a 清单**九项里三项已完成**（`ai/config.py` 原子写、CJK/Anthropic 路由启发式、CLAUDE.md 宪法修订）**、一项前提失效**（`_Reader3Unpickler` 早已收敛进 `safe_pickle`，`vector_search.py` 根本没有 loader —— 真正要合的是两个**同名不同签名**的 `load_book_cached`）。顺序：**WI-0 打桩接缝守卫必须先于任何一行路由搬家**（70 处 `monkeypatch.setattr(server, …)`，拆分后会静默失效，而 `server._call_provider` 是本进程通往 LLM 的唯一出口）→ WI-1 对齐权威文件 → WI-2 修坏掉的 `bench.py` → WI-3 `book_store.py` → WI-4 按关切拆 router。**`max_retries` 的「删或接」被 ADR-0011 削成只剩「接」**（删它 = 改响应形状 = Phase 2 窗口内非法）；**C5 裁决推迟到 012**。全部 WI **零触碰**冻结的 8 条路径，soak 计数不受影响 **✅ 权威侧已同步（2026-09-20）**：`SKILL.md:78` 从 `Tasks drafted` 改成 `🔨 Done on branch, not merged`，并带上「9 ✅ ＋ 1 ⚠️，#7 是撤销阻塞不是通过」这个限定词——不带限定词就成了粉饰。这条账从 `4312204` 带到这里，至此结清。**⬛ 2026-09-20 续三：WI-6（`eb8b60b`）/ WI-7（`207779b`）已落地，另修掉 011 自己弄出的 mypy 回归（`5bb091c`，欠账 #40），出口闸从九条扩到十条，第 10 条就是 `mypy src/` 干净。分支 35 个 commit（截至 `5bb091c`），仍未 push、未并 master。**当前工作树上三条 lane 实测全绿：unit **1554 passed / 2 skipped / 61.23s**、e2e **75 passed / 16 skipped / 68.09s**、packaging **1 passed / 16.15s**。**⬛ 2026-09-22 收口：009 欠账 #43 (i) 结清后（`4af73cc`）三条 lane 再跑一次全绿（unit 1558 / e2e 113 passed ＋ 16 skipped / packaging 1），PR #22 合入 `master`，合并提交 `4128221`。合入后对该 PR 做了一次全量审计，44 条 findings 分桶后有 22 条进入顺位 3.5 的 `017-audit-followup`；余下 19 条 `could` 与 3 条 `wont` 的理由写在那份任务文件的 §5。** | [tasks/011](20260816-tech-stack-migration/tasks/011-backend-refactor.md) |
 | **3.5** | `017-audit-followup` | M2 欠账兑付 | 后端 | **✅ 已合入 `master`**（2026-09-23，PR #23，合并 commit `6df5026`；从 `master` 的 `4128221` 开出）。PR #22 合入后全量审计的 44 条 findings，按 `audit-findings-triage` 复核分桶：must 4 ＋ must-pending-repro 2 ＋ should 16 = **22 条进本分支**，could 19 / wont 3 不做且各有理由。退出门槛与硬约束写在任务文件里。**它从 `master` 开、不回 011**——那条分支已经合了。**收尾时 CI 逼出第 16 个工作项**（原计划 15 个）：`lint.yml` 红在 router 体量闸（`chat.py` 583 > 550），而那条上限「只许下调」且有机器断言钉着，所以没动它；改的是 WI-2 留下的真缺陷——请求预算本是队列的事实，路由却各抄一份近似值，且叫停旗翻在 `q.exit()` 放行下一个请求**之后**，那个窗口正是审计 #2 要关的东西，WI-2 只关了一半。合并前三条 lane 在合并头 `83b7ed1` 上重跑全绿：unit **1662 passed / 2 skipped**（TOTAL 83%）、e2e **124 passed / 16 skipped**、packaging **1 passed**；CI 在 `255b63a` 全绿（lint 35827418587、tests 35827429249）。**冻结集 8 条路径零改动**，`suite_hash` 仍是 `1e868c7bf811`、23 个 blob，soak 计数与三道机制闸不受影响。**未兑付的仍记着**：`wont` 里的 **#10（重新着色后空高亮也能过）今天没有替代覆盖**——是写在纸面上的洞，不是已经盖住了，等下一次冻结集重置时一并买；could 19 条留作后续，不表示被否决 | [tasks/017](20260816-tech-stack-migration/tasks/017-audit-followup.md) |
-| **⟂** | `010-design-degradation-states` | Track D | **前端** | **⬜** WI-1 – WI-8 已定义 | [前端计划 §4](20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) |
+| **⟂** | `010-design-degradation-states` | Track D | **前端** | **🔨** 分支上完工、未合入（2026-09-24）：2 个 commit —— `293c68f`（九条出口闸逐条实测：5 过 / 3 不过 / 1 半）、`4fb33c9`（D-2 / D-5 / D-6 / D-8 四条裁定落档，九条出口闸全绿）。纯文档，允许改动集为 `designs/`、`spec-frontend-design.md`、`plan-frontend-ui-refactor.md`。**未 push、未并 `master`**；复核用 `git log --oneline master..010-design-degradation-states`。工作项仍是前端计划的 WI-1 – WI-8 | [前端计划 §4](20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) |
 | **4** | `012-storage-format` | Phase 3 | 后端 | **⬛** 计划未写 | — |
 | **5** | `013-ts-frontend-shell` | Phase 4A | **前端** | **⬜** WI-9 – WI-13 已定义 | 前端计划 §4 |
 | **6** | `014-ts-frontend-reader` | Phase 4B | **前端** | **⬜** WI-14 – WI-19 已定义 | 前端计划 §4 |
@@ -55,9 +55,15 @@
 
 > **当前位置：顺位 3.5 已结清，下一个是顺位 4 / `012-storage-format`，而它今天仍被挡着。**
 > 顺位 0–3.5 全部在 `master` 上（011 于 2026-09-22 合入 PR #22；017 于 2026-09-23 合入 PR #23）；
-> 顺位 4 之后（`012` / `013` / `014` / `015`）与 ⟂ 的 `010` **一个分支都还没开**。
-> **挡住 012 的不是顺位而是 §7 的闸**（soak 次数与三条机制挑战闸，2026-09-21 一并归零／作废），
-> 见下方第 1–3 条；⟂ 的 `010` 不占顺位、不受这些闸约束，可随时插入。
+> 顺位 4 之后（`012` / `013` / `014` / `015`）**一个分支都还没开**；⟂ 的 `010` 分支已开且
+> **分支上完工、未合入**（🔨，见上表），它不占顺位、不受 §7 的闸约束。
+> **挡住 012 的不是顺位，而且现在只剩 soak 次数与跨度那一道**（下方第 1 条）。§7 的三条机制挑战闸
+> 2026-09-21 随冻结集改判一并作废后已重跑：第 1 项（干净 Linux）与第 3 项（随机收集顺序）**PASS**；
+> 第 2 项（CPU 压力）2026-09-23 实测 FAIL、归因为冻结集 `helpers.py` 的测试夹具自伤而非产品缺陷，
+> **2026-09-24 经维护者裁定降为不阻塞的记录项**——是降级，不是通过。**机制闸不再挡 012。**
+> 裁定正文见[迁移计划 §7 纪律 3 下方](20260816-tech-stack-migration/plan-tech-stack-migration.md)，
+> 证据见 [`soak-log.md` 的「第 2 项归因」一节](20260816-tech-stack-migration/tasks/soak-log.md)，本文不抄。
+> 该裁定**没有**清零台账（`helpers.py` 一个字节没动）；后续修复立为 009 欠账 #49 / #50。
 >
 > **⚠️ 本节此前写死过派生值，已在 2026-09-19 整段重写。** 原文是「今天 3 次、跨度 0 ——最早解锁
 > **2026-09-11**」。那两个数与那个日期全部到期变烂，而且后者会把读到的人引向「还要再等」这个
@@ -67,7 +73,8 @@
 > **每天要做的一件事：往 soak 台账追一行。** `uv run python scripts/soak_run.py --append`，约 57 秒。
 > 忘一天不清零，只是把日历那一半往后推。**次数好补，跨度补不回来。**
 >
-> **Phase 3 今天没有解锁，而卡住它的不是次数。** 三件事要分开看：
+> **Phase 3 今天没有解锁，自 2026-09-24 起卡住它的就是次数与跨度（第 1 条）**——第 3 条的机制闸
+> 已不再阻塞（见上）。`--append` 只在 `master` 上跑（011 §8 门槛 4：分支上的运行不记账）。三件事要分开看：
 >
 > 1. **次数与跨度**——判据是 ≥10 次且 ≥5 个工作日，跨度按台账首行与第十行算，唯一定义处是
 >    [迁移计划 §7](20260816-tech-stack-migration/plan-tech-stack-migration.md)。**怎么数**见
@@ -77,7 +84,10 @@
 >    复核当天的实况是 10 行只落在 **3 个不同日历日**上，其中 6 行是五分钟内连跑出来的。
 >    §7 自己写着跨度条款的目的是「逼出时间维度的不稳定……这类问题在同一天连跑十次是照不出来的」
 >    ——**所以次数这一栏是过了，它想买的东西只买到一半**。补法是往后每天真的追一行，让不同日历日涨上去。
-> 3. **三条机制挑战闸（§7，全部阻塞 Phase 3，且不计入那 10 次）：2026-09-20 首轮跑完，1 / 3。**
+> 3. **三条机制挑战闸（§7，不计入那 10 次）——⬛ 2026-09-24 现状：不再阻塞 Phase 3**（第 1、3 项对
+>    `1e868c7bf811` 重跑 PASS，第 2 项经维护者裁定降为不阻塞的记录项，见本节开头）。**以下是 2026-09-20
+>    首轮的历史记录，其中「全部阻塞」「1 / 3」与后续各条 ⬛ 追记里的闸数都已被取代，保留原样：**
+>    **2026-09-20 首轮跑完，1 / 3。**
 >    结果表与复现命令的唯一定义处是
 >    [`soak-log.md` §机制挑战闸执行记录](20260816-tech-stack-migration/tasks/soak-log.md)，本文不抄。
 >    **CPU 压力 ✅ 过**；**干净 Linux/CI ❌ 验证为红**（job 已建进 `tests.yml` 并手点跑了两次，
@@ -110,7 +120,8 @@
 > 闸第 1 项**仍是 FAIL，仍是 1/3**，但阻塞面从三条收敛到两条，且两条都已具名可查。
 > 唯一定义处是 [soak 台账机制挑战闸节](20260816-tech-stack-migration/tasks/soak-log.md)，本文不抄数。
 >
-> **一句话：想让 Phase 3 动起来，该做的不是再跑十次 soak。** 今天只剩三件，且都不是等：
+> **一句话（2026-09-20 当时的判断，⬛ 2026-09-24 已反转：机制闸不再阻塞之后，让 Phase 3 动起来的
+> 恰恰就是每天在 `master` 上追 soak）：想让 Phase 3 动起来，该做的不是再跑十次 soak。** 今天只剩三件，且都不是等：
 > **(1)** 修 #44 ＋ #45，让 CI 那道闸转绿 —— #44 卡在 #43 的可观测性上；**#45 已于 2026-09-20 结清**，
 > 剩下 #44 与 #46，且要 `gh workflow run tests.yml` 真跑一次才谈得上转绿；
 > **(2)** 查清 #42 那条 flaky，而它卡在 [#43](20260816-tech-stack-migration/tasks/009-e2e-annotations.md)
@@ -194,6 +205,14 @@
 >   那次尝试当场作废重做。**一道闸的价值一半在它的记录写得够偏执。**
 > - **那条 `row:` 没有进台账**：CI 跑的是分支，按 011 §8 门槛 4 的括号，分支上的运行不记账。
 >
+> **⬛ 2026-09-24：第 2 项 2026-09-23 复跑 FAIL，归因为测试侧，维护者裁定降为不阻塞的记录项。**
+> **机制闸至此不再挡 Phase 3 / 012，剩下的只有 soak 次数与跨度。** 裁定、理由与连带后果的唯一定义处是
+> [迁移计划 §7](20260816-tech-stack-migration/plan-tech-stack-migration.md)（纪律 3 下方），证据是
+> [`soak-log.md`「第 2 项归因」](20260816-tech-stack-migration/tasks/soak-log.md)，本文不抄。
+> 要记住的三点：**这是降级不是通过**；台账**没有**清零；[欠账 #48](20260816-tech-stack-migration/tasks/009-e2e-annotations.md)
+> 随之失去对象已结清，新立 #49（`helpers.py` 8 秒轮询的修复，等冻结集下一次不得不重置或笔记保存代码被改时一并付）
+> 与 #50（`createAnnotation` 的 POST 未接 `reportNotesWriteFailure`）。上面第 (1)–(2) 件与本条之前各追记里的闸数，均以本条为准。
+>
 > **冻结生效中，代价自 2026-09-06 起是实的；2026-09-21 付过一次。** `suite_hash`
 > 现冻结在 **`1e868c7bf811`**（前值 `2747100dadf6` 已作废）。再动
 > `baseline_1b/**` / `tests/e2e/conftest.py` / `helpers.py` / `test_harness_smoke.py` /
@@ -222,7 +241,7 @@
 >
 > </details>
 >
-> **G1 同时解锁了 013（Phase 4A）**——它要的是 G1 不是 soak，可与 011 / 012 交错。**G1 于 2026-09-05 达成，至今 `013-ts-frontend-shell` 分支仍未创建、零提交**（`git branch -a | grep 013-ts-frontend-shell` 无输出）。同样零提交的还有 ⟂ 的 `010`——它是纯文档，本可在任意低能耗 session 插入。**这两条支线被解锁之后一直空着，是当前进度里最便宜的一块未动产。**
+> **G1 同时解锁了 013（Phase 4A）**——它要的是 G1 不是 soak，可与 011 / 012 交错。**G1 于 2026-09-05 达成，至今 `013-ts-frontend-shell` 分支仍未创建、零提交**（`git branch -a | grep 013-ts-frontend-shell` 无输出）。⟂ 的 `010` 曾同样零提交，**2026-09-24 已在分支上完工（🔨，2 个 commit，未 push、未合入，见 §1）**。**013 这条支线被解锁之后一直空着，是当前进度里最便宜的一块未动产；010 剩下的只是 push 与合入。**
 >
 > **Wave 7 已于 2026-09-04 收口，八波编排结束**：验收组 17 条 skip 用例（4b1 8 / p3 4 / 4a4 4 /
 > 2a 1）、`lint_e2e_groups.py` 分组守卫、`soak_run.py`、共用 DEG 断言体。常量全部由预估改实测并
@@ -453,6 +472,7 @@ gh run list --limit 5
 | 2026-09-18 | **计划外 WI-T7：给「长命服务不得把 stdout 接进管道」建类级闸。** 起因是核查发现[欠账 #10](20260816-tech-stack-migration/tasks/009-e2e-annotations.md) 虽标「已结清」，但结清判据是 `pytest tests/e2e` 全绿——**一条载荷相关的判据守一条载荷相关的缺陷，等于没建回归闸**；且同类缺陷在 `scripts/smoke_installed_wheel.py` 有**第二个现场**，由 `1392b1f`（2026-08-23）带进来、比 #10 建账还早，只因该脚本只打 4 个路由、写不满 65536 字节而一直没发作。闸走 AST，判据是「起 `reader3-server` 类长命服务 ＋ `stdout=PIPE`」而非「用了 PIPE」（`soak_run.py:322` 用 PIPE 但全程 `communicate` drain，必须放过）。**红收据判 `SEPARATION-BROKEN`**：绿之后主动移除了 9 行已录断言——初版把参数化钉成 `(文件, 行号)`，该设计在同一个工作项里就烂了一次，改为只钉文件。新记欠账 **#32**（本条的账）与 **#33**（`log_tail()` 无测试，未结清） | `011` 分支 `0be2370`；tasks/009 欠账 #32 / #33 |
 | 2026-09-18 | **欠账 #31 落号**：§7 承诺过的「发版关门检查跑一次 `baseline-1b` 全量」从来没建出来，逐文件复核 `.github/workflows/` 证实全仓无 Playwright / 无 e2e job。**兑付方写「待定」是刻意的**——先要裁的不是谁做，而是「建 CI e2e job」还是「显式接受缺口并从 §7 删掉该承诺」。**此裁决未做，它挡着机制挑战闸的第一项** | `master` `8fcc940`；[迁移计划 §7](20260816-tech-stack-migration/plan-tech-stack-migration.md) |
 | 2026-09-19 | **本看板整体对账**：顺位 3 由「⬜ 任务书已写」改为「🚧 进行中」并写入实测；「现在该做什么」整段重写、删掉写死的派生值（3 次 / 跨度 0 / 2026-09-11）；§3 补 011 的核对配方。**遗留一处未修**：权威侧 `SKILL.md:78` 仍写 `Tasks drafted`，按 §0 的规则应以它为准，所以本看板现在「对得比权威准」——需要同步修那一行，否则下次复核会按规则把本文改回错的 | 本文 §0 / §1 |
+| 2026-09-24 | **本看板对账（010 与机制闸）**：⟂ `010-design-degradation-states` 由「⬜」改为「🔨 分支上完工、未合入」（`293c68f` ＋ `4fb33c9`，九条出口闸全绿，未 push、未合入）；§7 机制挑战闸**不再阻塞 012**——第 1、3 项对 `1e868c7bf811` 重跑 PASS，第 2 项 2026-09-23 实测 FAIL、归因测试侧后由**维护者裁定降为不阻塞的记录项**（降级不是通过，台账未清零）；「现在该做什么」开头与第 3 条、2026-09-20「一句话」段改为以此为准，012 现在只被 soak 次数与跨度挡着。权威侧 `SKILL.md` 的 MD / 010 行与表后那段同步改过 | 本文 §1；[迁移计划 §7](20260816-tech-stack-migration/plan-tech-stack-migration.md)；[soak-log「第 2 项归因」](20260816-tech-stack-migration/tasks/soak-log.md) |
 
 > **来源**：2026-08-24 与 Codex（`gpt-5.6-terra`）的一次定向复核。Codex 选 C 并提出五条风险，
 > 其中三条经核对成立并已回写（见上表后两行）；两条不成立——它担心 010 的九条门槛「形式完成、

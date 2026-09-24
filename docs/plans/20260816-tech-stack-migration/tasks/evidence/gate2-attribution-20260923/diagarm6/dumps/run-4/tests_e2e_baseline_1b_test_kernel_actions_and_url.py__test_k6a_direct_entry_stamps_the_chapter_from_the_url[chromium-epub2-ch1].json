@@ -1,0 +1,102 @@
+{
+  "test": "tests/e2e/baseline_1b/test_kernel_actions_and_url.py::test_k6a_direct_entry_stamps_the_chapter_from_the_url[chromium-epub2-ch1]",
+  "fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/1",
+      "sent": 72,
+      "settled": 75,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "POST",
+      "url": "/api/notes/smoke_data/1",
+      "sent": 127,
+      "settled": null,
+      "status": null,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/1",
+      "sent": 154,
+      "settled": null,
+      "status": null,
+      "error": null
+    }
+  ],
+  "perf": [
+    {
+      "name": "/api/notes/smoke_data/1",
+      "start": 78,
+      "reqStart": 80,
+      "respStart": 80,
+      "respEnd": 80,
+      "dur": 3
+    }
+  ],
+  "diag": [],
+  "url": "http://127.0.0.1:60138/read/smoke_data/1",
+  "late_fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/1",
+      "sent": 72,
+      "settled": 75,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "POST",
+      "url": "/api/notes/smoke_data/1",
+      "sent": 127,
+      "settled": 8309,
+      "status": 201,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/1",
+      "sent": 154,
+      "settled": 8312,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/1",
+      "sent": 8310,
+      "settled": null,
+      "status": null,
+      "error": null
+    }
+  ],
+  "late_perf": [
+    {
+      "name": "/api/notes/smoke_data/1",
+      "start": 78,
+      "reqStart": 80,
+      "respStart": 80,
+      "respEnd": 80,
+      "dur": 3
+    },
+    {
+      "name": "/api/notes/smoke_data/1",
+      "start": 160,
+      "reqStart": 8311,
+      "respStart": 8317,
+      "respEnd": 8318,
+      "dur": 8158
+    },
+    {
+      "name": "/api/notes/smoke_data/1",
+      "start": 8316,
+      "reqStart": 8321,
+      "respStart": 8323,
+      "respEnd": 8324,
+      "dur": 8
+    }
+  ],
+  "late_diag": []
+}
