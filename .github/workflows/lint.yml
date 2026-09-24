@@ -8,15 +8,24 @@
 # 还没有 tests/ 的分支上也能跑起来的前提。
 # 测试 CI 由 008 单独建（tests/ 目录那时才有），与本文件不合并。
 #
-# **触发时机：只在发版时跑，日常 push 不跑。**（2026-08-23 按要求改）
-# 两条发版路径都认，因为本仓库两种都用过：
+# **触发时机：发版时跑，向 `master` 开 PR 时也跑；日常 push 到分支仍然不跑。**
+#（「只在发版时跑」是 2026-08-23 按要求改的；`pull_request` 是 2026-09-23 加的，
+# `push` 那一条口径没动。）
+# 发版两条路径都认，因为本仓库两种都用过：
 #   - `git push origin v1.5.0`（只打 tag，不建 Release）→ `push.tags`
 #   - 在 GitHub 上 Publish 一个 Release       → `release.published`
 # 从 UI 建 Release 会顺带产生 tag push，两条会同时命中；下面的 concurrency
 # 按 ref 归组并取消旧的，所以不会跑两遍。
 #
-# 代价要写明白：**这些 lint 从「每次 push 的护栏」降级成了「发版前的关门检查」。**
-# 中间攒下的违规不会有人告诉你，会一次性堆在发版那天。两个补偿手段：
+# **加 `pull_request` 买的是「合并结果被验过」**：GitHub 在这个事件上跑的是
+# `refs/pull/N/merge`，即分支并进 base 之后的那棵树，而不是分支头。本文件此前全部的绿都是
+# `workflow_dispatch` 打在分支头上的——017 那次 `lint.yml` 正是在分支头 `255b63a` 上转的绿，
+# 而落到 `master` 的是 merge commit `6df5026`，那棵树 CI 一次没跑过。完整理由与实测数字写在
+# `tests.yml` 的文件头，此处不重述（两个文件同一口径，只留一个定义处）。
+#
+# 代价要写明白：**这些 lint 曾从「每次 push 的护栏」降级成「发版前的关门检查」，
+# 现在补回了一半——开 PR 时会跑，直接 push 到分支时仍然不跑。**
+# 分支上攒的违规最晚在开 PR 那一刻现形，不再拖到发版那天。两个补偿手段仍在：
 #   - `workflow_dispatch`：想验的时候在 Actions 页面手点，或 `gh workflow run lint.yml`
 #   - 本地：`python3 scripts/lint_e2e_selectors.py`（另三条同理）零依赖，随手能跑
 name: lint
@@ -26,6 +35,9 @@ on:
     types: [published]
   push:
     tags: ["v*"]
+  # 跑的是 refs/pull/N/merge（分支并进 base 之后的树），不是分支头——理由见文件头。
+  pull_request:
+    branches: [master]
   workflow_dispatch:
 
 # 同一个 tag 被 release 事件和 tag push 各触发一次时，只留最新的那次。

@@ -14,19 +14,33 @@
 # 同时充当迁移计划 §7「机制挑战闸」第一项的载体 —— 理由与判据写在它自己头上，
 # 不在这里重述。两个 job 并行、互不依赖：e2e 挂了也要看得见 unit 是绿是红。
 #
-# **触发时机：只在发版时跑，日常 push 不跑**，与 `lint.yml` 同口径。
-# 两条发版路径都认（只打 tag / 在 GitHub 上 Publish Release），concurrency 按 ref
+# **触发时机：发版时跑，向 `master` 开 PR 时也跑；日常 push 到分支仍然不跑。**
+# 发版两条路径都认（只打 tag / 在 GitHub 上 Publish Release），concurrency 按 ref
 # 归组取消旧的，所以同一个 tag 不会跑两遍。
 #
-# **本工作流不设 required check，这是故意的。** 一个日常不跑的检查设成 required，
-# 只会把每个 PR 卡死在「Expected — Waiting for status」上。日常门禁由
-# `.claude/tdd-guardian/config.json` 的三条 lane 承担：unit 在 taskCompleted/commit，
-# packaging 与 e2e 在 push。
+# **`pull_request` 是 2026-09-23 补的**，它买的是一件此前**一次都没做到过**的事：
+# GitHub 在 `pull_request` 上跑的是 `refs/pull/N/merge`，即**分支并进 base 之后的那棵树**。
+# 此前全部「CI 全绿」的证据都是 `workflow_dispatch` 打在**分支头**上的（011 在 `4af73cc`、
+# 017 在 `255b63a`），而真正落到 `master` 的是 merge commit（`4128221` / `6df5026`）——
+# 两者的字节不保证相同，**合并结果从来没有被 CI 验过一次**。实测：`master` 上最后一次
+# run 是 2026-09-20 的 `e7c4890`，此后那三个 master commit 上的 run 数都是 0。
 #
-# 代价写明白，两条（与 `lint.yml` 同源）：
+# **仍然不加 `push` 触发。** 那是维护者 2026-08-23 定的口径，本次没动：日常 push 的护栏
+# 由 `.claude/tdd-guardian/config.json` 的三条 lane 承担（unit 在 taskCompleted/commit，
+# packaging 与 e2e 在 push）。
+#
+# **本工作流仍不设 required check，但此前那条理由已经不成立了。** 原文是「一个日常不跑的
+# 检查设成 required，只会把每个 PR 卡死在『Expected — Waiting for status』上」——加了
+# `pull_request` 之后它每个 PR 都会跑，那个失败形态没有了。设不设 required 要改 GitHub 上的
+# 分支保护规则，不是本文件能决定的事，**留给维护者裁**。
+#
+# 代价写明白（与 `lint.yml` 同源）：
 #   1. **本地门禁绕得过**——`git commit --no-verify` 一行就跳过。它挡的是手滑，不是决心。
-#   2. **中间攒下的问题会一次性堆在发版当天。** 补偿手段是 `workflow_dispatch`：
-#      想验的时候 `gh workflow run tests.yml`，或在 Actions 页面手点。
+#   2. **中间攒下的问题仍会堆着**，只是最晚堆到开 PR 那一刻，不再堆到发版当天。
+#      分支上想提前验，`workflow_dispatch` 仍在：`gh workflow run tests.yml`。
+#   3. **新代价：`e2e` job 现在进了每个 PR 的路径。** 它跑 `baseline_1b` 68 条 Playwright，
+#      而这套用例在干净 Linux 上只成功过一次（run 35584711194）。它要是 flaky，红的就是 PR
+#      而不是发版日。这正是机制挑战闸第 1 项要回答的问题——闸没过之前，别把它设成 required。
 #
 # ⚠️ **action 版本尚未在 CI 里实跑验证过。** `workflow_dispatch` 只对**默认分支上存在的
 # workflow** 生效，所以本文件在 008 合入 `master` 之前无法被触发一次。合入后的第一件事：
@@ -38,6 +52,9 @@ on:
     types: [published]
   push:
     tags: ["v*"]
+  # 跑的是 refs/pull/N/merge（分支并进 base 之后的树），不是分支头——理由见文件头。
+  pull_request:
+    branches: [master]
   workflow_dispatch:
 
 concurrency:
