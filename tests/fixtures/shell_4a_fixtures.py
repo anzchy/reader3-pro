@@ -316,10 +316,31 @@ def capture_all(
     return out
 
 
+#: Chromium on macOS serialises the computed `font-family` token `BlinkMacSystemFont`
+#: as `"system-ui"`; on Linux it keeps the literal. The committed snapshot was taken
+#: on macOS, so the macOS form is canonical (tests/unit/test_reg1_font_family_canonical.py).
+_FONT_FAMILY_ALIASES: Tuple[Tuple[str, str], ...] = (("BlinkMacSystemFont", '"system-ui"'),)
+
+
+def _canonical(values: Dict[str, str]) -> Dict[str, str]:
+    family = values.get("font-family")
+    if family is None:
+        return values
+    for literal, canonical in _FONT_FAMILY_ALIASES:
+        family = family.replace(literal, canonical)
+    return {**values, "font-family": family}
+
+
 def snapshot_values(capture: Capture) -> Dict[str, Dict[str, Optional[Dict[str, str]]]]:
-    """Raw values in snapshot shape; `None` for a testid that did not match exactly once."""
+    """Values in snapshot shape; `None` for a testid that did not match exactly once.
+
+    Raw except for `_canonical`, which folds platform-specific `font-family` aliases.
+    """
     return {
-        page: {tid: (entry["v"] if entry["count"] == 1 else None) for tid, entry in entries.items()}
+        page: {
+            tid: (_canonical(entry["v"]) if entry["count"] == 1 else None)
+            for tid, entry in entries.items()
+        }
         for page, entries in capture.items()
     }
 
