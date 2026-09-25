@@ -37,6 +37,7 @@
 | ts_utc | commit | result | duration_s | suite_hash | browser | os | log |
 |---|---|---|---|---|---|---|---|
 | 2026-09-23T10:51:23Z | baddc61 | green | 56.63 | 1e868c7bf811 | chromium-1234 | darwin-25.3.0 | .claude/tdd-guardian/soak-logs/2026-09-23T105123Z-baddc61-253060125-89fc9e.log |
+| 2026-09-25T22:31:21Z | 4178b8a | green | 61.65 | 1e868c7bf811 | chromium-1234 | darwin-25.3.0 | .claude/tdd-guardian/soak-logs/2026-09-25T223121Z-4178b8a-373044625-cdfb95.log |
 
 ---
 
