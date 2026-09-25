@@ -1,0 +1,28 @@
+/* Skeleton placeholder (Track-D WI-8, hosted in 013 WI-13). The cycle is --r3-skeleton-cycle,
+   a length of time that is not a transition (spec §3.5.3 exception 1). Under reduced motion
+   the pulse stops and the block becomes a solid sunken surface. */
+@keyframes r3-skeleton-pulse {
+  0%,
+  100% {
+    background-color: var(--r3-surface-hover);
+  }
+  50% {
+    background-color: var(--r3-surface-sunken);
+  }
+}
+
+.r3-skeleton {
+  display: inline-block;
+  min-width: var(--r3-space-2xl);
+  min-height: var(--r3-space-md);
+  border-radius: var(--r3-radius-sm);
+  background: var(--r3-surface-hover);
+  animation: r3-skeleton-pulse var(--r3-skeleton-cycle) var(--r3-ease-standard) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .r3-skeleton {
+    animation: none;
+    background: var(--r3-surface-sunken);
+  }
+}

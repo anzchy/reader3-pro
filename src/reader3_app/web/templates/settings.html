@@ -1,76 +1,128 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Settings · Reader3 Pro</title>
-  <link rel="stylesheet" href="/static/settings.css">
+  <script>(function(){var d=document.documentElement,s;try{s=localStorage}catch(e){s=null}function g(k){try{return s&&s.getItem(k)}catch(e){return null}}var c=g("reader3.ui.colorScheme");if(c==="light"||c==="dark"){d.setAttribute("data-theme",c)}else{d.removeAttribute("data-theme")}var r=g("reader3.reader.theme");d.setAttribute("data-reading-theme",r==="paper"||r==="sepia"||r==="green"||r==="night"||r==="auto"?r:"auto")})();</script>
+  <title>设置 · Reader3 Pro</title>
+  {{ vite_css('settings') }}
+  {{ vite_js('settings') }}
 </head>
 <body>
-  <div class="container" data-testid="set-screen">
-    <div class="topbar" data-testid="set-topbar">
-      <a class="link" href="/" data-testid="set-topbar-back-to-library">← Back to Library</a>
-      <div class="title">Settings</div>
-    </div>
+  <div class="set-screen" data-testid="set-screen">
+    <header class="set-topbar" data-testid="set-topbar">
+      <span class="set-brand" data-testid="set-brand">Reader3 Pro</span>
+      <a class="set-back" href="/" data-testid="set-topbar-back-to-library">← 返回书库</a>
+    </header>
+    <div class="sr-only" role="status" aria-live="polite" data-testid="set-live-region"></div>
 
-    <div class="section">
-      <h2>AI Preferences</h2>
-      <div class="row">
-        <label class="label">
-          Default provider
-          <select id="settings-default-provider"></select>
-        </label>
-      </div>
-      <div class="row">
-        <label class="checkbox">
-          <input type="checkbox" id="settings-streaming-enabled" checked>
-          Streaming enabled (when supported)
-        </label>
-      </div>
-      <div class="row">
-        <label class="checkbox">
-          <input type="checkbox" id="settings-show-timestamps" checked>
-          Show timestamps
-        </label>
-      </div>
-      <div class="row">
-        <label class="checkbox">
-          <input type="checkbox" id="settings-auto-suggest" checked>
-          Auto suggested questions (future)
-        </label>
-      </div>
-      <div class="row">
-        <button id="settings-save-preferences" class="btn">Save preferences</button>
-        <span id="settings-pref-status" class="status"></span>
-      </div>
-    </div>
+    <main class="set-inner">
+      <h1 class="set-page-title">设置</h1>
 
-    <div class="section">
-      <h2>Providers</h2>
-      <div id="settings-providers" class="providers"></div>
-    </div>
+      <section class="set-block" aria-labelledby="set-h-prefs">
+        <h2 class="set-block-title" id="set-h-prefs">AI 偏好</h2>
+        <div class="set-grid">
+          <label class="set-field">默认服务商
+            <select class="set-select" id="set-default-provider"></select>
+          </label>
+        </div>
+        <label class="set-check"><input type="checkbox" id="set-pref-streaming" checked> 流式输出（服务商支持时）</label>
+        <label class="set-check"><input type="checkbox" id="set-pref-timestamps" checked> 显示消息时间</label>
+        <label class="set-check"><input type="checkbox" id="set-pref-suggest" checked> 自动推荐问题</label>
+        <h3 class="set-block-title">检索</h3>
+        <div class="set-grid">
+          <label class="set-field">每次检索的片段数（1–20）
+            <input class="set-input" type="number" inputmode="numeric" min="1" max="20" step="1" value="6" data-testid="set-rag-chunks">
+          </label>
+          <label class="set-field">上下文窗口（1000–32000 字符）
+            <input class="set-input" type="number" inputmode="numeric" min="1000" max="32000" step="500" value="8000" data-testid="set-rag-context">
+          </label>
+          <label class="set-field">向量模型
+            <input class="set-input" type="text" readonly value="paraphrase-multilingual-MiniLM-L12-v2" data-testid="set-rag-embedding">
+          </label>
+        </div>
+        <div class="set-actions">
+          <button type="button" class="set-btn set-btn-primary" id="set-save-prefs">保存偏好</button>
+        </div>
+        <p class="set-result" id="set-prefs-result" role="status" aria-live="polite" data-state=""></p>
+      </section>
 
-    <div class="section">
-      <h2>Data</h2>
-      <div class="row">
-        <button id="settings-clear-conversations" data-testid="set-data-conversations" class="btn btn-danger">Clear conversations (IndexedDB)</button>
-        <button id="settings-clear-summaries" data-testid="set-data-cache" class="btn btn-danger">Clear summaries (IndexedDB)</button>
-        <span id="settings-data-status" class="status"></span>
-      </div>
-      <div class="row">
-        <button id="settings-export-config" data-testid="set-export-settings" class="btn">Export settings (no keys)</button>
-        <label class="btn" style="display:inline-flex; align-items:center; gap:8px;">
-          Import settings
-          <input id="settings-import-config" type="file" accept="application/json" style="display:none;" />
-        </label>
-        <span id="settings-config-status" class="status"></span>
-      </div>
-      <div class="hint">
-        Clearing data only affects this browser profile. It does not touch your books on disk.
-      </div>
-    </div>
+      <section class="set-block" aria-labelledby="set-h-providers">
+        <h2 class="set-block-title" id="set-h-providers">服务商</h2>
+        <p class="set-copy">配置保存在服务器的 <code>config/ai_settings.json</code>。API 密钥只存在服务器上，不会回传到浏览器。</p>
+        <p class="set-guide" id="set-provider-guide" role="note" aria-label="未启用服务商" hidden>还没有启用任何服务商。打开下面任一卡片右上角的开关，AI 助手才能工作；不想用云端服务的话，Ollama 可以完全在本机运行。</p>
+        <div class="set-providers" id="set-providers"></div>
+      </section>
+
+      <section class="set-block" aria-labelledby="set-h-appearance">
+        <h2 class="set-block-title" id="set-h-appearance">外观</h2>
+        <p class="set-copy">界面明暗。阅读页的纸色在阅读器的阅读设置里调，不在这里。</p>
+        <div class="set-actions" role="radiogroup" aria-label="界面明暗">
+          <button type="button" class="set-btn" role="radio" aria-checked="false" tabindex="-1" data-testid="set-appearance-scheme-system">跟随系统</button>
+          <button type="button" class="set-btn" role="radio" aria-checked="false" tabindex="-1" data-testid="set-appearance-scheme-light">浅色</button>
+          <button type="button" class="set-btn" role="radio" aria-checked="false" tabindex="-1" data-testid="set-appearance-scheme-dark">深色</button>
+        </div>
+      </section>
+
+      <section class="set-block" aria-labelledby="set-h-data">
+        <h2 class="set-block-title" id="set-h-data">数据</h2>
+        <p class="set-copy">这些操作会改动已存储的内容，执行前都会先请你确认。对话和摘要缓存只存在本浏览器里，清除它们不会动到磁盘上的书。</p>
+        <div class="set-actions">
+          <button type="button" class="set-btn set-btn-danger" data-testid="set-data-reindex">重建全部索引</button>
+          <button type="button" class="set-btn set-btn-danger" data-testid="set-data-conversations">删除全部对话</button>
+          <button type="button" class="set-btn set-btn-danger" data-testid="set-data-cache">清除摘要缓存（IndexedDB）</button>
+        </div>
+        <p class="set-result" id="set-data-result" role="status" aria-live="polite" data-state=""></p>
+      </section>
+
+      <section class="set-block" aria-labelledby="set-h-export">
+        <h2 class="set-block-title" id="set-h-export">导出与导入</h2>
+        <p class="set-copy">设置导出不含 API 密钥；导入时也不会读取密钥。</p>
+        <div class="set-actions">
+          <button type="button" class="set-btn" data-testid="set-export-json">导出书库 JSON</button>
+          <button type="button" class="set-btn" data-testid="set-export-settings">导出设置（不含密钥）</button>
+          <button type="button" class="set-btn" id="set-import-settings">导入设置</button>
+          <input type="file" id="set-import-file" accept="application/json" hidden>
+        </div>
+        <p class="set-result" id="set-export-result" role="status" aria-live="polite" data-state=""></p>
+      </section>
+    </main>
   </div>
 
-  <script src="/static/settings.js"></script>
+  <dialog class="set-modal" data-testid="set-modal-reindex" aria-labelledby="set-modal-reindex-title" aria-describedby="set-modal-reindex-desc">
+    <div class="set-modal-head">
+      <h2 class="set-modal-title" id="set-modal-reindex-title">重建全部语义索引？</h2>
+      <button type="button" class="set-icon-btn" aria-label="关闭" data-testid="set-modal-reindex-close">×</button>
+    </div>
+    <p class="set-modal-body" id="set-modal-reindex-desc" data-testid="set-modal-reindex-body">每一本已索引的书都会从头重新嵌入，可能要好几分钟，现有的向量会被丢弃。</p>
+    <div class="set-modal-foot">
+      <button type="button" class="set-btn" data-testid="set-modal-reindex-cancel">取消</button>
+      <button type="button" class="set-btn set-btn-danger" data-testid="set-modal-reindex-primary">重建索引</button>
+    </div>
+  </dialog>
+
+  <dialog class="set-modal" data-testid="set-modal-conversations" aria-labelledby="set-modal-conversations-title" aria-describedby="set-modal-conversations-desc">
+    <div class="set-modal-head">
+      <h2 class="set-modal-title" id="set-modal-conversations-title">删除全部对话？</h2>
+      <button type="button" class="set-icon-btn" aria-label="关闭" data-testid="set-modal-conversations-close">×</button>
+    </div>
+    <p class="set-modal-body" id="set-modal-conversations-desc" data-testid="set-modal-conversations-body">本浏览器里保存的每本书的 AI 对话都会被永久删除，无法撤销。</p>
+    <div class="set-modal-foot">
+      <button type="button" class="set-btn" data-testid="set-modal-conversations-cancel">取消</button>
+      <button type="button" class="set-btn set-btn-danger" data-testid="set-modal-conversations-primary">删除对话</button>
+    </div>
+  </dialog>
+
+  <dialog class="set-modal" data-testid="set-modal-cache" aria-labelledby="set-modal-cache-title" aria-describedby="set-modal-cache-desc">
+    <div class="set-modal-head">
+      <h2 class="set-modal-title" id="set-modal-cache-title">清除摘要缓存？</h2>
+      <button type="button" class="set-icon-btn" aria-label="关闭" data-testid="set-modal-cache-close">×</button>
+    </div>
+    <p class="set-modal-body" id="set-modal-cache-desc" data-testid="set-modal-cache-body">本浏览器（IndexedDB）里缓存的 AI 摘要会被删除，下次需要时重新生成。服务器上的书、笔记和设置都不受影响。</p>
+    <div class="set-modal-foot">
+      <button type="button" class="set-btn" data-testid="set-modal-cache-cancel">取消</button>
+      <button type="button" class="set-btn set-btn-danger" data-testid="set-modal-cache-primary">清除缓存</button>
+    </div>
+  </dialog>
 </body>
 </html>

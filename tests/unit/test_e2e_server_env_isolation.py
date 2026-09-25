@@ -117,11 +117,12 @@ def test_no_other_reader3_var_leaks_through(monkeypatch, tmp_path):
     """既有保证的回归网：除显式注回的那几个，任何 READER3_* 都不得穿透。
 
     没有它，修这个 bug 的人可以把剥离改成白名单式的「只剥 READER3_TOKEN」，
-    上面三条照样绿，而 READER3_LIBRARY_UI=classic 会换掉整个模板。
+    上面三条照样绿，而 READER3_ALLOWED_HOSTS 会让 Host 白名单拒掉 127.0.0.1 上的请求。
+    （原先拿 READER3_LIBRARY_UI 举例；013 WI-13 删了那个开关，换成一个仍然存在的变量。）
     """
     server_env = _load_server_env()
     monkeypatch.setenv("READER3_TOKEN", "sekrit")
-    monkeypatch.setenv("READER3_LIBRARY_UI", "classic")
+    monkeypatch.setenv("READER3_ALLOWED_HOSTS", "example.invalid")
     monkeypatch.setenv("READER3_BOOKS_DIR", "/definitely/not/here")
 
     books = tmp_path / "books"
@@ -129,7 +130,7 @@ def test_no_other_reader3_var_leaks_through(monkeypatch, tmp_path):
     env = server_env(books)
 
     assert "READER3_TOKEN" not in env, "READER3_TOKEN 穿透了——所有写操作会 401"
-    assert "READER3_LIBRARY_UI" not in env, "READER3_LIBRARY_UI 穿透了——会换掉整个模板"
+    assert "READER3_ALLOWED_HOSTS" not in env, "READER3_ALLOWED_HOSTS 穿透了——Host 白名单会拒掉测试服务"
     assert env["READER3_BOOKS_DIR"] == str(books), (
         f"READER3_BOOKS_DIR 没有被沙箱值覆盖：{env.get('READER3_BOOKS_DIR')}"
     )

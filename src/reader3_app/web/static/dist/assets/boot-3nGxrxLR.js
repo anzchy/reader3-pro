@@ -1,0 +1,1 @@
+function e(e,t=document.documentElement){t.dataset.r3Page=e}export{e as t};

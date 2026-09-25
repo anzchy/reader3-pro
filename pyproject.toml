@@ -46,10 +46,13 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 # setuptools 的 `*` 不递归。写成 `static/*` 会漏掉 static/js、static/css、
-# static/vendor 三个子目录，wheel 装出来阅读器直接白屏（reader.css、
+# static/vendor 三个子目录，wheel 装出来阅读器直接白屏（annotations.css、
 # annotations.js、epub.min.js 全缺）。本地 `uv run` 走源码树，看不见这个问题。
 # `**` 需要 setuptools>=62.3；build-system 已要求 >=68，见 [build-system]。
 # scripts/check_wheel_contents.py 是这条的守卫（CI 里的 wheel job），别删。
+# 013 WI-9 A9.5: `static/**/*` also carries the committed Vite output under
+# static/dist/ at any depth (tests/integration/test_wheel_includes_dist.py seeds a
+# file three levels deep); check_wheel_contents.py fails if the wheel has no dist member.
 "reader3_app.web" = ["templates/*.html", "static/**/*"]
 
 [tool.ruff]
@@ -120,7 +123,7 @@ testpaths = ["tests"]
 # selects zero tests and exits 0, which is exactly how a soak run comes to count the
 # empty set (policy-core completion bar #1: "lane discovered zero tests is a failure").
 addopts = "--strict-markers"
-# The five group markers below partition tests/e2e (one marker per subdirectory);
+# The six group markers below partition tests/e2e (one marker per subdirectory);
 # the phase table, the group contents and the soak rules are defined ONCE in
 # docs/plans/20260816-tech-stack-migration/tasks/009-e2e-annotations.md section 0.5.
 # Item counts live in scripts/lint_e2e_groups.py. Point at those; do not copy them here.
@@ -131,6 +134,8 @@ markers = [
     "acceptance_p3: activates at the Phase 3 exit; does NOT count toward the 1b exit bar",
     "acceptance_4a4: activates at 4A.4; does NOT count toward the 1b exit bar",
     "acceptance_2a: activates in Phase 2a; does NOT count toward the 1b exit bar",
+    "shell_4a: 013 Phase 4A.0 REG-1 baseline (WI-9); activated; does NOT count toward the 1b exit bar",
+    "track_d_013: one of the 34 Track-D items hosted by 013 (WI-10 / WI-11 / WI-13); not a group marker, the ledger selects on it",
     "real_loopback_socket: this test really opens a loopback TCP connection; exempt from the lane-wide egress backstop",
 ]
 
@@ -157,5 +162,8 @@ dev = [
     # 刻意把运行剖面冻结起来数 soak 次数的仓库，那等于把基准和挑战混成一锅。
     # pytest-random-order 不给 `--random-order*` 就完全不介入，闸跑完即回到原剖面。
     "pytest-random-order>=1.1.1",
+    # 013 WI-9 A9.9: frontend plan §5.0 runs the browser suite as `pytest -n 4`.
+    # tests/unit/test_xdist_collection_parity.py checks the -n 4 partition is exact.
+    "pytest-xdist>=3.8.0",
     "ruff>=0.16.3",
 ]

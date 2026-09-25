@@ -63,10 +63,24 @@ concurrency:
 
 jobs:
   unit:
-    name: 静态检查 ＋ unit lane（含覆盖率门禁）
+    name: 静态检查 ＋ unit lane（含覆盖率门禁）＋ fe-unit lane
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth 0：REG-1 的 C9.23（tests/unit/test_reg1_snapshot_metadata.py）要在对象库里
+      # 找到基线 commit 671f580；默认的深度 1 检出没有它，那条用例会（按设计）红而不是 skip。
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # 013 WI-9：unit lane 里有几条用例驱动 Node（depcruise、Vitest 宿主的三条），
+      # 它们在没有 node_modules 时判红、不 skip。Node 版本读 .nvmrc，与本地同一处定义。
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: ".nvmrc"
+          cache: npm
+
+      - name: npm ci
+        run: npm ci
 
       - uses: astral-sh/setup-uv@v6
         with:
@@ -114,6 +128,11 @@ jobs:
         if: always()
         run: python3 scripts/check_coverage_gate.py
 
+      # 与 `.claude/tdd-guardian/config.json` 的 fe-unit lane 同一条命令（013 WI-9，D4）。
+      - name: fe-unit lane（Vitest ＋ jsdom，frontend/tests）
+        if: always()
+        run: npm test
+
       - name: 保留覆盖率报告
         if: always()
         uses: actions/upload-artifact@v4
@@ -151,7 +170,11 @@ jobs:
     name: e2e baseline_1b（干净 Linux ＋ 冻结 lock，68/68 首次通过）
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth 0：「e2e 余下各组」那一步会跑 tests/e2e/shell_4a（REG-1），其中 C9.38
+      # 用 `git worktree add` 检出 671f580 重拍一次快照；深度 1 的检出没有那个 commit。
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - uses: astral-sh/setup-uv@v6
         with:

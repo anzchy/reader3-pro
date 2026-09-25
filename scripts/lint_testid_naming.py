@@ -36,6 +36,7 @@
 同样判违规，免得豁免变成永久的静默通行证。
 """
 
+import argparse
 import re
 import sys
 from collections import defaultdict
@@ -49,7 +50,7 @@ SCAN_GLOBS = (
     "src/reader3_app/web/templates/*.html",
 )
 
-# M4：前端 JS 也在发 testid（`library.js` 的状态 pill、`settings.js` 的 provider 卡片、
+# M4：前端 JS 也在发 testid（当时 `library.js` 的状态 pill——013 起已迁到 TS、`settings.js` 的 provider 卡片、
 # `search.js` / `notes-panel.js` 的动态列表），在此之前**没有任何东西在管这些名字的形状**。
 # 它们进扫描范围，但**只参与 CANONICAL 形状检查，不参与同文件唯一性检查**：
 #   * JS 里同一个 testid 字面量「在 `const` 表里定义一次、在别处 `setAttribute` 再引用
@@ -59,10 +60,22 @@ SCAN_GLOBS = (
 #     里承担了：它扫的是渲染后的 DOM，而 DOM 唯一性才是 Playwright strict 模式真正在乎
 #     的东西。静态近似在 JS 上尤其不准（一个字面量渲成 N 个节点、互斥分支各写一次），
 #     运行期断言才是它该待的地方。
-SHAPE_ONLY_SCAN_GLOBS = ("src/reader3_app/web/static/**/*.js",)
+#
+# `frontend/src/**/*.ts`（013 WI-9 验收 A9.13，用户裁定 D6）：TS 源码根同样在发 testid，
+# 同样只走形状——理由与上面 JS 那条完全相同。少了它，WI-3 #1、WI-12 #3、WI-13 #6 在 TS
+# 上都是空过。`frontend/tests/` 不在内：测试是 testid 的**使用方**，归选择器 lint 管。
+SHAPE_ONLY_SCAN_GLOBS = (
+    "src/reader3_app/web/static/**/*.js",
+    "frontend/src/**/*.ts",
+)
 
 # vendor 是第三方 JS（epub.js 等），不是我们发的 testid，扫它只会扫出别人的代码。
-SHAPE_ONLY_EXCLUDE = ("src/reader3_app/web/static/vendor/",)
+# dist 是 Vite 产物（压缩后的 frontend/src）：它发的名字已经在源码那一侧查过，
+# 压缩又会把 `*TESTID*` 常量名改掉——在产物上查只会得到更少、更难读的命中。
+SHAPE_ONLY_EXCLUDE = (
+    "src/reader3_app/web/static/vendor/",
+    "src/reader3_app/web/static/dist/",
+)
 
 # canonical 正则。这里就是唯一真相源（裁决见 docs/adr/0013-testid-invariant.md）——
 # 文档一律链接到这个常量，不要在任何 Markdown 表格里另抄一份（表格里的 | 会被转义成 \|）。
@@ -71,11 +84,28 @@ CANONICAL = re.compile(r"^(?:lib|rd|set)-[a-z0-9]+(?:-[a-z0-9]+)*$")
 ATTR_LITERAL_RE = re.compile(r'data-testid\s*=\s*"([^"]*)"')
 PROP_LITERAL_RE = re.compile(r'\btestId\s*=\s*"([^"]*)"')
 ATTR_EXPR_RE = re.compile(r"data-testid\s*=\s*\{([^}]*)\}")
-# 收尾的 `};` 允许有缩进：原型的表都在模块顶层（`};` 顶格），但 `library.js` /
+# 收尾的 `};` 允许有缩进：原型的表都在模块顶层（`};` 顶格），但（013 前的）`library.js` /
 # `library-chat.js` 的表包在 IIFE 里，收尾写的是 `  };`。要求顶格等于对这些表**视而不见**
 # ——而看不见的表照样让 lint 退出 0，是最坏的一种「通过」。
 TESTID_TABLE_RE = re.compile(r"const\s+\w*TESTID\w*\s*=\s*\{(.*?)\n[ \t]*\};", re.DOTALL)
 TABLE_VALUE_RE = re.compile(r':\s*"([^"]*)"')
+# DOM API 的两种写法（013 WI-9，A9.13）：`el.setAttribute("data-testid", <expr>)` 与
+# `el.dataset.testid = <expr>`。静态 JS 与 TS 都这么发 testid，此前只有 JSX/模板的属性形态
+# 被扫到。<expr> 是单个字符串字面量 → 走形状检查；含 `+` 或模板插值 → 按拼接判违规
+# （规格 §4 规则 5）；其余（标识符、`TABLE.key` 查表）放行——表里的值由 TESTID 表那条管。
+# <expr> 里的字符串字面量整段吞下：字面量内含 `)`（如 `")"`）时，`[^)]*` 会在字面量中间截断，
+# 截出的半截表达式既非字面量也非拼接，于是被放行——一个不合形状的名字就此漏检（013 WI-13
+# 期间由 C9.16 的性质测试随机撞出）。
+SET_ATTR_RE = re.compile(
+    r"""\.setAttribute\(\s*(["'])data-testid\1\s*,\s*"""
+    r"""(?P<expr>(?:"[^"\n]*"|'[^'\n]*'|`[^`\n]*`|[^)"'`])*?)\s*\)"""
+)
+# 同理，`dataset.testid = ';'` 的 `[^;\n]*` 会在字面量里的 `;` 处截断。
+DATASET_RE = re.compile(
+    r"""\.dataset\.testid\s*=(?!=)\s*(?P<expr>(?:"[^"\n]*"|'[^'\n]*'|`[^`\n]*`|[^;\n"'`])*?)\s*(?:;|$)""",
+    re.MULTILINE,
+)
+STRING_LITERAL_RE = re.compile(r"""^(?:"([^"\\]*)"|'([^'\\]*)'|`([^`\\$]*)`)$""")
 
 ADR_0014 = "docs/adr/0014-bounded-testid-enumeration.md"
 
@@ -95,10 +125,26 @@ def line_of(text: str, index: int) -> int:
     return text.count("\n", 0, index) + 1
 
 
-def main() -> int:
+def classify_expr(expr: str) -> tuple[str, str | None]:
+    """DOM API 形态里的 <expr>：("literal", 值) / ("concat", None) / ("opaque", None)。"""
+    m = STRING_LITERAL_RE.match(expr)
+    if m:
+        return "literal", next(g for g in m.groups() if g is not None)
+    if "+" in expr or "`" in expr:
+        return "concat", None
+    return "opaque", None
+
+
+def main(argv: list[str] | None = None) -> int:
+    # `--root` (013 WI-9)：反例播种进 tmp 副本，不碰真实仓库。不传 argv 即不带参数
+    # ——不是 sys.argv，pytest 底下那是 pytest 自己的参数。
+    parser = argparse.ArgumentParser(description="testid 命名 lint")
+    parser.add_argument("--root", type=Path, default=None, help="要扫的仓库根（默认本检出）")
+    args = parser.parse_args(argv or [])
+    root = args.root.resolve() if args.root else ROOT
     # 形状违规按 (文件, 字面量) 分组：同一个坏名字出现两次是一条待办，不是两条。
     bad_names: dict[tuple[str, str], tuple[list[int], list[str]]] = {}
-    bad_exprs: list[tuple[str, int, str]] = []
+    bad_exprs: list[tuple[str, int, str]] = []  # (文件, 行, 展示用的表达式)
     files = 0
     names: set[str] = set()
     # 唯一性统计的键是 (文件, 字面量)——跨文件同名不算重名，这是 ADR-0014 明写的盲区。
@@ -108,18 +154,18 @@ def main() -> int:
     # 的代码是同一份——分成两个循环写就是两份会各自漂移的 parser。
     targets: list[tuple[Path, bool]] = []
     for pattern in SCAN_GLOBS:
-        for path in sorted(ROOT.glob(pattern)):
+        for path in sorted(root.glob(pattern)):
             targets.append((path, True))
     for pattern in SHAPE_ONLY_SCAN_GLOBS:
-        for path in sorted(ROOT.glob(pattern)):
-            if any(x in path.as_posix() for x in SHAPE_ONLY_EXCLUDE):
+        for path in sorted(root.glob(pattern)):
+            if any(x in path.relative_to(root).as_posix() for x in SHAPE_ONLY_EXCLUDE):
                 continue
             targets.append((path, False))
 
     for path, check_uniqueness in targets:
         files += 1
         text = path.read_text(encoding="utf-8")
-        rel = path.relative_to(ROOT).as_posix()
+        rel = path.relative_to(root).as_posix()
 
         found: list[tuple[int, str, str]] = []
         for m in ATTR_LITERAL_RE.finditer(text):
@@ -129,6 +175,13 @@ def main() -> int:
         for table in TESTID_TABLE_RE.finditer(text):
             for m in TABLE_VALUE_RE.finditer(table.group(1)):
                 found.append((table.start(1) + m.start(1), m.group(1), "静态映射表"))
+        for regex, kind in ((SET_ATTR_RE, "setAttribute"), (DATASET_RE, "dataset.testid")):
+            for m in regex.finditer(text):
+                verdict, value = classify_expr(m.group("expr"))
+                if verdict == "literal":
+                    found.append((m.start("expr"), value, kind))
+                elif verdict == "concat":
+                    bad_exprs.append((rel, line_of(text, m.start("expr")), f"{kind} {m.group('expr').strip()}"))
 
         for pos, value, kind in found:
             line = line_of(text, pos)
@@ -145,13 +198,21 @@ def main() -> int:
         for m in ATTR_EXPR_RE.finditer(text):
             expr = m.group(1)
             if "+" in expr or "`" in expr:
-                bad_exprs.append((rel, line_of(text, m.start(1)), expr.strip()))
+                bad_exprs.append((rel, line_of(text, m.start(1)), f"data-testid={{{expr.strip()}}}"))
 
     # 豁免只压住唯一性发现，压不住形状检查——那是登记者从未打算授予的提权。
     duplicates = {key: sorted(lines) for key, lines in occurrences.items() if len(lines) > 1}
     exempted = {key for key in duplicates if key in UNIQUENESS_EXEMPTIONS}
     reported_dups = {key: lines for key, lines in duplicates.items() if key not in exempted}
-    dangling = sorted(key for key in UNIQUENESS_EXEMPTIONS if key not in duplicates)
+    # 登记表绑定的是本仓库（ROOT）的文件。--root 指向别的树（tmp 副本、夹具）时，那棵树
+    # 里根本没有的登记文件不归它负责；只有那棵树里确实存在的登记文件才参与悬空判定。
+    # 扫描本仓库时照旧：登记文件缺失即悬空（U17）。
+    foreign = root.resolve() != Path(ROOT).resolve()
+    dangling = sorted(
+        key
+        for key in UNIQUENESS_EXEMPTIONS
+        if key not in duplicates and not (foreign and not (root / key[0]).exists())
+    )
 
     print(f"扫描 {files} 个文件，{len(names)} 个唯一 testid 名。")
 
@@ -167,7 +228,7 @@ def main() -> int:
     if bad_exprs:
         print(f"\n拼接出来的 testid（{len(bad_exprs)} 处）——违反设计规格 §4 规则 5：")
         for rel, line, expr in bad_exprs:
-            print(f"  {rel}:{line}  data-testid={{{expr}}}")
+            print(f"  {rel}:{line}  {expr}")
         print("  有界取值改静态映射表，无界 id 改「字面量 testid ＋ 另一个 data-* 携带 id」。")
 
     if reported_dups:
@@ -191,4 +252,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

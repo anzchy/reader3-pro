@@ -1,0 +1,149 @@
+/* 013 WI-10: Tier 1 palette (spec §3.2) and the theme-independent Tier 2 scales
+   (spec §3.4, §3.5). The colour Tier 2 tokens are NOT here: they come from
+   frontend/src/shared/theme-tokens.ts through the theme plugin (virtual:r3-theme.css),
+   which is the only author of the light, dark and reading-paper blocks.
+
+   This file and theme-tokens.ts are the only places a `--p-*` name may appear; it is
+   registered in scripts/lint_hardcode.mjs EXEMPT_FILES as the Tier 1 definition site. */
+
+:root {
+  /* Brand -- blue (D-5); deliberately a different hue from status info. */
+  --p-blue-50: #eff6ff;
+  --p-blue-400: #60a5fa;
+  --p-blue-500: #3b82f6;
+  --p-blue-600: #2563eb;
+  --p-blue-950: #172554;
+
+  /* Neutral */
+  --p-gray-0: #ffffff;
+  --p-gray-50: #fafafa;
+  --p-gray-100: #f5f5f5;
+  --p-gray-200: #eeeeee;
+  --p-gray-300: #e5e5e5;
+  --p-gray-400: #cccccc;
+  --p-gray-500: #999999;
+  --p-gray-550: #707070;
+  --p-gray-600: #666666;
+  --p-gray-700: #4a4a4a;
+  --p-gray-800: #333333;
+  --p-gray-900: #1f2d3d;
+  --p-gray-950: #17222e;
+
+  /* Reading surfaces (prototype-measured paper colours) */
+  --p-paper-white: #ffffff;
+  --p-paper-sepia: #f6ecd8;
+  --p-paper-green: #dcece0;
+  --p-paper-night: #10151f;
+
+  /* Status: 700 light foreground / 400 dark foreground / 100 light subtle / 950 dark subtle */
+  --p-green-100: #dcfce7;
+  --p-green-400: #4ade80;
+  --p-green-700: #15803d;
+  --p-green-950: #14321f;
+  --p-amber-100: #fef3c7;
+  --p-amber-400: #fbbf24;
+  --p-amber-700: #b45309;
+  --p-amber-950: #3a2a08;
+  --p-red-100: #fee2e2;
+  --p-red-400: #f87171;
+  --p-red-700: #b91c1c;
+  --p-red-950: #3b1717;
+  --p-cyan-100: #e0f2fe;
+  --p-cyan-400: #22d3ee;
+  --p-cyan-700: #0e7490;
+  --p-cyan-950: #10283d;
+
+  /* Annotation: RGB triplets are the source; alpha lives at the point of use (WI-7). */
+  --p-hl-yellow-rgb: 251 191 36;
+  --p-hl-green-rgb: 74 222 128;
+  --p-hl-pink-rgb: 248 113 113;
+  --p-hl-blue-rgb: 96 165 250;
+  --p-hl-yellow-dk-rgb: 138 109 31;
+  --p-hl-green-dk-rgb: 47 107 61;
+  --p-hl-pink-dk-rgb: 125 59 59;
+  --p-hl-blue-dk-rgb: 47 85 128;
+  --p-hl-yellow: rgb(var(--p-hl-yellow-rgb));
+  --p-hl-green: rgb(var(--p-hl-green-rgb));
+  --p-hl-pink: rgb(var(--p-hl-pink-rgb));
+  --p-hl-blue: rgb(var(--p-hl-blue-rgb));
+  --p-hl-yellow-dk: rgb(var(--p-hl-yellow-dk-rgb));
+  --p-hl-green-dk: rgb(var(--p-hl-green-dk-rgb));
+  --p-hl-pink-dk: rgb(var(--p-hl-pink-dk-rgb));
+  --p-hl-blue-dk: rgb(var(--p-hl-blue-dk-rgb));
+
+  /* Spacing (§3.4): six steps, no seventh. */
+  --r3-space-xs: 4px;
+  --r3-space-sm: 8px;
+  --r3-space-md: 16px;
+  --r3-space-lg: 24px;
+  --r3-space-xl: 32px;
+  --r3-space-2xl: 48px;
+
+  /* Radius (§3.4): four steps. */
+  --r3-radius-sm: 6px;
+  --r3-radius-md: 10px;
+  --r3-radius-lg: 16px;
+  --r3-radius-full: 999px;
+
+  /* Layout (§3.4) */
+  --r3-sidebar-w: 232px;
+  --r3-right-w: 336px;
+  --r3-right-w-collapsed: 48px;
+  --r3-rail-w: 56px;
+  --r3-header-h: 60px;
+
+  /* Control sizes (§3.4): deliberately off the spacing scale. */
+  --r3-control-h: 34px;
+  --r3-control-h-sm: 28px;
+  --r3-control-px: 14px;
+  --r3-control-gap: 6px;
+
+  /* Type scale (§3.4) */
+  --r3-font-size-2xs: 11px;
+  --r3-font-size-xs: 12px;
+  --r3-font-size-sm: 13px;
+  --r3-font-size-base: 14px;
+  --r3-font-size-md: 16px;
+  --r3-font-size-lg: 18px;
+  --r3-font-size-xl: 22px;
+  --r3-font-size-2xl: 28px;
+  --r3-leading-tight: 1.4;
+  --r3-leading-normal: 1.6;
+  --r3-leading-reading: 1.9;
+  --r3-font-sans: -apple-system, system-ui, "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  /* No web-font CDN: an offline self-hosted app falls back to system serif faces. */
+  --r3-font-serif: "Songti SC", "PingFang SC", serif;
+
+  /* z-index (§3.5.1): nine ordered tiers, the only legal z-index values. */
+  --r3-z-base: 0;
+  --r3-z-raised: 10;
+  --r3-z-sticky: 100;
+  --r3-z-panel: 200;
+  --r3-z-overlay: 300;
+  --r3-z-toolbar: 400;
+  --r3-z-popover: 500;
+  --r3-z-toast: 600;
+  --r3-z-skip: 700;
+
+  /* Motion (§3.5.2): durations and easings are separate so they combine freely. */
+  --r3-duration-fast: 150ms;
+  --r3-duration-normal: 300ms;
+  --r3-duration-slow: 500ms;
+  --r3-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --r3-ease-decelerate: cubic-bezier(0, 0, 0, 1);
+  --r3-ease-accelerate: cubic-bezier(0.3, 0, 1, 1);
+
+  /* Lengths of time that are NOT transitions (§3.5.3 exceptions 1 and 3): defined outside
+     the reduced-motion block, never derived from --r3-duration-*. */
+  --r3-skeleton-cycle: 1500ms;
+  --r3-dwell-toast: 4000ms;
+}
+
+/* §3.5.3: the single reduced-motion switch. Components never repeat this query. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --r3-duration-fast: 0ms;
+    --r3-duration-normal: 0ms;
+    --r3-duration-slow: 0ms;
+  }
+}

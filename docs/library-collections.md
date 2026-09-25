@@ -48,10 +48,6 @@ These scopes are used by:
 - Library UI filtering
 - `GET /api/library/stats?scope=...`
 
-## UI Rollback Toggle
-
-- `READER3_LIBRARY_UI=modern|classic` (default `modern`)
-
 ## Validation & Security
 
 - Collection names are validated server-side (length + allowed characters) and rendered safely.

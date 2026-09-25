@@ -1,0 +1,7 @@
+本目录归 @pytest.mark.shell_4a 组：013 Phase 4A.0 的 REG-1 基线（WI-9，验收 A9.10）。
+它是已激活组，不计入 1b 门槛；条数与白名单在 scripts/lint_e2e_groups.py。
+共享 helper 在 tests/fixtures/shell_4a_fixtures.py，快照在 tests/fixtures/snapshots/。
+
+不要在这里放 conftest.py，也不要放 __init__.py：两者都会打断 tests/e2e/ 根目录下
+test_harness_smoke.py / test_testid_dom_uniqueness.py 的 `from conftest import BOOK_ID`
+（裸模块名）。理由与实测见 scripts/lint_e2e_groups.py 的「目录布局」小节。

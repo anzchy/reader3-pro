@@ -89,7 +89,23 @@ function ProviderRow(props) {
   );
 }
 
+/* 界面明暗三选一是有界集合（ADR-0014），每个选项一个唯一字面量。这里只有 chrome 轴：
+   纸色是阅读轴，控件在阅读器偏好面板（rd-pref-theme-*），不在设置页。
+   （2026-09-24，用户裁定 D10：原型先行补上「外观」分区，ADR-0013。） */
+const SET_APPEARANCE_SCHEME_TESTID = {
+  system: "set-appearance-scheme-system",
+  light: "set-appearance-scheme-light",
+  dark: "set-appearance-scheme-dark",
+};
+
+const APPEARANCE_SCHEMES = [
+  { id: "system", label: "跟随系统" },
+  { id: "light", label: "浅色" },
+  { id: "dark", label: "深色" },
+];
+
 function SettingsScreen(props) {
+  const { theme, onTheme } = props;
   const [confirm, setConfirm] = useState(null);
   const [announce, setAnnounce] = useState("");
 
@@ -137,6 +153,24 @@ function SettingsScreen(props) {
             <label className="field-label">Embedding model
               <input className="field-control" defaultValue="paraphrase-multilingual-MiniLM-L12-v2" data-testid="set-rag-embedding" />
             </label>
+          </div>
+        </section>
+
+        <section className="settings-block">
+          <h2 className="settings-title">外观</h2>
+          <p className="settings-copy">界面明暗。阅读页的纸色在阅读器的阅读设置里调，不在这里。</p>
+          <div className="settings-actions" role="radiogroup" aria-label="界面明暗">
+            {APPEARANCE_SCHEMES.map((scheme) => (
+              <button
+                key={scheme.id}
+                className={"btn " + ((theme || "system") === scheme.id ? "is-active" : "")}
+                type="button"
+                role="radio"
+                aria-checked={(theme || "system") === scheme.id}
+                data-testid={SET_APPEARANCE_SCHEME_TESTID[scheme.id]}
+                onClick={() => onTheme && onTheme(scheme.id)}
+              >{scheme.label}</button>
+            ))}
           </div>
         </section>
 

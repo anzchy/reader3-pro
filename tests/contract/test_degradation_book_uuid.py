@@ -14,7 +14,7 @@
      永久失联，而人还能修一个自己读得到的文件；
   3. 模板渲染成空串而不是字符串 "None"（`test_模板渲染空串而不是None`）。
      第 3 条是这里最容易悄悄坏掉的一条：Jinja 把 None 渲染成 "None"，那是个
-     真值，会绕过前端 `library-chat.js` 里 `if (!this.bookUuid)` 的降级分支，
+     真值，会绕过前端 `frontend/src/library/chat.ts` 里 book uuid 为空的降级分支，
      于是前端拿着 "None" 当 uuid 去发请求。
 
 坏 uuid 的书其 AI 端点应当 404（明确的缺失）而不是被换上一个新 uuid（无声的

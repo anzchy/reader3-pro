@@ -46,7 +46,7 @@
 | **⟂** | `010-design-degradation-states` | Track D | **前端** | **🔨** 分支上完工、未合入（2026-09-24）：2 个 commit —— `293c68f`（九条出口闸逐条实测：5 过 / 3 不过 / 1 半）、`4fb33c9`（D-2 / D-5 / D-6 / D-8 四条裁定落档，九条出口闸全绿）。纯文档，允许改动集为 `designs/`、`spec-frontend-design.md`、`plan-frontend-ui-refactor.md`。**未 push、未并 `master`**；复核用 `git log --oneline master..010-design-degradation-states`。工作项仍是前端计划的 WI-1 – WI-8 | [前端计划 §4](20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) |
 | **4** | `012-storage-format` | Phase 3 | 后端 | **⬛** 计划未写 | — |
 | **5** | `013-ts-frontend-shell` | Phase 4A | **前端** | **⬜** WI-9 – WI-13 已定义 | 前端计划 §4 |
-| **6** | `014-ts-frontend-reader` | Phase 4B | **前端** | **⬜** WI-14 – WI-19 已定义 | 前端计划 §4 |
+| **6** | `014-ts-frontend-reader` | Phase 4B | **前端** | **⬜** WI-14 – WI-19（含插入项 WI-16b）已定义 | 前端计划 §4 |
 | **7** | `015-launch-experience` | Phase 5 | 后端 ＋ **前端** | **⬛ / ⬜** CLI 侧未写；PWA 侧是 WI-20 | 前端计划 §4 |
 
 **⟂ = 可随时插入**，不占顺位。

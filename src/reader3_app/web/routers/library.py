@@ -10,7 +10,7 @@
 
 留在 `server` 的：`_validate_book_id`、`_validate_book_id_path_safe`、
 `_validate_collection_id`、`_collections_file_path`、`_book_uuid_or_none`、
-`_library_ui_mode`、`_library_template_name`、`_ui_default_provider`、`templates`。
+`_ui_default_provider`、`templates`。
 """
 from __future__ import annotations
 
@@ -96,7 +96,7 @@ async def library_view(request: Request):
 
     return _server.templates.TemplateResponse(
         request,
-        _server._library_template_name(),
+        "library.html",
         {
             "books": books,
             "counts": {
@@ -106,7 +106,6 @@ async def library_view(request: Request):
             },
             "collections": collections,
             "collections_error": collections_error,
-            "library_ui_mode": _server._library_ui_mode(),
             "ai_default_provider": _server._ui_default_provider(),
         },
     )

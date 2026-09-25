@@ -249,7 +249,7 @@
 | 表 | 文件 | 枚举值 → testid |
 |---|---|---|
 | `SHARED_TESTIDS` | components.jsx:68 | 见 §3 |
-| `LIB_BOOK_STATUS_TESTID` | components.jsx:343 | `not_indexed` / `indexing` / `indexed` / `error` → `lib-book-status-*` |
+| `LIB_BOOK_STATUS_TESTID` | components.jsx:343 | `not_indexed` / `indexing` / `indexed` / `error` / `stale` / `unknown` → `lib-book-status-*`（`stale` / `unknown` 为 2026-09-25 013 WI-13 原型先行新增，见 §8.3 末条） |
 | `LIB_CHAT_MSG_TESTID` | components.jsx:350 | `user` / `assistant` → `lib-chat-msg-*` |
 | `LIB_PANEL_TAB_TESTID` | components.jsx:355 | `dashboard` / `chat` / `search` → `lib-panel-tab-*` |
 | `RD_ANNO_TYPE_TESTID` | reader.jsx:53 | `marker` / `wavy` / `underline` → `rd-anno-type-*` |
@@ -258,6 +258,7 @@
 | `RD_AI_QUICK_TESTID` | reader.jsx:73 | `summary` / `highlights` / `background` → `rd-ai-quick-*` |
 | `RD_PREF_FONT_TESTID` | reader.jsx:79 | `system` / `kai` / `hei` / `song` → `rd-pref-font-*` |
 | `RD_PREF_THEME_TESTID` | reader.jsx:86 | `auto` / `paper` / `sepia` / `green` / `night` → `rd-pref-theme-*` |
+| `SET_APPEARANCE_SCHEME_TESTID` | settings.jsx:95 | `system` / `light` / `dark` → `set-appearance-scheme-*`（2026-09-24，用户裁定 D10：原型先行新增，不是改名，故不入 §2.4；上文 279 的计数是 2026-08-31 的实测，不含这 3 个） |
 
 被这条替换掉的旧写法，典型是 `data-testid={"status-" + props.status}`（规格 §4 规则 5 点名的那个）。
 
@@ -388,7 +389,8 @@ E2E 定位写作 `[data-testid="lib-book-card"][data-book-id="…"]`——
   没有开合按钮，只有 `rd-ai-history-list`）、`rd-ai-quick-*`（旧 UI 没有快捷追问）、
   `rd-note-editor-quote`、`rd-notes-review-list`、`rd-notes-export`、`rd-error-reprocess`、
   `rd-search-index-book`（旧搜索抽屉只有索引状态文字，没有「建索引」按钮）。
-- **设置页**：`set-rag-*`、`set-data-reindex`、`set-export-json`、`set-provider-ollama-hint`。
+- **设置页**：`set-rag-*`、`set-data-reindex`、`set-export-json`、`set-provider-ollama-hint`、
+  `set-appearance-scheme-{system,light,dark}`（2026-09-24 D10 原型新增，WI-12 建「外观」分区时带上）。
 
 三处是**形态不同**而非缺失，单列出来免得后来者以为是漏贴：
 
@@ -407,6 +409,16 @@ E2E 定位写作 `[data-testid="lib-book-card"][data-book-id="…"]`——
 是三元式，同一时刻只有一种视图在树上；生产模板两种视图同时在 DOM 里。分叉的完整理由写在
 `library.js` 表上方的注释里，裁决依据是 ADR-0014 的「有界归 testid、无界归判别位」。
 上一段说的 loading / unknown 缺项对新的八个名字同样成立。
+
+⚠️ 2026-09-25（013 WI-13，裁定 D9 / D12，原型先行后回贴到此）：
+- `LIB_BOOK_STATUS_TESTID` 补齐 `stale` / `unknown`（WI-3 六态收敛），原型的兜底从 `not_indexed`
+  改为 `unknown`。生产侧对应扩成 `lib-book-{grid,row}-status-{not-indexed,indexing,indexed,error,stale,unknown}`
+  十二个；上一段「unknown 缺项」对生产侧自此不再成立，只剩 loading 一态无 testid（刻意）。
+- 新增书库名：`lib-right-panel`（右栏 tabpanel，移动端抽屉可达性断言的目标）、`lib-toast`（书库 toast）、
+  `lib-degrade-s2` / `lib-degrade-s2-reindex` / `lib-degrade-s2-dismiss`（搜索面板顶部的 DEG-S2 横幅，
+  由 013 接进 library.html）。
+- `lib-load-failed` / `lib-load-retry`：只进原型与本表，**不接进 library.html**——书目是服务端渲染，
+  没有客户端拉取，就没有「加载失败」这一态；待 012/014 引入客户端书目拉取时一并接入（裁定 D12）。
 
 `rd-notes-jump` / `rd-notes-delete` 也在缺失名单里：旧笔记条目整块可点，没有拆出跳转与删除两个
 按钮。这条与上表同类。

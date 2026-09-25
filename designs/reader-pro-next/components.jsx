@@ -366,6 +366,10 @@ const LIB_BOOK_STATUS_TESTID = {
   indexing: "lib-book-status-indexing",
   indexed: "lib-book-status-indexed",
   error: "lib-book-status-error",
+  // 2026-09-25 013 WI-13（裁定 D12，原型先行）：WI-3 的六态收敛——stale（索引指纹过期）与
+  // unknown（状态读不出来）。unknown 不许回落成 not_indexed 的文案（WI-3 验收 3）。
+  stale: "lib-book-status-stale",
+  unknown: "lib-book-status-unknown",
 };
 
 const LIB_CHAT_MSG_TESTID = {
@@ -383,13 +387,16 @@ const STATUS_META = {
   not_indexed: { label: "Not indexed", tone: "warn" },
   indexing: { label: "Indexing…", tone: "busy" },
   indexed: { label: "Indexed", tone: "ok" },
-  error: { label: "Index error", tone: "bad" }
+  error: { label: "Index error", tone: "bad" },
+  stale: { label: "Index stale", tone: "warn" },
+  unknown: { label: "Status unknown", tone: "muted" }
 };
 
 function StatusPill(props) {
-  const meta = STATUS_META[props.status] || STATUS_META.not_indexed;
+  // 2026-09-25（WI-3 验收 3 / C9）：枚举外的值落到 unknown，不再冒充 not_indexed。
+  const meta = STATUS_META[props.status] || STATUS_META.unknown;
   return (
-    <span className={"status-pill is-" + meta.tone} data-testid={LIB_BOOK_STATUS_TESTID[props.status] || LIB_BOOK_STATUS_TESTID.not_indexed}>
+    <span className={"status-pill is-" + meta.tone} data-testid={LIB_BOOK_STATUS_TESTID[props.status] || LIB_BOOK_STATUS_TESTID.unknown}>
       {props.status === "indexing" && <span className="spinner" aria-hidden="true"></span>}
       {meta.label}
     </span>
@@ -614,6 +621,21 @@ function SearchPanel(props) {
 
   return (
     <div className="panel-content" data-testid="lib-panel-search">
+      {/* 2026-09-25 013 WI-13（原型先行）：DEG-S2 横幅住在搜索面板顶部（WI-3 验收 6），
+          warn 调、可关闭；「重建索引」是单飞按钮（WI-3 验收 7）。 */}
+      {props.staleCount > 0 && (
+        <section className="degrade-banner is-warn" role="status" aria-live="polite" data-testid="lib-degrade-s2">
+          <span className="degrade-icon" aria-hidden="true">⚠</span>
+          <div className="degrade-body">
+            <strong>索引已过期，结果可能不全</strong>
+            <p>{props.staleCount} 本书的语义索引与当前模型不符，重建后恢复。</p>
+          </div>
+          <div className="degrade-actions">
+            <button className="btn btn-sm" type="button" data-testid="lib-degrade-s2-reindex">重建索引</button>
+          </div>
+          <button className="btn btn-icon" type="button" aria-label="关闭" data-testid="lib-degrade-s2-dismiss">×</button>
+        </section>
+      )}
       <div className="panel-title-row">
         <h2 className="panel-title">Search library</h2>
         {active && <button className="text-button" type="button" data-testid="lib-search-clear" onClick={() => onQuery("")}>Clear</button>}
@@ -712,7 +734,8 @@ function InsightsPanel(props) {
         ))}
         <button className="collapse-button desktop-only" type="button" aria-label="Collapse insights panel" data-testid="lib-insights-collapse" onClick={() => onCollapse(true)}>›</button>
       </div>
-      <div className="tabpanel" role="tabpanel" id={"tabpanel-" + tab} aria-labelledby={"tab-" + tab}>
+      {/* 2026-09-25 013 WI-13（原型先行）：lib-right-panel 是右栏的内容区，移动端抽屉可达性断言的目标。 */}
+      <div className="tabpanel" role="tabpanel" id={"tabpanel-" + tab} aria-labelledby={"tab-" + tab} data-testid="lib-right-panel">
         {props.children}
       </div>
     </aside>

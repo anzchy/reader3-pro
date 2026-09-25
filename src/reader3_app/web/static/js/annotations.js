@@ -1238,7 +1238,7 @@
       const dialog = this.conflictDialog;
       if (!dialog) return;
       // **零关闭路径**（设计规格 §6.4 要求 3）。模板里没有关闭按钮；这里把 Esc 也堵上 ——
-      // 注意不能照抄 `library.js` 的 `setupDialog`，它是 `preventDefault()` 之后**照样**
+      // 注意不能照抄 013 前 `static/library.js` 的 `setupDialog`（已删），它是 `preventDefault()` 之后**照样**
       // `close()`，那是给可关闭弹层用的。遮罩点击则是「不装」就没有：原生 <dialog> 的
       // light-dismiss 要自己写坐标判断才有，不写就关不掉。
       dialog.addEventListener("cancel", (e) => e.preventDefault());

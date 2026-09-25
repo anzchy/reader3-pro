@@ -33,6 +33,7 @@ ARIA 定位走 Playwright 的 get_by_role / get_by_label / get_by_text 等 API�
 testid，本该被拦下来**显式放行**，而不是从没被看见过。
 """
 
+import argparse
 import re
 import sys
 from pathlib import Path
@@ -121,16 +122,22 @@ def selector_ok(sel: str) -> str | None:
     return None
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    # `--root` (013 WI-9): seeded counter-examples go into a tmp copy, never the real tree.
+    # No argv means no flags -- not sys.argv, which under pytest is pytest's own.
+    parser = argparse.ArgumentParser(description="E2E selector lint")
+    parser.add_argument("--root", type=Path, default=None, help="repo root to scan (default: this checkout)")
+    args = parser.parse_args(argv or [])
+    root = args.root.resolve() if args.root else ROOT
     violations: list[tuple[str, int, str, str]] = []
     files = 0
     checked = 0
 
     for pattern in SCAN_GLOBS:
-        for path in sorted(ROOT.glob(pattern)):
+        for path in sorted(root.glob(pattern)):
             files += 1
             text = path.read_text(encoding="utf-8")
-            rel = str(path.relative_to(ROOT))
+            rel = str(path.relative_to(root))
             lines = text.splitlines()
 
             def allowed(line_no: int) -> bool:
@@ -165,4 +172,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

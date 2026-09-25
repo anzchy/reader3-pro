@@ -71,12 +71,13 @@ ACCEPTANCE_DIRS: Tuple[str, ...] = (
     "acceptance_p3",
     "acceptance_4a4",
     "acceptance_2a",
+    "shell_4a",
 )
 GROUP_MARKERS: Tuple[str, ...] = ("baseline_1b", *ACCEPTANCE_DIRS)
 
 #: 矩阵条件 3：skip reason 里必须出现激活阶段标识。与守卫脚本各写一份是刻意的——
 #: 本文件是守卫的**独立 oracle**，不从被测脚本 import 判据。
-PHASE_TOKEN_RE = re.compile(r"4B\.1|P3|4A\.4|2a")
+PHASE_TOKEN_RE = re.compile(r"4B\.1|P3|4A\.4|2a|4A\.0")
 
 #: 每个组目录的 skip reason 必须点名**自己**的激活阶段。p3 的 token 是字面 `P3`。
 PHASE_TOKEN_FOR_DIR: Dict[str, str] = {
@@ -84,6 +85,7 @@ PHASE_TOKEN_FOR_DIR: Dict[str, str] = {
     "acceptance_p3": "P3",
     "acceptance_4a4": "4A.4",
     "acceptance_2a": "2a",
+    "shell_4a": "4A.0",
 }
 
 #: 共享断言主体模块的裸模块名与期望落点（矩阵 Unit A 第八条的条 (3)）。
@@ -123,8 +125,35 @@ CANONICAL_ACCEPTANCE_PER_DIR: Dict[str, int] = {
     "acceptance_p3": 4,
     "acceptance_4a4": 4,
     "acceptance_2a": 1,
+    "shell_4a": 108,
 }
-CANONICAL_ACCEPTANCE_ITEMS = 17
+# 17 → 26：2026-09-24 013 WI-9 批 A（REG-1 基线，A9.10）新增已激活组 `shell_4a`，
+# **实测 9 条 item**（C9.22 按页参数化 ×3、C9.24、C9.25、C9.26、C9.38、C9.39 ×2）。
+# 理由写在 `scripts/lint_e2e_groups.py` 的「常量的变更史」里，本文件不复述。
+# 26 → 60：2026-09-24 013 WI-10（token 与主题层）往 `shell_4a` 加 34 条，**实测**
+# （`pytest tests/e2e/shell_4a --collect-only -q` 数出 43 = 9 + 34）：
+# `test_theme_resolution.py` 25（A10.2 ×10、A10.3 ×5、A10.4、A10.5、A10.6 ×4、A10.7、
+# A10.8 ×2、FA-03/04）、`test_fouc.py` 6（A10.9：DCL 与 body 插入两个采样点 × 3 页）、
+# `test_track_d_wi7.py` 3（Track-D 折入 28–30）。
+# 60 → 61：2026-09-24 013 WI-10 追加 `test_dark_os_legacy_unchanged.py` 1 条（shell_4a 43 → 44）。
+# 61 → 88：2026-09-25 013 WI-12（设置页切片）往 `shell_4a` 加 27 条，**实测**
+# （`pytest tests/e2e/shell_4a --collect-only -q` 数出 71 = 44 + 27）：`test_settings_confirm.py` 6、
+# `test_settings_appearance.py` 7、`test_settings_layout.py` 4、`test_settings_testids.py` 1、
+# `test_settings_rows.py` 9。理由写在 `scripts/lint_e2e_groups.py` 的「常量的变更史」里。
+# 88 → 120：2026-09-25 013 WI-13（书库页切片）往 `shell_4a` 加 32 条，**实测**
+# （`pytest tests/e2e/shell_4a --collect-only -q` 数出 103 = 71 + 32）：`test_library_functional.py` 9、
+# `test_library_layout.py` 6、`test_library_states.py` 2、`test_library_testids.py` 1、
+# `test_library_theme_toggle.py` 7、`test_track_d_wi1_page.py` 2、`test_track_d_wi3_page.py` 5。
+# 理由写在 `scripts/lint_e2e_groups.py` 的「常量的变更史」里。
+# 120 → 121：2026-09-25 013 终审 RV-1（FB-S09 D8 余项）往 `shell_4a` 加 1 条，**实测**
+# （`pytest tests/e2e/shell_4a --collect-only -q` 数出 104 = 103 + 1）：
+# `test_settings_rows.py::test_provider_save_failure_is_visible`。
+# 理由写在 `scripts/lint_e2e_groups.py` 的「常量的变更史」里。
+# 121 → 125：2026-09-25 013 终审 RV-14（WI-11 验收 4 / 4a 的真浏览器半边）往 `shell_4a` 加 4 条，
+# **实测**（`pytest tests/e2e/shell_4a --collect-only -q` 数出 108 = 104 + 4）：
+# `test_toast.py`（C11.07 ×1、C11.08 ×1、C11.15 按 1500 / 7000 参数化 ×2）。
+# 理由写在 `scripts/lint_e2e_groups.py` 的「常量的变更史」里。
+CANONICAL_ACCEPTANCE_ITEMS = 125
 # 7 → 8 / 91 → 92：2026-09-20 欠账 #44 新增
 # `tests/e2e/test_w8a_selection_survives_rerender.py`（恰好一条 item）。它按内容属于
 # `baseline_1b`，落在白名单是为了不动 `suite_hash` 的覆盖面——理由与到期动作写在
@@ -160,7 +189,14 @@ CANONICAL_ACCEPTANCE_ITEMS = 17
 # 它与上一条同住 DEG-S5 对话框，但问的是收尾之后那次保存带的是哪一版令牌，判据不重叠。
 # 落白名单的理由与到期动作写在 `scripts/lint_e2e_groups.py` 的白名单注释里，本文件不复述。
 CANONICAL_UNGROUPED_ITEMS = 55
-CANONICAL_E2E_ITEMS = 140
+# 140 → 149：同上，`shell_4a` 的 9 条。
+# 149 → 183：2026-09-24 013 WI-10 往 `shell_4a` 加的 34 条（见上面 26 → 60 那条注释）。
+# 183 → 184：同上，深色 OS 回归 1 条。
+# 184 → 211：2026-09-25 013 WI-12 的 27 条（见上面 61 → 88 那条注释；全量实测 211）。
+# 211 → 243：2026-09-25 013 WI-13 的 32 条（见上面 88 → 120 那条注释；全量实测 243）。
+# 243 → 244：2026-09-25 013 终审 RV-1 的 1 条（见上面 120 → 121 那条注释；全量实测 244）。
+# 244 → 248：2026-09-25 013 终审 RV-14 的 4 条（见上面 121 → 125 那条注释；全量实测 248）。
+CANONICAL_E2E_ITEMS = 248
 
 #: **已激活**的 acceptance 组，与 `scripts/lint_e2e_groups.py` 的
 #: `ACTIVATED_ACCEPTANCE_DIRS` 各写一份——本文件是守卫的独立 oracle，不从被测脚本 import
@@ -173,7 +209,9 @@ CANONICAL_E2E_ITEMS = 140
 #: 既不 skip 也不被要求 passed——两条轴对它都不说话。
 #:
 #: `acceptance_2a`：011 WI-5b（DEG-S5 写冲突对话框落地）解禁，2026-09-19。
-CANONICAL_ACTIVATED_ACCEPTANCE_DIRS: FrozenSet[str] = frozenset({"acceptance_2a"})
+#: `shell_4a`：013 WI-9 批 A（REG-1 基线）生而激活，2026-09-24——它守的是既有页面，
+#: 没有「等功能落地」的 skip 期。
+CANONICAL_ACTIVATED_ACCEPTANCE_DIRS: FrozenSet[str] = frozenset({"acceptance_2a", "shell_4a"})
 
 
 # --------------------------------------------------------------------------

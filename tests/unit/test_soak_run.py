@@ -643,7 +643,9 @@ def _index_with_covered_paths_staged(tmp_path: Path) -> Dict[str, str]:
     在共享仓库里 `git add` 是会被看见的副作用。`GIT_INDEX_FILE` 让整套 git 命令改读副本。
     """
     alt = tmp_path / "alt-index"
-    alt.write_bytes((REPO_ROOT / ".git" / "index").read_bytes())
+    # linked worktree 里 `.git` 是文件不是目录，索引路径要问 git 本身。
+    index = _run(["git", "rev-parse", "--git-path", "index"], cwd=REPO_ROOT, check=True).stdout.strip()
+    alt.write_bytes((REPO_ROOT / index).read_bytes())
     env = dict(os.environ, GIT_INDEX_FILE=str(alt))
     _run(["git", "add", "--", *_soak().HASH_COVERED_PATHS], cwd=REPO_ROOT, env=env, check=True)
     return env

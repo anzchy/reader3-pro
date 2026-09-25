@@ -1,0 +1,16 @@
+# 013 WI-9 A9.7a (case C9.33): the 12 class selectors defined only in the two deleted
+# stylesheets (plan §9.2 confirmation gate). Each must have zero word-bounded
+# class-selector hits in the live style sources; tests/unit/test_dead_static_files_removed.py
+# asserts it. Format: <deleted source file> <class name without the dot>.
+library.css sidebar-header
+library.css app-title
+library.css settings-link
+library.css collection-name
+library.css cell-status
+library.css cell-read
+library.css right-placeholder
+library.css chat-msg
+library.css chat-msg-role
+library.css chat-msg-text
+ai.css ai-msg
+ai.css ai-citations

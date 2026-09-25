@@ -1,0 +1,57 @@
+/* DegradeBanner (plan WI-1 styling half, hosted in 013 WI-13; design spec §5.4).
+   The tone owns the border and the foreground together: a banner's border is always its own
+   text colour, and that colour is the tone token (warn -> --r3-warning, danger -> --r3-error),
+   never the accent (Track-D WI-1 #1). Token-only; the 0.8 token-ref lint checks every name. */
+.r3-degrade-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--r3-space-sm);
+  padding: var(--r3-space-sm) var(--r3-space-md);
+  border: 1px solid currentColor;
+  border-radius: var(--r3-radius-md);
+  font-size: var(--r3-font-size-sm);
+  line-height: var(--r3-leading-tight);
+}
+
+.r3-degrade-banner--warn {
+  color: var(--r3-warning);
+  border-color: var(--r3-warning);
+  background-color: var(--r3-warning-subtle);
+}
+
+.r3-degrade-banner--danger {
+  color: var(--r3-error);
+  border-color: var(--r3-error);
+  background-color: var(--r3-error-subtle);
+}
+
+.r3-degrade-banner__icon {
+  flex: none;
+  font-size: var(--r3-font-size-md);
+}
+
+.r3-degrade-banner__body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--r3-space-xs);
+}
+
+.r3-degrade-banner__actions {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--r3-space-xs);
+}
+
+.r3-degrade-banner__dismiss {
+  flex: none;
+  padding: 0 var(--r3-space-xs);
+  border: 0;
+  border-radius: var(--r3-radius-sm);
+  background-color: transparent;
+  color: inherit;
+  font-size: var(--r3-font-size-md);
+  cursor: pointer;
+}

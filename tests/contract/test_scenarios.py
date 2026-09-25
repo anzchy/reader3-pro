@@ -665,7 +665,7 @@ def test_索引元数据被状态接口原样读出(world: World, monkeypatch: p
 def test_旧格式的索引元数据在HTTP边界上被降级为未索引(world: World, monkeypatch: pytest.MonkeyPatch) -> None:
     """存量索引（meta 里没有 `space` 键）不许再让界面显示绿色的 "Indexed"。
 
-    `library.js` 拿这个响应渲染徽标和 "N chunks"，而同一本书上 `semantic_search()`
+    书库页（`frontend/src/library/index.ts`）拿这个响应渲染徽标和 "N chunks"，而同一本书上 `semantic_search()`
     每一次都会抛 `not indexed`。降级路径必须在**它自己所在的这一层**留下断言：
     单元测试证不了路由没把 `status()` 的降级再改写回去。
     """

@@ -336,15 +336,15 @@ PAGE_FIXTURES = {
 #: 每页至少一个**点名的、只可能由 JS 注入**的哨兵 testid，及其应有的重数。
 #:
 #: `NODE_FLOORS` 那条下限管不了这件事，而且管不了是结构性的：它是一条**匿名**的
-#: 计数下限，静态模板一个人就能满足（三页的静态 testid 各有几十个）。`library.js`
-#: 或 `settings.js` 整个挂掉——404、语法错、初始化抛异常——页面照样渲出静态骨架，
+#: 计数下限，静态模板一个人就能满足（三页的静态 testid 各有几十个）。书库或设置页
+#: 的脚本整个挂掉——404、语法错、初始化抛异常——页面照样渲出静态骨架，
 #: 节点数照样远超 5，于是「全部动态 testid 一个不剩」这件事在本文件里**没有任何
 #: 一条断言会红**：分组不变式对空组无话可说，逐名那两条只覆盖有界名。
 #: 那正是本表要拦的洞。
 #:
 #: 三个名字都验过「只在 JS 里出现，模板里一个字都没有」：
-#:   * `lib-book-{grid,row}-status-not-indexed` —— `library.js` 的
-#:     `LIB_BOOK_{GRID,ROW}_STATUS_TESTID` 表，要等 `/api/library/status` 的 XHR 回来
+#:   * `lib-book-{grid,row}-status-not-indexed` —— 书库页脚本（013 起为
+#:     `frontend/src/library/status.ts` 的 `GRID_TESTID` / `ROW_TESTID` 表），要等 `/api/library/status` 的 XHR 回来
 #:     才 `setAttribute`。重数 = 书库里的书数，因此从 `E2E_BOOKS_IDS` 派生而不写 4：
 #:     再加一本书时该红的是「书库条数」那条用例，不是这里（与 conftest 里同一条纪律）。
 #:     语料四本都没建索引，状态恒为 `not_indexed`。

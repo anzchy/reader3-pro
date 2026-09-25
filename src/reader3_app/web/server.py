@@ -297,17 +297,6 @@ def _project_root_dir_from_books_dir() -> str:
 def _collections_file_path() -> Path:
     return collections_service.collections_path(_project_root_dir_from_books_dir())
 
-def _library_ui_mode() -> str:
-    mode = (os.environ.get("READER3_LIBRARY_UI") or "modern").strip().lower()
-    return mode if mode in {"modern", "classic"} else "modern"
-
-def _library_template_name() -> str:
-    if _library_ui_mode() == "classic":
-        classic = TEMPLATES_DIR / "library_classic.html"
-        if classic.exists():
-            return "library_classic.html"
-    return "library.html"
-
 def _validate_collection_id(collection_id: str) -> str:
     try:
         return str(uuid.UUID(str(collection_id)))
@@ -452,7 +441,7 @@ def _book_uuid_or_none(book_folder: str) -> Optional[str]:
     降级后的可观测证据有三处，不是静默：
       1. 服务端 warning，点名是哪本书、错在哪；
       2. 该书的 AI 端点 404（明确的缺失），而不是被换上一个新 uuid（无声的数据丢失）；
-      3. 前端 `library-chat.js` 已有的 `if (!this.bookUuid)` 分支会亮出提示。
+      3. 前端 `frontend/src/library/chat.ts` 在 book uuid 为空时的分支会亮出提示。
          模板必须渲染成空串才能命中它 —— Jinja 把 None 渲染成字符串 "None"，
          那是个真值，会绕过整条降级路径。见 library.html / reader.html 的 `or ""`。
 
@@ -1152,6 +1141,14 @@ from .routers.ai import rag as _ai_rag_router  # noqa: E402
 from .routers.ai import summary as _ai_summary_router  # noqa: E402
 from .routers import notes as _notes_router  # noqa: E402
 from .routers import search as _search_router  # noqa: E402
+from .vite_assets import vite_css, vite_js  # noqa: E402
+
+# 013 WI-10: the templates link the built token/theme CSS by page name (hashed names).
+# Registered here, beside the other late imports, so the module-level line numbers that
+# tests/unit/test_server_patch_seam_ownership.py pins above stay put.
+templates.env.globals["vite_css"] = vite_css
+# 013 WI-12: and the page entry's module script (settings is the first page to use it).
+templates.env.globals["vite_js"] = vite_js
 
 app.include_router(_library_router.router)
 app.include_router(_reader_router.router)
