@@ -138,6 +138,54 @@ baseline 全部 skipped、push gate 全绿。「扫顶层」是这类检查最�
 - `EXPECTED_ACCEPTANCE_ITEMS` 14 → **17**（同日，欠账 #14）：R-6 拆 a/b 后 R-6b 三条落进
   `acceptance_4b1`（Wave 4），该目录由 5 变 8。改成按目录定义再求和，是让「哪个目录少了一条」
   在失败消息里直接可读。
+- `EXPECTED_ACCEPTANCE_ITEMS` 17 → **26**（2026-09-24，013 WI-9 批 A，用户决定 D5）：新增组
+  `shell_4a`（REG-1 基线，验收 A9.10），**实测 9 条 item**（C9.22 按页参数化 ×3、C9.24、C9.25、
+  C9.26、C9.38、C9.39 ×2）。它是一个**新的 acceptance 组**而不是白名单模块，理由是它守的是
+  Phase 4A 整段的回归门，将来 WI-12 / WI-13 还会往里加，需要自己的按目录条数；它也不进
+  `baseline_1b`，因为那会改 `suite_hash` 并清零 soak 计数。它**生而激活**（进
+  `ACTIVATED_ACCEPTANCE_DIRS`）：守的是既有页面，没有「等功能落地」的 skip 期。阶段 token
+  `4A.0` 只为满足「每组一个 token」的结构约束，激活组上用不到 skip reason。
+  `EXPECTED_UNGROUPED_ITEMS`（55）与 `EXPECTED_BASELINE_ITEMS`（68）不变。
+- `EXPECTED_ACCEPTANCE_PER_DIR["shell_4a"]` 9 → **43**（2026-09-24，013 WI-10，token 与主题层）：
+  **实测 +34**——`test_theme_resolution.py` 25（A10.2–A10.8 与 FA-03/04，10 组合参数化）、
+  `test_fouc.py` 6（A10.9，DCL 与 body 插入两个采样点 × 3 页）、`test_track_d_wi7.py` 3
+  （Track-D 折入 28–30，静态判据，带 `track_d_013` marker）。进 `shell_4a` 而不进白名单：
+  它们守的是 Phase 4A 的同一道回归门，且计划把这些 node id 指定在此目录。
+  `EXPECTED_UNGROUPED_ITEMS`（55）与 `EXPECTED_BASELINE_ITEMS`（68）不变。
+- `EXPECTED_ACCEPTANCE_PER_DIR["shell_4a"]` 43 → **44**（2026-09-24，013 WI-10 追加）：
+  **实测 +1**——`test_dark_os_legacy_unchanged.py` 1（OS 深色、无存储主题时，library /
+  reader 的 REG-1 testid 计算样式等于 671f580 在同一模拟下的独立采集）。同一道回归门，
+  进 `shell_4a`。`EXPECTED_UNGROUPED_ITEMS`（55）与 `EXPECTED_BASELINE_ITEMS`（68）不变。
+- `EXPECTED_ACCEPTANCE_PER_DIR["shell_4a"]` 44 → **71**（2026-09-25，013 WI-12，设置页切片）：
+  **实测 +27**（`pytest tests/e2e/shell_4a --collect-only -q` 数出 71）——
+  `test_settings_confirm.py` 6（A12.2 / FP-15，三个破坏性动作 × 确认与关闭两条）、
+  `test_settings_appearance.py` 7（A12.6–A12.8、FB-S10、WI-10 A10.3 设置页半边）、
+  `test_settings_layout.py` 4（A12.4 / FV-08、FV-15 × 3 视口）、`test_settings_testids.py` 1
+  （A12.3 DOM 半边）、`test_settings_rows.py` 9（FB-S01..S09、FD-17/18、FA-07）。设置页替换是
+  Phase 4A 同一道回归门的一段，计划把这些 node id 指定在此目录。
+  `EXPECTED_UNGROUPED_ITEMS`（55）与 `EXPECTED_BASELINE_ITEMS`（68）不变。- `EXPECTED_ACCEPTANCE_PER_DIR["shell_4a"]` 71 → **103**（2026-09-25，013 WI-13，书库页切片）：
+  **实测 +32**（`pytest tests/e2e/shell_4a --collect-only -q` 数出 103）——
+  `test_library_functional.py` 9（FB-L 收藏夹单飞、批量索引禁用、选择投影、视图互斥、排序、
+  搜索去抖、卡片键盘激活 Enter/Space、地标与当前导航）、`test_library_layout.py` 6（1440 三栏、
+  1024 右抽屉、390 双抽屉、长标题不溢出 × 3 视口）、`test_library_states.py` 2（空库、筛选为空）、
+  `test_library_testids.py` 1（DOM 半边）、`test_library_theme_toggle.py` 7（主题切换 × 与设置页
+  互通）、`test_track_d_wi1_page.py` 2（Track-D WI-1 行 1 / 3 / 7 的页面半边）、
+  `test_track_d_wi3_page.py` 5（六态胶囊、越界即 unknown、S2 横幅与重建单飞）。书库页替换是
+  Phase 4A 同一道回归门的一段。`test_dark_os_legacy_unchanged.py` 仍是 1 条（PAGES 收窄到
+  reader，item 数不变）。`EXPECTED_UNGROUPED_ITEMS`（55）与 `EXPECTED_BASELINE_ITEMS`（68）不变。
+- `EXPECTED_ACCEPTANCE_PER_DIR["shell_4a"]` 103 → **104**（2026-09-25，013 终审 RV-1，FB-S09 D8 余项）：
+  **实测 +1**（`pytest tests/e2e/shell_4a --collect-only -q` 数出 104）——
+  `test_settings_rows.py::test_provider_save_failure_is_visible`（服务商卡片的保存请求在浏览器里
+  被 route 成 500，卡片结果行显示「保存没有成功」与错误态，编辑中的模型值保留）。与 FB-S09 的
+  偏好保存失败那一条同属设置页切片，进 `shell_4a`。
+  `EXPECTED_UNGROUPED_ITEMS`（55）与 `EXPECTED_BASELINE_ITEMS`（68）不变。
+- `EXPECTED_ACCEPTANCE_PER_DIR["shell_4a"]` 104 → **108**（2026-09-25，013 终审 RV-14，WI-11 验收 4 / 4a）：
+  **实测 +4**（`pytest tests/e2e/shell_4a --collect-only -q` 数出 108）——
+  `test_toast.py`：C11.07（真实停留等于 `--r3-dwell-toast` 的读值、同一时刻两次触发只剩一个
+  `lib-toast`）、C11.08（`emulate_media(reduced_motion="reduce")` 下 token 与默认逐字相等且不为零，
+  Toast 仍停留 N 毫秒）、C11.15（加载后把 token 改成 1500 / 7000 毫秒，真实停留跟着走，×2）。
+  矩阵早就把这三行派给 e2e lane，此前一直没写。Toast 属于书库页切片，进 `shell_4a`。
+  `EXPECTED_UNGROUPED_ITEMS`（55）与 `EXPECTED_BASELINE_ITEMS`（68）不变。
 """
 
 from __future__ import annotations
@@ -155,13 +203,14 @@ from typing import Dict, FrozenSet, Iterable, List, Mapping, Optional, Sequence,
 # 常量（唯一定义处）
 # ---------------------------------------------------------------------------
 
-#: 五个组 marker，与 `tests/e2e/<marker>/` 目录一一对应（任务书 §0.5 的表是唯一定义处）。
+#: 六个组 marker，与 `tests/e2e/<marker>/` 目录一一对应（任务书 §0.5 的表是唯一定义处）。
 GROUP_MARKERS = (
     "baseline_1b",
     "acceptance_4b1",
     "acceptance_p3",
     "acceptance_4a4",
     "acceptance_2a",
+    "shell_4a",
 )
 BASELINE_MARKER = "baseline_1b"
 ACCEPTANCE_MARKERS = GROUP_MARKERS[1:]
@@ -175,11 +224,17 @@ EXPECTED_BASELINE_ITEMS = 68
 #   acceptance_p3 ：DEG-S1…S4 朴素横幅形态
 #   acceptance_4a4：DEG-S1…S4 设计规格形态（与 p3 共用断言主体，只换 testid 映射）
 #   acceptance_2a ：DEG-S5 写冲突
+#   shell_4a      ：013 REG-1 基线（C9.22 ×3、C9.24、C9.25、C9.26、C9.38、C9.39 ×2）＝ 9，
+#                  ＋ WI-10 token/主题层 34（主题解析 25、FOUC 6、Track-D WI-7 3）＝ 43，
+#                  ＋ WI-10 深色 OS 下旧页不变 1 ＝ 44，＋ WI-12 设置页 27 ＝ 71，
+#                  ＋ WI-13 书库页 32 ＝ 103，＋ 终审 RV-1 服务商保存失败 1 ＝ 104，
+#                  ＋ 终审 RV-14 Toast 停留（C11.07、C11.08、C11.15 ×2）4 ＝ 108
 EXPECTED_ACCEPTANCE_PER_DIR: Dict[str, int] = {
     "acceptance_4b1": 8,
     "acceptance_p3": 4,
     "acceptance_4a4": 4,
     "acceptance_2a": 1,
+    "shell_4a": 108,
 }
 EXPECTED_ACCEPTANCE_ITEMS = sum(EXPECTED_ACCEPTANCE_PER_DIR.values())
 
@@ -205,7 +260,9 @@ EXPECTED_ACCEPTANCE_ITEMS = sum(EXPECTED_ACCEPTANCE_PER_DIR.values())
 #:   `test_deg_s5_write_conflict.py` 的模块级 skip 删除后实测 `1 passed`。它是本仓历史上
 #:   **第一个**被激活的 acceptance 组，「已激活组」这个口径也是因它而生：在它之前，两条轴
 #:   要求**每一个** acceptance item 都带生效的 skip，于是解禁本身被读成违规。
-ACTIVATED_ACCEPTANCE_DIRS: FrozenSet[str] = frozenset({"acceptance_2a"})
+#: - `shell_4a` 进表（2026-09-24，013 WI-9 批 A）。REG-1 基线守的是 `671f580` 的既有页面，
+#:   建组即实测 `9 passed`，从来没有 skip 形态。
+ACTIVATED_ACCEPTANCE_DIRS: FrozenSet[str] = frozenset({"acceptance_2a", "shell_4a"})
 
 # `tests/e2e/` 下**不带组 marker**的模块白名单。这是唯一的豁免口径：不在这里、
 # 又没有组 marker 的 item 一律违规。每一项都必须在本次收集里真的贡献 item——悬空条目
@@ -315,8 +372,9 @@ PHASE_TOKEN_FOR_DIR: Dict[str, str] = {
     "acceptance_p3": "P3",
     "acceptance_4a4": "4A.4",
     "acceptance_2a": "2a",
+    "shell_4a": "4A.0",
 }
-PHASE_TOKEN_RE = re.compile(r"4B\.1|P3|4A\.4|2a")
+PHASE_TOKEN_RE = re.compile(r"4B\.1|P3|4A\.4|2a|4A\.0")
 
 #: 阶段 token 必须整体出现，不能只是别人的前缀。`"4B.1" in "阶段 4B.10 再说"` 为真，
 #: 于是一条把激活阶段写成 4B.10 的 reason 就能冒充 4B.1 的登记——substring 包含在这里

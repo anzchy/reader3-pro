@@ -43,6 +43,8 @@ GROUP_MARKERS = [
     "acceptance_p3",
     "acceptance_4a4",
     "acceptance_2a",
+    # 013 WI-9 批 A（REG-1 基线）：已激活组，不计入 1b 门槛。
+    "shell_4a",
 ]
 
 # pytest 的退出码：5 = 一条都没收到。整个 WI-1 要抓的就是「拼错的 marker 选中空集
