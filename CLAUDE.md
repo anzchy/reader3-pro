@@ -30,9 +30,6 @@ This creates a `books/{bookname}_data/` directory containing:
 ```bash
 # Start the web server on http://127.0.0.1:8123
 uv run reader3-server
-
-# Use classic library UI (pre-004)
-READER3_LIBRARY_UI=classic uv run reader3-server
 ```
 
 ### AI Assistant Setup
@@ -109,8 +106,8 @@ Templates live in `src/reader3_app/web/templates/`, static assets in
 `src/reader3_app/web/static/` — `ls` them rather than trusting a list here.
 
 Two things `ls` won't tell you:
-- `js/pagination.js` is **legacy** CSS-column pagination and is **not loaded by `reader.html`**.
-  Don't edit it expecting the reader to change — `js/epub-renderer.js` is the live renderer.
+- `js/epub-renderer.js` is the live renderer (epub.js); the old CSS-column pagination
+  script was deleted in 013 WI-9, so don't look for a second renderer.
 - JavaScript is vanilla ES6+ (no frameworks). CSS is plain CSS (no preprocessors).
 
 ## Constitution Principles (Summary)
