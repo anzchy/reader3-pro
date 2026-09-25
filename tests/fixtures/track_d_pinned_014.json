@@ -1,0 +1,113 @@
+{
+  "_doc": "013 WI-13 Track-D pins (C13.31). Every entry is one (row, half) of the 34 rows marked 【实现类·前置 WI-9·验于 013】 that is NOT executed in 013. Allowed only inside C8_SET of tests/unit/test_track_d_ledger.py (C-8 plus ruling D12). The owner deletes the entry in the change that lands the test, or the ledger goes red on the overlap. Ruling R2 (2026-09-25): a D12 pin's target names its route owner as '012 debt #N' (a row of the cross-wave debt register in docs/plans/20260816-tech-stack-migration/tasks/009-e2e-annotations.md) and its UI-acceptance owner as a 014 WI. RV-15 (2026-09-25): that WI is WI-16b, the library WI inserted after WI-16; a library-side D12 pin names it and no other WI.",
+  "pinned": [
+    {
+      "row": "WI-3#5",
+      "half": "reader",
+      "target": "014 WI-16",
+      "reason": "C-8: the reader page's status consumer moves into {frontend source root} with 014 WI-16; the library half is checked in 013 (test_library_slice_wi13.py::test_status_meta_single_definition_imported_by_library)."
+    },
+    {
+      "row": "WI-4#1",
+      "half": "library",
+      "target": "012 debt #54 (routes) / 014 WI-16b (UI acceptance)",
+      "reason": "DEG-S3. D12 (2026-09-25, user ruling, option 1): the bulk migrate / partial-failure routes this row needs do not exist in 013 and the HTTP API is frozen (ADR-0011). R2 (2026-09-25) parked the UI acceptance on 014 WI-16 because 014 had no library-page WI; RV-15 (2026-09-25, user ruling) opened one, and the UI acceptance now settles in 014 WI-16b, route in 012 debt #54."
+    },
+    {
+      "row": "WI-4#1",
+      "half": "reader",
+      "target": "012 debt #54 (routes) / 014 WI-16b (UI acceptance)",
+      "reason": "DEG-S3. D12 (2026-09-25, user ruling, option 1): the bulk migrate / partial-failure routes this row needs do not exist in 013 and the HTTP API is frozen (ADR-0011). R2 (2026-09-25) parked the UI acceptance on 014 WI-16 because 014 had no library-page WI; RV-15 (2026-09-25, user ruling) opened one, and the UI acceptance now settles in 014 WI-16b, route in 012 debt #54."
+    },
+    {
+      "row": "WI-4#2",
+      "half": "library",
+      "target": "012 debt #54 (routes) / 014 WI-16b (UI acceptance)",
+      "reason": "DEG-S3. D12 (2026-09-25, user ruling, option 1): the bulk migrate / partial-failure routes this row needs do not exist in 013 and the HTTP API is frozen (ADR-0011). R2 (2026-09-25) parked the UI acceptance on 014 WI-16 because 014 had no library-page WI; RV-15 (2026-09-25, user ruling) opened one, and the UI acceptance now settles in 014 WI-16b, route in 012 debt #54."
+    },
+    {
+      "row": "WI-4#2",
+      "half": "reader",
+      "target": "012 debt #54 (routes) / 014 WI-16b (UI acceptance)",
+      "reason": "DEG-S3. D12 (2026-09-25, user ruling, option 1): the bulk migrate / partial-failure routes this row needs do not exist in 013 and the HTTP API is frozen (ADR-0011). R2 (2026-09-25) parked the UI acceptance on 014 WI-16 because 014 had no library-page WI; RV-15 (2026-09-25, user ruling) opened one, and the UI acceptance now settles in 014 WI-16b, route in 012 debt #54."
+    },
+    {
+      "row": "WI-4#3",
+      "half": "all",
+      "target": "012 debt #54 (routes) / 014 WI-16b (UI acceptance)",
+      "reason": "DEG-S3. D12 (2026-09-25, user ruling, option 1): the bulk migrate / partial-failure routes this row needs do not exist in 013 and the HTTP API is frozen (ADR-0011). R2 (2026-09-25) parked the UI acceptance on 014 WI-16 because 014 had no library-page WI; RV-15 (2026-09-25, user ruling) opened one, and the UI acceptance now settles in 014 WI-16b, route in 012 debt #54."
+    },
+    {
+      "row": "WI-4#4",
+      "half": "all",
+      "target": "012 debt #54 (routes) / 014 WI-16b (UI acceptance)",
+      "reason": "DEG-S3. D12 (2026-09-25, user ruling, option 1): the bulk migrate / partial-failure routes this row needs do not exist in 013 and the HTTP API is frozen (ADR-0011). R2 (2026-09-25) parked the UI acceptance on 014 WI-16 because 014 had no library-page WI; RV-15 (2026-09-25, user ruling) opened one, and the UI acceptance now settles in 014 WI-16b, route in 012 debt #54."
+    },
+    {
+      "row": "WI-4#5",
+      "half": "all",
+      "target": "012 debt #54 (routes) / 014 WI-16b (UI acceptance)",
+      "reason": "DEG-S3. D12 (2026-09-25, user ruling, option 1): the bulk migrate / partial-failure routes this row needs do not exist in 013 and the HTTP API is frozen (ADR-0011). R2 (2026-09-25) parked the UI acceptance on 014 WI-16 because 014 had no library-page WI; RV-15 (2026-09-25, user ruling) opened one, and the UI acceptance now settles in 014 WI-16b, route in 012 debt #54."
+    },
+    {
+      "row": "WI-4#6",
+      "half": "all",
+      "target": "012 debt #54 + 012 debt #56 (routes) / 014 WI-16b (UI acceptance)",
+      "reason": "DEG-S3. D12 (2026-09-25, user ruling, option 1): the bulk migrate / partial-failure routes this row needs do not exist in 013 and the HTTP API is frozen (ADR-0011). R2 (2026-09-25) parked the UI acceptance on 014 WI-16 because 014 had no library-page WI; RV-15 (2026-09-25, user ruling) opened one, and the UI acceptance now settles in 014 WI-16b, route in 012 debt #54 (and #56 for the /api/library list it compares against)."
+    },
+    {
+      "row": "WI-4#7",
+      "half": "library",
+      "target": "012 debt #54 (routes) / 014 WI-16b (UI acceptance)",
+      "reason": "DEG-S3. D12 (2026-09-25, user ruling, option 1): the bulk migrate / partial-failure routes this row needs do not exist in 013 and the HTTP API is frozen (ADR-0011). R2 (2026-09-25) parked the UI acceptance on 014 WI-16 because 014 had no library-page WI; RV-15 (2026-09-25, user ruling) opened one, and the UI acceptance now settles in 014 WI-16b, route in 012 debt #54."
+    },
+    {
+      "row": "WI-4#7",
+      "half": "reader",
+      "target": "012 debt #54 (routes) / 014 WI-16b (UI acceptance)",
+      "reason": "DEG-S3. D12 (2026-09-25, user ruling, option 1): the bulk migrate / partial-failure routes this row needs do not exist in 013 and the HTTP API is frozen (ADR-0011). R2 (2026-09-25) parked the UI acceptance on 014 WI-16 because 014 had no library-page WI; RV-15 (2026-09-25, user ruling) opened one, and the UI acceptance now settles in 014 WI-16b, route in 012 debt #54."
+    },
+    {
+      "row": "WI-5#1",
+      "half": "all",
+      "target": "012 debt #55 (routes) / 014 WI-16b (UI acceptance)",
+      "reason": "DEG-S4. D12 (2026-09-25, user ruling, option 1): the bulk migrate / partial-failure routes this row needs do not exist in 013 and the HTTP API is frozen (ADR-0011). R2 (2026-09-25) parked the UI acceptance on 014 WI-16 because 014 had no library-page WI; RV-15 (2026-09-25, user ruling) opened one, and the UI acceptance now settles in 014 WI-16b, route in 012 debt #55."
+    },
+    {
+      "row": "WI-5#2",
+      "half": "all",
+      "target": "012 debt #55 (routes) / 014 WI-16b (UI acceptance)",
+      "reason": "DEG-S4. D12 (2026-09-25, user ruling, option 1): the bulk migrate / partial-failure routes this row needs do not exist in 013 and the HTTP API is frozen (ADR-0011). R2 (2026-09-25) parked the UI acceptance on 014 WI-16 because 014 had no library-page WI; RV-15 (2026-09-25, user ruling) opened one, and the UI acceptance now settles in 014 WI-16b, route in 012 debt #55."
+    },
+    {
+      "row": "WI-5#3",
+      "half": "all",
+      "target": "012 debt #55 (routes) / 014 WI-16b (UI acceptance)",
+      "reason": "DEG-S4. D12 (2026-09-25, user ruling, option 1): the bulk migrate / partial-failure routes this row needs do not exist in 013 and the HTTP API is frozen (ADR-0011). R2 (2026-09-25) parked the UI acceptance on 014 WI-16 because 014 had no library-page WI; RV-15 (2026-09-25, user ruling) opened one, and the UI acceptance now settles in 014 WI-16b, route in 012 debt #55."
+    },
+    {
+      "row": "WI-5#4",
+      "half": "all",
+      "target": "012 debt #55 (routes) / 014 WI-16b (UI acceptance)",
+      "reason": "DEG-S4. D12 (2026-09-25, user ruling, option 1): the bulk migrate / partial-failure routes this row needs do not exist in 013 and the HTTP API is frozen (ADR-0011). R2 (2026-09-25) parked the UI acceptance on 014 WI-16 because 014 had no library-page WI; RV-15 (2026-09-25, user ruling) opened one, and the UI acceptance now settles in 014 WI-16b, route in 012 debt #55."
+    },
+    {
+      "row": "WI-5#5",
+      "half": "all",
+      "target": "012 debt #55 (routes) / 014 WI-16b (UI acceptance)",
+      "reason": "DEG-S4. D12 (2026-09-25, user ruling, option 1): the bulk migrate / partial-failure routes this row needs do not exist in 013 and the HTTP API is frozen (ADR-0011). R2 (2026-09-25) parked the UI acceptance on 014 WI-16 because 014 had no library-page WI; RV-15 (2026-09-25, user ruling) opened one, and the UI acceptance now settles in 014 WI-16b, route in 012 debt #55."
+    },
+    {
+      "row": "WI-5#6",
+      "half": "all",
+      "target": "012 debt #55 (routes) / 014 WI-16b (UI acceptance)",
+      "reason": "DEG-S4. D12 (2026-09-25, user ruling, option 1): the bulk migrate / partial-failure routes this row needs do not exist in 013 and the HTTP API is frozen (ADR-0011). R2 (2026-09-25) parked the UI acceptance on 014 WI-16 because 014 had no library-page WI; RV-15 (2026-09-25, user ruling) opened one, and the UI acceptance now settles in 014 WI-16b, route in 012 debt #55."
+    },
+    {
+      "row": "WI-8#4",
+      "half": "all",
+      "target": "012 debt #56 (routes) / 014 WI-16b (UI acceptance)",
+      "reason": "D12: the library list is server-rendered by Jinja today; there is no client-side list fetch whose aria-busy could be observed (FD-20). Lands with the client list fetch (012/014). R2 (2026-09-25) parked the UI acceptance on 014 WI-16 because 014 had no library-page WI; RV-15 (2026-09-25, user ruling) opened one, and the UI acceptance now settles in 014 WI-16b, route in 012 debt #56."
+    }
+  ]
+}

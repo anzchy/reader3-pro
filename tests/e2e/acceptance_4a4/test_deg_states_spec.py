@@ -25,7 +25,7 @@ p3 那份 docstring 写了逐条理由）：S1 比的是 `GET /api/notes` 交出
 S4 先要求每本新格式书的书卡**恰好 1 张**再断它没戴 pkl 角标（缺卡时那条否定断言是空真的——
 这一条审计里由两批独立找出，改在 `run_deg_s4` 一处，两组同时生效）。
 
-**解 skip 的顺序**：4A.4 书库页切片（前端计划 WI-13）与阅读器 DEG 挂载（WI-16）落地 ⇒ 核对映射表 ⇒
+**解 skip 的顺序**：4A.4 书库页切片（前端计划 WI-13）、阅读器 DEG 挂载（WI-16）与书库侧 DEG-S3 / S4 延后验收（WI-16b）落地 ⇒ 核对映射表 ⇒
 删本文件的 skip 行 ⇒ `-m acceptance_4a4` ⇒ 条数常量不变。
 """
 
@@ -51,7 +51,7 @@ pytestmark = [
     pytest.mark.skip(
         reason=(
             "激活阶段 4A.4：DEG-S1…S4 的设计规格形态（DegradeBanner 组件、第五态 StatusPill、"
-            "storage_format 角标）要到前端计划 WI-13 / WI-16 落地才存在。"
+            "storage_format 角标）要到前端计划 WI-13 / WI-16 / WI-16b 落地才存在。"
             "到期动作：核对本文件 DEG_TESTIDS 与 4A.4 模板/组件里的 testid 一致后删本行；条数常量不变。"
         )
     ),
