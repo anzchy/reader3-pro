@@ -16,7 +16,10 @@
     --dedao-orange-light: #fff7f0;
     --dedao-orange-muted: rgba(255, 107, 0, 0.1);
 
-    /* Text Colors */
+    /* Text Colors. 013 WI-10 ruling (2026-09-24): legacy colours stay literal and do NOT
+       follow the theme until their page is migrated -- aliasing them to --r3-* made the
+       unmigrated pages half-dark under an OS dark preference
+       (tests/e2e/shell_4a/test_dark_os_legacy_unchanged.py). */
     --dedao-text: #333333;
     --dedao-muted: #666666;
     --dedao-light: #999999;
@@ -89,10 +92,8 @@
     --dedao-line-height: 1.6;
     --dedao-line-height-reading: 1.9;
 
-    /* Transitions */
-    --dedao-transition-fast: 150ms ease;
-    --dedao-transition-normal: 300ms ease;
-    --dedao-transition-slow: 500ms ease;
+    /* Transitions: retired in 013 WI-10. Motion is `var(--r3-duration-*) var(--r3-ease-*)`
+       from frontend/src/styles/tokens.css (spec §3.5.2). */
 }
 
 
@@ -210,7 +211,7 @@
     font-size: 14px;
     font-weight: 500;
     cursor: pointer;
-    transition: all var(--dedao-transition-fast);
+    transition: all var(--r3-duration-fast) var(--r3-ease-standard);
     border: none;
     outline: none;
 }
@@ -289,7 +290,7 @@
     border-radius: var(--dedao-radius-md);
     color: var(--dedao-text);
     outline: none;
-    transition: border-color var(--dedao-transition-fast);
+    transition: border-color var(--r3-duration-fast) var(--r3-ease-standard);
 }
 
 .dedao-input:focus {
@@ -364,7 +365,7 @@
 }
 
 .dedao-card-hover {
-    transition: transform var(--dedao-transition-fast), box-shadow var(--dedao-transition-fast);
+    transition: transform var(--r3-duration-fast) var(--r3-ease-standard), box-shadow var(--r3-duration-fast) var(--r3-ease-standard);
 }
 
 .dedao-card-hover:hover {
@@ -377,7 +378,7 @@
     background-color: var(--dedao-card);
     border-radius: var(--dedao-radius-lg);
     overflow: hidden;
-    transition: transform var(--dedao-transition-fast), box-shadow var(--dedao-transition-fast);
+    transition: transform var(--r3-duration-fast) var(--r3-ease-standard), box-shadow var(--r3-duration-fast) var(--r3-ease-standard);
 }
 
 .dedao-book-card:hover {
@@ -404,7 +405,7 @@
     height: 100%;
     background-color: var(--dedao-orange);
     border-radius: 2px;
-    transition: width var(--dedao-transition-normal);
+    transition: width var(--r3-duration-normal) var(--r3-ease-standard);
 }
 
 
@@ -494,7 +495,7 @@
     background-color: var(--dedao-card);
     border-left: 1px solid var(--dedao-border);
     transform: translateX(100%);
-    transition: transform var(--dedao-transition-normal);
+    transition: transform var(--r3-duration-normal) var(--r3-ease-standard);
     z-index: 50;
 }
 
@@ -520,7 +521,7 @@
     font-size: 14px;
     color: var(--dedao-muted);
     cursor: pointer;
-    transition: color var(--dedao-transition-fast);
+    transition: color var(--r3-duration-fast) var(--r3-ease-standard);
     border-bottom: 2px solid transparent;
 }
 
@@ -544,7 +545,7 @@
     font-size: 14px;
     color: var(--dedao-muted);
     border-radius: var(--dedao-radius-md);
-    transition: background-color var(--dedao-transition-fast), color var(--dedao-transition-fast);
+    transition: background-color var(--r3-duration-fast) var(--r3-ease-standard), color var(--r3-duration-fast) var(--r3-ease-standard);
 }
 
 .dedao-toc-item:hover {
@@ -577,7 +578,7 @@
     padding: 12px;
     background-color: var(--dedao-bg);
     border-radius: var(--dedao-radius-lg);
-    transition: box-shadow var(--dedao-transition-fast);
+    transition: box-shadow var(--r3-duration-fast) var(--r3-ease-standard);
 }
 
 .dedao-search-result:hover {
@@ -655,7 +656,7 @@
     border-radius: 50%;
     border: 2px solid white;
     cursor: pointer;
-    transition: transform var(--dedao-transition-fast);
+    transition: transform var(--r3-duration-fast) var(--r3-ease-standard);
 }
 
 .dedao-marker:hover {
@@ -753,7 +754,7 @@
         top: var(--dedao-header-height);
         bottom: 0;
         transform: translateX(100%);
-        transition: transform var(--dedao-transition-normal);
+        transition: transform var(--r3-duration-normal) var(--r3-ease-standard);
         z-index: 40;
     }
 
@@ -780,7 +781,7 @@
         top: var(--dedao-header-height);
         bottom: 0;
         transform: translateX(-100%);
-        transition: transform var(--dedao-transition-normal);
+        transition: transform var(--r3-duration-normal) var(--r3-ease-standard);
         z-index: 40;
     }
 
@@ -820,11 +821,11 @@
 }
 
 .dedao-animate-fade-in {
-    animation: dedao-fade-in var(--dedao-transition-normal);
+    animation: dedao-fade-in var(--r3-duration-normal) var(--r3-ease-decelerate);
 }
 
 .dedao-animate-slide-up {
-    animation: dedao-slide-up var(--dedao-transition-normal);
+    animation: dedao-slide-up var(--r3-duration-normal) var(--r3-ease-decelerate);
 }
 
 .dedao-animate-pulse {

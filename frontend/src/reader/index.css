@@ -1,0 +1,6 @@
+/* reader page stylesheet entry (013 WI-9). Token-free placeholder so the entry emits its
+   own CSS asset; the page WI moves reader.html's inline styles here. The rule restates
+   the root element's default display, so it is a no-op once linked. */
+:root[data-r3-page="reader"] {
+  display: block;
+}
