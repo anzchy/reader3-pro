@@ -1,0 +1,44 @@
+/* Toast (013 WI-11 behaviour, styles shipped with the library in WI-13; design spec §5.3).
+   One persistent polite region at the toast layer; the toast itself carries the tone. */
+.r3-toast-region {
+  position: fixed;
+  right: var(--r3-space-lg);
+  bottom: var(--r3-space-lg);
+  z-index: var(--r3-z-toast);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--r3-space-sm);
+  pointer-events: none;
+}
+
+.r3-toast {
+  max-width: calc(var(--r3-right-w) + var(--r3-space-2xl));
+  padding: var(--r3-space-sm) var(--r3-space-md);
+  border: 1px solid var(--r3-border);
+  border-radius: var(--r3-radius-md);
+  background-color: var(--r3-surface-raised);
+  color: var(--r3-text);
+  box-shadow: var(--r3-shadow-md);
+  font-size: var(--r3-font-size-sm);
+  line-height: var(--r3-leading-tight);
+  pointer-events: auto;
+}
+
+.r3-toast--success {
+  border-color: var(--r3-success);
+  color: var(--r3-success);
+  background-color: var(--r3-success-subtle);
+}
+
+.r3-toast--error {
+  border-color: var(--r3-error);
+  color: var(--r3-error);
+  background-color: var(--r3-error-subtle);
+}
+
+.r3-toast--info {
+  border-color: var(--r3-info);
+  color: var(--r3-info);
+  background-color: var(--r3-info-subtle);
+}
