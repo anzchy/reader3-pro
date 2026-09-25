@@ -225,7 +225,7 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 >
 > **扫描集是 `static/**` 下的全部 `.css`，不只是 `static/css/`。** 本行此前写作 `static/css/`，实施时发现那样会漏掉 `static/` 顶层的 `dedao-theme.css`（620 个 `--dedao-*`，全仓库最大的一坨 token）、`library.css`、`ai.css`、`search.css`、`settings.css` 五个文件——正好是悬空引用最可能藏身的地方。同理，规格侧除 `spec-frontend-design.md` 外也扫 `plan-frontend-ui-refactor.md` 的 CSS 块。落地实测：22 个来源、271 个定义、1119 处引用，悬空 0、带 fallback 0。
 >
-> **扫描范围会再扩一次，且已有归属。** 上面五处都是**现状**的样式所在地；`{前端源码根}`（Vite ＋ TS 的新目录，013 建）落地后，本 lint 必须同时扫它，否则 013／014 迁进去的样式全部脱离本 lint。前端计划有三条验收依赖它在源码根下生效（`plan-frontend-ui-refactor.md` 的 WI-7 验收 3、WI-10、WI-16），**扩范围这件事由该计划的 WI-9 验收 12 交付**，改动落回本行。此前两边都默认对方会做。
+> **扫描范围会再扩一次，且已有归属。** 上面五处都是**现状**的样式所在地；`{前端源码根}`（Vite ＋ TS 的新目录，013 建）落地后，本 lint 必须同时扫它，否则 013／014 迁进去的样式全部脱离本 lint。前端计划有三条验收依赖它在源码根下生效（`plan-frontend-ui-refactor.md` 的 WI-7 验收 3、WI-10、WI-16），**扩范围这件事由该计划的 WI-9 验收 12 交付**，改动落回本行。此前两边都默认对方会做。**已落地（013 WI-9 批次 C）：** 源码根即 `frontend/src/`，`scripts/lint_token_refs.py` 的 `SCAN_GLOBS` 已加入 `frontend/src/**/*.css` 与 `frontend/src/**/*.ts`，由 `tests/unit/test_token_ref_scan_covers_fe_root.py` 钉住。
 
 **验收**: 两个 P0 修复并人工 smoke；`--port` 与 `/api/health` 可用；testid 在原型与模板两侧一致且三条 lint 生效。完整门槛见 §7。
 
@@ -608,7 +608,7 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 | M2 | Phase 2a + 2b | `011-backend-refactor` | A |
 | M3 | Phase 3 存储迁移 | `012-storage-format` | A |
 | M4a | Phase 4A 底座 + settings + library | `013-ts-frontend-shell` | **B**（WI-9 – WI-13） |
-| M4b | Phase 4B 阅读器 | `014-ts-frontend-reader` | **B**（WI-14 – WI-19） |
+| M4b | Phase 4B 阅读器 ＋ 书库侧延后验收 | `014-ts-frontend-reader` | **B**（WI-14 – WI-19，含插入项 WI-16b） |
 | M5 | Phase 5 launch + PWA | `015-launch-experience` | A（`reader3 launch`）＋ **B**（PWA，WI-20） |
 | M1b-债 | 欠账 #22 字号/间距慢一拍（合入 009 后、冻结 G2 前的一条独立小分支） | `016-settings-apply-order` | A（兑付记在 [`tasks/009` 欠账表 #22](./tasks/009-e2e-annotations.md)，不另开 task 文件） |
 | M2-债 | 011 合入后的全量审计欠账：44 条 findings 中判为 must / should 的 22 条 | `017-audit-followup` | A（任务展开写在 [`tasks/017-audit-followup.md`](./tasks/017-audit-followup.md)） |
@@ -641,7 +641,7 @@ must / should 两桶共 22 条落在本分支。**它从 `master` 开、不回 0
 事实（哪些代码还在、哪些已经被上一个分支改掉了），而 011 的事实要等 008 落地才成立。
 提前写只会得到一份开工时已经过期的清单。开某个分支前补它自己那份。
 
-**补任务文件时有一条固定动作**：去 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) 的跨波欠账表里，把**兑付方指向该分支**的行抄成开工项。009 做 E2E 特征化时实测撞出的生产缺陷都记在那张表上，而那份文件会随 009 合并进入归档——不在开分支时主动去取，这些账就丢了。今天指向 **011** 的有一行：**#18**（`collections_service._NAME_RE` 把连字符判成字符范围端点，导致 `sci-fi` 这类集合名建不出来、而带反斜杠的名字反被放行）。指向前端计划的五行已由 [前端计划 §6.1](../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) 接走。
+**补任务文件时有一条固定动作**：去 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) 的跨波欠账表里，把**兑付方指向该分支**的行抄成开工项。009 做 E2E 特征化时实测撞出的生产缺陷都记在那张表上，而那份文件会随 009 合并进入归档——不在开分支时主动去取，这些账就丢了。今天指向 **011** 的有一行：**#18**（`collections_service._NAME_RE` 把连字符判成字符范围端点，导致 `sci-fi` 这类集合名建不出来、而带反斜杠的名字反被放行）。指向前端计划的五行已由 [前端计划 §6.1](../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) 接走。指向 **012** 的今天有九行：**#35**，以及 2026-09-25 按用户裁定 R1–R3 立账的 **#51–#58**（013 延后的后端半边：provider 保存版本校验、批量重建索引、书库导出、DEG-S3 / DEG-S4 数据面、客户端书目列表、上传、删书）——内容只在那张表里，开 012 时照表抄。
 
 > **「领先一个分支」按依赖顺序数，不按编号顺序数。** Track D（010）先于 011 成文，是因为
 > §9.1 把 Track D 与 1b 标为「Phase 0 一结束就动」——它们是 Phase 3 的前置，

@@ -131,7 +131,7 @@
 
 **testid 命名**：canonical 正则的唯一定义处是 `scripts/lint_testid_naming.py` 的 `CANONICAL` 常量（[ADR-0013](../../adr/0013-testid-invariant.md)），从那里 import 或复制，不要从任何 Markdown 表格里复制。本计划涉及的所有新建元素一律 `lib-` / `rd-` / `set-` 三前缀之一。原型原有 138 个 testid 站点**零个合规**，其中 24 个带 `reader-` / `library-` 前缀的**看起来像合规但不是**。重命名本身归 0.5，**已于 2026-08-23 完成**（新旧对照见 [`contracts/testid-rename-map.md`](../20260816-tech-stack-migration/contracts/testid-rename-map.md)）；本计划只负责新元素首次就写对。
 
-**分支落点**：Track D → `010-design-degradation-states`；WI-9–WI-13 → `013-ts-frontend-shell`；WI-14–WI-19 → `014-ts-frontend-reader`；WI-20 → `015-launch-experience`。编号来源见上表第一行。
+**分支落点**：Track D → `010-design-degradation-states`；WI-9–WI-13 → `013-ts-frontend-shell`；WI-14–WI-19（含 2026-09-25 插入的 [WI-16b](#wi-16b-书库侧延后验收)）→ `014-ts-frontend-reader`；WI-20 → `015-launch-experience`。编号来源见上表第一行。
 
 ---
 
@@ -424,14 +424,14 @@ WI-1 到 WI-20 全部以这三项落地为前置，下面各 WI 的「前置 WI�
 
 **验收标准**：
 
-1. 【实现类·前置 WI-9·验于 013】`READER3_ALLOW_PICKLE=1` 时，书库页与阅读器页**都**能查到对应的 s3 testid 元素且可见。（阅读器那半边随 WI-16 在 `014` 上复验。）
+1. 【实现类·前置 WI-9·验于 013】`READER3_ALLOW_PICKLE=1` 时，书库页与阅读器页**都**能查到对应的 s3 testid 元素且可见。（阅读器那半边随 [WI-16b](#wi-16b-书库侧延后验收) 在 `014` 上复验，挂载点由 WI-16 建。）
 2. 【实现类·前置 WI-9·验于 013】未设该环境变量时两页都查不到（元素数为 0）。
 3. 【实现类·前置 WI-9·验于 013】该横幅的 `tone` 解析为 danger（前景色计算值等于 `--r3-error` 的解析值）。
 4. 【实现类·前置 WI-9·验于 013】默认折叠：`lib-degrade-s3-list` 初始不可见；点 `lib-degrade-s3-toggle` 后可见，再点恢复不可见。
 5. 【实现类·前置 WI-9·验于 013】未迁移书目超过上限时渲染 `lib-degrade-s3-more`，其文本包含剩余条数；不超过时该元素不存在。
 6. 【实现类·前置 WI-9·验于 013】展开后列表里每一项的文本等于对应书的书名（与 `/api/library` 返回值逐条比对）。
 7. 【实现类·前置 WI-9·验于 013】**实现与文案各只有一份**：`{前端源码根}` 下，S3 横幅组件的**定义处**计数恰好为 **1**，其横幅文案字符串字面量的出现处计数同样恰好为 **1**；书库页与阅读器页两个挂载点**都从那一处 import**，两页各自的入口模块里该组件与该文案的本地定义处计数均为 **0**。共享模块的目录边界由 **WI-11** 给出（见 WI-11 的「范围」栏），本条不另指定目录名。
-   > **为什么这条非有不可**：DEG-S3 是五条降级里**唯一的全局降级**，两页都要出现（见本 WI「做什么」）。上面第 1 条只要求「两页都能查到」——两份各自实现的横幅同样能让它转绿，然后文案在一次改动里只改一半，两页说法就此分岔。这条把「一份」变成可数的断言，堵住那条路。**落在 `013` 而不是 `014`**：按 §4.0 的规则，`014` 只收「断言目标只存在于阅读器页」的条目，而本条的断言目标是共享模块的源码定义处，两页共用；DEG-S3 的重做形态本身也归 WI-13（见 WI-13「范围」）。阅读器那半边的挂载由 WI-16 复验，与本 WI 第 1 条同一口径。
+   > **为什么这条非有不可**：DEG-S3 是五条降级里**唯一的全局降级**，两页都要出现（见本 WI「做什么」）。上面第 1 条只要求「两页都能查到」——两份各自实现的横幅同样能让它转绿，然后文案在一次改动里只改一半，两页说法就此分岔。这条把「一份」变成可数的断言，堵住那条路。**落在 `013` 而不是 `014`**：按 §4.0 的规则，`014` 只收「断言目标只存在于阅读器页」的条目，而本条的断言目标是共享模块的源码定义处，两页共用；DEG-S3 的重做形态本身也归 WI-13（见 WI-13「范围」）。阅读器那半边的挂载由 [WI-16b](#wi-16b-书库侧延后验收) 复验，与本 WI 第 1 条同一口径。
 
 ---
 
@@ -682,7 +682,7 @@ mark.annotation.annotation--marker.annotation--yellow { background: rgb(var(--r3
 | `static/css/reader.css` | 98 | 4/4（**100%**） |
 | `static/css/toc-panel.css` | 82 | 4/4（**100%**） |
 | `static/css/toolbar.css` | 40 | 1/1（**100%**） |
-| `static/js/pagination.js` | 336 | 死 JS，`CLAUDE.md:161` 自己写着 not loaded |
+| `static/js/pagination.js` | 336 | 死 JS，`CLAUDE.md` 自己写着 not loaded（原 `:161`，2026-09-24 时已在 `:112`） |
 | **合计** | **1920** | |
 
 仓库里剩下的引用全部在 `CLAUDE.md` 与 `specs/_archive/`（后者项目 CLAUDE.md 明文标为 frozen、never implement from），不构成调用。
@@ -691,7 +691,7 @@ mark.annotation.annotation--marker.annotation--yellow { background: rgb(var(--r3
 >
 > **`search.css`（328 行）不在本 WI 删**——它当前**唯一**的加载方是 `library_classic.html`，随 WI-13 一起走，见 WI-13 验收。
 
-**同时修文档**：`CLAUDE.md:158/161/166` 把 `library.css` / `pagination.js` / `css/reader.css` 记成活文件（`:161` 甚至自带 "not loaded by reader.html" 的自相矛盾注释）。这三行随删除一起改掉——正是这份过期文档让孤儿活了这么久。
+**同时修文档**：`CLAUDE.md:158/161/166` 把 `library.css` / `pagination.js` / `css/reader.css` 记成活文件（`:161` 甚至自带 "not loaded by reader.html" 的自相矛盾注释）。这三行随删除一起改掉——正是这份过期文档让孤儿活了这么久。（2026-09-24 订正：那一段已由 d11da98 移入 skill，只剩 `CLAUDE.md:112` 一处——`pagination.js` 那条 bullet——随删除改掉。）
 
 ##### 存活样式文件的去向（本节只处置死文件，活文件也得有主）
 
@@ -811,10 +811,12 @@ mark.annotation.annotation--marker.annotation--yellow { background: rgb(var(--r3
    - a. 该 lint 在**本 WI 落地时故意为红**（此刻 `reader.html` 1403 行、`library.html` 1075 行内联样式还在），以 xfail／allowlist 记录初值，随 WI-12 / WI-13 / WI-16 逐页转绿；**allowlist 只许缩短不许增长**，末页转绿后整条 allowlist 删除。
    - a1. **四个模板全部要进初值 allowlist，一个都不能漏。** 此前这条只点了 `reader.html` 与 `library.html` 两个，而扫描集是 `templates/*.html`（实测 4 个文件）——没登记的文件从 lint 落地那一刻起就是**无条件红**，且没有任何 WI 负责让它转绿。实测初值（2026-08-23，按 `<style` ＋ `style="` 合计）：`reader.html` 1403＋2、`library.html` 1075＋2、`settings.html` 0＋2、`library_classic.html` 10＋3。后两个的划掉方式分别是 WI-12 验收 5b（迁走两处属性）与 WI-13 验收 4（随文件删除）。
    - a2. **内联 `<script>` 那一半的初值同样按实测记。** 实测四个模板的内联 `<script>`（不带 `src`）：`reader.html` **3** 处（`:1702`、`:1747`、`:1834`）、`library.html` **0**、`settings.html` **0**、`library_classic.html` **0**。所以脚本侧的 allowlist 初值只有 `{"reader.html": 3}` 一条，由 WI-16 验收 14 收敛到 1（只剩 FOUC 那段）；另外两段的去向在那一条里一并交代。**注意目标态与初值方向相反**：`library.html` 今天是 0、目标也是 0（它的三个 `<script>` 全带 `src`），不要照旧稿写成 1。
-   - b. 每个 Vite 入口都产出自己的 CSS 资产（`dist/` 下三个入口各有非空 `.css`），模板通过带哈希的 `<link>` 引用。
+   - a3. **FOUC 脚本按正文 hash 豁免（2026-09-24，用户裁定 D7）。** WI-10 的 FOUC 段在三个页面模板里是同一段正文，lint 按其正文 sha256 识别并豁免，不占白名单名额；非 FOUC 的内联 `<script>` 仍按 a2 的初值 `{"reader.html": 3}`（library 0、settings 0）计数，照旧只许缩短、不设例外。上面「`reader.html`:1」的目标态读作「除 FOUC 外为 0」。
+   - b. 每个 Vite 入口都产出自己的 CSS 资产（`dist/` 下三个入口各有非空 `.css`），模板通过带哈希的 `<link>` 引用。**阅读器半边：2026-09-25 用户裁定：依据 6a 推迟至 014 WI-16，不算偏离**（终点即 [WI-16 验收 14](#wi-16-4b2-阅读器外壳重写与三覆盖层几何门槛)）。
    - c. **`style="` 属性也算内联样式，必须一起统计。** 此前这条 lint 只数 `<style` 标签，抓不到属性形态；实测四个模板里还有 **9 处内联 `style="` 属性**（`settings.html` 2 ＋ `reader.html` 2 ＋ `library.html` 2 ＋ `library_classic.html` 3）。只数标签的话，`settings.html` 的白名单初值会被记成 0，而它实际有 2 处——那是把一条绿灯发给了违规文件。白名单机制照旧（只许缩短），初值按 `<style` ＋ `style="` 的合计记。
-7. **六个死样式文件与 `pagination.js` 已删除**（§9.2）：七个路径在仓库中均不存在；**可执行代码与模板**中对这七个文件名的引用计数为 0。`CLAUDE.md` 的三行（`:158` / `:161` / `:166`）同步改掉。
+7. **六个死样式文件与 `pagination.js` 已删除**（§9.2）：七个路径在仓库中均不存在；**可执行代码与模板**中对这七个文件名的引用计数为 0。`CLAUDE.md` 的 `:112` 一处同步改掉（2026-09-24 订正：原写 `:158` / `:161` / `:166` 三行，那一段已由 d11da98 移入 skill，只剩 :112 一处）。由 `tests/unit/test_dead_static_files_removed.py` 机器判定（C9.31–C9.33）。
    - **计数排除四类非调用位置**，否则这条验收按字面永远转不了绿：① `specs/_archive/`（frozen 历史记录）；② `docs/plans/`（**本计划 §9.2 的死文件表格本身就逐行列着这七个名字**——机械执行会要求删掉定义它自己的那张表）；③ `designs/**/spec/`（实测 `reader-pro-spec.md:312`、`:638` 两处提到 `pagination.js`，且 `:312` 恰恰是在说明「它当前未被 Reader 模板加载」，属说明性叙述）；④ `*.egg-info/`（实测 `SOURCES.txt:33`、`:38` 含 `ai.css` / `library.css`，是构建产物，随下次构建重生，删了也会回来）。
+   - **何为「调用位置」（2026-09-24，用户裁定）**：ADR 叙述、冻结测试（`tests/e2e/baseline_1b/**` 等）的注释／docstring、`.claude/` 笔记**不算**调用位置，不改、不计数；扫描因此另外排除 `tests/`（测试不是可执行产品代码）、`node_modules/`、`.claude/`，`docs/` 整体排除（含 ADR）。`reader.html:1946-1948` 的 `window.Pagination.recalculate` 死分支不在本条处置——它不引用文件名，删它属于改 `reader.html` 的行为代码，留给 WI-16。
    - a. 删除前逐个眼过 `library.css` 的 10 个、`ai.css` 的 2 个未匹配 class（§9.2 的确认门槛）。**验收形式是机器可判的，不是 PR 描述**：把这 12 个 class 名落成一份清单文件随 PR 提交，断言每一个在**活样式源**（`dedao-theme.css`、`css/annotations.css`、`settings.css`、四个模板的内联块）里的命中数为 0。理由同 WI-14 验收 7 的那次改法——写进 PR 描述的是自陈，写了照样能合，第二次改动时也没人会重读。
    - b. **回归断言**：删除后 REG-1 的三页 smoke 全绿，且三页**计算样式快照零 diff**——证明这七个文件确实对渲染零贡献。这条是本次删除唯一的安全网，不得跳过。
 8. **JS 单测宿主可用**：`package.json` 存在，一条命令跑 Vitest 并通过；故意写一条必失败的用例，确认它确实变红（不是空跑 0 passed）。`vitest` 与 `vite` 共用同一份 `resolve.alias`（改一处别名，两边同时生效）。
@@ -950,6 +952,7 @@ WI-13 / WI-16 要照抄原型 `designs/reader-pro-next/`，而原型用的是**�
 1. 组件样式文件里对 `--p-*` 的直接引用次数为 0（只许引 `--r3-*`）。
 2. token 悬空 lint 通过：**chrome 2 × reading 5 = 10 种**属性组合下（chrome 只有 light / dark 两个有效解析，`system` 不是第三种视觉），`getComputedStyle` 解析全部 `--r3-*` 均非空字符串。
 3. 切到 dark chrome 后 `body` 背景色计算值改变，且 `--r3-text` 与 `--r3-bg` 对比度 ≥4.5:1；**且此断言与 `data-reading-theme` 取何值无关**（跑满 5 个值结果一致）。
+   - **裁定（2026-09-24，用户裁定）**：「body 背景色改变」按页拆：设置页随 WI-12、书库页随 WI-13 验，阅读器钉到 014 的 WI-16。未迁移页面的 `--dedao-*` 颜色保持字面量、不接主题——否则系统深色下旧页面半黑（回归，见 `tests/e2e/shell_4a/test_dark_os_legacy_unchanged.py`）。对比度 ≥4.5 与五个阅读纸色结果一致两条照旧在本 WI 验。
 4. `--r3-warning` / `--r3-error` 及四个 `-subtle` 在 10 种组合下都有定义。
 5. WI-7 的 `--r3-hl-*-rgb` 在 10 种组合下都解析为三个数字。
 6. **纸色绝对性**：`paper` / `sepia` / `green` / `night` 四值下解析出的 `--r3-page-bg` / `-ink` / `-quiet` / `--r3-hl-*`，在 light chrome 与 dark chrome 下**逐字相等**。
@@ -1000,8 +1003,10 @@ WI-13 / WI-16 要照抄原型 `designs/reader-pro-next/`，而原型用的是**�
 **验收标准**：
 
 1. 源码内 `console.log(` 出现次数为 0，`no-console` 规则开启且构建通过。
+   - **裁定（2026-09-24，用户裁定 D3）**：013 里「源码内」只数前端源码根 `frontend/src`；`static/js/` 里剩下的 42 处旧调用随文件迁移归 WI-14 / WI-16 清零。另加一条正向判定：`shared/` 下 `debug` 的定义恰好一处。
 2. `localStorage["reader3.debug"]` 未设置时 `debug.*` 调用不产生任何控制台输出；设置后产生输出。
 3. `escape.ts` 只导出单个 `escapeHtml`；源码内 `escapeHtml` 的**定义**处（非引用处）计数为 1，四份旧实现（`library-search.js` `search.js` `ai.js` `settings.js`）的本地定义全部删除。
+   - **裁定（2026-09-24，用户裁定，同 D3 口径）**：013 里「源码内」只数 `frontend/src`（已为 1）。`static/` 下四份旧实现是非模块脚本，没法 import，随页面迁移删：`settings.js` → WI-12，`library-search.js` → WI-13，`search.js` 与 `ai.js` → 014 的 WI-16。在最后一份删掉之前，由 `tests/unit/test_single_escape_html.py::test_legacy_static_definitions_removed` 的 strict xfail 记着。
    - a. `escapeHtml(null)` 与 `escapeHtml(undefined)` 均返回空串（取 B 派语义，见上表）。
    - b. 参数化用例覆盖 `& < > " '` 五个字符各自的输出实体，逐一比对字面量。
 4. Toast 挂载后 N 毫秒自动消失，且同时最多存在一个 Toast 容器元素。`N` ＝ `getComputedStyle` 读到的 `--r3-dwell-toast`（断言用同一个读值，既不写死常数、也不以任何 `--r3-duration-*` 为基），求值规则见 §5.0 占位符表，取值裁决见设计规格 §5.3。
@@ -1020,7 +1025,7 @@ WI-13 / WI-16 要照抄原型 `designs/reader-pro-next/`，而原型用的是**�
 
 设计规格 §6.1 的四个分区照做。破坏性操作（清缓存 / 清会话 / 重建索引）必须走 `<dialog>` 确认，**不要用 `confirm()`**。
 
-> **`Modal` 选型已于 2026-08-20 统一裁定为原生 `<dialog>` ＋ `showModal()`**（`div[role=dialog]` 落选，裁决理由见 **WI-6** 与 `spec-frontend-design.md` §5；ET-17 已闭）。本 WI 这条要求不变——它本来就写的是 `<dialog>`。要注意的是：**WI-12 与 WI-6 用的是同一个 `Modal` 组件，不是两套。** `set-confirm-dialog` 与 `rd-conflict-dialog` 的差别只在 `role`（`dialog` vs `alertdialog`）和关闭路径的数量（三条 vs 零条），底座是同一个。焦点陷阱、Esc 分层与兄弟节点 `inert` 都由 `showModal()` 提供，两边都不手写。
+> **`Modal` 选型已于 2026-08-20 统一裁定为原生 `<dialog>` ＋ `showModal()`**（`div[role=dialog]` 落选，裁决理由见 **WI-6** 与 `spec-frontend-design.md` §5；ET-17 已闭）。本 WI 这条要求不变——它本来就写的是 `<dialog>`。要注意的是：**WI-12 与 WI-6 用的是同一个 `Modal` 组件，不是两套。** `set-modal-{reindex,conversations,cache}` 与 `rd-conflict-dialog` 的差别只在 `role`（`dialog` vs `alertdialog`）和关闭路径的数量（三条 vs 零条），底座是同一个。焦点陷阱、Esc 分层与兄弟节点 `inert` 都由 `showModal()` 提供，两边都不手写。（2026-09-24，用户裁定 D10：按 ADR-0014 与原型改为逐操作对话框）
 
 移动端 390×844 下 ollama 行的 `Enabled` 溢出（§7 实测第四项）在这一项修掉。
 
@@ -1028,14 +1033,14 @@ WI-13 / WI-16 要照抄原型 `designs/reader-pro-next/`，而原型用的是**�
 
 > ~~此前这一分区还写着「＋ 界面语言」。~~ **2026-08-23 裁决：界面文案 zh-CN 为唯一交付语言**（此前 `spec-frontend-design.md` §0 定的「en 为主」已被推翻），**界面语言控件随之删掉**——只有一个 locale 时它是空操作。理由不在这里重述，见 `spec-frontend-design.md` §6.1（与那边删掉 `Auto suggested questions (future)` 同一条理由）。本分区因此**只有明暗三选一一组控件**，`涉及 testid` 栏里也没有语言控件的 testid。
 
-**涉及 testid**：`set-appearance-scheme-system` / `-light` / `-dark`、`set-provider-*`、`set-data-cache`、`set-data-conversations`、`set-data-reindex`、`set-export-json`、`set-export-settings`、`set-rag-chunks`、`set-rag-context`、`set-rag-embedding`、`set-confirm-dialog`、`set-confirm-ok`、`set-confirm-cancel`。
+**涉及 testid**：`set-appearance-scheme-system` / `-light` / `-dark`、`set-provider-*`、`set-data-cache`、`set-data-conversations`、`set-data-reindex`、`set-export-json`、`set-export-settings`、`set-rag-chunks`、`set-rag-context`、`set-rag-embedding`、`set-modal-reindex` / `set-modal-conversations` / `set-modal-cache`（各带 `-body` / `-close` / `-cancel` / `-primary`）。（2026-09-24，用户裁定 D10：按 ADR-0014 与原型改为逐操作对话框）
 
 **涉及降级状态**：无。
 
 **验收标准**：
 
 1. 源码内 `confirm(` 与 `alert(` 出现次数为 0。
-2. 点任一破坏性操作后 `set-confirm-dialog` 可见；点 `set-confirm-cancel` 后请求数为 0；点 `set-confirm-ok` 后对应请求发出 1 次。
+2. 点任一破坏性操作 `set-data-X` 后对应的 `set-modal-X` 可见（X ∈ reindex / conversations / cache）；点 `set-modal-X-cancel` 后请求数为 0；点 `set-modal-X-primary` 后对应请求发出 1 次。（2026-09-24，用户裁定 D10：按 ADR-0014 与原型改为逐操作对话框）⏸ **reindex 的 primary 半条 Deferred（2026-09-25，用户裁定 D11：延后）**：冻结 API 没有批量重建索引路由，`set-modal-reindex-primary` 只显示可见的「暂不支持」结果行、发出 0 次请求；服务端效果是 [012 债 #52](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账)。conversations / cache 两项照原文全量验收。
 3. 设置页所有 testid 匹配 canonical 正则且以 `set-` 开头（命名 lint 通过）。
 4. 390×844 下 ollama 行的 `Enabled` 控件 `getBoundingClientRect().right` ≤ 视口宽度。
 5. 设置页样式文件对 `--p-*` 的直接引用次数为 0。
@@ -1086,7 +1091,48 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 8. `lib-theme-toggle` 连点三次回到初始态；`aria-label` 随态更新；三态与设置页「外观」互通（在设置页选 `dark` 后回书库，按钮显示 `dark`）。
 9. **迁出的样式不许带着硬编码走**：4b 产生的那些 `.css` 文件全部通过 **§9.3 的 token 硬编码 lint**，即 `library.html` 这一项从该 lint 的白名单里**划掉**。少了这一条，4b 就只是把 1075 行硬编码从模板搬进 CSS 文件——`<style` 计数归零了，`#rrggbb` 与离档字号一个没少。本条与 4b 必须同批转绿，不许分两次。
 10. **Track D 的 4A 半边在这里结账**：WI-1–WI-8 中标着 `〔实现类·前置 WI-9〕验于 013` 的**全部** 34 条验收已实际执行并全绿，条数与 §4.0 分布表一致。少了这一条，那 34 条从 `010` 的账上划走之后落不到任何账上——`010` 说「未激活」，`013` 从不提它们，等于谁都不欠。**判法**：跑一遍 §4.0 那 34 条，逐条二值记录，全绿才算本 WI 完成。
+    - **裁定（2026-09-24，用户裁定 D1＋D2）**：`acceptance-4a4` 那道出口门挪到 `014`。本条与第 11 条逐条给出二选一的判词：「013 全绿」，或「书库半边绿、阅读器半边钉到 `014` 的某个具名 WI」。每条的判词与归属写进 013 结账记录，不许有无主条目。
+    - **延后条目总表（2026-09-25 重述，用户裁定 R2 / R3 / R4）**：下表是 013 延后的**全部**条目，每条都有主。Track-D 行的逐条钉值（`row` × `half`）以 `tests/fixtures/track_d_pinned_014.json` 为准，`tests/unit/test_track_d_ledger.py` 机械校验「钉值 ＋ 已测 ＝ 34 条」、D12 钉条必须写出 014 WI 与 `012 debt #N`、且该号在欠账表里归 012，书库侧钉条（`library` / `all` 半边）的 WI 必须是 WI-16b、阅读器半边是 WI-16b 或 WI-14–WI-19 之一。书库侧的 UI 验收一律在 [**WI-16b**](#wi-16b-书库侧延后验收)（014 的书库 WI，2026-09-25 用户裁定开立）结账；此前挂在 WI-16 验收 16 上。
+
+      | 延后条目 | UI 验收归属 | 路由 / 后端归属 | 依据 |
+      |---|---|---|---|
+      | Track-D WI-3#5 阅读器半边 | 014 WI-16 | — | C-8 |
+      | Track-D WI-4#1–#7（DEG-S3；#1 / #2 / #7 两个半边） | 014 WI-16b | [012 债 #54](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账)（#6 另加 [012 债 #56](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账)） | D12 → R2 |
+      | Track-D WI-5#1–#6（DEG-S4）、FD-05 | 014 WI-16b | [012 债 #55](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账) | D12 → R2 |
+      | Track-D WI-8#4（即第 34 条）、FD-20、FD-03、验收 7 的「加载失败」分支、C13.06 | 014 WI-16b | [012 债 #56](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账) | D12 → R2 |
+      | 验收 5（A13.5） | 014 WI-19 | — | C-10a |
+      | 验收 11（A13.11） | 014 WI-16 | — | C-8b |
+      | EXIT-3（`acceptance-4a4` 出口门） | 014 的出口门（不属单个 WI） | — | C-6 / D1＋D2 |
+      | FB-L01–03（上传 / 选文件 / 拖放区） | 014 WI-16b | [012 债 #57](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账) | D13 |
+      | FB-L18（删书后的陈旧写） | 014 WI-16b | [012 债 #58](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账) | D13 |
+      | FA-08 / FB-L15 | **不延后，按偏离交付** | — | D14 |
 11. **接 D-8 移交**：笔记面板的 **chip 四色选择器**已是字面量，且与 `spec §3.3` 的四个 `--r3-hl-*-rgb` **一一对应**——四个 chip 选择器逐个列出，每个只引用与自己同色的那个 `-rgb` token，alpha 恒为 `.35`（D-8 已定死的九个之一）。**判法**：对四个色名各跑一次，取 chip 元素的 `background-color` 计算值，与「该色 `-rgb` 三元组 ＋ `.35`」算出的 `rgba()` 逐位相等；交叉引用（绿 chip 引用了黄的 `-rgb`）必须判红。这一条 2026-09-23 从 `010` 的 D-8 移交过来，理由是它依赖「笔记面板迁进源码根」这个本 WI 的前置——**移交不是免掉**，它在这里翻牌。
+
+> **裁定 D12（2026-09-25，用户裁定，选项 1）——本 WI 的范围切分，写于任何测试之前。**
+> - **Deferred（路由 / UI 两半的归属见验收 10 的延后总表，2026-09-25 裁定 R2 定到具体号；UI 半边同日移交 [WI-16b](#wi-16b-书库侧延后验收)）**：Track-D WI-4 第 15–21 条（DEG-S3）、WI-5 第 22–27 条（DEG-S4）与 FD-05。理由：所需的批量迁移/部分失败路由在 013 不存在，而 HTTP API 冻结（ADR-0011）。逐条钉在 `tests/fixtures/track_d_pinned_014.json`，附理由。
+> - **Deferred（待客户端列表拉取存在；归属见验收 10 的延后总表，UI 半边归 [WI-16b](#wi-16b-书库侧延后验收)）**：验收 7 的「加载失败」分支、FD-20、FD-03、Track-D 第 34 条与 C13.06（`lib-load-failed` / `lib-load-retry`）。今天书目由 Jinja 服务端渲染，没有可失败的客户端列表请求。两个 testid **先进原型、回填台账**，但**本 WI 不接进 `library.html`**。
+> - **沿用既有裁定**：验收 5（A13.5）→ `014`/WI-19（C-10a）；验收 11（A13.11）→ `014`/WI-16（C-8b）；EXIT-3 → `014`（C-6/D1）。
+> - **其余照做**：三栏 `min-width:0`（390×844 与 1440）、三个 JS 文件迁 TS（去掉自带 `escapeHtml`）、内联样式迁入 `frontend/src/library/index.css`（token 化）、与设置页共用的三态明暗切换、六个状态 testid 与唯一的 `statusMeta`、由 `/api/index/{id}/status` 的 `stale: true` 驱动的 DEG-S2、骨架及其 reduced-motion、DegradeBanner/Toast 样式与 `lib-toast`、A10.3 对比度、原型与 rename-map testid、allowlist / hardcode 基线 / inline 钉值收缩、REG-1 差异登记。
+> - **状态 testid 命名（C8）**：沿用产线的有界表 `lib-book-{grid,row}-status-{not-indexed,indexing,indexed,error,stale,unknown}`，不用 WI-3 字面的 `lib-status-*`（后者会破坏 X-2d 与 DOM 唯一性）。`014` 解除 p3/4a4 跳过时须把 `DEG_TESTIDS` 的 `lib-status-stale` 改指（随 EXIT-3）。
+> - **新发现的阻塞（D12 未覆盖）**：FB-L01–03、FB-L18 与 FA-08 / FB-L15——2026-09-25 已分别裁定，见下方 D13 与 D14。
+
+> **裁定 D13（2026-09-25，用户裁定 R3）——上传与删书延后给后端，与 D11 / D12 同形。**
+> - FB-L01–03（`lib-add-books` / `lib-choose-files` / `lib-dropzone`）与 FB-L18（A 标签页删书、B 标签页对它写）在 013 **Deferred**：没有上传路由、没有删书路由，而 HTTP API 冻结（ADR-0011）。
+> - 路由半边：上传 [012 债 #57](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账)，删书 [012 债 #58](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账)。FB-L18 的陈旧写本身服务端今天已回 404，缺的只是造出前提的删书路由（核实记录在 #58）。
+> - UI 验收：014 [WI-16b](#wi-16b-书库侧延后验收)（2026-09-25 由 WI-16 验收 16 移交）。不归 015——迁移计划 §9 的 M5 只含 `reader3 launch` 与 PWA，没有导入流程。
+> - 矩阵行 FB-L01–03、FB-L18 标 Deferred 并链到本条；归属总表在验收 10。
+
+> **裁定 D14（2026-09-25，用户裁定 R4）——FA-08 / FB-L15 按偏离交付，不是延后。**
+> - 书卡**不**加 `role="button"`；保留卡内「Read {title}」链接，另加 Space 激活（`frontend/src/library/index.ts:309`，C13.16 由 `tests/e2e/shell_4a/test_library_functional.py` 守）。`aria-label` 含书名、Enter 与 Space 都能进阅读器，两项照做；与矩阵原文的差别只有 role。
+> - 理由：冻结的 `baseline_1b` 靠 `get_by_role("link", name="Read {title}")` 点进书卡（`test_read_paths.py:280`、`test_library_nav_and_collections.py:339`）。改成 button 要么删链接（冻结用例红、soak 清零），要么在 button 里套链接（交互元素嵌套）。
+> - 矩阵行 FB-L15、FA-08 标偏离并链到本条。
+
+> **L7 不修（2026-09-25，用户裁定 R5，won't-fix）**：`--r3-dwell-toast` 缺失时 `showToast` 照旧抛错。理由：这个 token 是设计 token 合同的一部分（WI-11 验收 4），缺了是构建坏了，失败要响；静默回落到一个常数会把「token 没接上」藏起来。已记录的 `frontend/tests/shared/toast.test.ts`（`toThrow(/--r3-dwell-toast/)`）守着这条行为。
+
+> **收据豁免记录：WI-13-e2e（2026-09-25，013 终审）**
+> - WI-13 的 e2e 红**只留在运行日志里**：实现之前那一次 `shell_4a` 运行是 **33 FAILED**。收据 CLI（`receipt.js record`）**没有记录它**。
+> - 规格没有漂移：那 8 个 e2e 规格文件按 sha 钉住，此后只有**两处经批准的修改**。
+> - 为什么不补录：补录要在代码已经变绿之后跑 lane，那次运行要么是绿的，要么红的原因已不是原来那个，把它写成「红收据」是**假记录**，比没有记录更糟。因此这一项按豁免登记：**红有日志为证，没有 CLI 收据**，不补、不伪造。
 
 ---
 
@@ -1243,6 +1289,53 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 14. `templates/reader.html` 内联 `<style>` 块数为 0（§9.1）。起点是 **1403 行**内联样式——全仓库最大的一块——全部迁到 `dist/` 产物；模板只剩结构标记、`{{ }}` 插值与 `<head>` 里那一段 FOUC `<script>`。本条转绿即 WI-9 验收 6a 的 allowlist 可以整条删除。
 15. **迁出的样式不许带着硬编码走**：第 14 条产生的那些 `.css` 文件全部通过 **§9.3 的 token 硬编码 lint**，即 `reader.html` 这一项从该 lint 的白名单里**划掉**。1403 行是全仓库最大的一块硬编码来源；只做 `<style` 归零而不过硬编码 lint，等于把它整块搬进 `dist/` 并就地合法化。本条与第 14 条必须同批转绿。同时划掉 `static/css/annotations.css` 与 `static/js/epub-renderer.js:95` / `:186` 两处内联样式赋值。**本条转绿即 §9.3 的白名单可以整条删除**——按 §9.3 的初值表，`reader.html` 与 `annotations.css` 是最后两项（`library.html` 归 WI-13 验收 9，`settings.html` 与 `settings.css` 归 WI-12 验收 9，`library_classic.html` 随文件删除消失）。写法与第 14 条对 §9.1 allowlist 的处理对齐：**每条 lint 都要有一个明确的终点**。
 16. **Track D 的 4B 半边在这里结账**：WI-1–WI-8 中标着 `〔实现类·前置 WI-9〕验于 014` 的**全部** 22 条验收已实际执行并全绿，条数与 §4.0 分布表一致。理由同 WI-13 验收 10。**判法**：逐条二值记录，全绿才算本 WI 完成。至此 §4.0 的 1 ＋ 33 ＋ 22 ＝ 56 条全部有过实际判定。
+    - **另收 013 的延后条目（2026-09-25，用户裁定 R2 / R3；同日收窄）**：只收阅读器侧——WI-13 验收 10 的延后总表里「UI 验收归属」写着 WI-16 的各行在这里结账（今天是 Track-D WI-3#5 阅读器半边与验收 11 / A13.11 两行）。书库侧（D12 的 17 条钉条、FD-03 / FD-05 / FD-20、D13 的 FB-L01–03 / FB-L18）归 [WI-16b](#wi-16b-书库侧延后验收)。Track-D 那几行跑绿的同一个改动里删掉 `tests/fixtures/track_d_pinned_014.json` 的对应钉条，否则台账按重叠律判红。
+
+---
+
+### WI-16b: 书库侧延后验收
+
+**范围**：013 延后、UI 验收原先挂在 WI-16 验收 16 上的**书库侧**条目，一条不多一条不少：[D12](#wi-13-4a4-书库页切片) 的 17 条 Track-D 钉条（`tests/fixtures/track_d_pinned_014.json` 里引 D12 的全部条目）、FD-03 / FD-05 / FD-20、WI-13 验收 7 的「加载失败」分支，以及 [D13](#wi-13-4a4-书库页切片) 的 FB-L01–03、FB-L18。归属总表在 [WI-13 验收 10](#wi-13-4a4-书库页切片)，本 WI 不复写各条的判定内容，只认领。
+
+**为什么单开、为什么叫 16b**（2026-09-25 用户裁定，经 reader-a2 转达）：R2 当时把这些条目挂到 WI-16，理由是「014 没有书库页 WI」；WI-16 是阅读器外壳，拿它结书库的账等于让一个 WI 同时欠两页。现在给书库侧开一个专门的 WI。编号取 `16b`：`WI-20` 已归 015 PWA，又不重排已有编号；字母后缀插入沿用迁移侧 `011` 的 `WI-0a` / `WI-0b`、`WI-5a` / `WI-5b`。排在 WI-16 之后，是因为 DEG-S3 的三个阅读器半边要挂在 WI-16 建好的阅读器外壳上。
+
+**前置 WI**：WI-13（书库页已在源码根）、WI-16（阅读器半边的挂载点）。**外部前置**：012 债 [#54–#58](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账)，每条验收只等自己点名的那一条。
+
+**做什么**：债兑付一条，就把等它的那几条跑绿；Track-D 条目跑绿的同一改动里删掉对应钉条，否则台账按重叠律判红（[WI-13 验收 10](#wi-13-4a4-书库页切片)）。三个 DEG-S3 阅读器半边也在这里，不回 WI-16：它们与书库半边等同一条债（#54）、跑同一个共享组件（WI-4 验收 7），拆两处结账会让一次兑付分两次验。台账规则（D12 钉条的 UI 归属必须是本 WI）由 `tests/unit/test_track_d_ledger.py` 机械校验。
+
+**涉及 testid**：`lib-degrade-s3`、`rd-degrade-s3`、`lib-degrade-s3-toggle`、`lib-degrade-s3-list`、`lib-degrade-s3-more`、`lib-book-grid-status-indexed`、`lib-storage-format-badge`、`lib-degrade-s4`、`lib-degrade-s4-progress`、`lib-migrate-failed-item`、`lib-migrate-retry`、`lib-book-grid`、`lib-book-card`、`lib-load-failed`、`lib-load-retry`、`lib-empty`、`lib-filter-empty`、`lib-add-books`、`lib-choose-files`、`lib-dropzone`、`lib-bulk-index`。
+
+**涉及降级状态**：DEG-S3、DEG-S4（重做形态，书库侧与 DEG-S3 的阅读器挂载）。
+
+**验收标准**：
+
+每条的判定内容以括号里链到的原文为准，此处不复写。**二值判法对每条相同**：对应用例存在、未被 skip / xfail / `.todo`，并在它的 lane 上通过；Track-D 条目的用例带 `[track_d_013 WI-n#m]`（两半行加 `/library` 或 `/reader`）标签，且同一改动删掉该钉条；矩阵条目的用例 docstring 写明行号。所等的债未兑付时该条记「未兑付」，不许以 skip 计绿。
+
+1. WI-4 验收 1 书库半边——`lib-degrade-s3`；等债 #54。
+2. WI-4 验收 1 阅读器半边——`rd-degrade-s3`；等债 #54。
+3. WI-4 验收 2 书库半边——`lib-degrade-s3`；等债 #54。
+4. WI-4 验收 2 阅读器半边——`rd-degrade-s3`；等债 #54。
+5. WI-4 验收 3——`lib-degrade-s3`；等债 #54。
+6. WI-4 验收 4——`lib-degrade-s3-toggle`、`lib-degrade-s3-list`；等债 #54。
+7. WI-4 验收 5——`lib-degrade-s3-more`；等债 #54。
+8. WI-4 验收 6——`lib-degrade-s3-list`；等债 #54 与 #56（比对的 `/api/library` 是 #56）。
+9. WI-4 验收 7 书库半边——`lib-degrade-s3`（书库入口从共享定义处 import）；等债 #54。
+10. WI-4 验收 7 阅读器半边——`rd-degrade-s3`（阅读器入口从同一定义处 import）；等债 #54。
+11. WI-5 验收 1——`lib-book-grid-status-indexed`（WI-5 原文写 `lib-status-indexed`，按 D12 的状态 testid 命名改指）、`lib-storage-format-badge`；等债 #55。
+12. WI-5 验收 2——`lib-storage-format-badge`；等债 #55。
+13. WI-5 验收 3——`lib-degrade-s4`、`lib-degrade-s4-progress`；等债 #55。
+14. WI-5 验收 4——`lib-migrate-failed-item`、`lib-migrate-retry`；等债 #55。
+15. WI-5 验收 5——`lib-migrate-retry`；等债 #55。
+16. WI-5 验收 6——`lib-migrate-failed-item`；等债 #55。
+17. WI-8 验收 4 与矩阵 FD-20（同一断言，WI-8 验收 4 自注矩阵行即 FD-20）——`lib-book-grid`（`aria-busy`）、`lib-book-card`；等债 #56。
+18. 矩阵 FD-05——`lib-migrate-failed-item`、`lib-book-card`；等债 #55。
+19. 矩阵 FD-03（013 用例编号 C13.06）——`lib-load-failed`、`lib-load-retry`；等债 #56。
+20. WI-13 验收 7 的「加载失败」分支——`lib-load-failed` 与 `lib-empty`、`lib-filter-empty` 互斥；等债 #56。
+21. 矩阵 FB-L01——`lib-add-books`；等债 #57。
+22. 矩阵 FB-L02——`lib-choose-files`；等债 #57。
+23. 矩阵 FB-L03——`lib-dropzone`；等债 #57。
+24. 矩阵 FB-L18——`lib-bulk-index`；等债 #58。
+25. **收口**：`tests/fixtures/track_d_pinned_014.json` 里引 D12 的钉条数为 0，`tests/unit/test_track_d_ledger.py` 全绿。
 
 ---
 
@@ -1543,9 +1636,9 @@ E2E 侧：**不要写 Node Playwright Test 的 `webServer` 语法**，用 pytest
 
 | 用例 ID | 归属 WI | 断言目标 | 预期结果 |
 |---|---|---|---|
-| FB-L01 | WI-13 | `lib-add-books` | 八态全过；loading 期间 `aria-busy="true"`；连点 3 次只开一次文件选择 |
-| FB-L02 | WI-13 | `lib-choose-files` | 同上；无文件选中时取消不产生请求 |
-| FB-L03 | WI-13 | `lib-dropzone`（role=button） | 键盘 Enter 与鼠标点击行为一致；拖入非 EPUB 时显示错误态而不是静默忽略 |
+| FB-L01 | WI-13 | `lib-add-books` | 八态全过；loading 期间 `aria-busy="true"`；连点 3 次只开一次文件选择。 ⏸ **Deferred（2026-09-25，用户裁定 D13，见 [WI-13 的裁定 D13](#wi-13-4a4-书库页切片)）**：路由 [012 债 #57](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账)，UI 验收 014 [WI-16b](#wi-16b-书库侧延后验收) |
+| FB-L02 | WI-13 | `lib-choose-files` | 同上；无文件选中时取消不产生请求。 ⏸ **Deferred（2026-09-25，用户裁定 D13，见 [WI-13 的裁定 D13](#wi-13-4a4-书库页切片)）**：路由 [012 债 #57](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账)，UI 验收 014 [WI-16b](#wi-16b-书库侧延后验收) |
+| FB-L03 | WI-13 | `lib-dropzone`（role=button） | 键盘 Enter 与鼠标点击行为一致；拖入非 EPUB 时显示错误态而不是静默忽略。 ⏸ **Deferred（2026-09-25，用户裁定 D13，见 [WI-13 的裁定 D13](#wi-13-4a4-书库页切片)）**：路由 [012 债 #57](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账)，UI 验收 014 [WI-16b](#wi-16b-书库侧延后验收) |
 | FB-L04 | WI-13 | `lib-collections-create` | 名称为空时 `disabled` 为真；连点 3 次只创建 1 个集合（幂等） |
 | FB-L05 | WI-13 | `lib-select-all` / `lib-select-none` | 点 all 后选中数等于当前可见书数；点 none 后为 0；筛选状态下 all 只选可见项 |
 | FB-L06 | WI-13 | `lib-toggle-selection` | 单卡选中态 `aria-pressed` 翻转；再点回退 |
@@ -1557,10 +1650,10 @@ E2E 侧：**不要写 Node Playwright Test 的 `webServer` 语法**，用 pytest
 | FB-L12 | WI-3 | `lib-degrade-s2-reindex` | 连点 3 次只发 1 次重建请求；重建中按钮 `aria-busy="true"` |
 | FB-L13 | WI-5 | `lib-migrate-retry` | 只对本项发请求；重试中该项 `disabled`，其余项不受影响 |
 | FB-L14 | WI-4 | `lib-degrade-s3-toggle` | 折叠 / 展开来回 3 次状态正确；`aria-expanded` 同步翻转 |
-| FB-L15 | WI-13 | `lib-book-card`（role=button） | Enter 与 Space 都能进入阅读器；`aria-label` 含书名 |
+| FB-L15 | WI-13 | `lib-book-card`（role=button） | Enter 与 Space 都能进入阅读器；`aria-label` 含书名。 ⚠️ **偏离（2026-09-25，用户裁定 D14，见 [WI-13 的裁定 D14](#wi-13-4a4-书库页切片)）**：不加 `role="button"`，保留卡内「Read {title}」链接 ＋ Space 激活（冻结的 `baseline_1b` 要这个链接）；`aria-label` 与 Enter / Space 照做 |
 | FB-L16 | WI-13 | `lib-refresh-stats` | 连点 3 次只发 1 次；陈旧数据点击后统计数字被替换而不是叠加 |
 | FB-L17 | WI-13 | `lib-nav-settings` / `lib-nav-library` | 当前页对应项 `aria-current="page"`，另一项没有 |
-| FB-L18 | WI-13 | **陈旧数据写入** | 在 A 标签页删掉一本书，B 标签页点该书的 `lib-bulk-index`：不静默成功，显示错误或刷新提示 |
+| FB-L18 | WI-13 | **陈旧数据写入** | 在 A 标签页删掉一本书，B 标签页点该书的 `lib-bulk-index`：不静默成功，显示错误或刷新提示。 ⏸ **Deferred（2026-09-25，用户裁定 D13，见 [WI-13 的裁定 D13](#wi-13-4a4-书库页切片)）**：路由 [012 债 #58](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账)，UI 验收 014 [WI-16b](#wi-16b-书库侧延后验收) |
 | FB-L19 | WI-13 | `lib-theme-toggle` | 三态循环，连点 3 次回到初始态；`aria-label` 随态更新；与设置页「外观」共用 `reader3.ui.colorScheme`（设置页选 `dark` 后回书库，按钮显示 `dark`） |
 
 #### 5.1.2 阅读器
@@ -1596,11 +1689,11 @@ E2E 侧：**不要写 Node Playwright Test 的 `webServer` 语法**，用 pytest
 | FB-S02 | WI-12 | `set-provider-save` | 必填项为空时 `disabled`；保存中 `aria-busy`；连点 3 次只发 1 次 |
 | FB-S03 | WI-12 | `set-provider-test` | 测试中 `disabled`；成功 / 失败分别渲染 `set-provider-result` 的两种态，文案不同 |
 | FB-S04 | WI-12 | `set-provider-refresh-models` | 连点 3 次只发 1 次；失败时下拉保持原值而不是清空 |
-| FB-S05 | WI-12 | `set-data-cache` / `set-data-conversations` / `set-data-reindex` | 三个破坏性操作**都**先弹 `set-confirm-dialog`；cancel 后请求数为 0 |
-| FB-S06 | WI-12 | `set-export-json` / `set-export-settings` | 导出内容非空且是合法 JSON；导出中按钮 `disabled` |
+| FB-S05 | WI-12 | `set-data-cache` / `set-data-conversations` / `set-data-reindex` | 三个破坏性操作**都**先弹各自的 `set-modal-{reindex,conversations,cache}`；`-cancel` 后请求数为 0（2026-09-24，用户裁定 D10：按 ADR-0014 与原型改为逐操作对话框）。⏸ **reindex 的服务端效果半条 Deferred（2026-09-25，用户裁定 D11：延后）**：`-primary` 显示可见的「暂不支持」、0 请求；服务端效果是 [012 债 #52](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账)。conversations / cache 全量 |
+| FB-S06 | WI-12 | `set-export-json` / `set-export-settings` | 导出内容非空且是合法 JSON；导出中按钮 `disabled`。⏸ **`set-export-json` Deferred（2026-09-25，用户裁定 D11：延后）**：冻结 API 没有书库导出路由，按钮显示可见的「暂不支持」、0 请求；服务端效果是 [012 债 #53](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账)。`set-export-settings` 照原文全量验收 |
 | FB-S07 | WI-12 | `set-rag-chunks` / `set-rag-context` / `set-rag-embedding` | 越界输入被钳到合法区间而不是保存越界值；保存后刷新仍是钳后的值 |
 | FB-S08 | WI-12 | `set-provider-key` | 输入框 `type="password"`；保存后重新加载页面，返回值不含明文 key |
-| FB-S09 | WI-12 | **陈旧数据写入** | A 标签页改了 provider 配置，B 标签页用旧值点 `set-provider-save`：不静默覆盖 |
+| FB-S09 | WI-12 | **陈旧数据写入** ⏸ **Deferred（2026-09-24，用户裁定 D8）** | A 标签页改了 provider 配置，B 标签页用旧值点 `set-provider-save`：不静默覆盖。**挪到后端**：服务端半条是 [012 债 #51](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账)；013 只断言保存失败时设置页出现可见错误（`tests/e2e/shell_4a/test_settings_rows.py::test_provider_save_failure_is_visible`） |
 | FB-S10 | WI-12 | `set-appearance-scheme-system` / `-light` / `-dark` | `role="radiogroup"`，恰有一个 `aria-checked="true"`，无存储值时是 `-system`；选 `system` 时 `<html>` 上**没有** `data-theme` 属性，选另两个时属性值等于所选；三次切换都不触碰 `data-reading-theme` |
 
 ---
@@ -1623,7 +1716,7 @@ E2E 侧：**不要写 Node Playwright Test 的 `webServer` 语法**，用 pytest
 | FP-12 | WI-16 | 覆盖层几何 | `rd-anno-toolbar` 相对选区矩形水平居中误差 ≤N px、垂直贴边误差 ≤N px。`toBeVisible()` 不算 |
 | FP-13 | WI-16 | 覆盖层几何 | `rd-note-editor` 同 FP-12 |
 | FP-14 | WI-16 | 覆盖层几何 | `rd-note-tooltip`（hover 触发）同 FP-12 |
-| FP-15 | WI-12 | `set-confirm-dialog` | Esc 可关闭、遮罩点击可关闭、焦点陷阱与归还同 FP-05/07 |
+| FP-15 | WI-12 | `set-modal-{reindex,conversations,cache}`（2026-09-24，用户裁定 D10：按 ADR-0014 与原型改为逐操作对话框） | Esc 可关闭、遮罩点击可关闭、焦点陷阱与归还同 FP-05/07 |
 | FP-16 | WI-13 | 书库右栏抽屉（`768–1279px`） | 打开 / 关闭状态下 `aria-expanded` 同步；抽屉打开时焦点移入 |
 | FP-17 | WI-16 | `prefers-reduced-motion` | 开启后面板 `transition-duration` 计算值为 `0s`（a11y 契约第 5 条） |
 
@@ -1642,7 +1735,7 @@ E2E 侧：**不要写 Node Playwright Test 的 `webServer` 语法**，用 pytest
 | FA-05 | WI-18 | §8-3 键盘可达 | `rd-pref-theme-*` / `rd-pref-font-*` | `role="radio"` ＋ 可聚焦（`tabIndex` ≥ -1 且能被 Tab 到）；现状是裸 `div`，完全不可聚焦 |
 | FA-06 | WI-18 | §8-3 | `rd-pref-theme-*` 容器 | `role="radiogroup"`；方向键左右各移动一位并循环；Home / End 跳首尾 |
 | FA-07 | WI-12 | §8-3 | `set-provider-toggle` | `role="switch"` ＋ `aria-checked`；Space 切换、Enter 不误触发第二次 |
-| FA-08 | WI-13 | §8-3 | `lib-book-card` | `role="button"` ＋ Enter 与 Space 都可激活；`aria-label` 含书名 |
+| FA-08 | WI-13 | §8-3 | `lib-book-card` | `role="button"` ＋ Enter 与 Space 都可激活；`aria-label` 含书名。 ⚠️ **偏离（2026-09-25，用户裁定 D14，见 [WI-13 的裁定 D14](#wi-13-4a4-书库页切片)）**：不加 `role="button"`，保留卡内「Read {title}」链接 ＋ Space 激活（冻结的 `baseline_1b` 要这个链接）；`aria-label` 与 Enter / Space 照做 |
 | FA-09 | WI-16 | §8-4 动态区域 | 搜索结果容器 | `aria-live="polite"`；结果更新后该区域文本变化被断言到（不是只断言属性存在） |
 | FA-10 | WI-16 | §8-4 | AI 流式输出容器 | `aria-live="polite"`；流式追加时不重复播报已有内容（断言 `aria-atomic` 为 `false`） |
 | FA-11 | WI-3 | §8-4 | 索引进度 | `aria-live="polite"`；进度变化时文本更新 |
@@ -1666,9 +1759,9 @@ E2E 侧：**不要写 Node Playwright Test 的 `webServer` 语法**，用 pytest
 |---|---|---|---|---|
 | FD-01 | WI-13 | 空库 | `lib-empty` | 可见，且 `lib-book-card` 数量为 0；`lib-filter-empty` 不可见 |
 | FD-02 | WI-13 | 筛选零结果 | `lib-filter-empty` | 可见，且 `lib-empty` 不可见（两者互斥） |
-| FD-03 | WI-13 | 加载失败 | 书库错误态 testid | 可见且含重试入口；点重试重新发请求 |
+| FD-03 | WI-13 | 加载失败 | 书库错误态 testid | 可见且含重试入口；点重试重新发请求 **〔D12 2026-09-25：Deferred → [012 债 #56](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账) / 014 [WI-16b](#wi-16b-书库侧延后验收)（R2；2026-09-25 由 WI-16 移交）〕** |
 | FD-04 | WI-13 | 三态互斥 | 空 / 零结果 / 错误 | 任意时刻三者可见数 ≤1 |
-| FD-05 | WI-13 | 部分失败 | 批量索引 10 本失败 3 本 | 成功 7 本正常显示，3 个 `lib-migrate-failed-item`，**不是整批回滚也不是整批标成功** |
+| FD-05 | WI-13 | 部分失败 | 批量索引 10 本失败 3 本 | 成功 7 本正常显示，3 个 `lib-migrate-failed-item`，**不是整批回滚也不是整批标成功** **〔D12 2026-09-25：Deferred → [012 债 #55](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账) / 014 [WI-16b](#wi-16b-书库侧延后验收)（R2；2026-09-25 由 WI-16 移交）〕** |
 | FD-06 | WI-13 | 超长文本 | 书名 500 字符 | 卡片不撑破容器（卡片 `getBoundingClientRect().width` ≤ 网格列宽），文本截断或换行 |
 | FD-07 | WI-13 | 超长文本 | 集合名 200 字符 | 侧栏不出现横向滚动（`document.body.scrollWidth` ≤ 视口宽） |
 | FD-08 | WI-16 | 空章节 | 只有封面的 spine 0 | 正文区渲染封面，进度不等于 100%（与 FR-07 呼应） |
@@ -1683,7 +1776,7 @@ E2E 侧：**不要写 Node Playwright Test 的 `webServer` 语法**，用 pytest
 | FD-17 | WI-12 | 加载失败 | provider 模型列表拉取失败 | 下拉保持原值 ＋ 显示错误提示；不是清空成空下拉 |
 | FD-18 | WI-12 | 空 | 未配置任何 provider | 设置页显示引导态而不是空白 |
 | FD-19 | WI-3 | 部分失败 | 批量索引部分成功 | 成功项 `lib-status-indexed`、失败项 `lib-status-error`，两者同时存在 |
-| FD-20 | WI-13 | 首屏顺序 | 数据返回前后 | 返回前 `lib-book-card` 数为 0，返回后等于接口条数（**不断言骨架**） |
+| FD-20 | WI-13 | 首屏顺序 | 数据返回前后 | 返回前 `lib-book-card` 数为 0，返回后等于接口条数（**不断言骨架**） **〔D12 2026-09-25：Deferred → [012 债 #56](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账) / 014 [WI-16b](#wi-16b-书库侧延后验收)（R2；2026-09-25 由 WI-16 移交）〕** |
 
 ---
 
@@ -2084,7 +2177,7 @@ TOC 点击与笔记跳转都是**整页导航**，走 `@app.get("/read/{book_id}
 | ET-13 | `commands.ts` DOM 禁令改 ESLint `no-restricted-globals` | WI-14 | MEDIUM | ET-1 |
 | ET-18 | ~~定 `--r3-text-quiet` 合规值 ＋ 补 §3.3 对比度表~~ | WI-10 | — (已闭) | 2026-08-23 裁定：删 `--r3-text-quiet`；`--r3-text-subtle` 提到 `--p-gray-550` `#707070`（亮）/ `#7a8aa2`（暗），`sepia`/`green` 的 `--r3-page-quiet` 提到 `#7a6449`/`#506856`；`--r3-text-disabled` 标记为 WCAG 1.4.3 豁免。已回写 spec §3.2/§3.3/§3.4。WI-10 直接照 spec 建 token 层 |
 | ET-19 | 把规格 §3.5 的 z-index 与动效 token 实现进 WI-10 的 token 层 | WI-10 | MEDIUM | **必须在 WI-10 之前**；WI-16 的三覆盖层几何门槛依赖层级 token。⚠️ 规格 §3.5 已于 2026-08-20 落地（z-index 九档有序枚举 ＋ 动效三档时长与三条缓动 ＋ `prefers-reduced-motion` 单点降级），本条不是「去写规格」，是「把已写好的 §3.5 落成 Tier 2 定义」 |
-| ET-7 | 修 `CLAUDE.md:158/161/166` 过期条目 | WI-9 | LOW | ET-5 |
+| ET-7 | 修 `CLAUDE.md` 过期条目（原 `:158/161/166`；2026-09-24 只剩 `:112` 一处，已随 WI-9 订正） | WI-9 | LOW | ET-5 |
 | ET-20 | 修 `spec:541` 的「唯一一个存储 key」错误证据 | WI-10 | LOW | — |
 
 **关键路径**：ET-1 → {Track D 实现类, ET-3} → ET-3 → 所有模板改动。ET-3 未绿之前，
