@@ -1,0 +1,55 @@
+{
+  "_boot-3nGxrxLR.js": {
+    "file": "assets/boot-3nGxrxLR.js",
+    "name": "boot",
+    "css": [
+      "assets/boot-CNryPNqI.css"
+    ]
+  },
+  "_boot-CNryPNqI.css": {
+    "file": "assets/boot-CNryPNqI.css",
+    "src": "_boot-CNryPNqI.css"
+  },
+  "_scheme-DCeriljz.js": {
+    "file": "assets/scheme-DCeriljz.js",
+    "name": "scheme"
+  },
+  "src/library/index.ts": {
+    "file": "assets/library-BTA2xIZk.js",
+    "name": "library",
+    "src": "src/library/index.ts",
+    "isEntry": true,
+    "imports": [
+      "_boot-3nGxrxLR.js",
+      "_scheme-DCeriljz.js"
+    ],
+    "css": [
+      "assets/library-D2aE6Bca.css"
+    ]
+  },
+  "src/reader/index.ts": {
+    "file": "assets/reader-Cos2qJfE.js",
+    "name": "reader",
+    "src": "src/reader/index.ts",
+    "isEntry": true,
+    "imports": [
+      "_boot-3nGxrxLR.js"
+    ],
+    "css": [
+      "assets/reader-C0gMwvDO.css"
+    ]
+  },
+  "src/settings/index.ts": {
+    "file": "assets/settings-7sxYhDDA.js",
+    "name": "settings",
+    "src": "src/settings/index.ts",
+    "isEntry": true,
+    "imports": [
+      "_boot-3nGxrxLR.js",
+      "_scheme-DCeriljz.js"
+    ],
+    "css": [
+      "assets/settings-C7wbX1-v.css"
+    ]
+  }
+}
