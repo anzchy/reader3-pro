@@ -298,7 +298,8 @@ class BookVectorIndex:
             # error / 半路中断）时也原样透传——那是索引流程自己的状态，不是失效。
             return meta
 
-        # 失效索引：报 "not_indexed"。前端（library.js:290 起、library-search.js:163 起）
+        # 失效索引：报 "not_indexed"。前端（`frontend/src/shared/status-meta.ts` 的归一化与
+        # `frontend/src/library/search.ts` 的 index 徽标）
         # 只在这个分支渲染 Index 按钮，而 "unknown" 分支给不出任何补救动作；验收要的是
         # 「提示重新索引」。"曾经索引过、只是过期了" 由下面的附加字段承担，前端会忽略
         # 未知键，所以这里只改 Python 就够。

@@ -23,6 +23,7 @@ function LibraryScreen(props) {
   const [collections, setCollections] = useState(A.collections);
   const [dialog, setDialog] = useState(null);
   const [announce, setAnnounce] = useState("");
+  const [toast] = useState("");
 
   /* Search panel state */
   const [query, setQuery] = useState("");
@@ -81,11 +82,16 @@ function LibraryScreen(props) {
           mode={mode} onMode={setMode}
           sort={searchSort} onSort={setSearchSort}
           expanded={expanded} onExpand={(id) => setExpanded((current) => ({ ...current, [id]: true }))}
+          staleCount={A.books.filter((b) => b.status === "stale").length}
         />;
 
   return (
     <div className={"library-shell " + (collapsed ? "is-collapsed" : "")} data-testid="lib-shell">
       <LiveRegion page="lib" message={announce} />
+      {/* 2026-09-25 013 WI-13（原型先行，A11.4/A11.4a）：书库 toast 的落点，住在常驻 aria-live 区里。 */}
+      <div className="toast-region" aria-live="polite">
+        {toast && <div className="toast" role="status" data-testid="lib-toast">{toast}</div>}
+      </div>
 
       <div className={"drawer-scrim " + (mobileNav || mobileInsights ? "is-open" : "")} onClick={onCloseMobile} aria-hidden="true"></div>
 
@@ -150,7 +156,15 @@ function LibraryScreen(props) {
           </div>
         )}
 
-        {A.books.length === 0 ? (
+        {/* 2026-09-25 013 WI-13（裁定 D12，原型先行）：加载失败态，与 lib-empty / lib-filter-empty 互斥。
+            生产侧待客户端书目拉取存在后接入（归属 012/014），本 WI 不接进 library.html。 */}
+        {A.loadFailed ? (
+          <div className="empty-panel-inner" role="alert" data-testid="lib-load-failed">
+            <h2 className="empty-title">书库加载失败</h2>
+            <p className="empty-copy">网络或服务出错，书目没有取到。</p>
+            <button className="btn" type="button" data-testid="lib-load-retry">重试</button>
+          </div>
+        ) : A.books.length === 0 ? (
           <div className="empty-panel-inner" data-testid="lib-empty">
             <div className="empty-symbol" aria-hidden="true">📚</div>
             <h2 className="empty-title">Your library is empty</h2>
@@ -338,7 +352,7 @@ function App() {
             }}
           />
         ) : (
-          <SettingsScreen />
+          <SettingsScreen theme={theme} onTheme={setTheme} />
         )}
       </div>
 

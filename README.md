@@ -46,8 +46,8 @@ This project is an enhanced version (thus add `pro` to repo name) of Andrie Karp
 │       ├── ai/                     # AI assistant backend modules
 │       └── web/
 │           ├── server.py           # FastAPI app
-│           ├── templates/          # Jinja templates (library.html, library_classic.html, reader.html)
-│           └── static/             # JS/CSS assets (library.js/css, search.css, library-search.js)
+│           ├── templates/          # Jinja templates (library.html, reader.html, settings.html)
+│           └── static/             # Legacy reader JS/CSS (dedao-theme.css, search.js, ai.js) + Vite output (dist/)
 ├── config/
 │   └── ai_settings.example.json    # Example AI config (copy to ai_settings.json)
 ├── docs/
@@ -157,18 +157,6 @@ READER3_TOKEN=$(openssl rand -hex 16) uv run reader3-server
 The token suits CLI and reverse-proxy setups. The browser UI does not attach it to
 its own `fetch` calls yet, so with a token set the pages load but in-page actions
 fail -- leave it unset for normal desktop use.
-
-### Library UI Mode (modern/classic)
-
-The Library UI supports rollback to the classic page:
-
-```bash
-# Modern (default)
-READER3_LIBRARY_UI=modern uv run reader3-server
-
-# Classic (pre-004)
-READER3_LIBRARY_UI=classic uv run reader3-server
-```
 
 If you already have `*_data/` folders at repo root, move them into `books/`:
 

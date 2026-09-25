@@ -5,7 +5,7 @@ WI-19 收紧了 ``is_indexed()``（meta 缺 ``space`` 键、或 ``model_name`` �
 **原样**返回。于是对**每一个存量索引**（都没有 ``space`` 键）出现了两个相反的答案：
 
 * ``GET /api/index/{book_id}/status`` 回 ``"status": "indexed"``；
-  ``library.js`` 据此渲染绿色 **"Indexed"** 徽标，后面还跟一个 ``N chunks``；
+  书库页（当时的 ``library.js``，013 起为 ``frontend/src/library/index.ts``）据此渲染绿色 **"Indexed"** 徽标，后面还跟一个 ``N chunks``；
 * 同一本书上 ``semantic_search()`` 每一次都抛 ``not indexed. Run indexing first.``。
 
 验收要求这个降级「提示重新索引」，而现在界面告诉用户的恰好相反——用户没有任何理由
@@ -42,7 +42,7 @@ from reader3_app.vector_search import BookVectorIndex
 BOOK_ID = "consistency_data"
 TEST_MODEL = "test-embedder-v1"
 
-#: 前端（library.js:290 起、library-search.js:163 起）只认得这几个串，其余一律落到
+#: 前端（``frontend/src/shared/status-meta.ts``、``frontend/src/library/search.ts``）只认得这几个串，其余一律落到
 #: "unknown"。失效索引必须落在一个**给得出补救动作**的分支上。
 FRONTEND_KNOWN_STATUSES = {"indexed", "not_indexed", "indexing", "error"}
 
@@ -95,7 +95,7 @@ def test_s1_存量索引的状态串与is_indexed一致(books_dir: Path) -> None
     """S1（承重）— 存量 meta（没有 ``space`` 键）不许再报 ``"indexed"``。
 
     为什么取 ``not_indexed`` 而不是新造一个串落到前端的 ``unknown`` 分支：
-    ``library-search.js:165`` 只在 ``not_indexed`` 时渲染 **Index 按钮**，
+    书库搜索（``frontend/src/library/search.ts``）只在 ``not_indexed`` 时渲染 **Index 按钮**，
     ``unknown`` 分支渲染的 "Index: unknown" 没有任何补救动作。验收要的是
     「提示重新索引」，只有前者给得出这个动作。「曾经索引过、只是过期了」这条信息
     由下面的附加字段承担，不靠状态串。L2 / S2
@@ -122,7 +122,7 @@ def test_s2_换了模型之后状态串也跟着降级(books_dir: Path, monkeypa
 
 
 def test_s5_失效索引不再报一个会被前端显示的chunk数(books_dir: Path) -> None:
-    """S5 — ``library.js`` 拿 ``chunk_count`` 渲染 "N chunks"。
+    """S5 — 书库页（``frontend/src/library/index.ts``）拿 ``chunk_count`` 渲染 "N chunks"。
 
     失效索引报 0；原来的数量挪进诊断字段，信息不丢但不再被当成有效数据。L2 / S2
     """
