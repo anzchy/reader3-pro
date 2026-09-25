@@ -1,0 +1,31 @@
+{
+  "name": "reader3-frontend",
+  "private": true,
+  "type": "module",
+  "description": "Reader3 Pro TS/Vite frontend (013 WI-9). Sources in frontend/src, build output committed to src/reader3_app/web/static/dist.",
+  "engines": {
+    "node": "^22.22.2 || ^24.15.0"
+  },
+  "packageManager": "npm@10.9.8",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build": "tsc --noEmit -p tsconfig.json && vite build --config frontend/vite.config.ts",
+    "test": "vitest run --config frontend/vitest.config.ts",
+    "lint:deps": "depcruise --config .dependency-cruiser.cjs frontend/src",
+    "lint:eslint": "eslint --max-warnings 0 frontend/src",
+    "lint:contracts": "python3 scripts/lint_contracts.py"
+  },
+  "devDependencies": {
+    "dependency-cruiser": "18.4.0",
+    "eslint": "10.11.0",
+    "fast-check": "4.10.2",
+    "jsdom": "30.1.1",
+    "postcss-html": "2.0.0",
+    "stylelint": "17.15.0",
+    "stylelint-declaration-strict-value": "1.12.1",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.70.1",
+    "vite": "8.3.0",
+    "vitest": "5.0.1"
+  }
+}

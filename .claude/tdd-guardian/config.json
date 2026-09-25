@@ -43,6 +43,18 @@
       "coverage": "none",
       "probeCommand": "uv run pytest tests/integration --collect-only -q",
       "timeoutMs": 900000
+    },
+    {
+      "name": "fe-unit",
+      "description": "Vitest + jsdom over frontend/tests; added 2026-09-24 by 013 (WI-9) per user decision D4",
+      "command": "npm test",
+      "gateOn": [
+        "taskCompleted",
+        "commit"
+      ],
+      "coverage": "none",
+      "probeCommand": "npx vitest list",
+      "timeoutMs": 300000
     }
   ],
   "coverageThresholds": {

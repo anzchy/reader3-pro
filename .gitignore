@@ -3,6 +3,8 @@ __pycache__/
 *.py[oc]
 build/
 dist/
+# 013 WI-9: the Vite build output IS committed (plan §7.5; A9.2 compares it to a rebuild).
+!src/reader3_app/web/static/dist/
 wheels/
 *.egg-info
 
@@ -62,3 +64,6 @@ error.log
 .cc-suite/
 .context/
 .prompts/
+
+# Node workspace (013 WI-9): package-lock.json is committed, the install is not
+node_modules/
