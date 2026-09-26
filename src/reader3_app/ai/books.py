@@ -327,6 +327,19 @@ class BookUuidResolver:
             cached = self._uuid_to_folder.get(normalized)
         if not cached:
             raise KeyError(f"Unknown book_uuid: {normalized}")
+        # A thread paused between ensure_book_uuid and _register can land a stale
+        # entry after the scan above, so the post-scan hit is checked like any other.
+        try:
+            held = self._uuid_on_disk(cached)
+        except (OSError, ValueError):
+            held = None
+        if held != normalized:
+            # Reverse entry only, compare-and-delete: keeping the forward one means a
+            # deleted folder degrades by raising, not by the miss path's makedirs.
+            with self._lock:
+                if self._uuid_to_folder.get(normalized) == cached:
+                    del self._uuid_to_folder[normalized]
+            raise KeyError(f"Unknown book_uuid: {normalized}")
         return cached
 
     def identity_for_folder(self, book_folder: str) -> BookIdentity:

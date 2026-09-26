@@ -562,3 +562,216 @@ class ResolverVsDisk(RuleBasedStateMachine):
 
 ResolverVsDisk.TestCase.settings = settings(max_examples=40, stateful_step_count=20, deadline=None)
 test_c11_resolver_agrees_with_disk_oracle = ResolverVsDisk.TestCase
+
+
+# --------------------------------------------------------------------------- #
+# folder_for_book_uuid: the post-scan candidate is validated too
+# --------------------------------------------------------------------------- #
+#
+# A thread paused inside ``_load_folder`` (between ``ensure_book_uuid`` and
+# ``_register``) can land a registration after another thread's ``scan()`` but
+# before its post-scan lookup. That registration was read from a file that has
+# since changed, and the post-scan lookup used to return it unchecked.
+#
+# c14, c16 and c17 hook the private ``scan`` / ``_register`` / ``_uuid_on_disk``
+# on the instance to place that late registration deterministically. This is the
+# accepted exception to "don't mock your own modules": the race window cannot be
+# hit reliably any other way. c15 is the real-thread pair.
+
+
+def _one_shot_scan(r: BookUuidResolver, after: Callable[[], None]) -> None:
+    """Replace ``r.scan`` once: run the real scan, then ``after``, then restore."""
+
+    def hooked() -> None:
+        del r.scan  # type: ignore[method-assign]
+        BookUuidResolver.scan(r)
+        after()
+
+    r.scan = hooked  # type: ignore[method-assign]
+
+
+def _late_register(r: BookUuidResolver, folder: str, u: str) -> Callable[[], None]:
+    def go() -> None:
+        with r._lock:
+            r._register(folder, u)
+
+    return go
+
+
+@pytest.mark.parametrize("disk", ["rewritten"] + sorted(CORRUPTIONS))
+@pytest.mark.parametrize("start", ["warm", "cold"])
+def test_c14_late_registration_is_not_returned(books: Path, start: str, disk: str) -> None:
+    """Private hook on ``scan`` (accepted exception, see block comment): after
+    the real scan, a stale ``X -> u1`` lands as a paused thread would land it."""
+    u1, u2 = _u(), _u()
+    folder = books / X
+    if start == "warm":
+        r = _warm(books, u1)
+    else:
+        folder.mkdir()
+        (folder / "book.pkl").write_bytes(b"old-book-bytes")
+        _write_meta(folder, {"book_uuid": u1})
+        r = BookUuidResolver(str(books))
+    meta = _write_meta(folder, {"book_uuid": u2} if disk == "rewritten" else CORRUPTIONS[disk])
+    st0 = _st(meta)
+    listing0 = sorted(os.listdir(folder))
+
+    _one_shot_scan(r, _late_register(r, X, u1))
+    with pytest.raises(KeyError):
+        r.folder_for_book_uuid(u1)
+    assert u1 not in r._uuid_to_folder
+    assert "scan" not in vars(r)
+
+    if disk == "rewritten":
+        assert r.folder_for_book_uuid(u2) == X
+        assert r.book_uuid_for_folder(X) == u2
+    else:
+        with pytest.raises(KeyError):
+            r.folder_for_book_uuid(u1)
+        with pytest.raises(ValueError):
+            r.book_uuid_for_folder(X)
+
+    assert _st(meta) == st0
+    assert sorted(os.listdir(folder)) == listing0
+    assert _scratch(folder) == []
+
+
+def test_c15_real_threads_late_registration(books: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Real threads, public calls only. The wrappers add blocking and nothing else."""
+    import reader3_app.ai.books as books_mod
+
+    u1 = _u()
+    folder = books / X
+    folder.mkdir()
+    (folder / "book.pkl").write_bytes(b"old-book-bytes")
+    meta = _write_meta(folder, {"book_uuid": u1})
+    r = BookUuidResolver(str(books))
+
+    a_read = threading.Event()
+    release_a = threading.Event()
+    real_ensure = books_mod.ensure_book_uuid
+
+    def paused_ensure(books_dir: str, book_folder: str) -> str:
+        got = real_ensure(books_dir, book_folder)
+        if threading.current_thread().name == "A":
+            a_read.set()
+            release_a.wait(timeout=5)
+        return got
+
+    monkeypatch.setattr(books_mod, "ensure_book_uuid", paused_ensure)
+
+    a = _Bounded(lambda: r.book_uuid_for_folder(X), name="A").start()
+    assert a_read.wait(timeout=5), "thread A never reached ensure_book_uuid"
+
+    _write_meta(folder, "{")
+    st_c = _st(meta)
+
+    def release_and_join_a() -> None:
+        release_a.set()
+        a.settle()
+
+    _one_shot_scan(r, release_and_join_a)
+    b = _Bounded(lambda: r.folder_for_book_uuid(u1), name="B").start().settle()
+
+    assert isinstance(b.exc, KeyError), f"B got result={b.result!r} exc={b.exc!r}"
+    assert a.exc is None and a.result == u1
+
+    with pytest.raises(KeyError):
+        run_bounded(lambda: r.folder_for_book_uuid(u1))
+    with pytest.raises(ValueError):
+        r.book_uuid_for_folder(X)
+    assert _st(meta) == st_c
+    assert _scratch(folder) == []
+
+
+def test_c16_fresh_entry_survives_invalidation(books: Path) -> None:
+    """Private hooks on ``scan`` and ``_uuid_on_disk`` (accepted exception, see
+    block comment). Between the validation read and the delete, another writer
+    re-registers ``u1`` to a folder that really holds it."""
+    u1, u2 = _u(), _u()
+    y = "y_book"  # not *_data: scan() can never rediscover it
+    meta_x = _write_meta(books / X, {"book_uuid": u2})
+    meta_y = _write_meta(books / y, {"book_uuid": u1})
+    st_x, st_y = _st(meta_x), _st(meta_y)
+    r = BookUuidResolver(str(books))
+
+    _one_shot_scan(r, _late_register(r, X, u1))
+
+    def spy(book_folder: str) -> Optional[str]:
+        if book_folder == X:
+            del r._uuid_on_disk  # type: ignore[method-assign]
+            with r._lock:
+                r._register(y, u1)
+        return BookUuidResolver._uuid_on_disk(r, book_folder)
+
+    r._uuid_on_disk = spy  # type: ignore[method-assign]
+
+    with pytest.raises(KeyError):
+        r.folder_for_book_uuid(u1)
+    assert "_uuid_on_disk" not in vars(r), "the post-scan candidate was never validated"
+    assert r._uuid_to_folder[u1] == y
+
+    assert r.folder_for_book_uuid(u1) == y
+    assert _st(meta_x) == st_x
+    assert _st(meta_y) == st_y
+    assert _scratch(books / X) == []
+    assert _scratch(books / y) == []
+
+
+def test_c17_folder_gone_before_validation(books: Path) -> None:
+    """Private hook on ``scan`` (accepted exception, see block comment): the
+    folder is deleted, then the stale registration lands, before validation."""
+    u1, u2 = _u(), _u()
+    r = _warm(books, u1)
+    _write_meta(books / X, {"book_uuid": u2})
+    listing: List[List[str]] = []
+
+    def gone_then_late() -> None:
+        shutil.rmtree(books / X)
+        listing.append(sorted(os.listdir(books)))
+        with r._lock:
+            r._register(X, u1)
+
+    _one_shot_scan(r, gone_then_late)
+
+    def unchanged() -> None:
+        assert not (books / X).exists()
+        assert sorted(os.listdir(books)) == listing[0]
+
+    with pytest.raises(KeyError) as ei:
+        r.folder_for_book_uuid(u1)
+    assert not isinstance(ei.value, OSError)
+    assert u1 not in r._uuid_to_folder
+    unchanged()
+
+    with pytest.raises(KeyError):
+        r.folder_for_book_uuid(u1)
+    unchanged()
+    with pytest.raises(KeyError):
+        r.folder_for_book_uuid(u2)
+    unchanged()
+
+    with pytest.raises(FileNotFoundError):
+        r.book_uuid_for_folder(X)
+    unchanged()
+
+
+class ResolverVsDiskLate(ResolverVsDisk):
+    """``ResolverVsDisk`` plus late stale registrations before a reverse lookup."""
+
+    @rule(name=st.sampled_from(NAMES), data=st.data())
+    def reverse_after_late_registration(self, name: str, data: st.DataObject) -> None:
+        # u is held by no folder on disk, so "no holder" is the oracle's answer.
+        pool = [s for s in self.seen if s not in self._held()] + [_u()]
+        u = data.draw(st.sampled_from(pool), label="late")
+        _one_shot_scan(self.r, _late_register(self.r, name, u))
+        try:
+            got: Optional[str] = run_bounded(lambda: self.r.folder_for_book_uuid(u))
+        except KeyError:
+            got = None
+        self._refresh_pending()
+        assert got is None, f"returned {got!r} for {u}, which no folder holds on disk"
+
+
+ResolverVsDiskLate.TestCase.settings = settings(max_examples=40, stateful_step_count=20, deadline=None)
+test_c18_resolver_agrees_with_disk_under_late_registration = ResolverVsDiskLate.TestCase
