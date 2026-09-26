@@ -294,6 +294,54 @@ def _is_own_staging_name(leftover: str) -> bool:
     return suffix.isdigit()
 
 
+def _parked_asides(leftover: str) -> List[str]:
+    """The superseded artifacts a dead run parked in ``leftover`` and never published over.
+
+    Only a run killed inside the commit window leaves this shape: its marker
+    ``book.pkl`` is still in staging (so the new version never landed) and at
+    least one ``*.superseded`` entry is beside it (so the old version's files
+    were already moved out of the book directory). Those asides are then the
+    only copies of the published artifacts. Top-level entries only — an image
+    whose EPUB name happens to end in ``.superseded`` must not count.
+    """
+    try:
+        names = os.listdir(leftover)
+    except OSError:
+        return []
+    if 'book.pkl' not in names:
+        return []
+    return sorted(n for n in names if n.endswith('.superseded'))
+
+
+def _unlanded_commit_message(output_dir: str, parked: List[Tuple[str, List[str]]]) -> str:
+    """Tell the operator exactly how to put the published version back by hand.
+
+    Recovery is not automated because file names alone cannot say which side
+    of the rollback the dead run was on (a half-finished rollback and a
+    forward commit into a book without ``images/`` leave identical names), and
+    guessing wrong destroys the old images. Each move is one ``src -> dst``
+    line so the instructions can be followed — and checked — mechanically.
+    """
+    book_dir = os.path.abspath(output_dir)
+    lines = [
+        f"refusing to process {book_dir}: an earlier run was killed while swapping in "
+        f"a new version, so {book_dir} may be a mixed old/new version. The previous "
+        "version's files are parked in the staging directory below and are their "
+        "only copy. Put them back by hand, in this order:",
+    ]
+    for leftover, asides in parked:
+        staging = os.path.abspath(leftover)
+        lines.append(f"  from {staging}:")
+        for aside in asides:
+            live = os.path.join(book_dir, aside[:-len('.superseded')])
+            if os.path.lexists(live):
+                lines.append(f"    remove {live}")
+            lines.append(f"    {os.path.join(staging, aside)} -> {live}")
+        lines.append(f"    then delete {staging}")
+    lines.append(f"Processing {book_dir} is refused until that is done.")
+    return "\n".join(lines)
+
+
 def _clear_staging_dirs(output_dir: str) -> None:
     """Remove staging directories left behind by a previous crashed run.
 
@@ -301,11 +349,19 @@ def _clear_staging_dirs(output_dir: str) -> None:
     concurrent reprocess of this same book. Deleting it would pull the floor out
     from under that run, so this refuses instead: two processes rebuilding one
     book at once is a mistake worth reporting, not racing.
+
+    A dead run's directory is usually debris, except when the run died inside
+    the commit window: then it holds the only copy of the published artifacts
+    (see :func:`_parked_asides`), and this refuses as well, touching nothing.
+    Every leftover is classified before any is deleted, so one directory's
+    refusal can never arrive after another's deletion.
     """
     normalized = os.path.normpath(output_dir)
+    deletable: List[str] = []
+    parked: List[Tuple[str, List[str]]] = []
     # glob.escape: a book folder is named after the EPUB file, so it can legally
     # contain '*', '?' or '[' — none of which may be read as a pattern here.
-    for leftover in glob.glob(f"{glob.escape(normalized)}.staging-*"):
+    for leftover in sorted(glob.glob(f"{glob.escape(normalized)}.staging-*")):
         if not _is_own_staging_name(leftover):
             # Someone else's directory that merely matches the pattern. Not ours
             # to reason about, and certainly not ours to delete.
@@ -315,6 +371,14 @@ def _clear_staging_dirs(output_dir: str) -> None:
                 f"another process is already processing {normalized}; refusing to "
                 f"delete the staging directory it still holds a lock on: {leftover}"
             )
+        asides = _parked_asides(leftover)
+        if asides:
+            parked.append((leftover, asides))
+        else:
+            deletable.append(leftover)
+    if parked:
+        raise RuntimeError(_unlanded_commit_message(normalized, parked))
+    for leftover in deletable:
         shutil.rmtree(leftover, ignore_errors=True)
 
 
