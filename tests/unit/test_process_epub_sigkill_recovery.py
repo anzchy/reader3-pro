@@ -35,11 +35,15 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import uuid
+from collections import Counter
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 import pytest
+from hypothesis import HealthCheck, given, settings
+from hypothesis import strategies as st
 
 from bookdir import USER_PATHS, make_seeded_book_dir, staging_leftovers, user_subset
 from epub_builder import IMAGES_V1, IMAGES_V2, MARKER_V1, MARKER_V2, sha256_of, snapshot_tree
@@ -1237,3 +1241,1035 @@ def test_w1_c18_every_subprocess_is_bounded():
             offenders[name] = bad
     assert offenders == {}
     assert total_runs >= 1
+
+
+# =========================================================================== #
+# Follow-up hardening (plan-20260926-212356 WI-1, matrix tests-20260926-212356)
+#
+# C19-C23: fail closed on staging inspection, scope and disambiguate the
+# recovery message, release the lock when images/ cannot be created.
+# C24-C27: keep this run's own staging when an in-process rollback left the
+# previous version parked in it (Amendment 1, WI-1(f)).
+#
+# Test and param ids avoid every word the message or stderr is checked for;
+# free-text checks go through scrub()/words() because every path carries the
+# pytest tmp dir, which is named after the test.
+# =========================================================================== #
+
+
+def scrub(msg: str, tmp_path: Path) -> str:
+    return msg.replace(str(tmp_path), "<tmp>")
+
+
+def path_tokens(line: str) -> List[Path]:
+    return [Path(t.rstrip(":,.;)'\"")) for t in re.findall(r"/\S+", line)]
+
+
+def words(line: str) -> str:
+    return re.sub(r"/\S+", " ", line)
+
+
+def says_remove_exact(msg: str, p: Path | str) -> bool:
+    target = Path(p)
+    return any(
+        REMOVE_WORD.search(words(line)) and target in path_tokens(line) for line in msg.splitlines()
+    )
+
+
+def under(p: Path | str, out: Path) -> bool:
+    return Path(p) == out or out in Path(p).parents
+
+
+def has_note(msg: str, p: Path | str, rx: str) -> bool:
+    target = Path(p)
+    return any(
+        target in path_tokens(line) and re.search(rx, words(line)) for line in msg.splitlines()
+    )
+
+
+def pinned_uninspectable(msg: str, p: Path | str) -> bool:
+    target = Path(p)
+    for line in msg.splitlines():
+        w = words(line)
+        if (
+            target in path_tokens(line)
+            and re.search(r"(?i)inspect\b.*\bby hand", w)
+            and re.search(r"(?i)only copy", w)
+            and not REMOVE_WORD.search(w)
+        ):
+            return True
+    return False
+
+
+def removal_lines(msg: str) -> List[str]:
+    return [line for line in msg.splitlines() if REMOVE_WORD.search(words(line))]
+
+
+def stderr_lines_naming(err: str, p: Path | str) -> List[str]:
+    target = Path(p)
+    return [line for line in err.splitlines() if target in path_tokens(line)]
+
+
+def errno_text_in(text: str, err: int) -> bool:
+    return os.strerror(err) in text or errno.errorcode[err] in text
+
+
+def staging_of(out: Path) -> Path:
+    return Path(f"{os.path.normpath(out)}.staging-{os.getpid()}")
+
+
+class Proxy:
+    """Stands in for a module as seen by ``reader3``: overrides win, the rest delegates.
+
+    Installed with ``mp.setattr(reader3, "os", ...)`` / ``(reader3, "shutil", ...)``
+    so the fault reaches only reader3's own calls, never snapshot_tree, listing()
+    or expect_refusal, which use the same functions.
+    """
+
+    def __init__(self, real: Any, **overrides: Callable[..., Any]):
+        self._real = real
+        self._overrides = overrides
+
+    def __getattr__(self, name: str) -> Any:
+        if name in self._overrides:
+            return self._overrides[name]
+        return getattr(self._real, name)
+
+
+OsProxy = Proxy
+ShutilProxy = Proxy
+
+
+def listing_overrides(fault: Callable[[str], None]) -> Dict[str, Callable[..., Any]]:
+    """listdir and scandir together, so switching between them cannot disarm a fault."""
+
+    def listdir(path: Any = ".") -> List[str]:
+        fault(os.path.normpath(os.fspath(path)))
+        return os.listdir(path)
+
+    def scandir(path: Any = ".") -> Any:
+        fault(os.path.normpath(os.fspath(path)))
+        return os.scandir(path)
+
+    return {"listdir": listdir, "scandir": scandir}
+
+
+ERR_CLASS = {errno.EACCES: PermissionError, errno.ENOTDIR: NotADirectoryError}
+
+
+def raise_on_listing(target: Path, err: int) -> Callable[[str], None]:
+    def fault(p: str) -> None:
+        if p == str(target):
+            raise ERR_CLASS.get(err, OSError)(err, os.strerror(err), p)
+
+    return fault
+
+
+def file_hashes(roots: Iterable[Path]) -> Counter:
+    hashes: Counter = Counter()
+    for root in roots:
+        root = Path(root)
+        if root.is_file():
+            hashes[sha256_of(root)] += 1
+            continue
+        for dirpath, _, filenames in os.walk(root):
+            for name in filenames:
+                hashes[sha256_of(Path(dirpath) / name)] += 1
+    return hashes
+
+
+def follow_exact(msg: str, dirs: Sequence[Path]) -> None:
+    """An operator that acts on exact path tokens only: moves, then the named deletions."""
+    for src, dst in parse_moves(msg):
+        try:
+            if says_remove_exact(msg, dst):
+                _rm_strict(Path(dst))
+            os.rename(src, dst)
+        except OSError as exc:
+            pytest.fail(f"following the message failed at {src} -> {dst}: errno {exc.errno}")
+    for d in dirs:
+        if says_remove_exact(msg, d):
+            try:
+                shutil.rmtree(d)
+            except OSError as exc:
+                pytest.fail(f"a staging dir named for deletion could not be cleared: {exc.errno}")
+
+
+# --------------------------------------------------------------------------- #
+# W1-C19 family: fail closed on inspection (WI-1a)
+# --------------------------------------------------------------------------- #
+
+
+def test_w1_c19_unreadable_leftover_real_mode(tmp_path, books_dir, epub_v1, epub_v2, v2_src):
+    if os.geteuid() == 0:
+        pytest.skip("root reads a mode-000 directory")
+    out = make_seeded_book_dir(books_dir, epub_v1)
+    plain = forge_dead_run(out, v2_src, "rb_done")
+    hidden = forge_dead_run(out, v2_src, "after_D", suffix=a_reaped_pid())
+    before = {d: snapshot_tree(d) for d in (out, plain, hidden)}
+    listing0 = sorted(os.listdir(books_dir))
+
+    os.chmod(hidden, 0)
+    try:
+        with pytest.raises(RuntimeError) as excinfo:
+            reader3.process_epub(str(epub_v2), str(out))
+    finally:
+        os.chmod(hidden, 0o700)
+    msg = str(excinfo.value)
+
+    assert hidden in [t for line in msg.splitlines() for t in path_tokens(line)], msg
+    assert errno_text_in(scrub(msg, tmp_path), errno.EACCES), msg
+    assert LOCK_MESSAGE not in msg, msg
+    assert pinned_uninspectable(msg, hidden), msg
+    assert not says_remove_exact(msg, hidden), msg
+
+    for d, snap in before.items():
+        assert snapshot_tree(d) == snap, f"{d} changed on a stopped call"
+    assert sorted(os.listdir(books_dir)) == listing0
+
+    follow_message(msg, hidden)
+    assert hidden.exists()
+    assert snapshot_tree(hidden) == before[hidden]
+
+
+@pytest.mark.parametrize("err", [errno.EIO, errno.EACCES, errno.ENOTDIR], ids=["e1", "e2", "e3"])
+def test_w1_c19b_listing_errno(err, tmp_path, books_dir, epub_v1, epub_v2, v2_src):
+    out = make_seeded_book_dir(books_dir, epub_v1)
+    victim = forge_dead_run(out, v2_src, "built", suffix=a_reaped_pid())
+    plain = forge_dead_run(out, v2_src, "rb_done")
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(reader3, "os", OsProxy(os, **listing_overrides(raise_on_listing(victim, err))))
+        msg = str(expect_refusal(out, epub_v2, [victim, plain], ctx=f"C19b {err}"))
+
+    assert victim in [t for line in msg.splitlines() for t in path_tokens(line)], msg
+    assert errno_text_in(scrub(msg, tmp_path), err), msg
+    assert pinned_uninspectable(msg, victim), msg
+    assert not says_remove_exact(msg, victim), msg
+
+
+@pytest.mark.parametrize("variant", ["gone_only", "gone_then_parked"])
+def test_w1_c19c_vanished_leftover(variant, books_dir, epub_v1, epub_v2, v2_src):
+    out = make_seeded_book_dir(books_dir, epub_v1)
+    user0 = user_subset(snapshot_tree(out))
+    gone = forge_dead_run(out, v2_src, "built", suffix=900001)
+    if variant == "gone_only":
+        other = forge_dead_run(out, v2_src, "rb_done", suffix=900002)
+    else:
+        other = forge_dead_run(out, v2_src, "after_D", suffix=900002)
+    assert sorted([gone.name, other.name])[0] == gone.name
+    listing0 = sorted(os.listdir(books_dir))
+    out0, other0 = snapshot_tree(out), snapshot_tree(other)
+
+    def vanish(p: str) -> None:
+        if p == str(gone):
+            shutil.rmtree(gone)
+            os.listdir(gone)  # the real FileNotFoundError
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(reader3, "os", OsProxy(os, **listing_overrides(vanish)))
+        if variant == "gone_only":
+            reader3.process_epub(str(epub_v2), str(out))
+        else:
+            with pytest.raises(RuntimeError) as excinfo:
+                reader3.process_epub(str(epub_v2), str(out))
+
+    if variant == "gone_only":
+        assert assert_consistent(out, epub_v1, epub_v2) == MARKER_V2
+        assert staging_leftovers(out) == []
+        assert user_subset(snapshot_tree(out)) == user0
+    else:
+        msg = str(excinfo.value)
+        assert {src for src, _ in parse_moves(msg)} == {
+            str(other / "book.epub.superseded"),
+            str(other / "images.superseded"),
+        }, msg
+        assert LOCK_MESSAGE not in msg, msg
+        assert snapshot_tree(out) == out0
+        assert snapshot_tree(other) == other0
+        assert sorted(os.listdir(books_dir)) == sorted(set(listing0) - {gone.name})
+
+
+C19D_ROLES = list(itertools.permutations(["unreadable", "parked", "plain"]))
+
+
+@pytest.mark.parametrize("order", C19D_ROLES, ids=[f"perm{i}" for i in range(len(C19D_ROLES))])
+def test_w1_c19d_all_classified_first(order, tmp_path, books_dir, epub_v1, epub_v2, v2_src):
+    out = make_seeded_book_dir(books_dir, epub_v1)
+    suffix = {role: 900001 + i for i, role in enumerate(order)}
+    plain = forge_dead_run(out, v2_src, "built", suffix=suffix["plain"])
+    unreadable = forge_dead_run(out, v2_src, "built", suffix=suffix["unreadable"])
+    parked = forge_dead_run(out, v2_src, "after_D", suffix=suffix["parked"])
+
+    with pytest.MonkeyPatch.context() as mp:
+        fault = raise_on_listing(unreadable, errno.EIO)
+        mp.setattr(reader3, "os", OsProxy(os, **listing_overrides(fault)))
+        msg = str(expect_refusal(out, epub_v2, [unreadable, parked, plain], ctx=str(order)))
+
+    assert unreadable in [t for line in msg.splitlines() for t in path_tokens(line)], msg
+    assert errno_text_in(scrub(msg, tmp_path), errno.EIO), msg
+    assert pinned_uninspectable(msg, unreadable), msg
+    assert not says_remove_exact(msg, unreadable), msg
+    assert {src for src, _ in parse_moves(msg)} == {
+        str(parked / "book.epub.superseded"),
+        str(parked / "images.superseded"),
+    }, msg
+    assert LOCK_MESSAGE not in msg, msg
+
+    u0 = snapshot_tree(unreadable)
+    follow_message(msg, unreadable)
+    assert unreadable.exists()
+    assert snapshot_tree(unreadable) == u0
+
+
+@pytest.mark.parametrize("pair", [(900001, 900002), (900002, 900001)], ids=["lock_low", "lock_high"])
+def test_w1_c19e_held_lock_first(pair, tmp_path, books_dir, epub_v1, epub_v2, v2_src):
+    out = make_seeded_book_dir(books_dir, epub_v1)
+    s1, s2 = pair
+    held = forge_dead_run(out, v2_src, "build_mid", suffix=s1)
+    unreadable = forge_dead_run(out, v2_src, "built", suffix=s2)
+    fd = _hold(held / LOCK)
+    try:
+        with pytest.MonkeyPatch.context() as mp:
+            fault = raise_on_listing(unreadable, errno.EIO)
+            mp.setattr(reader3, "os", OsProxy(os, **listing_overrides(fault)))
+            msg = str(expect_refusal(out, epub_v2, [held, unreadable], ctx=str(pair)))
+    finally:
+        _release(fd)
+    assert LOCK_MESSAGE in msg, msg
+    assert "mixed" not in scrub(msg, tmp_path).lower(), msg
+
+
+@pytest.mark.parametrize("variant", ["own_digits", "not_own"])
+def test_w1_c19f_file_shaped_leftover(variant, tmp_path, books_dir, epub_v1, epub_v2):
+    out = make_seeded_book_dir(books_dir, epub_v1)
+    if variant == "own_digits":
+        f = Path(f"{out}.staging-{a_reaped_pid()}")
+        f.write_bytes(b"not a dir")
+        sha0 = sha256_of(f)
+        msg = str(expect_refusal(out, epub_v2, [f], ctx=variant))
+        assert f in [t for line in msg.splitlines() for t in path_tokens(line)], msg
+        assert errno_text_in(scrub(msg, tmp_path), errno.ENOTDIR), msg
+        assert pinned_uninspectable(msg, f), msg
+        assert not says_remove_exact(msg, f), msg
+        assert sha256_of(f) == sha0
+    else:
+        decoy = books_dir / "sample_data.staging-backup"
+        decoy.write_bytes(b"not a dir")
+        sha0 = sha256_of(decoy)
+        clean_next_run_keeping(out, epub_v1, epub_v2, [str(decoy)])
+        assert sha256_of(decoy) == sha0
+
+
+# --------------------------------------------------------------------------- #
+# W1-C20, C20b, C21: scope and disambiguate the steps (WI-1b, WI-1c)
+# --------------------------------------------------------------------------- #
+
+ODD = {
+    "odd1": "notes.json.superseded",
+    "odd2": "ai_meta.json.superseded",
+    "odd3": "chroma_db.superseded",
+    "odd4": ".superseded",
+}
+
+
+def _add_odd(dead: Path, name: str) -> Path:
+    p = dead / name
+    if name == "chroma_db.superseded":
+        p.mkdir()
+        (p / "x.bin").write_bytes(b"odd-index")
+    else:
+        p.write_bytes(f"odd:{name}".encode())
+    return p
+
+
+def _odd_state(p: Path) -> Any:
+    if p.is_dir():
+        return snapshot_tree(p)
+    st_ = os.stat(p)
+    return (sha256_of(p), st_.st_ino, st_.st_mtime_ns)
+
+
+@pytest.mark.parametrize("odd", list(ODD))
+def test_w1_c20_odd_aside_listed_only(odd, books_dir, epub_v1, epub_v2, v2_src):
+    out = make_seeded_book_dir(books_dir, epub_v1)
+    full_before = snapshot_tree(out)
+    dead = forge_dead_run(out, v2_src, "after_D")
+    odd_path = _add_odd(dead, ODD[odd])
+    odd_before = _odd_state(odd_path)
+
+    msg = str(expect_refusal(out, epub_v2, [dead], ctx=odd))
+
+    assert {src for src, _ in parse_moves(msg)} == {
+        str(dead / "book.epub.superseded"),
+        str(dead / "images.superseded"),
+    }, msg
+    for line in removal_lines(msg):
+        for t in path_tokens(line):
+            if under(t, out):
+                assert t in {out / "book.epub", out / "images"}, (line, msg)
+            assert t != out, (line, msg)
+    assert odd_path in [t for line in msg.splitlines() for t in path_tokens(line)], msg
+    assert not says_remove_exact(msg, dead), msg
+    assert has_note(msg, dead, r"(?i)keep"), msg
+
+    follow_message(msg, dead)
+    assert snapshot_tree(out) == full_before
+    assert _odd_state(odd_path) == odd_before
+    assert dead.exists()
+
+    msg2 = str(expect_refusal(out, epub_v2, [dead], ctx=f"{odd} again"))
+    assert parse_moves(msg2) == [], msg2
+    assert odd_path in [t for line in msg2.splitlines() for t in path_tokens(line)], msg2
+
+
+def test_w1_c20b_odd_aside_alone(books_dir, epub_v1, epub_v2, v2_src):
+    out = make_seeded_book_dir(books_dir, epub_v1)
+    dead = forge_dead_run(out, v2_src, "built")
+    odd_path = _add_odd(dead, "notes.json.superseded")
+
+    e1 = expect_refusal(out, epub_v2, [dead], ctx="C20b")
+    msg = str(e1)
+    assert parse_moves(msg) == [], msg
+    for line in removal_lines(msg):
+        assert not [t for t in path_tokens(line) if under(t, out)], (line, msg)
+    assert odd_path in [t for line in msg.splitlines() for t in path_tokens(line)], msg
+    assert not says_remove_exact(msg, dead), msg
+    assert has_note(msg, dead, r"(?i)keep"), msg
+
+    e2 = expect_refusal(out, epub_v2, [dead], ctx="C20b again")
+    assert str(e2) == msg
+
+
+def _c21_scenario(books_dir: Path, epub_v1: Path, v2_src: Path, variant: str):
+    out = make_seeded_book_dir(books_dir, epub_v1)
+    d1 = forge_dead_run(out, v2_src, "after_D")
+    drop = ["book.epub.superseded"] if variant == "images_only" else []
+    d2 = forge_dead_run(out, v2_src, "after_D", suffix=a_reaped_pid(), drop=drop)
+    return out, d1, d2
+
+
+@pytest.mark.parametrize("variant", ["both", "images_only"])
+def test_w1_c21_two_dead_runs_same_artifact(
+    variant, tmp_path, books_dir, epub_v1, epub_v2, v2_src, roles
+):
+    out, d1, d2 = _c21_scenario(books_dir, epub_v1, v2_src, variant)
+    msg = str(expect_refusal(out, epub_v2, [d1, d2], ctx=variant))
+    moves = parse_moves(msg)
+
+    assert not [m for m in moves if m[1] == str(out / "images")], msg
+    assert not says_remove_exact(msg, out / "images"), msg
+    if variant == "both":
+        assert not says_remove_exact(msg, out / "book.epub"), msg
+        assert moves == [], msg
+    else:
+        assert moves == [(str(d1 / "book.epub.superseded"), str(out / "book.epub"))], msg
+        assert says_remove_exact(msg, out / "book.epub"), msg
+    tokens = [t for line in msg.splitlines() for t in path_tokens(line)]
+    assert d1 / "images.superseded" in tokens and d2 / "images.superseded" in tokens, msg
+    assert re.search("(?i)inspect", scrub(msg, tmp_path)), msg
+    assert not says_remove_exact(msg, d1) and not says_remove_exact(msg, d2), msg
+    for d in (d1, d2):
+        assert has_note(msg, d, r"(?i)keep"), (d, msg)
+
+    images_before = {k: v for k, v in snapshot_tree(out).items() if k.startswith("images")}
+    asides_before = {d: snapshot_tree(d / "images.superseded") for d in (d1, d2)}
+    follow_exact(msg, [d1, d2])
+    assert {k: v for k, v in snapshot_tree(out).items() if k.startswith("images")} == images_before
+    for d, snap in asides_before.items():
+        assert snapshot_tree(d / "images.superseded") == snap
+    if variant == "images_only":
+        assert roles.tree(out)["book.epub"] == "v1"
+
+    # The substring-driven operator, on a fresh copy of the same scenario.
+    books2 = tmp_path / "books2"
+    books2.mkdir()
+    out2, e1, e2 = _c21_scenario(books2, epub_v1, v2_src, variant)
+    msg2 = str(expect_refusal(out2, epub_v2, [e1, e2], ctx=f"{variant} copy"))
+    images2 = {k: v for k, v in snapshot_tree(out2).items() if k.startswith("images")}
+    follow_message(msg2, e1)
+    assert e1.is_dir() and (e1 / "images.superseded").is_dir()
+    assert {k: v for k, v in snapshot_tree(out2).items() if k.startswith("images")} == images2
+
+
+# --------------------------------------------------------------------------- #
+# W1-C22, C22b: the message law over generated leftover sets
+# --------------------------------------------------------------------------- #
+
+C22_ASIDES = [
+    "book.epub.superseded",
+    "images.superseded",
+    "notes.json.superseded",
+    ".superseded",
+    "chroma_db.superseded",
+]
+KNOWN_ASIDES = {"book.epub.superseded": "book.epub", "images.superseded": "images"}
+DIR_ASIDES = {"images.superseded", "chroma_db.superseded"}
+USER_BYTES = {"notes.json": b"user-notes", "ai_meta.json": b"user-meta", "chroma_db/db.bin": b"user-db"}
+
+
+def _build_c22(root: Path, dirs: Sequence[Set[str]], occupied: Set[str]) -> Tuple[Path, List[Path]]:
+    out = root / "books" / "s_data"
+    (out / "chroma_db").mkdir(parents=True)
+    for rel, data in USER_BYTES.items():
+        (out / rel).write_bytes(data)
+    if "book.epub" in occupied:
+        (out / "book.epub").write_bytes(b"live-epub")
+    if "images" in occupied:
+        (out / "images").mkdir()
+        (out / "images" / "live.png").write_bytes(b"live-image")
+    leftovers = []
+    for i, asides in enumerate(dirs):
+        d = Path(f"{out}.staging-90000{i}")
+        d.mkdir()
+        (d / LOCK).touch()
+        (d / "book.pkl").write_bytes(f"{i}:pkl".encode())
+        for name in sorted(asides):
+            data = f"{i}:{name}".encode()
+            if name in DIR_ASIDES:
+                (d / name).mkdir()
+                (d / name / "f.bin").write_bytes(data)
+            else:
+                (d / name).write_bytes(data)
+        leftovers.append(d)
+    return out, leftovers
+
+
+def _refuse_twice(out: Path, epub_v2: Path) -> str:
+    msgs = []
+    for _ in range(2):
+        with pytest.raises(RuntimeError) as excinfo:
+            reader3.process_epub(str(epub_v2), str(out))
+        msgs.append(str(excinfo.value))
+    assert msgs[0] == msgs[1]
+    return msgs[0]
+
+
+@settings(max_examples=60, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@given(
+    dirs=st.lists(st.sets(st.sampled_from(C22_ASIDES), min_size=1), min_size=1, max_size=3),
+    occupied=st.sets(st.sampled_from(["book.epub", "images"])),
+)
+def test_w1_c22_message_law(dirs, occupied, tmp_path, epub_v2):
+    root = Path(tempfile.mkdtemp(dir=tmp_path))
+    out, leftovers = _build_c22(root, dirs, occupied)
+    books_before = snapshot_tree(root / "books")
+
+    msg = _refuse_twice(out, epub_v2)
+
+    # 0. a refusal is side-effect-free
+    assert snapshot_tree(root / "books") == books_before
+    moves = parse_moves(msg)
+    dsts = [Path(dst) for _, dst in moves]
+    count = {a: sum(a in s for s in dirs) for a in KNOWN_ASIDES}
+    # 1. only the two known live paths are ever move destinations
+    assert set(dsts) <= {out / "book.epub", out / "images"}, msg
+    # 2. no destination twice
+    assert len(dsts) == len(set(dsts)), msg
+    # 3. a move iff exactly one directory parks that artifact, from that directory
+    for aside, live in KNOWN_ASIDES.items():
+        got = [src for src, dst in moves if Path(dst) == out / live]
+        if count[aside] == 1:
+            owner = next(d for d, s in zip(leftovers, dirs) if aside in s)
+            assert got == [str(owner / aside)], msg
+        else:
+            assert got == [], msg
+    # 4. liveness
+    for dst in dsts:
+        if os.path.lexists(dst):
+            assert says_remove_exact(msg, dst), (dst, msg)
+    for d, s in zip(leftovers, dirs):
+        if all(a in KNOWN_ASIDES and count[a] == 1 for a in s):
+            assert says_remove_exact(msg, d), (d, msg)
+        else:
+            assert not says_remove_exact(msg, d), (d, msg)
+            assert has_note(msg, d, r"(?i)keep"), (d, msg)
+    # 5. safety: nothing under out is named for removal except a move destination
+    for line in removal_lines(msg):
+        for t in path_tokens(line):
+            if under(t, out):
+                assert t in dsts, (line, msg)
+    # 6. every parked entry is listed
+    tokens = {t for line in msg.splitlines() for t in path_tokens(line)}
+    for d, s in zip(leftovers, dirs):
+        for a in s:
+            assert d / a in tokens, (d / a, msg)
+    # 7. conservation under a strict operator
+    parked = file_hashes([d / a for d, s in zip(leftovers, dirs) for a in s])
+    follow_exact(msg, leftovers)
+    kept = file_hashes([out, *[d for d in leftovers if d.exists()]])
+    assert not parked - kept, (parked - kept, msg)
+    for rel, data in USER_BYTES.items():
+        assert (out / rel).read_bytes() == data
+
+
+@settings(max_examples=40, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@given(
+    dirs=st.lists(st.sets(st.sampled_from(list(KNOWN_ASIDES)), min_size=1), min_size=1, max_size=3),
+    occupied=st.sets(st.sampled_from(["book.epub", "images"])),
+    odd=st.sampled_from(["notes.json.superseded", ".superseded", "chroma_db.superseded"]),
+    data=st.data(),
+)
+def test_w1_c22b_odd_addition_relation(dirs, occupied, odd, data, tmp_path, epub_v2):
+    k = data.draw(st.integers(0, len(dirs) - 1))
+    root = Path(tempfile.mkdtemp(dir=tmp_path))
+    out, leftovers = _build_c22(root, dirs, occupied)
+    msg1 = _refuse_twice(out, epub_v2)
+    _add_odd(leftovers[k], odd)
+    msg2 = _refuse_twice(out, epub_v2)
+
+    def live_named(msg: str) -> Set[Path]:
+        return {
+            t for line in removal_lines(msg) for t in path_tokens(line) if under(t, out)
+        }
+
+    def dirs_named(msg: str) -> Set[Path]:
+        return {d for d in leftovers if says_remove_exact(msg, d)}
+
+    assert set(parse_moves(msg2)) == set(parse_moves(msg1)), (msg1, msg2)
+    assert live_named(msg2) == live_named(msg1), (msg1, msg2)
+    assert dirs_named(msg2) == dirs_named(msg1) - {leftovers[k]}, (msg1, msg2)
+    assert leftovers[k] / odd in {t for line in msg2.splitlines() for t in path_tokens(line)}
+
+
+# --------------------------------------------------------------------------- #
+# W1-C23: makedirs(images) failure releases the lock (WI-1e)
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [OSError(errno.ENOSPC, os.strerror(errno.ENOSPC)), KeyboardInterrupt()],
+    ids=["f1", "f2"],
+)
+def test_w1_c23_images_dir_fault(fault, books_dir, epub_v1, epub_v2):
+    out = make_seeded_book_dir(books_dir, epub_v1)
+    before = snapshot_tree(out)
+    user0 = user_subset(before)
+    staging = str(staging_of(out))
+
+    def makedirs(p: Any, *a: Any, **kw: Any) -> None:
+        p = os.fspath(p)
+        if os.path.basename(p) == "images" and os.path.dirname(p) == staging:
+            raise fault
+        os.makedirs(p, *a, **kw)
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(reader3, "os", OsProxy(os, makedirs=makedirs))
+        fds0 = len(os.listdir("/dev/fd"))
+        with pytest.raises(type(fault)) as excinfo:
+            reader3.process_epub(str(epub_v2), str(out))
+        fds1 = len(os.listdir("/dev/fd"))
+
+    if isinstance(fault, OSError):
+        assert excinfo.value.errno == errno.ENOSPC
+    assert staging_leftovers(out) == []
+    assert fds1 == fds0
+    assert snapshot_tree(out) == before
+    clean_next_run(out, epub_v1, epub_v2, "C23")
+    assert user_subset(snapshot_tree(out)) == user0
+
+
+# --------------------------------------------------------------------------- #
+# W1-C24..C27: commit-failure staging retention (Amendment 1, WI-1(f))
+# --------------------------------------------------------------------------- #
+
+
+class CommitFaults:
+    """One forward fault in the commit, optionally one fault in its rollback.
+
+    Steps are matched by exact ``(src, dst)`` paths, never by substring:
+    A/B park the live epub/images, C/D land the new ones, F is the first fsync
+    of ``out`` (F2 the second, after the marker), E is the marker rename. The
+    forward fault raises before the real call, so the step has no effect.
+    """
+
+    def __init__(
+        self,
+        out: Path,
+        step: Optional[str],
+        restore: str = "none",
+        *,
+        on_step: Optional[Callable[[], None]] = None,
+        unlistable_after_start: bool = False,
+        on_rmtree_staging: Optional[Callable[[], None]] = None,
+    ):
+        self.out = Path(out)
+        self.staging = staging_of(self.out)
+        self.step = step
+        self.restore = restore
+        self.on_step = on_step
+        self.unlistable_after_start = unlistable_after_start
+        self.on_rmtree_staging = on_rmtree_staging
+        self.boom = OSError(errno.EIO, "commit-fault-sentinel")
+        self.step_fired = False
+        self.restore_fired = False
+        self.commit_started = False
+        self.out_fsyncs = 0
+
+    def install(self, mp: pytest.MonkeyPatch) -> None:
+        mp.setattr(
+            reader3,
+            "os",
+            OsProxy(
+                os,
+                replace=self._replace,
+                fsync=self._fsync,
+                unlink=self._unlink,
+                remove=self._unlink,
+                **listing_overrides(self._listing),
+            ),
+        )
+        mp.setattr(reader3, "shutil", ShutilProxy(shutil, rmtree=self._rmtree))
+
+    def _forward(self) -> None:
+        self.step_fired = True
+        if self.on_step is not None:
+            self.on_step()
+        raise self.boom
+
+    def _restore_fault(self) -> None:
+        self.restore_fired = True
+        raise OSError(errno.EIO, "restore-fault-sentinel")
+
+    def _replace(self, src: Any, dst: Any, *a: Any, **kw: Any) -> None:
+        s, d = Path(os.fspath(src)), Path(os.fspath(dst))
+        st_, out = self.staging, self.out
+        if d == st_ / "book.epub.superseded":
+            self.commit_started = True
+        if not self.step_fired:
+            hit = {
+                "A": d == st_ / "book.epub.superseded",
+                "B": d == st_ / "images.superseded",
+                "C": s == st_ / "book.epub" and d == out / "book.epub",
+                "D": s == st_ / "images" and d == out / "images",
+                "E": d == out / "book.pkl",
+            }.get(self.step or "", False)
+            if hit:
+                self._forward()
+        elif self.restore in ("rep_epub", "rep_images") and not self.restore_fired:
+            name = "book.epub" if self.restore == "rep_epub" else "images"
+            if s == st_ / f"{name}.superseded":
+                self._restore_fault()
+        os.replace(src, dst, *a, **kw)
+
+    def _fsync(self, fd: int) -> None:
+        try:
+            is_out = os.path.samestat(os.fstat(fd), os.stat(self.out))
+        except OSError:
+            is_out = False
+        if is_out:
+            self.out_fsyncs += 1
+            if not self.step_fired and (
+                (self.step == "F" and self.out_fsyncs == 1)
+                or (self.step == "F2" and self.out_fsyncs == 2)
+            ):
+                self._forward()
+        os.fsync(fd)
+
+    def _unlink(self, path: Any, *a: Any, **kw: Any) -> None:
+        if (
+            self.step_fired
+            and self.restore == "dis_epub"
+            and Path(os.fspath(path)) == self.out / "book.epub"
+        ):
+            self._restore_fault()
+        os.unlink(path, *a, **kw)
+
+    def _rmtree(self, path: Any, *a: Any, **kw: Any) -> None:
+        p = Path(os.fspath(path))
+        if self.step_fired and self.restore == "dis_images" and p == self.out / "images":
+            self._restore_fault()
+        if p == self.staging and self.on_rmtree_staging is not None:
+            self.on_rmtree_staging()
+        shutil.rmtree(path, *a, **kw)
+
+    def _listing(self, p: str) -> None:
+        if self.unlistable_after_start and self.commit_started and p == str(self.staging):
+            raise OSError(errno.EIO, os.strerror(errno.EIO), p)
+
+
+C24_STEPS = ("A", "B", "C", "D", "F", "E")
+C24_RESTORES = ("none", "rep_epub", "rep_images", "dis_epub", "dis_images")
+
+
+def _commit_shape(shape: str, books_dir: Path, epub_v1: Path) -> Path:
+    if shape == "absent":
+        return books_dir / "sample_data"
+    out = make_seeded_book_dir(books_dir, epub_v1)
+    if shape == "bare_epub":
+        (out / "book.epub").unlink()
+    elif shape == "bare_images":
+        shutil.rmtree(out / "images")
+    elif shape == "user_files":
+        (out / "notes.json").write_text('{"notes": [{"id": "extra"}]}', encoding="utf-8")
+        (out / "chroma_db" / "extra.bin").write_bytes(b"extra index segment")
+    return out
+
+
+def _step_unreachable(shape: str, step: str) -> bool:
+    # Revision 3: with no live artifact there is no aside rename to fault.
+    return (step == "A" and shape in ("bare_epub", "absent")) or (
+        step == "B" and shape in ("bare_images", "absent")
+    )
+
+
+def _v1_hashes(out: Path) -> Counter:
+    roots = [p for p in (out / "book.epub", out / "images") if p.exists()]
+    return file_hashes(roots)
+
+
+def _asides_intact(staging: Path, full_before: Dict[str, Tuple]) -> None:
+    epub = staging / "book.epub.superseded"
+    if epub.exists():
+        assert os.stat(epub).st_ino == full_before["book.epub"][3]
+        assert sha256_of(epub) == full_before["book.epub"][0]
+    images = staging / "images.superseded"
+    if images.exists():
+        assert os.stat(images).st_ino == full_before["images/"][3]
+        expected = {
+            k[len("images/"):]: v for k, v in full_before.items()
+            if k.startswith("images/") and k != "images/"
+        }
+        assert snapshot_tree(images) == expected
+
+
+def _run_faulted(faults: CommitFaults, out: Path, epub_v2: Path, capsys) -> Tuple[Any, str, int, int]:
+    capsys.readouterr()
+    with pytest.MonkeyPatch.context() as mp:
+        faults.install(mp)
+        fds0 = len(os.listdir("/dev/fd"))
+        with pytest.raises(OSError) as excinfo:
+            reader3.process_epub(str(epub_v2), str(out))
+        fds1 = len(os.listdir("/dev/fd"))
+    return excinfo, capsys.readouterr().err, fds0, fds1
+
+
+@pytest.mark.parametrize("shape", ["seeded", "bare_epub", "bare_images"])
+def test_w1_c24_commit_x_restore_faults(shape, tmp_path, epub_v1, epub_v2, capsys):
+    combos = 0
+    for step in C24_STEPS:
+        if _step_unreachable(shape, step):
+            continue
+        for restore in C24_RESTORES:
+            if (restore == "dis_epub" and shape == "bare_epub") or (
+                restore == "dis_images" and shape == "bare_images"
+            ):
+                continue
+            combos += 1
+            ctx = f"{shape}/{step}/{restore}"
+            books = Path(tempfile.mkdtemp(dir=tmp_path)) / "books"
+            books.mkdir()
+            out = _commit_shape(shape, books, epub_v1)
+            full_before = snapshot_tree(out)
+            v1 = _v1_hashes(out)
+            faults = CommitFaults(out, step, restore)
+
+            excinfo, err, fds0, fds1 = _run_faulted(faults, out, epub_v2, capsys)
+
+            assert faults.step_fired, f"{ctx}: matrix error, the step never ran"
+            assert excinfo.value is faults.boom, ctx
+            assert fds1 == fds0, ctx
+            lost = v1 - file_hashes([out, *map(Path, staging_leftovers(out))])
+            assert not lost, f"{ctx}: parked bytes lost: {lost}"
+            staging = faults.staging
+            if not faults.restore_fired:
+                assert snapshot_tree(out) == full_before, ctx
+                assert staging_leftovers(out) == [], ctx
+                continue
+            assert staging.is_dir(), ctx
+            assert reader3._staging_dir_is_owned(str(staging)) is False, ctx
+            _asides_intact(staging, full_before)
+            assert len(stderr_lines_naming(err, staging)) >= 1, (ctx, err)
+
+            msg = str(expect_refusal(out, epub_v2, [staging], ctx=ctx))
+            follow_message(msg, staging)
+            assert snapshot_tree(out) == full_before, ctx
+            assert staging_leftovers(out) == [], ctx
+    assert combos == {"seeded": 30, "bare_epub": 20, "bare_images": 20}[shape]
+
+
+def test_w1_c24b_restore_fault_representative(books_dir, epub_v1, epub_v2, capsys):
+    out = make_seeded_book_dir(books_dir, epub_v1)
+    full_before = snapshot_tree(out)
+    user0 = user_subset(full_before)
+    faults = CommitFaults(out, "E", "rep_images")
+    staging = faults.staging
+
+    excinfo, err, _, _ = _run_faulted(faults, out, epub_v2, capsys)
+
+    assert excinfo.value is faults.boom
+    lines = stderr_lines_naming(err, staging)
+    assert lines, err
+    assert any(
+        re.search(r"(?i)\bkept\b", words(line))
+        and re.search(r"(?i)only copy", words(line))
+        and not REMOVE_WORD.search(words(line))
+        for line in lines
+    ), err
+    assert any(
+        "could not restore" in line and out / "images" in path_tokens(line)
+        for line in err.splitlines()
+    ), err
+
+    assert reader3._staging_dir_is_owned(str(staging)) is False
+    assert os.stat(staging / "images.superseded").st_ino == full_before["images/"][3]
+    # Pinned (Revision 3): the rollback carries on past a failed restore.
+    assert not (staging / "book.epub.superseded").exists()
+    assert sha256_of(out / "book.epub") == full_before["book.epub"][0]
+
+    msg = str(expect_refusal(out, epub_v2, [staging], ctx="C24b"))
+    parked = {str(staging / n) for n in os.listdir(staging) if n.endswith(".superseded")}
+    assert {src for src, _ in parse_moves(msg)} == parked, msg
+    follow_message(msg, staging)
+    assert snapshot_tree(out) == full_before
+
+    clean_next_run(out, epub_v1, epub_v2, "C24b")
+    assert user_subset(snapshot_tree(out)) == user0
+
+
+def test_w1_c24c_restore_fault_real_mode(books_dir, epub_v1, epub_v2, capsys):
+    if os.geteuid() == 0:
+        pytest.skip("root ignores directory modes")
+    out = make_seeded_book_dir(books_dir, epub_v1)
+    full_before = snapshot_tree(out)
+    faults = CommitFaults(out, "E", "none", on_step=lambda: os.chmod(out, 0o500))
+    staging = faults.staging
+    try:
+        excinfo, err, _, _ = _run_faulted(faults, out, epub_v2, capsys)
+    finally:
+        os.chmod(out, 0o700)
+
+    assert excinfo.value is faults.boom
+    assert any(re.search(r"(?i)\bkept\b", words(line)) for line in stderr_lines_naming(err, staging)), err
+    assert staging.is_dir()
+    assert reader3._staging_dir_is_owned(str(staging)) is False
+    assert (staging / "book.epub.superseded").exists() and (staging / "images.superseded").exists()
+    _asides_intact(staging, full_before)
+
+    msg = str(expect_refusal(out, epub_v2, [staging], ctx="C24c"))
+    follow_message(msg, staging)
+    assert snapshot_tree(out) == full_before
+
+
+@pytest.mark.parametrize("shape", ["seeded", "bare_epub", "bare_images", "absent", "user_files"])
+def test_w1_c25_full_rollback_clears_staging(shape, tmp_path, epub_v1, epub_v2, capsys):
+    for step in C24_STEPS:
+        if _step_unreachable(shape, step):
+            continue
+        ctx = f"{shape}/{step}"
+        books = Path(tempfile.mkdtemp(dir=tmp_path)) / "books"
+        books.mkdir()
+        out = _commit_shape(shape, books, epub_v1)
+        full_before = snapshot_tree(out)
+        faults = CommitFaults(out, step, "none")
+
+        excinfo, err, fds0, fds1 = _run_faulted(faults, out, epub_v2, capsys)
+
+        assert faults.step_fired, f"{ctx}: matrix error, the step never ran"
+        assert excinfo.value is faults.boom, ctx
+        assert stderr_lines_naming(err, faults.staging) == [], (ctx, err)
+        assert staging_leftovers(out) == [], ctx
+        assert snapshot_tree(out) == full_before, ctx
+        assert fds1 == fds0, ctx
+        clean_next_run(out, epub_v1, epub_v2, ctx)
+
+
+@pytest.mark.parametrize("variant", ["ok", "after_marker"])
+def test_w1_c26_staging_after_marker(variant, books_dir, epub_v1, epub_v2, capsys):
+    out = make_seeded_book_dir(books_dir, epub_v1)
+    seen: List[List[str]] = []
+    staging = staging_of(out)
+    faults = CommitFaults(
+        out,
+        "F2" if variant == "after_marker" else None,
+        on_rmtree_staging=lambda: seen.append(sorted(os.listdir(staging))),
+    )
+    capsys.readouterr()
+    with pytest.MonkeyPatch.context() as mp:
+        faults.install(mp)
+        if variant == "ok":
+            reader3.process_epub(str(epub_v2), str(out))
+        else:
+            with pytest.raises(OSError) as excinfo:
+                reader3.process_epub(str(epub_v2), str(out))
+            # Pinned (Revision 3): a fault after the marker is re-raised.
+            assert excinfo.value is faults.boom
+    err = capsys.readouterr().err
+
+    assert assert_consistent(out, epub_v1, epub_v2) == MARKER_V2
+    assert seen and {"book.epub.superseded", "images.superseded"} <= set(seen[-1]), seen
+    assert staging_leftovers(out) == []
+    assert stderr_lines_naming(err, staging) == [], err
+    clean_next_run(out, epub_v1, epub_v2, variant)
+
+
+C27_VARIANTS = {
+    "after_rollback_fault": ("E", "rep_images"),
+    "after_clean_rollback": ("E", "none"),
+    "after_success": (None, "none"),
+}
+
+
+@pytest.mark.parametrize("variant", list(C27_VARIANTS))
+def test_w1_c27_staging_unlistable_at_exit(variant, books_dir, epub_v1, epub_v2, capsys):
+    out = make_seeded_book_dir(books_dir, epub_v1)
+    full_before = snapshot_tree(out)
+    step, restore = C27_VARIANTS[variant]
+    faults = CommitFaults(out, step, restore, unlistable_after_start=True)
+    staging = faults.staging
+
+    capsys.readouterr()
+    with pytest.MonkeyPatch.context() as mp:
+        faults.install(mp)
+        if variant == "after_success":
+            reader3.process_epub(str(epub_v2), str(out))
+        else:
+            with pytest.raises(OSError) as excinfo:
+                reader3.process_epub(str(epub_v2), str(out))
+            assert excinfo.value is faults.boom
+    err = capsys.readouterr().err
+
+    assert faults.commit_started
+    assert any(
+        re.search(r"(?i)\bkept\b", words(line))
+        and errno_text_in(words(line), errno.EIO)
+        and not REMOVE_WORD.search(words(line))
+        for line in stderr_lines_naming(err, staging)
+    ), err
+    assert staging.is_dir()
+    assert reader3._staging_dir_is_owned(str(staging)) is False
+
+    if variant == "after_rollback_fault":
+        msg = str(expect_refusal(out, epub_v2, [staging], ctx=variant))
+        follow_message(msg, staging)
+        assert snapshot_tree(out) == full_before
+    else:
+        clean_next_run(out, epub_v1, epub_v2, variant)
+
+
+def test_w1_c27b_staging_unlistable_real_mode(books_dir, epub_v1, epub_v2, capsys):
+    if os.geteuid() == 0:
+        pytest.skip("root reads a mode-000 directory")
+    out = make_seeded_book_dir(books_dir, epub_v1)
+    full_before = snapshot_tree(out)
+    staging = staging_of(out)
+    faults = CommitFaults(out, "E", "none", on_step=lambda: os.chmod(staging, 0o000))
+    try:
+        excinfo, err, _, _ = _run_faulted(faults, out, epub_v2, capsys)
+    finally:
+        if staging.exists():
+            os.chmod(staging, 0o700)
+
+    assert excinfo.value is faults.boom
+    assert any(
+        re.search(r"(?i)\bkept\b", words(line)) and errno_text_in(words(line), errno.EACCES)
+        for line in stderr_lines_naming(err, staging)
+    ), err
+    assert staging.is_dir()
+    assert (staging / "book.epub.superseded").exists() and (staging / "images.superseded").exists()
+    _asides_intact(staging, full_before)
+
+    msg = str(expect_refusal(out, epub_v2, [staging], ctx="C27b"))
+    follow_message(msg, staging)
+    assert snapshot_tree(out) == full_before
