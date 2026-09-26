@@ -440,7 +440,7 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 >
 > **必须写明丢了什么**：本地计数丢掉的是「**独立、干净环境**」这一性质。而依赖漂移、时区、缓存这三类，正是上面「跨度条款」想逼出来的东西——它们恰恰在同一台机器上最不容易复现。所以改基之后，跨度条款只剩「日历时间」这一半效力，「环境多样性」那一半没有了。改基本身是**已知代价，不是疏漏**。
 >
-> **但原文在这里承诺过一项补偿：在发版关门检查中对 `baseline-1b` 做一次全量运行。该补偿至今没有建出来。** 2026-09-18 在 `e7c4890` 上逐文件复核：
+> **但原文在这里承诺过一项补偿：在发版关门检查中对 `baseline-1b` 做一次全量运行。该补偿至今没有建出来。**（**⚠️ 本段是 2026-09-18 的核查快照，已过期：2026-09-20 以 `tests.yml` 的 `e2e` job 兑付，见 [`tasks/009` 欠账 #31](./tasks/009-e2e-annotations.md)。它提供的是独立的干净 Linux 信号，结果记进 `soak-log.md` 的机制挑战闸表，**不进 soak 台账**——一行 linux 记录按下方清零规则第 2 条会把计数清零。**）2026-09-18 在 `e7c4890` 上逐文件复核：
 >
 > - `.github/workflows/tests.yml`（101 行）只有一个 job：`unit`（`:43`）。步骤是 ruff / mypy / `pytest tests/unit tests/contract` / 覆盖率门禁，**不起浏览器**。
 > - `.github/workflows/lint.yml`（79 行）两个 job：`contracts`（`:36`）、`wheel`（`:59`）。
@@ -612,7 +612,7 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 | M5 | Phase 5 launch + PWA | `015-launch-experience` | A（`reader3 launch`）＋ **B**（PWA，WI-20） |
 | M1b-债 | 欠账 #22 字号/间距慢一拍（合入 009 后、冻结 G2 前的一条独立小分支） | `016-settings-apply-order` | A（兑付记在 [`tasks/009` 欠账表 #22](./tasks/009-e2e-annotations.md)，不另开 task 文件） |
 | M2-债 | 011 合入后的全量审计欠账：44 条 findings 中判为 must / should 的 22 条 | `017-audit-followup` | A（任务展开写在 [`tasks/017-audit-followup.md`](./tasks/017-audit-followup.md)） |
-| M4a-债 | 013 延后的后端半边中**不依赖 012 存储格式**的四条（#51 / #56 / #58 / #53）＋ 每书写协调契约 | `018-library-routes` | A（任务文件开分支前补；分拆裁定见 [`tasks/012` §6 D1](./tasks/012-storage-format.md)） |
+| M4a-债 | 013 延后的后端半边中**不依赖 012 存储格式**的四条（#51 / #56 / #58 / #53）＋ 每书写协调契约 ＋ 009 欠账 #31 收尾对账（job 已于 2026-09-20 建成并结清；018 只核验合并头与改掉过期措辞） | `018-library-routes` | A（[任务文件](./tasks/018-library-routes.md)，骨架 2026-09-26 待审；分拆裁定见 [`tasks/012` §6 D1](./tasks/012-storage-format.md)） |
 
 M1b 与 MD 可与 M1/M2 交错推进；M4a 可与 M2/M3 交错推进；**M3 与 M4b 严格串行**。
 
@@ -632,23 +632,22 @@ must / should 两桶共 22 条落在本分支。**它从 `master` 开、不回 0
 012 之前**做完并合入，012 在它之上开工；**验收写死要新格式**的 #57（上传后按新格式落盘）与
 **要 generation swap** 的 #52 留在 012 的末波。裁定理由与逐条依赖核对只写在
 [`tasks/012` §6 D1](./tasks/012-storage-format.md)。`018` 的合入同样不得动冻结集 8 条路径——
-它跑在 `master` 上，改一个字节就清零 soak。**兑付方改写未做**：009 欠账表这四行的兑付方列、
-`tests/unit/test_track_d_ledger.py` 的 `DEBT_012_RE` 校验与 `track_d_pinned_014.json`、
-前端计划的对应引用必须**同一批**改，放在 018 开工时做；在那之前 009 表仍写 012，以本段为准。
+它跑在 `master` 上，改一个字节就清零 soak。兑付方改写是 [018 WI-1](./tasks/018-library-routes.md)（一个 commit）；在它合入之前 009 表仍写 012，以本段为准。
 
-**后端分支**的任务清单放在本文件夹的 `tasks/{分支名}.md`，不写进本文。今天存在六个：
+**后端分支**的任务清单放在本文件夹的 `tasks/{分支名}.md`，不写进本文。今天存在七个：
 [`007-hygiene-and-contracts.md`](./tasks/007-hygiene-and-contracts.md)、
 [`008-test-safety-net.md`](./tasks/008-test-safety-net.md)、
 [`009-e2e-annotations.md`](./tasks/009-e2e-annotations.md)、
 [`011-backend-refactor.md`](./tasks/011-backend-refactor.md)、
 [`012-storage-format.md`](./tasks/012-storage-format.md)（骨架，2026-09-26）、
-[`017-audit-followup.md`](./tasks/017-audit-followup.md)。
+[`017-audit-followup.md`](./tasks/017-audit-followup.md)、
+[`018-library-routes.md`](./tasks/018-library-routes.md)（骨架，2026-09-26）。
 
 **前端分支（010 / 013 / 014 与 015 的 PWA 部分）不再有独立任务文件**——它们的工作项以
 `### WI-N:` 的形式直接写在 [前端计划正文](../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) 里，
 这样 `/tdd-guardian:workflow` 能把整份计划当成单一输入来跑。
 
-其余两个（018 / 015 的后端部分）**故意还没写**。评审第 9 条要求补齐骨架，
+其余一个（015 的后端部分）**故意还没写**。评审第 9 条要求补齐骨架，
 处置方式是**领先一个分支即时补**，不是现在一次写完：骨架的价值来自它写下的
 事实（哪些代码还在、哪些已经被上一个分支改掉了），而 011 的事实要等 008 落地才成立。
 提前写只会得到一份开工时已经过期的清单。开某个分支前补它自己那份。
