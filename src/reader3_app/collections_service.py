@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import fcntl
 import json
+import logging
 import os
 import re
 import tempfile
@@ -13,6 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Iterator, Optional
 
+logger = logging.getLogger("reader3.collections")
 
 COLLECTIONS_SCHEMA_VERSION = 1
 COLLECTIONS_FILENAME = "library_collections.json"
@@ -147,13 +149,23 @@ def _atomic_write_json(path: Path, data: dict) -> None:
         os.replace(tmp_path, path)
     except BaseException:
         # The old file is untouched; do not leave the half-written scratch behind.
+        # A failed cleanup is logged, never raised: it must not mask the real error.
         try:
             os.unlink(tmp_path)
-        except OSError:
+        except FileNotFoundError:
             pass
+        except OSError as e:
+            logger.warning("collections: could not remove scratch file %s: %s", tmp_path, e)
         raise
-    # Make the rename itself durable.
-    _fsync_dir(path.parent)
+    # Make the rename itself durable. The new file is already published, so a
+    # failure here is logged rather than raised: raising would report failure
+    # for a change the caller can already see, and a retried create would then
+    # hit "already exists". The rename may not survive a power loss; the warning
+    # is the only signal. Only OSError: an interrupt still propagates.
+    try:
+        _fsync_dir(path.parent)
+    except OSError as e:
+        logger.warning("collections: directory fsync failed after publishing %s: %s", path, e)
 
 
 def load_collections(path: Path) -> list[Collection]:

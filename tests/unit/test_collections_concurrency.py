@@ -24,12 +24,15 @@ Cases W2-C1..C11 follow ``.claude/tdd-guardian/tests-20260926-154111.md``.
 
 from __future__ import annotations
 
+import contextlib
 import errno
 import fcntl
 import hashlib
 import itertools
 import json
+import logging
 import os
+import re
 import stat
 import subprocess
 import sys
@@ -42,7 +45,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 import pytest
-from hypothesis import HealthCheck, given, settings
+from hypothesis import HealthCheck, assume, given, settings
 from hypothesis import strategies as st
 
 from reader3_app import collections_service as cs
@@ -568,3 +571,582 @@ def test_c11_fresh_install_only_new_path_is_lock_file(tmp_path: Path) -> None:
     assert sorted(os.listdir(config)) == expected
     cs.delete_collection(p, c.id)
     assert sorted(os.listdir(config)) == expected
+
+
+# =========================================================================== #
+# Follow-up hardening (plan-20260926-212356 WI-3 + Amendment 1 #4, #6;
+# matrix tests-20260926-212356)
+#
+# c12-c15: a directory fsync that fails after ``os.replace`` has published the
+# file is logged, not raised -- the API reports success exactly when the change
+# is visible. c16/c16b: a scratch cleanup that fails is logged, the original
+# error still propagates. c17/c17n, c18/c18n: handshake proofs that the lock
+# really excludes a second writer, each with a negative control that bypasses
+# the lock and must lose an update.
+# =========================================================================== #
+
+LOGGER_NAME = "reader3.collections"
+GRACE = BARRIER_TIMEOUT_S
+SCRATCH_RE = re.compile(r"^\.library_collections\..*\.tmp$")
+
+
+def _zeta() -> Collection:
+    return Collection(id=str(uuid.uuid4()), name="Zeta", created_at="2026-01-01T00:00:00+00:00", book_ids=[])
+
+
+def _fd_count() -> int:
+    return len(os.listdir("/dev/fd"))
+
+
+def _warnings(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
+    return [r for r in caplog.records if r.name == LOGGER_NAME and r.levelno == logging.WARNING]
+
+
+def _is_dir_fd(fd: Any) -> bool:
+    fileno = fd if isinstance(fd, int) else fd.fileno()
+    return stat.S_ISDIR(os.fstat(fileno).st_mode)
+
+
+def _fsync_failing_on_dirs(make_exc: Callable[[], BaseException]) -> Callable[[Any], None]:
+    """``os.fsync`` that raises on directory fds and is real otherwise (c9's classification)."""
+    real_fsync = os.fsync
+
+    def fsync(fd: Any) -> None:
+        if _is_dir_fd(fd):
+            raise make_exc()
+        real_fsync(fd)
+
+    return fsync
+
+
+def _eio() -> OSError:
+    return OSError(errno.EIO, os.strerror(errno.EIO))
+
+
+def _names_errno(msg: str, code: int, noise: Path) -> bool:
+    # The tmp dir is named after the test node; strip it before any free-text check.
+    text = msg.replace(str(noise), "")
+    return os.strerror(code) in text or errno.errorcode[code] in text
+
+
+# --------------------------------------------------------------------------- #
+# W3-c12 directory fsync fails after publish
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("op", ["save", "create", "rename", "update", "delete"])
+def test_c12_dir_fsync_failure_after_publish_is_logged(
+    path: Path, caplog: pytest.LogCaptureFixture, op: str
+) -> None:
+    a = cs.create_collection(path, name="Alpha")
+    z = _zeta()
+    caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
+
+    fns: dict[str, Callable[[], Any]] = {
+        "save": lambda: cs.save_collections(path, [a, z]),
+        "create": lambda: cs.create_collection(path, name="Beta"),
+        "rename": lambda: cs.rename_collection(path, a.id, name="Renamed"),
+        "update": lambda: cs.update_collection_books(path, a.id, add=["x_data"]),
+        "delete": lambda: cs.delete_collection(path, a.id),
+    }
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(os, "fsync", _fsync_failing_on_dirs(_eio))
+        fds0 = _fd_count()
+        result = fns[op]()
+        fds1 = _fd_count()
+
+    on_disk = cs.load_collections(path)
+    if op in ("save", "delete"):
+        assert result is None
+    else:
+        assert isinstance(result, Collection)
+        assert cs.get_collection(path, result.id) == result
+    if op == "save":
+        assert on_disk == [a, z]
+    elif op == "create":
+        assert [c.name for c in on_disk] == ["Alpha", "Beta"]
+    elif op == "rename":
+        assert [(c.id, c.name) for c in on_disk] == [(a.id, "Renamed")]
+    elif op == "update":
+        assert [c.book_ids for c in on_disk] == [["x_data"]]
+    else:
+        assert on_disk == []
+
+    recs = _warnings(caplog)
+    assert len(recs) == 1, [r.getMessage() for r in recs]
+    msg = recs[0].getMessage()
+    assert str(path) in msg
+    assert _names_errno(msg, errno.EIO, path.parent)
+    assert set(os.listdir(path.parent)) <= {DATA_NAME, LOCK_NAME}
+    assert fds1 == fds0
+    assert isinstance(run_bounded(lambda: cs.create_collection(path, name="After")), Collection)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory modes")
+def test_c12b_dir_open_failure_after_publish_real(path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    a = cs.create_collection(path, name="Alpha")
+    caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
+
+    # Write and search, no read: everything up to os.replace works for real,
+    # then os.open(dir, O_RDONLY) in the directory fsync fails with EACCES.
+    os.chmod(path.parent, 0o300)
+    try:
+        result = cs.update_collection_books(path, a.id, add=["x_data"])
+    finally:
+        os.chmod(path.parent, 0o700)
+
+    assert isinstance(result, Collection)
+    assert result.book_ids == ["x_data"]
+    got = cs.get_collection(path, a.id)
+    assert got is not None and got.book_ids == ["x_data"]
+    recs = _warnings(caplog)
+    assert len(recs) == 1, [r.getMessage() for r in recs]
+    msg = recs[0].getMessage()
+    assert str(path) in msg
+    assert _names_errno(msg, errno.EACCES, path.parent)
+    assert set(os.listdir(path.parent)) <= {DATA_NAME, LOCK_NAME}
+    assert isinstance(run_bounded(lambda: cs.create_collection(path, name="After")), Collection)
+
+
+# --------------------------------------------------------------------------- #
+# W3-c13 reported success iff visible
+# --------------------------------------------------------------------------- #
+
+_FAULTS = ["none", "dump", "file_fsync", "replace", "dir_open", "dir_fsync"]
+_FAULT_ERRNO = {
+    "dump": errno.ENOSPC,
+    "file_fsync": errno.EIO,
+    "replace": errno.EIO,
+    "dir_open": errno.EACCES,
+    "dir_fsync": errno.EIO,
+}
+
+
+def _arm(mp: pytest.MonkeyPatch, fault: str, p: Path) -> None:
+    real_fsync = os.fsync
+    real_replace = os.replace
+    real_open = os.open
+
+    def err(code: int) -> OSError:
+        if code == errno.EACCES:
+            return PermissionError(code, os.strerror(code))
+        return OSError(code, os.strerror(code))
+
+    if fault == "dump":
+
+        def dump(*args: Any, **kwargs: Any) -> None:
+            raise err(errno.ENOSPC)
+
+        mp.setattr(cs.json, "dump", dump)
+    elif fault == "file_fsync":
+
+        def fsync(fd: Any) -> None:
+            if not _is_dir_fd(fd):
+                raise err(errno.EIO)
+            real_fsync(fd)
+
+        mp.setattr(os, "fsync", fsync)
+    elif fault == "replace":
+
+        def replace(src: Any, dst: Any, *args: Any, **kwargs: Any) -> None:
+            if Path(os.fspath(dst)) == p:
+                raise err(errno.EIO)
+            real_replace(src, dst, *args, **kwargs)
+
+        mp.setattr(os, "replace", replace)
+    elif fault == "dir_open":
+
+        def open_(target: Any, flags: int, *args: Any, **kwargs: Any) -> int:
+            if isinstance(target, (str, os.PathLike)) and Path(os.fspath(target)) == p.parent:
+                raise err(errno.EACCES)
+            return real_open(target, flags, *args, **kwargs)
+
+        mp.setattr(os, "open", open_)
+    elif fault == "dir_fsync":
+        mp.setattr(os, "fsync", _fsync_failing_on_dirs(lambda: err(errno.EIO)))
+
+
+@settings(max_examples=50, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@given(
+    cols=st.lists(_collection, min_size=1, max_size=4, unique_by=lambda c: c.name.lower()),
+    op=st.sampled_from(["create", "rename", "update", "delete"]),
+    fault=st.sampled_from(_FAULTS),
+)
+def test_c13_reported_success_iff_visible(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, cols: list[Collection], op: str, fault: str
+) -> None:
+    fresh = "Fresh"
+    taken = {c.name.strip().lower() for c in cols}
+    # Preconditions, not assertions: the op must change the file, and the
+    # names this example creates must be free.
+    assume(fresh.lower() not in taken and "post" not in taken)
+    assume("zz_data" not in cols[0].book_ids)
+
+    p = cs.collections_path(tempfile.mkdtemp(dir=tmp_path))
+    cs.save_collections(p, cols)
+    sha0 = _sha(p)
+    caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
+    caplog.clear()
+    target = cols[0]
+
+    fns: dict[str, Callable[[], Any]] = {
+        "create": lambda: cs.create_collection(p, name=fresh),
+        "rename": lambda: cs.rename_collection(p, target.id, name=fresh),
+        "update": lambda: cs.update_collection_books(p, target.id, add=["zz_data"]),
+        "delete": lambda: cs.delete_collection(p, target.id),
+    }
+    raised: Optional[BaseException] = None
+    with pytest.MonkeyPatch.context() as mp:
+        _arm(mp, fault, p)
+        try:
+            fns[op]()
+        except OSError as e:
+            raised = e
+    ok = raised is None
+
+    after = cs.load_collections(p)
+    by_id = {c.id: c for c in after}
+    if op == "create":
+        visible = any(c.name == fresh for c in after)
+    elif op == "rename":
+        visible = target.id in by_id and by_id[target.id].name == fresh
+    elif op == "update":
+        visible = target.id in by_id and "zz_data" in by_id[target.id].book_ids
+    else:
+        visible = target.id not in by_id
+
+    assert ok == visible, (op, fault, raised)
+    assert (not ok) == (_sha(p) == sha0), (op, fault)
+    assert ok == (fault in ("none", "dir_open", "dir_fsync")), (op, fault, raised)
+    if not ok:
+        assert isinstance(raised, OSError) and raised.errno == _FAULT_ERRNO[fault], raised
+    assert set(os.listdir(p.parent)) <= {DATA_NAME, LOCK_NAME}
+    assert len(_warnings(caplog)) == (1 if fault in ("dir_open", "dir_fsync") else 0), (op, fault)
+    assert isinstance(run_bounded(lambda: cs.create_collection(p, name="Post")), Collection)
+
+
+# --------------------------------------------------------------------------- #
+# W3-c14 only OSError is swallowed
+# --------------------------------------------------------------------------- #
+
+
+def test_c14_dir_fsync_base_exception_propagates(path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    a = cs.create_collection(path, name="Alpha")
+    caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(os, "fsync", _fsync_failing_on_dirs(KeyboardInterrupt))
+        fds0 = _fd_count()
+        with pytest.raises(KeyboardInterrupt):
+            cs.update_collection_books(path, a.id, add=["x_data"])
+        fds1 = _fd_count()
+
+    got = cs.get_collection(path, a.id)
+    assert got is not None and got.book_ids == ["x_data"]
+    assert _warnings(caplog) == []
+    assert set(os.listdir(path.parent)) <= {DATA_NAME, LOCK_NAME}
+    assert fds1 == fds0
+    assert isinstance(run_bounded(lambda: cs.create_collection(path, name="After")), Collection)
+
+
+# --------------------------------------------------------------------------- #
+# W3-c15 a create reported under a dir-fsync failure is visible exactly once
+# --------------------------------------------------------------------------- #
+
+
+def test_c15_create_after_dir_fsync_failure_is_not_duplicated(path: Path) -> None:
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(os, "fsync", _fsync_failing_on_dirs(_eio))
+        c = cs.create_collection(path, name="A")
+
+    assert isinstance(c, Collection)
+    assert cs.get_collection(path, c.id) == c
+    with pytest.raises(ValueError, match="already exists"):
+        cs.create_collection(path, name="a")
+    assert isinstance(cs.create_collection(path, name="B"), Collection)
+    assert [x.name for x in cs.load_collections(path)] == ["A", "B"]
+
+
+# --------------------------------------------------------------------------- #
+# W3-c16 scratch cleanup failure: warn, never mask the original error
+# --------------------------------------------------------------------------- #
+
+
+def _unlink_error(kind: str) -> OSError:
+    if kind == "u1":
+        return PermissionError(errno.EACCES, os.strerror(errno.EACCES))
+    if kind == "u2":
+        return OSError(errno.EIO, os.strerror(errno.EIO))
+    return FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT))
+
+
+@pytest.mark.parametrize("unlink", ["u1", "u2", "u3"])
+@pytest.mark.parametrize("stage", ["s1", "s2", "s3"])
+def test_c16_scratch_cleanup_failure_warns_and_propagates(
+    path: Path, caplog: pytest.LogCaptureFixture, stage: str, unlink: str
+) -> None:
+    a = cs.create_collection(path, name="Alpha")
+    sha0 = _sha(path)
+    caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
+
+    boom: BaseException
+    if stage == "s1":
+        boom = OSError(errno.ENOSPC, os.strerror(errno.ENOSPC))
+    elif stage == "s2":
+        boom = OSError(errno.EIO, os.strerror(errno.EIO))
+    else:
+        boom = KeyboardInterrupt()
+
+    real_unlink = os.unlink
+    real_replace = os.replace
+    seen: list[str] = []
+    cleanup_err = _unlink_error(unlink)
+
+    def fake_unlink(target: Any, *args: Any, **kwargs: Any) -> None:
+        name = os.fspath(target)
+        if isinstance(name, str) and SCRATCH_RE.match(os.path.basename(name)):
+            seen.append(name)
+            if unlink == "u3":
+                real_unlink(target, *args, **kwargs)
+            raise cleanup_err
+        real_unlink(target, *args, **kwargs)
+
+    def dump(*args: Any, **kwargs: Any) -> None:
+        raise boom
+
+    def replace(src: Any, dst: Any, *args: Any, **kwargs: Any) -> None:
+        if Path(os.fspath(dst)) == path:
+            raise boom
+        real_replace(src, dst, *args, **kwargs)
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(os, "unlink", fake_unlink)
+        mp.setattr(os, "remove", fake_unlink)
+        if stage == "s2":
+            mp.setattr(os, "replace", replace)
+        else:
+            mp.setattr(cs.json, "dump", dump)
+        with pytest.raises(type(boom)) as excinfo:
+            cs.update_collection_books(path, a.id, add=["x_data"])
+
+    assert excinfo.value is boom
+    assert len(seen) == 1, seen
+    seen_tmp = seen[0]
+    recs = _warnings(caplog)
+    if unlink == "u3":
+        assert recs == []
+        assert set(os.listdir(path.parent)) <= {DATA_NAME, LOCK_NAME}
+    else:
+        assert len(recs) == 1, [r.getMessage() for r in recs]
+        msg = recs[0].getMessage()
+        assert seen_tmp in msg
+        assert os.strerror(cleanup_err.errno) in msg
+        assert Path(seen_tmp).exists()
+    assert _sha(path) == sha0
+
+    assert isinstance(run_bounded(lambda: cs.create_collection(path, name="After")), Collection)
+    if Path(seen_tmp).exists():
+        os.unlink(seen_tmp)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory modes")
+def test_c16b_scratch_cleanup_failure_real_mode(path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    a = cs.create_collection(path, name="Alpha")
+    sha0 = _sha(path)
+    caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
+    boom = OSError(errno.ENOSPC, os.strerror(errno.ENOSPC))
+
+    def dump(*args: Any, **kwargs: Any) -> None:
+        # Read and search only: the scratch file can no longer be unlinked.
+        os.chmod(path.parent, 0o500)
+        raise boom
+
+    try:
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(cs.json, "dump", dump)
+            with pytest.raises(OSError) as excinfo:
+                cs.update_collection_books(path, a.id, add=["x_data"])
+    finally:
+        os.chmod(path.parent, 0o700)
+
+    assert excinfo.value is boom
+    scratch = [n for n in os.listdir(path.parent) if SCRATCH_RE.match(n)]
+    assert len(scratch) == 1, scratch
+    scratch_path = path.parent / scratch[0]
+    recs = _warnings(caplog)
+    assert len(recs) == 1, [r.getMessage() for r in recs]
+    msg = recs[0].getMessage()
+    assert str(scratch_path) in msg
+    assert os.strerror(errno.EACCES) in msg
+    assert _sha(path) == sha0
+    assert isinstance(run_bounded(lambda: cs.create_collection(path, name="After")), Collection)
+    os.unlink(scratch_path)
+
+
+# --------------------------------------------------------------------------- #
+# W3-c17 / c17n threads: handshake proof of exclusion, and its control
+# --------------------------------------------------------------------------- #
+
+
+def _thread_handshake(
+    path: Path, monkeypatch: pytest.MonkeyPatch, *, bypass: bool
+) -> tuple[_Bounded, _Bounded, list[bool], list[list[str]], Collection]:
+    """H loads under the lock and holds; C announces itself, then tries to load.
+
+    With the lock, C cannot load while H holds it, so ``saw_c`` is False and C's
+    load sees H's write. Without it, C loads the stale copy, H waits for C to
+    return and saves last, and C's add is lost.
+    """
+    a = cs.create_collection(path, name="Alpha")
+    holding = threading.Event()
+    about_to_acquire = threading.Event()
+    c_loaded = threading.Event()
+    c_returned = threading.Event()
+    saw_c: list[bool] = []
+    c_loads: list[list[str]] = []
+    real_load = cs.load_collections
+
+    def spy(p: Path) -> list[Collection]:
+        cols = real_load(p)
+        who = threading.current_thread().name
+        ids = next((list(c.book_ids) for c in cols if c.id == a.id), [])
+        if who == "H":
+            holding.set()
+            about_to_acquire.wait(timeout=JOIN_TIMEOUT_S)
+            seen = c_loaded.wait(timeout=GRACE)
+            saw_c.append(seen)
+            if seen:
+                c_returned.wait(timeout=JOIN_TIMEOUT_S)
+        elif who == "C":
+            c_loads.append(ids)
+            c_loaded.set()
+        return cols
+
+    monkeypatch.setattr(cs, "load_collections", spy)
+    if bypass:
+        monkeypatch.setattr(cs, "_collections_write_lock", lambda p: contextlib.nullcontext())
+
+    h = _Bounded(lambda: cs.update_collection_books(path, a.id, add=["h_data"]), name="H").start()
+    assert holding.wait(timeout=5)
+    c = _Bounded(
+        lambda: (about_to_acquire.set(), cs.update_collection_books(path, a.id, add=["c_data"]), c_returned.set()),
+        name="C",
+    ).start()
+    h.settle()
+    c.settle()
+    monkeypatch.undo()
+    return h, c, saw_c, c_loads, a
+
+
+def test_c17_thread_writers_exclude(path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    h, c, saw_c, c_loads, a = _thread_handshake(path, monkeypatch, bypass=False)
+
+    assert h.exc is None and c.exc is None, (_outcome(h), _outcome(c))
+    assert saw_c == [False], "C loaded while H held the lock"
+    assert len(c_loads) == 1 and "h_data" in c_loads[0], c_loads
+    got = cs.get_collection(path, a.id)
+    assert got is not None and got.book_ids == ["h_data", "c_data"]
+
+
+def test_c17n_bypassed_lock_loses_update(path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    h, c, saw_c, c_loads, a = _thread_handshake(path, monkeypatch, bypass=True)
+
+    assert h.exc is None and c.exc is None, (_outcome(h), _outcome(c))
+    assert saw_c == [True], "the control did not interleave: the handshake cannot discriminate"
+    assert len(c_loads) == 1 and "h_data" not in c_loads[0], c_loads
+    got = cs.get_collection(path, a.id)
+    assert got is not None and got.book_ids == ["h_data"]
+
+
+# --------------------------------------------------------------------------- #
+# W3-c18 / c18n processes: flock proof of exclusion, and its control
+# --------------------------------------------------------------------------- #
+
+# Everything slow (interpreter start, imports, the bypass) happens before
+# "ready", so a child that is not blocked finishes well inside GRACE.
+_LOCK_CHILD = """
+import contextlib
+import sys
+from pathlib import Path
+from reader3_app import collections_service as cs
+path, cid, mode = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+if mode == "bypass":
+    cs._collections_write_lock = lambda p: contextlib.nullcontext()
+print("ready", flush=True)
+cs.update_collection_books(path, cid, add=["child_data"])
+"""
+
+
+def _spawn_lock_child(path: Path, cid: str, mode: str) -> subprocess.Popen[str]:
+    return subprocess.Popen(
+        [sys.executable, "-c", _LOCK_CHILD, str(path), cid, mode],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+
+def _reap(proc: Optional[subprocess.Popen[str]]) -> None:
+    if proc is None:
+        return
+    if proc.poll() is None:
+        proc.kill()
+    proc.wait(timeout=60)
+    for pipe in (proc.stdout, proc.stderr):
+        if pipe is not None:
+            pipe.close()
+
+
+def test_c18_process_writer_waits_for_flock(path: Path) -> None:
+    a = cs.create_collection(path, name="Alpha")
+    z = _zeta()
+    fd = os.open(path.parent / LOCK_NAME, os.O_CREAT | os.O_RDWR, 0o644)
+    proc: Optional[subprocess.Popen[str]] = None
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        snap = cs.load_collections(path)
+        sha0 = _sha(path)
+        proc = _spawn_lock_child(path, a.id, "locked")
+        assert proc.stdout is not None
+        ready = _Bounded(proc.stdout.readline).start().settle(JOIN_TIMEOUT_S).result
+        assert ready.strip() == "ready"
+        with pytest.raises(subprocess.TimeoutExpired):
+            proc.wait(timeout=GRACE)
+        assert _sha(path) == sha0
+        # Another writer's committed write, made while the flock is held.
+        cs.save_collections(path, snap + [z])
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        _, err = proc.communicate(timeout=60)
+        assert proc.returncode == 0, err
+    finally:
+        _reap(proc)
+        os.close(fd)
+
+    got = cs.get_collection(path, a.id)
+    assert got is not None and "child_data" in got.book_ids
+    assert "Zeta" in [c.name for c in cs.load_collections(path)]
+
+
+def test_c18n_bypassed_flock_loses_update(path: Path) -> None:
+    a = cs.create_collection(path, name="Alpha")
+    z = _zeta()
+    fd = os.open(path.parent / LOCK_NAME, os.O_CREAT | os.O_RDWR, 0o644)
+    proc: Optional[subprocess.Popen[str]] = None
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        snap = cs.load_collections(path)
+        proc = _spawn_lock_child(path, a.id, "bypass")
+        assert proc.stdout is not None
+        ready = _Bounded(proc.stdout.readline).start().settle(JOIN_TIMEOUT_S).result
+        assert ready.strip() == "ready"
+        assert proc.wait(timeout=JOIN_TIMEOUT_S) == 0, "the control child did not finish past the held flock"
+        # The stale copy taken before the child ran is saved last.
+        cs.save_collections(path, snap + [z])
+        fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        _reap(proc)
+        os.close(fd)
+
+    got = cs.get_collection(path, a.id)
+    assert got is not None and "child_data" not in got.book_ids
+    assert "Zeta" in [c.name for c in cs.load_collections(path)]

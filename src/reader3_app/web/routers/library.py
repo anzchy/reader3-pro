@@ -179,9 +179,10 @@ async def api_collections_update_books(collection_id: str, body: CollectionBooks
             raise HTTPException(status_code=404, detail="Collection not found")
 
         add_ids = [_server._validate_book_id(x) for x in (body.add or [])]
+        # Not filtered against ``col``: that snapshot is read outside the lock, so a
+        # book added since would be silently kept. The mutator ignores non-members
+        # under the lock.
         remove_ids = [_server._validate_book_id_path_safe(x) for x in (body.remove or [])]
-        remove_allowed = set(col.book_ids or [])
-        remove_ids = [x for x in remove_ids if x in remove_allowed]
         updated = collections_service.update_collection_books(
             _server._collections_file_path(),
             cid,
