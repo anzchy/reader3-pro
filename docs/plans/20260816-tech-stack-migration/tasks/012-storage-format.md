@@ -258,7 +258,7 @@
 |---|---|---|---|
 | 1 | 新书不依赖 pickle | 删掉 `book.pkl` 后新处理的书可阅读 / 搜索 / 标注 / 建索引（含 WI-4 的枚举与缓存、WI-7 的 `_load_book`） | _待填_ |
 | 2 | `--migrate` 保住用户数据 | WI-6 验收第 1 条（三件字节不变 + 指纹不变） | _待填_ |
-| 3 | 崩溃注入 | WI-6 验收第 2 条 | _待填_ |
+| 3 | 崩溃注入矩阵 | **每个写手 × 每个提交点**都有注入测试，不只 `--migrate`：WI-1 八步发布（WI-1 验收）、WI-3 双写、WI-6 `--migrate`（WI-6 验收第 2 条）、WI-7 generation swap、WI-12 批量重建、WI-13 上传。每一格两种注入都要有：**进程内抛异常**（monkeypatch 提交点）与**真杀进程**（子进程跑写手，在提交点前后 `SIGKILL`——`finally` / 上下文管理器在这里不会执行，异常注入测不到这一类）。每格三条断言：① 书目录三态只落 `missing` 或 `valid`，永不 `corrupt`；② 注入前那一版仍可读（阅读 / 搜索 / 标注 / 语义查询），索引不出现「写侧已换、查询侧打空」；③ 不做人工清理直接重跑写手，收敛到与未中断一次跑完**相同**的结果（残留 staging 被 `_staging_dir_is_owned` 判为无主并清掉）。矩阵写成一张表放进测试模块 docstring，缺格即不过 | _待填_ |
 | 4 | 两条协议缺口 | WI-3 验收第 1、2 条（inode 断言；无新产物挨旧 marker） | _待填_ |
 | 5 | 真实 iframe 标注迁移 E2E | WI-6 验收第 3 条 | _待填_ |
 | 6 | DEG-S1–S4 可见 | `acceptance_p3` 解 skip 全绿；`lint_e2e_groups.py` rc=0 且 `ACTIVATED_ACCEPTANCE_DIRS` 含 `acceptance_p3` | _待填_ |
@@ -273,11 +273,13 @@
 | 15 | Wave D 两条欠账 | WI-12 的逐本进度 / 失败处理 / 重叠规则有契约测试；WI-13 的新格式落盘与上传边界有测试；设置页 `reindex` 不再显示「暂不支持」 | _待填_ |
 | 16 | e2e 分组与 soak 计数 | 新增的每条 e2e 都登记进 `scripts/lint_e2e_groups.py` 的分组（验收目录进 `EXPECTED_ACCEPTANCE_PER_DIR`，或模块进 `UNGROUPED_E2E_MODULES` 并同步 `EXPECTED_UNGROUPED_ITEMS`）；`scripts/soak_run.py` 由此派生 `EXPECTED_NONBASELINE_ITEMS`，`verdict` 要求 `-m baseline_1b` 的 deselected **恰好**等于它——漏登记一条，合入后下一次 soak 就判 red | _待填_ |
 | F | **冻结区零字节改动** | 下列 8 条路径 `git diff --stat master... -- <paths>` 为空，`suite_hash` 与 [`soak-log.md`](./soak-log.md) 表头冻结值一致：`tests/e2e/baseline_1b/**`、`tests/e2e/conftest.py`、`tests/e2e/helpers.py`、`tests/e2e/test_harness_smoke.py`、`tests/fixtures/epub_corpus.py`、`tests/fixtures/epub_zip.py`、`tests/fixtures/ai_stub.py`、`tests/conftest.py`。路径清单的定义处是 `soak-log.md`「`suite_hash` 的取法」与 `scripts/soak_run.py` 的 `HASH_COVERED_PATHS`，冲突以那里为准 | _待填_ |
+| R | **红灯必查根因** | 分支存续期间，`baseline_1b` 与 e2e lane **每一次**红都在 §8「红灯记录」追一行：时间、commit、失败用例、根因（产品缺陷 / 测试缺陷 / 环境）、处置 commit。**不允许以「重跑变绿」结案**——重跑只用来复现，不用来消红。根因归「测试缺陷」且落在冻结集的，按 [§7](../plan-tech-stack-migration.md) 清零规则处理并如实记账，不得绕开。表为空或每行根因齐全才算过 | _待填_ |
 | 17 | 欠账回写 | 009 表里兑付方为 012 的每一行（#35、#52、#54、#55、#57——届时 018 那一批已把另外四行改走）状态改为已结清（附 commit）或写明转出去向 | _待填_ |
 | 18 | ADR 回写 | ADR-0009 → Accepted、compliance 更新；ADR-0007 compliance 更新 | _待填_ |
 | 19 | CI 全绿后开 PR | `tests.yml`、`lint.yml` | _待填_ |
 
 - 不得设 `TDD_GUARD_BYPASS`。
+- **门槛 3 与 R 为什么是硬门槛**（2026-09-26 加，出自「跳过 soak 的代价评估」）：本分支引入的缺陷——崩溃安全发布、每书锁、generation swap、删书与写手并发——**天然是间歇性的**，表现与 flaky 测试无法区分。soak 证明的只是基线在一个本地剖面下攒到了 10 次绿，不是 flaky 率上界（[§7](../plan-tech-stack-migration.md) 界定段）；所以「红了就重跑」会把真竞态藏进重跑里。门槛 R 管的是判读纪律，门槛 3 让崩溃安全不再只靠 E2E 当判官。
 - `EXPECTED_BASELINE_ITEMS` 不许变——它一变就说明碰了冻结集。（门槛 16 改的是验收 / 白名单两个常量，不是这一个。）
 - #51 / #53 / #56 / #58 的兑付不在本表：它们的出口闸属于 018。门槛 13 / 14 只验「012 的改动没把 018 的路由与锁弄坏」。
 
@@ -324,3 +326,10 @@
 ## 8. 合入记录
 
 _未合入。合入后本节是「012 是否在主干上」的唯一定义处，格式照 [011 §8 合入记录](./011-backend-refactor.md)。_
+
+### 红灯记录（门槛 R）
+
+分支存续期间 `baseline_1b` / e2e lane 的每一次红追一行。「重跑变绿」不是根因。
+
+| 时间（UTC） | commit | 失败用例 | 根因类别 | 根因 | 处置 commit |
+|---|---|---|---|---|---|
