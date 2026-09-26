@@ -235,29 +235,93 @@ class BookUuidResolver:
                 # 缺失），而不是被悄悄换上一个新 uuid（无声的数据丢失）。
                 logger.warning("skipping %s: cannot resolve its book_uuid: %s", item, e)
 
-    def _load_folder(self, book_folder: str) -> None:
+    def _load_folder(self, book_folder: str) -> str:
         book_folder = _safe_folder_name(book_folder)
         book_uuid = ensure_book_uuid(self.books_dir, book_folder)
         with self._lock:
-            self._uuid_to_folder[book_uuid] = book_folder
-            self._folder_to_uuid[book_folder] = book_uuid
+            self._register(book_folder, book_uuid)
+        return book_uuid
+
+    def _register(self, book_folder: str, book_uuid: str) -> None:
+        """Map folder <-> uuid, dropping the reverse entry of the folder's old uuid.
+
+        Caller holds ``_lock``. Without the cleanup a folder whose uuid changed kept
+        answering reverse lookups for the uuid it no longer holds.
+        """
+        old = self._folder_to_uuid.get(book_folder)
+        if old is not None and old != book_uuid and self._uuid_to_folder.get(old) == book_folder:
+            del self._uuid_to_folder[old]
+        self._uuid_to_folder[book_uuid] = book_folder
+        self._folder_to_uuid[book_folder] = book_uuid
+
+    def _forget(self, book_folder: str, book_uuid: str, *, keep_forward: bool = False) -> None:
+        """Compare-and-delete: drop X->U / U->X only if they still say exactly that.
+
+        Another thread may already have replaced a stale entry with a fresh one;
+        a blind delete would throw the fresh one away.
+        """
+        with self._lock:
+            if not keep_forward and self._folder_to_uuid.get(book_folder) == book_uuid:
+                del self._folder_to_uuid[book_folder]
+            if self._uuid_to_folder.get(book_uuid) == book_folder:
+                del self._uuid_to_folder[book_uuid]
+
+    def _uuid_on_disk(self, book_folder: str) -> Optional[str]:
+        """The folder's uuid as ``ai_meta.json`` holds it now -- read only, never written.
+
+        ``None`` means the folder exists but carries no uuid yet. An unreadable file
+        raises (ADR-0003: refuse, do not mint over it), and so does a missing
+        folder: minting for it would makedirs the deleted book back into existence.
+        """
+        meta_path = _ai_meta_path(self.books_dir, book_folder)
+        meta = _read_ai_meta(meta_path)
+        if meta is None and not os.path.isdir(os.path.dirname(meta_path)):
+            raise FileNotFoundError(f"book folder {book_folder!r} is gone")
+        return _uuid_from_meta(meta_path, meta or {})
 
     def book_uuid_for_folder(self, book_folder: str) -> str:
         book_folder = _safe_folder_name(book_folder)
         with self._lock:
             cached = self._folder_to_uuid.get(book_folder)
         if cached:
-            return cached
-        self._load_folder(book_folder)
-        with self._lock:
-            return self._folder_to_uuid[book_folder]
+            # WI-3: the cache is a hint, the file is the truth. A folder deleted
+            # and reprocessed (or replaced by another book) used to keep answering
+            # with the uuid it had before, and conversations attached to the wrong
+            # identity with nothing raised.
+            try:
+                on_disk = self._uuid_on_disk(book_folder)
+            except FileNotFoundError:
+                # Keep the forward entry: dropping it would send the next call down
+                # the miss path, whose makedirs recreates the deleted folder.
+                self._forget(book_folder, cached, keep_forward=True)
+                raise
+            except (OSError, ValueError):
+                self._forget(book_folder, cached)
+                raise
+            if on_disk == cached:
+                return cached
+            self._forget(book_folder, cached)
+            if on_disk is not None:
+                with self._lock:
+                    self._register(book_folder, on_disk)
+                return on_disk
+        return self._load_folder(book_folder)
 
     def folder_for_book_uuid(self, book_uuid: str) -> str:
         normalized = str(UUID(str(book_uuid)))
         with self._lock:
             cached = self._uuid_to_folder.get(normalized)
         if cached:
-            return cached
+            try:
+                held = self._uuid_on_disk(cached)
+            except (OSError, ValueError):
+                held = None
+            if held == normalized:
+                return cached
+            # Only the reverse entry: the forward one re-validates on its own hit.
+            with self._lock:
+                if self._uuid_to_folder.get(normalized) == cached:
+                    del self._uuid_to_folder[normalized]
         self.scan()
         with self._lock:
             cached = self._uuid_to_folder.get(normalized)

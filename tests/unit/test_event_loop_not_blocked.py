@@ -108,6 +108,9 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Env]:
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(server, "BOOKS_DIR", str(books_dir))
 
+    # WI-3 起缓存命中要和磁盘上的 ai_meta.json 对账；补一份持有 BOOK_UUID 的真文件（只是 setup）。
+    (books_dir / BOOK_ID / "ai_meta.json").write_text(f'{{"book_uuid": "{BOOK_UUID}"}}', encoding="utf-8")
+
     resolver = BookUuidResolver(books_dir=str(books_dir))
     # 预置映射，folder_for_book_uuid() 因此不会走 scan()。
     resolver._uuid_to_folder[BOOK_UUID] = BOOK_ID
