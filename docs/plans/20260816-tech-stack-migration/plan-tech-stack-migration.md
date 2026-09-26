@@ -612,6 +612,7 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 | M5 | Phase 5 launch + PWA | `015-launch-experience` | A（`reader3 launch`）＋ **B**（PWA，WI-20） |
 | M1b-债 | 欠账 #22 字号/间距慢一拍（合入 009 后、冻结 G2 前的一条独立小分支） | `016-settings-apply-order` | A（兑付记在 [`tasks/009` 欠账表 #22](./tasks/009-e2e-annotations.md)，不另开 task 文件） |
 | M2-债 | 011 合入后的全量审计欠账：44 条 findings 中判为 must / should 的 22 条 | `017-audit-followup` | A（任务展开写在 [`tasks/017-audit-followup.md`](./tasks/017-audit-followup.md)） |
+| M4a-债 | 013 延后的后端半边中**不依赖 012 存储格式**的四条（#51 / #56 / #58 / #53）＋ 每书写协调契约 | `018-library-routes` | A（任务文件开分支前补；分拆裁定见 [`tasks/012` §6 D1](./tasks/012-storage-format.md)） |
 
 M1b 与 MD 可与 M1/M2 交错推进；M4a 可与 M2/M3 交错推进；**M3 与 M4b 严格串行**。
 
@@ -625,23 +626,34 @@ must / should 两桶共 22 条落在本分支。**它从 `master` 开、不回 0
 而那个目录在 `.gitignore:62` 上、不进版本库，所以**能进仓库的那一份事实写在
 [`tasks/017-audit-followup.md`](./tasks/017-audit-followup.md)**，不要只依赖 findings 文件。
 
-**后端分支**的任务清单放在本文件夹的 `tasks/{分支名}.md`，不写进本文。今天存在五个：
+`018` 同类：不是新里程碑，是 **M4a（013）延后到后端的欠账兑付**。2026-09-26 用户裁定 D1
+（Fable 子代理裁定 ＋ Codex 复核后的修正版）把原本全部挂给 012 的 #51–#53、#56–#58 拆开：
+**不依赖新存储格式**的 #51 / #56 / #58 / #53 连同一份每书写协调契约进 `018`，**在 soak 等待期内、
+012 之前**做完并合入，012 在它之上开工；**验收写死要新格式**的 #57（上传后按新格式落盘）与
+**要 generation swap** 的 #52 留在 012 的末波。裁定理由与逐条依赖核对只写在
+[`tasks/012` §6 D1](./tasks/012-storage-format.md)。`018` 的合入同样不得动冻结集 8 条路径——
+它跑在 `master` 上，改一个字节就清零 soak。**兑付方改写未做**：009 欠账表这四行的兑付方列、
+`tests/unit/test_track_d_ledger.py` 的 `DEBT_012_RE` 校验与 `track_d_pinned_014.json`、
+前端计划的对应引用必须**同一批**改，放在 018 开工时做；在那之前 009 表仍写 012，以本段为准。
+
+**后端分支**的任务清单放在本文件夹的 `tasks/{分支名}.md`，不写进本文。今天存在六个：
 [`007-hygiene-and-contracts.md`](./tasks/007-hygiene-and-contracts.md)、
 [`008-test-safety-net.md`](./tasks/008-test-safety-net.md)、
 [`009-e2e-annotations.md`](./tasks/009-e2e-annotations.md)、
 [`011-backend-refactor.md`](./tasks/011-backend-refactor.md)、
+[`012-storage-format.md`](./tasks/012-storage-format.md)（骨架，2026-09-26）、
 [`017-audit-followup.md`](./tasks/017-audit-followup.md)。
 
 **前端分支（010 / 013 / 014 与 015 的 PWA 部分）不再有独立任务文件**——它们的工作项以
 `### WI-N:` 的形式直接写在 [前端计划正文](../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) 里，
 这样 `/tdd-guardian:workflow` 能把整份计划当成单一输入来跑。
 
-其余两个（012 / 015 的后端部分）**故意还没写**。评审第 9 条要求补齐骨架，
+其余两个（018 / 015 的后端部分）**故意还没写**。评审第 9 条要求补齐骨架，
 处置方式是**领先一个分支即时补**，不是现在一次写完：骨架的价值来自它写下的
 事实（哪些代码还在、哪些已经被上一个分支改掉了），而 011 的事实要等 008 落地才成立。
 提前写只会得到一份开工时已经过期的清单。开某个分支前补它自己那份。
 
-**补任务文件时有一条固定动作**：去 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) 的跨波欠账表里，把**兑付方指向该分支**的行抄成开工项。009 做 E2E 特征化时实测撞出的生产缺陷都记在那张表上，而那份文件会随 009 合并进入归档——不在开分支时主动去取，这些账就丢了。今天指向 **011** 的有一行：**#18**（`collections_service._NAME_RE` 把连字符判成字符范围端点，导致 `sci-fi` 这类集合名建不出来、而带反斜杠的名字反被放行）。指向前端计划的五行已由 [前端计划 §6.1](../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) 接走。指向 **012** 的今天有九行：**#35**，以及 2026-09-25 按用户裁定 R1–R3 立账的 **#51–#58**（013 延后的后端半边：provider 保存版本校验、批量重建索引、书库导出、DEG-S3 / DEG-S4 数据面、客户端书目列表、上传、删书）——内容只在那张表里，开 012 时照表抄。
+**补任务文件时有一条固定动作**：去 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) 的跨波欠账表里，把**兑付方指向该分支**的行抄成开工项。009 做 E2E 特征化时实测撞出的生产缺陷都记在那张表上，而那份文件会随 009 合并进入归档——不在开分支时主动去取，这些账就丢了。今天指向 **011** 的有一行：**#18**（`collections_service._NAME_RE` 把连字符判成字符范围端点，导致 `sci-fi` 这类集合名建不出来、而带反斜杠的名字反被放行）。指向前端计划的五行已由 [前端计划 §6.1](../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) 接走。指向 **012** 的今天有九行：**#35**，以及 2026-09-25 按用户裁定 R1–R3 立账的 **#51–#58**（013 延后的后端半边：provider 保存版本校验、批量重建索引、书库导出、DEG-S3 / DEG-S4 数据面、客户端书目列表、上传、删书）——内容只在那张表里，开 012 时照表抄。**其中 #51 / #53 / #56 / #58 已于 2026-09-26 裁定改由 `018` 兑付**（见上文 `018` 段），表上的兑付方列待 018 开工时同批改写。
 
 > **「领先一个分支」按依赖顺序数，不按编号顺序数。** Track D（010）先于 011 成文，是因为
 > §9.1 把 Track D 与 1b 标为「Phase 0 一结束就动」——它们是 Phase 3 的前置，
@@ -660,6 +672,7 @@ must / should 两桶共 22 条落在本分支。**它从 `master` 开、不回 0
 | Track D | 0 | **Phase 3**（DEG-S1–DEG-S5 原型） |
 | Phase 2a | 1a | 2b |
 | Phase 2b | 2a | Phase 3 |
+| M4a-债（`018`） | 2b（`book_store` 的元数据接缝）＋ 4A 已合入；**不等 soak** | Phase 3 的末波（#55 的载体是 018 的书目列表路由 #56，#57 要用 018 的每书写锁），**不挡 Phase 3 开工** |
 | **Phase 3** | **2b ＋ Track D ＋ 1b 的 soak**（从 **G2** 起算）——三路汇合 | 4B |
 | Phase 4A | 1b 的 **G1** | 4B（其中 4A.4 项） |
 | Phase 4B | Phase 3 ＋ 4A.4 | 5 |
