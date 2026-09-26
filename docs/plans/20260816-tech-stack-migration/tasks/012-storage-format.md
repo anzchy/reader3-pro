@@ -1,11 +1,11 @@
 # 012-storage-format —— 任务
 
-- **状态**: 骨架，待审（2026-09-26）。分支**未开**；本文只做开工前的范围与闸门登记，没有一项已实施。D1 已裁定（§6）
+- **状态**: 骨架，待审（2026-09-26）。分支**未开**；本文只做开工前的范围与闸门登记，没有一项已实施。D1 与 Q1–Q6 已裁定（§6）
 - **对应阶段**: Phase 3「存储去 pickle 化」＝ 里程碑 **M3**（[§9 编号表](../plan-tech-stack-migration.md)）
 - **计划文件夹**: [`20260816-tech-stack-migration/`](../plan-tech-stack-migration.md)（归属 **A**）
 - **上游**: [`018-library-routes`](./018-library-routes.md)（[§9](../plan-tech-stack-migration.md) 的 M4a-债）先于本分支合入，本分支在它之上开工；顺序的定义处是 [进度盘 §2](../../20260824-frontend-backend-plan-progress.md)
 - **下游**: M3 与 M4b（`014`）**严格串行**（[§9.1](../plan-tech-stack-migration.md)）。014 WI-16b 的外部前置写的是「债 #54–#58」，D1 之后拆成两家：**等 012** 的是 #54、#55、#57；**等 018** 的是 #56、#58（#53 的前端半边是 FB-S06，不在 WI-16b）
-- **节奏**: 按 Wave 推进，Wave 内按 WI 顺序；行为变更各自独立 commit，路由新增与 `routes.snapshot` 同 commit
+- **节奏**: 按 Wave 推进，Wave 内按**依赖**顺序（通常即编号顺序；例外写在 §3 表里——Wave C 是 WI-9 → WI-10 → WI-8 → WI-11，因为 WI-8 依赖 WI-9 / WI-10）；行为变更各自独立 commit，路由新增与 `routes.snapshot` 同 commit
 
 > **权威范围**：本文**定义**的只有四件事——012 的工作项切分、每个 WI 的验收占位、012 的出口闸与合入记录、D1 的裁定理由（§6）。
 > 以下一律**只链接不复述**（「搬，不抄」）：写入协议与三态读取 → [ADR-0007](../../../adr/0007-crash-safe-publish-protocol.md)；
@@ -82,7 +82,7 @@
 |---|---|---|
 | A 格式与读写 | WI-1 – WI-5 | ✅（WI-1 的字段冻结部分是文档，TODO(审)） |
 | B 迁移与索引 | WI-6、WI-7 | ✅ |
-| C 可见性与日落 | WI-8 – WI-11 | WI-8/9/10 ✅；WI-11 ❌（文档 + 版本号） |
+| C 可见性与日落 | WI-8 – WI-11，**做的顺序 WI-9 → WI-10 → WI-8 → WI-11** | WI-8/9/10 ✅；WI-11 ❌（文档 + 版本号） |
 | D 末波欠账 | WI-12（#52）、WI-13（#57） | ✅ |
 
 > **编号说明**：WI-1 – WI-11 与 D1 前的草稿同号。草稿里暂定的 WI-12 – WI-17 **整组作废**：#51 / #53 / #56 / #58 移去 018，
@@ -122,7 +122,7 @@
   - `corrupt` 大声失败、不回退 pkl；`missing` 走 pkl、不告警
   - **损坏的 `book.pkl`** 在 `missing` 态下的阅读页表现有断言（[009 原 tests/23 附注](./009-e2e-annotations.md)：这一态等 012 定三态后补）
   - 测试矩阵：待 /tdd-guardian:design-tests
-- TODO(审): 双写期产物是 pkl + manifest + chapters + `book.epub` + `images/`，**谁是 marker**？今天 `_commit_staged_artifacts` 最后一步 rename 的是 `book.pkl`。见 §6 Q2。
+- 双写期产物是 pkl + manifest + chapters + `book.epub` + `images/`；marker 是 `manifest.json`，多产物如何收成一个提交点由 Q2 原型定（§6 Q2）。今天 `_commit_staged_artifacts` 最后一步 rename 的是 `book.pkl`。
 
 ### WI-4: `book_store.py` 封装格式判断（含 `book_store` 之外的存储泄漏）
 
@@ -168,7 +168,7 @@
   - 不需要 `READER3_ALLOW_PICKLE=1` 即可迁移
   - 迁移进行中对同一本书删书 / 重建索引被锁挡住（按 018 契约的拒绝语义），且迁移不会把已删的目录重新建出来
   - 测试矩阵：待 /tdd-guardian:design-tests
-- TODO(审): ADR-0009 还要求 `--migrate-all` 与未迁移库存清单——进本 WI、进 WI-11，还是推到停写 pkl 那一版？（§6 Q5）
+- **`--migrate-all` 与未迁移库存清单也在本 WI**（§6 Q5）：WI-11 的「N+1 停写 pkl」以它们已发布为前提。验收补充：`--migrate-all` 逐本持锁、一本失败不中断其余、结束时打印未迁移清单；清单可单独查询（不迁移只列）
 
 ### WI-7: Chroma 索引重建改 generation swap（写侧 + 查询侧）
 
@@ -258,7 +258,7 @@
 |---|---|---|---|
 | 1 | 新书不依赖 pickle | 删掉 `book.pkl` 后新处理的书可阅读 / 搜索 / 标注 / 建索引（含 WI-4 的枚举与缓存、WI-7 的 `_load_book`） | _待填_ |
 | 2 | `--migrate` 保住用户数据 | WI-6 验收第 1 条（三件字节不变 + 指纹不变） | _待填_ |
-| 3 | 崩溃注入矩阵 | **每个写手 × 每个提交点**都有注入测试，不只 `--migrate`：WI-1 八步发布（WI-1 验收）、WI-3 双写、WI-6 `--migrate`（WI-6 验收第 2 条）、WI-7 generation swap、WI-12 批量重建、WI-13 上传。每一格两种注入都要有：**进程内抛异常**（monkeypatch 提交点）与**真杀进程**（子进程跑写手，在提交点前后 `SIGKILL`——`finally` / 上下文管理器在这里不会执行，异常注入测不到这一类）。每格三条断言：① 书目录三态只落 `missing` 或 `valid`，永不 `corrupt`；② 注入前那一版仍可读（阅读 / 搜索 / 标注 / 语义查询），索引不出现「写侧已换、查询侧打空」；③ 不做人工清理直接重跑写手，收敛到与未中断一次跑完**相同**的结果（残留 staging 被 `_staging_dir_is_owned` 判为无主并清掉）。矩阵写成一张表放进测试模块 docstring，缺格即不过 | _待填_ |
+| 3 | 崩溃注入矩阵 | **每个写手 × 每个提交点**都有注入测试，不只 `--migrate`：WI-1 八步发布（WI-1 验收）、WI-3 双写、WI-6 `--migrate`（WI-6 验收第 2 条）、WI-7 generation swap、WI-12 批量重建、WI-13 上传。每一格两种注入都要有：**进程内抛异常**（monkeypatch 提交点）与**真杀进程**（子进程跑写手，在提交点前后 `SIGKILL`——`finally` / 上下文管理器在这里不会执行，异常注入测不到这一类）。每格三条断言：① 书目录三态只落 `missing` 或 `valid`，永不 `corrupt`；② 注入点在提交点**之前** → 旧版本完整可读，注入点在提交点**之后** → 新版本完整可读（阅读 / 搜索 / 标注 / 语义查询）；任何一格都不出现新旧混合（例如新 `images/` ＋ 旧 `book.pkl`，见 [009 #59](./009-e2e-annotations.md#跨波欠账)），索引不出现「写侧已换、查询侧打空」；③ 不做人工清理直接重跑写手，收敛到与未中断一次跑完**相同**的结果（残留 staging 被 `_staging_dir_is_owned` 判为无主并清掉）。矩阵写成一张表放进测试模块 docstring，缺格即不过 | _待填_ |
 | 4 | 两条协议缺口 | WI-3 验收第 1、2 条（inode 断言；无新产物挨旧 marker） | _待填_ |
 | 5 | 真实 iframe 标注迁移 E2E | WI-6 验收第 3 条 | _待填_ |
 | 6 | DEG-S1–S4 可见 | `acceptance_p3` 解 skip 全绿；`lint_e2e_groups.py` rc=0 且 `ACTIVATED_ACCEPTANCE_DIRS` 含 `acceptance_p3` | _待填_ |
@@ -276,7 +276,7 @@
 | R | **红灯必查根因** | 分支存续期间，`baseline_1b` 与 e2e lane **每一次**红都在 §8「红灯记录」追一行：时间、commit、失败用例、根因（产品缺陷 / 测试缺陷 / 环境）、处置 commit。**不允许以「重跑变绿」结案**——重跑只用来复现，不用来消红。根因归「测试缺陷」且落在冻结集的，按 [§7](../plan-tech-stack-migration.md) 清零规则处理并如实记账，不得绕开。表为空或每行根因齐全才算过 | _待填_ |
 | 17 | 欠账回写 | 009 表里兑付方为 012 的每一行（#35、#52、#54、#55、#57——届时 018 那一批已把另外四行改走）状态改为已结清（附 commit）或写明转出去向（那四行由 [018 WI-1](./018-library-routes.md) 改走、由 018 结清） | _待填_ |
 | 18 | ADR 回写 | ADR-0009 → Accepted、compliance 更新；ADR-0007 compliance 更新 | _待填_ |
-| 19 | CI 全绿后开 PR | `tests.yml`、`lint.yml` | _待填_ |
+| 19 | 合入前 CI 全绿 | PR 上 `pull_request` 触发的 `tests.yml` 与 `lint.yml` 全绿后才合入（PR 先开，CI 才会跑） | _待填_ |
 
 - 不得设 `TDD_GUARD_BYPASS`。
 - **门槛 3 与 R 为什么是硬门槛**（2026-09-26 加，出自「跳过 soak 的代价评估」）：本分支引入的缺陷——崩溃安全发布、每书锁、generation swap、删书与写手并发——**天然是间歇性的**，表现与 flaky 测试无法区分。soak 证明的只是基线在一个本地剖面下攒到了 10 次绿，不是 flaky 率上界（[§7](../plan-tech-stack-migration.md) 界定段）；所以「红了就重跑」会把真竞态藏进重跑里。门槛 R 管的是判读纪律，门槛 3 让崩溃安全不再只靠 E2E 当判官。
@@ -306,11 +306,11 @@
 |---|---|---|---|
 | D1 | #51–#53、#56–#58 的归属 | §2.2 | ✅ **已裁定（2026-09-26，用户裁定）**。来源：Fable 子代理裁定 ＋ Codex 复核（线程 `01a0daf3-7dd9-7120-aee4-d7e834502adb`）后的修正版。**结论**：#51 / #56 / #58 / #53 ＋ 每书写协调契约进新分支 `018-library-routes`（[§9](../plan-tech-stack-migration.md) M4a-债），soak 等待期内、012 之前做完；018 内 #58 只在锁落地之后落，#53 只在导出 schema（metadata / content / annotations 的覆盖面）定下之后落，否则在 018 内延后并写明 owner——**不回 012**。012 留 #57、#52 作末波。**理由**：#57 的验收写死新格式落盘，依赖 WI-3；#52 依赖 WI-7，且今天的单本重建是先毁后建、查询开固定集合名，批量叠在上面会放大损坏；其余四条不依赖新存储格式，放在 012 里只会让 M3→M4b 的串行链平白变长。**兑付方改写**：[018 WI-1](./018-library-routes.md) |
 | Q1 | **ADR-0011 是否允许 012 新增路由？** | ADR-0011 Decision Outcome（`docs/adr/0011-api-v1-freeze.md:36`） | ✅ **已关（2026-09-26）**：允许。同一段写明「任何路由的增删改，两步都要做：先在同一个 commit 里改快照，再在 PR 描述里写明破坏性与迁移路径」——新增路由走这个流程即合规；「Phase 3 只能新增字段，不得改名、不得改语义、不得改默认值」约束的是**已有**路由的响应形状，不禁止新增路由。013 的 D11–D13 把冻结当作不加路由的理由，是 013 自己的范围决定，不是 ADR 的要求。落到本文即 §4 门槛 8 |
-| Q2 | 双写期的 commit marker 是 `book.pkl` 还是 `manifest.json`？ADR-0007 写「012 之后仍是三件（`manifest.json` + `chapters.jsonl` + `images/`）」，没覆盖 pkl 与新格式**并存**的双写期 | ADR-0007 三产物缺口一节 | TODO(审) |
-| Q3 | `book_uuid` 是否并入 `manifest.json` | ADR-0009 Neutral、ADR-0003 Revisit When | TODO(审) |
-| Q4 | 指纹比对与 ADR-0005 运行时文本重匹配：并存还是取代 | ADR-0005 Revisit When | TODO(审) |
-| Q5 | `--migrate-all` / 未迁移清单归 WI-6、WI-11 还是后续版本 | ADR-0009 Decision Outcome | TODO(审) |
-| Q6 | 日落版本号：ADR-0009 写「当前 `pyproject.toml` 版本 `1.4.0`」，今天是 `1.5.0`——ADR 的基线已过期，日落号要按哪个起算 | ADR-0009 Decision Outcome、`pyproject.toml` | TODO(审) |
+| Q2 | 双写期的 commit marker 是 `book.pkl` 还是 `manifest.json`？ADR-0007 写「012 之后仍是三件（`manifest.json` + `chapters.jsonl` + `images/`）」，没覆盖 pkl 与新格式**并存**的双写期 | ADR-0007 三产物缺口一节 | ✅ **已裁定（2026-09-26）**：marker 是 **`manifest.json`**，最后落。**机制未定**，由一个 WI-1 前的原型定：持久化恢复日志（Codex 的提议）还是 generation 目录 ＋ 单个指针原子换（协调者倾向，与 WI-7 的 generation swap 同构）。二者都要让「多个产物」变成「一个提交点」——今天 `_commit_staged_artifacts` 逐个替换、只有内存里的回滚，被杀即混版（[009 #59](./009-e2e-annotations.md#跨波欠账)）。无论选哪个都要写**取代 ADR-0007 的新 ADR**（其「跨设备 rename 降级为复制」一句顺带更正）；恢复必须先于 staging 清理。来源：Codex（线程 `01a0dc02-d308-78f1-8750-8bcb9dacec06`）＋ Fable 子代理，维护者确认 |
+| Q3 | `book_uuid` 是否并入 `manifest.json` | ADR-0009 Neutral、ADR-0003 Revisit When | ✅ **已裁定（2026-09-26）**：**不并入**，只留在 `ai_meta.json`。manifest 是可由 EPUB 重建的派生物，uuid 是身份；并进去后重建即换身份，或者重建要特意保留它——两份就会漂。018 Q12「删后重导入 = 新书」与此一致 |
+| Q4 | 指纹比对与 ADR-0005 运行时文本重匹配：并存还是取代 | ADR-0005 Revisit When | ✅ **已裁定（2026-09-26）**：**并存**。指纹相等 → 跳过重匹配（快路径）；不等 → 走 ADR-0005 重匹配，**不**据此作废标注 |
+| Q5 | `--migrate-all` / 未迁移清单归 WI-6、WI-11 还是后续版本 | ADR-0009 Decision Outcome | ✅ **已裁定（2026-09-26）**：都进 **WI-6**（见该 WI）。停写 pkl 之前用户必须有一条命令迁完整库 |
+| Q6 | 日落版本号：ADR-0009 写「当前 `pyproject.toml` 版本 `1.4.0`」，今天是 `1.5.0`——ADR 的基线已过期，日落号要按哪个起算 | ADR-0009 Decision Outcome、`pyproject.toml` | ✅ **已裁定（2026-09-26，维护者）**：按 **minor** 节奏，从 **N = 发布 012 的那一版**（大概率 1.6.0）起算：N 双写；N+1 停写 pkl（前提：`--migrate-all` 已随某一版发布）；N+2 删 runtime fallback。ADR-0009 写「从 N 起算」，不写字面版本号；WI-11 在发版时把 N 填成实数 |
 
 ---
 
