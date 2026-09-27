@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reader3 Pro — Feature Ledger</title>
+<!-- Generated from docs/feature-ledger.md by scripts/build_feature_ledger.py — do not hand-edit the ledger-data block; edit the .md and rebuild. -->
+<script type="application/json" id="ledger-data">
+{"synced_from": "docs/feature-ledger.md", "synced_at": "2026-09-27", "commit": "8e1cf48", "statuses": ["accepted", "partial", "stub", "absent", "unknown", "deprecated", "superseded", "removed"], "features": [
+  {"id": "F-001", "name": "EPUB ingest CLI", "area": "EPUB processing", "status": "accepted", "what": "`uv run reader3 <file.epub>` parses an EPUB into `books/{name}_data/` (`book.pkl`, `book.epub`, `images/`).", "routes": ["cli: reader3"], "code": ["src/reader3_app/reader3.py"], "tests": ["tests/unit/test_process_epub_commit.py"], "adr": [], "confirm": "Run `uv run reader3 ./books/dracula.epub`: it prints a `--- Summary ---` block (Title, Authors, Physical Files (Spine), TOC Root Items, Images extracted), and `books/dracula_data/` then holds `book.pkl`, `book.epub` and `images/`.", "tracked": "", "evidence": "v1.0 · baseline", "limits": ""},
+  {"id": "F-002", "name": "Semantic index CLI", "area": "EPUB processing", "status": "accepted", "what": "`uv run reader3 --index <book_folder> [--force]` builds the per-book ChromaDB index.", "routes": ["cli: reader3"], "code": ["src/reader3_app/reader3.py", "src/reader3_app/vector_search.py"], "tests": ["tests/unit/test_semantic_extra_optional.py"], "adr": [], "confirm": "Run `uv run reader3 --index dracula_data`: it prints `Indexed dracula_data: N chunks using paraphrase-multilingual-MiniLM-L12-v2`. Without the extra it exits with \"Semantic search dependencies are not installed. Install the optional extra: `uv sync --extra semantic` …\" instead of a traceback.", "tracked": "", "evidence": "001/002 · baseline", "limits": "requires the optional `semantic` extra (`uv sync --extra semantic`)."},
+  {"id": "F-003", "name": "Crash-safe book publish", "area": "EPUB processing", "status": "partial", "what": "stage → verify → atomic swap → recovery after kill when (re)processing a book.", "routes": [], "code": ["src/reader3_app/reader3.py"], "tests": ["tests/unit/test_process_epub_staging.py", "tests/unit/test_process_epub_sigkill_recovery.py"], "adr": ["ADR-0007"], "confirm": "Re-run `uv run reader3 ./books/dracula.epub` over an already processed book: afterwards `ls books/` shows no leftover `dracula_data.staging-<pid>` directory and `/read/dracula_data/0` still opens. Kill-mid-run recovery is only verifiable through the tests named above.", "tracked": "", "evidence": "007 · PR #26 (`b8e0353`)", "limits": "ADR-0007 is Partial; debt #59 half-cleared, remainder moved to 012 Q2."},
+  {"id": "F-004", "name": "Stat-keyed book cache", "area": "EPUB processing", "status": "accepted", "what": "loaded books are cached and reloaded when `book.pkl` changes on disk.", "routes": [], "code": ["src/reader3_app/book_store.py"], "tests": ["tests/contract/test_book_store_route_freshness.py"], "adr": [], "confirm": "With `uv run reader3-server` running, open `/read/{book_id}/0`, re-process the same EPUB with `uv run reader3`, then reload the page: the re-processed content is served without restarting the server.", "tracked": "", "evidence": "011", "limits": ""},
+  {"id": "F-005", "name": "3-pane library", "area": "Library", "status": "accepted", "what": "library page at `GET /` — grid/list view, sort, select mode, format counts, Dedao-style UI.", "routes": ["GET /", "MOUNT /static"], "code": ["src/reader3_app/web/routers/library.py", "frontend/src/library/"], "tests": ["tests/e2e/shell_4a/", "tests/e2e/baseline_1b/test_library_nav_and_collections.py"], "adr": [], "confirm": "`uv run reader3-server`, open `http://127.0.0.1:8123/`: a sidebar (Types / Collections), the book grid, and a right panel with Dashboard / Chat / Search tabs. `▦` / `☰` switch grid and list, `A→Z` sorts, `✓` enters select mode and shows the bulk bar (Select all / Clear / Add to collection / Index selected).", "tracked": "", "evidence": "004 (PR #12/#13) · 005 restyle (PR #14) · TS port 013 WI-13 (PR #25)", "limits": "no upload/import (#57), delete (#58), export (#53) — planned in 012/018 (see F-034, F-035, F-036)."},
+  {"id": "F-006", "name": "Collections", "area": "Library", "status": "accepted", "what": "create/rename/delete collections; add/remove books (`/api/collections*`).", "routes": ["GET /api/collections", "POST /api/collections", "GET /api/collections/{collection_id}", "PUT /api/collections/{collection_id}", "DELETE /api/collections/{collection_id}", "POST /api/collections/{collection_id}/books"], "code": ["src/reader3_app/collections_service.py", "src/reader3_app/web/routers/library.py"], "tests": ["tests/unit/test_collections_concurrency.py", "tests/contract/test_collections_books_route_race.py"], "adr": [], "confirm": "On the library page click `+` next to Collections, enter a name, press Create: a toast 「已创建收藏夹「name」」 appears and the collection is listed. In select mode tick books → Add to collection → pick it: 「已加入「name」」 and its badge count rises; its Delete button removes it after the confirm prompt.", "tracked": "", "evidence": "004 · locking fix PR #26 (`4d3c5ac`)", "limits": "debt #18 (hyphen in names parsed as regex range)."},
+  {"id": "F-007", "name": "Library stats dashboard", "area": "Library", "status": "accepted", "what": "`GET /api/library/stats?scope=` aggregates reading / indexing stats.", "routes": ["GET /api/library/stats"], "code": ["src/reader3_app/web/routers/library.py"], "tests": ["tests/contract/routes.snapshot"], "adr": [], "confirm": "The library's Dashboard tab shows Books / Indexed / Sections / Chunks and an indexed-percent bar; Refresh stats re-fetches. `curl 'http://127.0.0.1:8123/api/library/stats?scope=all'` returns `scope`, `books_total`, `books_indexed`, `indexed_percent`, `sections_total`, `chunks_total`, `computed_at`; `scope=bogus` returns 400 `Invalid scope`.", "tracked": "", "evidence": "004 · baseline", "limits": "`format:pdf` scope is a placeholder (no PDF support) (see F-038)."},
+  {"id": "F-008", "name": "Bulk index from selection", "area": "Library", "status": "accepted", "what": "index several selected books from the library in one action.", "routes": ["POST /api/index/{book_id}", "GET /api/index/{book_id}/status"], "code": ["frontend/src/library/"], "tests": ["tests/e2e/shell_4a/"], "adr": [], "confirm": "On the library page press `✓`, tick two books, press Index selected: their status pills move to indexed and the live region announces \"Indexing finished.\"; a failure opens the \"Indexing completed with errors\" dialog. With nothing ticked, Index selected is disabled.", "tracked": "", "evidence": "004 · baseline", "limits": "no bulk re-index route (#52, planned in 012) (see F-037)."},
+  {"id": "F-009", "name": "Paginated epub.js reader", "area": "Reader", "status": "accepted", "what": "full-screen paginated reader in an iframe; TOC panel, keyboard navigation, back-to-library.", "routes": ["GET /read/{book_id}", "GET /read/{book_id}/{chapter_index}", "GET /read/{book_id}/book.epub", "GET /read/{book_id}/images/{image_name}"], "code": ["src/reader3_app/web/routers/reader.py", "src/reader3_app/web/static/js/epub-renderer.js"], "tests": ["tests/e2e/baseline_1b/test_read_paths.py", "tests/e2e/baseline_1b/test_read_presentation_anchoring.py"], "adr": ["ADR-0002"], "confirm": "Click a book card in the library → `/read/{book_id}/0` opens paginated; `→` / `PageDown` and `←` / `PageUp` turn pages, `↓` / `↑` change section, and the progress pill reads 「当前阅读至 N%」. The rail's Table of Contents button opens the chapter list with a \"Search chapters...\" filter; the back arrow returns to the library.", "tracked": "", "evidence": "006 · PR #16/#17", "limits": "still classic JS; TS rewrite is 014. Page turning is keyboard-only (see F-033)."},
+  {"id": "F-010", "name": "Reader preferences", "area": "Reader", "status": "partial", "what": "font size and paragraph spacing, applied in the correct order.", "routes": [], "code": ["src/reader3_app/web/templates/reader.html", "src/reader3_app/web/static/js/epub-renderer.js"], "tests": ["tests/e2e/baseline_1b/"], "adr": [], "confirm": "In the reader click the rail's \"Aa\" (Font Settings): 文字 `+` / `−` changes 当前字号 (default 17) and the page text size, 段落间距 `+` / `−` changes 当前间距 (default 1.9); both survive a reload (`localStorage[\"reader3-font-settings\"]`).", "tracked": "", "evidence": "006 · apply-order fix 016 (PR #21)", "limits": "the four reader themes are dead (#21); page prev/next buttons are a dead surface (#11) (see F-031, F-032, F-033)."},
+  {"id": "F-011", "name": "Keyword search", "area": "Search", "status": "accepted", "what": "in-book and whole-library search, case sensitivity, diacritic normalization (café→cafe), deep links `?q=&occurrence=`, in-chapter highlight.", "routes": ["GET /api/search/{book_id}", "GET /api/search/library", "POST /api/highlight/{book_id}/{chapter_order}"], "code": ["src/reader3_app/search_service.py", "src/reader3_app/web/routers/search.py"], "tests": ["tests/unit/test_highlight_utf16_offsets.py", "tests/e2e/baseline_1b/test_read_chapter_change_and_search.py", "frontend/tests/library/search.test.ts"], "adr": [], "confirm": "In the reader click the rail's Search, leave Mode on keyword, type a word: results list; clicking one jumps to and highlights it. The library's Search tab (\"Search across your library...\") searches all books. `curl 'http://127.0.0.1:8123/api/search/{book_id}?q=cafe'` also matches \"café\".", "tracked": "", "evidence": "001 · PR #1/#2", "limits": "library search deserializes every book (#35, assigned to 012)."},
+  {"id": "F-012", "name": "Semantic / hybrid search", "area": "Search", "status": "accepted", "what": "semantic and hybrid search modes over a per-book ChromaDB store (`paraphrase-multilingual-MiniLM-L12-v2`). Degrades cleanly when the extra isn't installed.", "routes": ["GET /api/search/{book_id}", "GET /api/search/library", "POST /api/index/{book_id}", "GET /api/index/{book_id}/status"], "code": ["src/reader3_app/vector_search.py", "src/reader3_app/web/routers/search.py"], "tests": ["tests/unit/test_semantic_extra_optional.py"], "adr": ["ADR-0004"], "confirm": "After F-002 indexing, `curl http://127.0.0.1:8123/api/index/{book_id}/status` returns `status` and a non-zero `chunk_count`; in the reader Search drawer switch Mode to semantic or hybrid and a query returns results. Without the extra, `curl -X POST http://127.0.0.1:8123/api/index/{book_id} -H 'Content-Type: application/json' -d '{}'` returns 400 with the `uv sync --extra semantic` hint.", "tracked": "", "evidence": "001/002 · optional-extra 011/017", "limits": "ADR-0004 is Partial."},
+  {"id": "F-013", "name": "AI Q&A + summary", "area": "AI", "status": "accepted", "what": "streaming Q&A (SSE) and summaries; token-budget routing chooses full-book / multi-chapter / RAG, with keyword fallback when no index.", "routes": ["POST /api/ai/question/{book_uuid}", "POST /api/ai/summary/{book_uuid}", "POST /api/ai/rag/retrieve"], "code": ["src/reader3_app/ai/routing.py", "src/reader3_app/ai/rag.py", "src/reader3_app/web/routers/ai/"], "tests": ["tests/unit/test_routing_token_budget.py", "tests/e2e/baseline_1b/test_other_ai_streaming.py"], "adr": [], "confirm": "With a provider enabled in `/settings`, open a book, click the rail's AI Assistant, type in \"Ask about this book... (Enter to send)\" and press Send: the answer streams in and Stop can cut it off. The Summary / Highlights / Background buttons each produce a summary message.", "tracked": "", "evidence": "002 · PR #3–#8", "limits": "questions about an unindexed book (#26)."},
+  {"id": "F-014", "name": "Multi-provider support", "area": "AI", "status": "accepted", "what": "Anthropic, OpenAI, Gemini, OpenRouter, Ollama; per-provider config and \"test connection\".", "routes": ["GET /api/settings/providers", "GET /api/settings/providers/{provider_name}", "PUT /api/settings/providers/{provider_name}", "DELETE /api/settings/providers/{provider_name}", "POST /api/settings/providers/{provider_name}/test", "GET /api/ollama/status", "GET /api/ollama/models"], "code": ["src/reader3_app/ai/providers/", "src/reader3_app/ai/config.py", "src/reader3_app/web/routers/settings.py"], "tests": ["tests/unit/test_provider_retry.py", "tests/contract/test_provider_test_route.py"], "adr": [], "confirm": "Open `/settings` → 服务商: each provider has a card with 模型, 服务地址 and (except Ollama) API 密钥; 保存 then 测试连接 reports OK or the provider's error. The Ollama card's 刷新模型 fills the model list; `curl http://127.0.0.1:8123/api/ollama/status` reports whether Ollama is running.", "tracked": "", "evidence": "002 · baseline", "limits": "retry only on the non-streaming path (#36)."},
+  {"id": "F-015", "name": "Per-book AI request queue", "area": "AI", "status": "accepted", "what": "per-book request queue with leases and a budget, so concurrent AI calls don't pile up.", "routes": ["POST /api/ai/question/{book_uuid}", "POST /api/ai/summary/{book_uuid}"], "code": ["src/reader3_app/ai/queue.py"], "tests": ["tests/unit/test_ai_queue_lease.py", "tests/unit/test_ai_queue_budget.py"], "adr": [], "confirm": "With a provider enabled, fire a dozen concurrent `curl -X POST http://127.0.0.1:8123/api/ai/question/{book_uuid} -H 'Content-Type: application/json' -d '{\"question\":\"hi\",\"provider\":\"ollama\"}' &` for one book: requests run one at a time, and those beyond 10 pending get HTTP 429 \"Too many pending AI requests. Please try again.\" (a request that waits past its timeout gets 504).", "tracked": "", "evidence": "011/017", "limits": ""},
+  {"id": "F-016", "name": "Conversation threads + export", "area": "AI", "status": "accepted", "what": "multiple conversation threads per book; export as json / text / md.", "routes": ["GET /api/ai/conversations/{book_uuid}", "GET /api/ai/conversations/{book_uuid}/{conversation_id}", "PUT /api/ai/conversations/{book_uuid}/{conversation_id}", "DELETE /api/ai/conversations/{book_uuid}/{conversation_id}", "GET /api/ai/conversations/{book_uuid}/{conversation_id}/export"], "code": ["src/reader3_app/ai/conversations.py", "src/reader3_app/web/routers/ai/conversations.py"], "tests": ["tests/unit/test_conversation_never_silently_dropped.py"], "adr": [], "confirm": "In the reader's AI panel, New chat starts a second thread and both appear in the History list; pick MD / TXT / JSON and press Export to download the thread. `curl 'http://127.0.0.1:8123/api/ai/conversations/{book_uuid}/{conversation_id}/export?format=xml'` returns 400 \"Invalid format (use json|text|md)\".", "tracked": "", "evidence": "002 · baseline", "limits": ""},
+  {"id": "F-017", "name": "Library-panel chat", "area": "AI", "status": "accepted", "what": "chat from the library's right panel, scoped to one book: pick a book, continue one of its five latest threads or start a new one, streamed over SSE.", "routes": ["POST /api/ai/question/{book_uuid}", "GET /api/ai/conversations/{book_uuid}"], "code": ["frontend/src/library/chat.ts"], "tests": ["frontend/tests/library/chat.test.ts"], "adr": [], "confirm": "On the library page open the Chat tab, choose a book in \"Select a book...\", type in \"Ask about this book...\" and press Send: the reply streams into the thread (Stop cancels); \"History (latest 5)\" then lists the thread.", "tracked": "", "evidence": "004 · TS port 013 (PR #25)", "limits": "single-book scope only; the All books / Collection scopes are disabled (see F-039)."},
+  {"id": "F-018", "name": "Annotations + notes", "area": "Notes", "status": "partial", "what": "highlight / underline / wavy in colors, with attached notes; notes panel.", "routes": ["GET /api/notes/{book_id}", "GET /api/notes/{book_id}/{chapter_index}", "POST /api/notes/{book_id}/{chapter_index}", "PUT /api/notes/{book_id}/{chapter_index}/{note_id}", "DELETE /api/notes/{book_id}/{chapter_index}/{note_id}"], "code": ["src/reader3_app/notes_service.py", "src/reader3_app/models/annotations.py", "src/reader3_app/web/static/js/annotations.js"], "tests": ["tests/e2e/test_notes_write_failure_is_attributable.py", "tests/e2e/test_stored_cfi_must_agree_with_quote.py"], "adr": ["ADR-0005"], "confirm": "In the reader select a sentence: the toolbar offers color dots, Marker / Wavy / Underline, Add Note, Copy, Delete, Ask AI. Pick Marker, then Add Note → \"Write your thoughts...\" → Save; the rail's Notes button lists it (「共N条笔记」), it survives a reload, and `books/{book_id}_data/notes.json` holds it.", "tracked": "", "evidence": "006", "limits": "text-only anchoring, CFI always null (#6–#8); `PUT` accepts only `note_text` (#29). Reader-side split is 014. The notes panel's 点评此书 button is dead (see F-040)."},
+  {"id": "F-019", "name": "Note write-conflict handling", "area": "Notes", "status": "partial", "what": "ETag optimistic concurrency on note writes, with a conflict dialog (DEG-S5).", "routes": ["POST /api/notes/{book_id}/{chapter_index}", "PUT /api/notes/{book_id}/{chapter_index}/{note_id}", "DELETE /api/notes/{book_id}/{chapter_index}/{note_id}"], "code": ["src/reader3_app/web/routers/notes.py"], "tests": ["tests/e2e/acceptance_2a/test_deg_s5_write_conflict.py", "tests/e2e/test_conflict_resolution_single_flight.py"], "adr": [], "confirm": "`curl -i http://127.0.0.1:8123/api/notes/{book_id}/0` shows an `ETag` header; `curl -i -X PUT http://127.0.0.1:8123/api/notes/{book_id}/0/{note_id} -H 'If-Match: \"stale\"' -H 'Content-Type: application/json' -d '{\"note_text\":\"x\"}'` returns 409 with the current `etag`. In the UI, editing the same note from two tabs makes the second save show the conflict dialog with 保留我的 / 采用远端.", "tracked": "", "evidence": "011/017", "limits": "scope of what is covered vs. deferred has not been re-audited since 017."},
+  {"id": "F-020", "name": "Settings page + API", "area": "Settings & UI", "status": "accepted", "what": "`/settings`, `GET/PUT /api/settings`, export/import without API keys; keys never returned to the browser; file written `0600`.", "routes": ["GET /settings", "GET /api/settings", "PUT /api/settings", "GET /api/settings/export", "POST /api/settings/import"], "code": ["src/reader3_app/web/routers/settings.py", "frontend/src/settings/"], "tests": ["tests/unit/test_settings_file_permissions.py", "tests/unit/test_ai_settings_no_key_loss.py"], "adr": [], "confirm": "Click Settings in the library top bar → `/settings` shows AI 偏好, 服务商, 外观, 数据, 导出与导入. Change 每次检索的片段数 and press 保存偏好: the value survives a reload. 导出设置（不含密钥） downloads JSON with no API keys, 导入设置 reads one back; `curl http://127.0.0.1:8123/api/settings` contains no key values, and `ls -l config/ai_settings.json` shows `-rw-------` after a save.", "tracked": "", "evidence": "002 · TS port 013 WI-12 (PR #25)", "limits": "a stale tab can silently overwrite provider settings (#51, 018). The page's 重建全部索引 and 导出书库 JSON are stubs (see F-036, F-037)."},
+  {"id": "F-021", "name": "Light/dark theme (no FOUC)", "area": "Settings & UI", "status": "accepted", "what": "theme tokens and resolution with no flash of unstyled content.", "routes": [], "code": ["frontend/src/shared/"], "tests": ["tests/e2e/shell_4a/test_theme_resolution.py", "tests/e2e/shell_4a/test_fouc.py"], "adr": [], "confirm": "On the library page click the top-bar `◐` (`lib-theme-toggle`): it cycles 跟随系统 → 浅色 → 深色 (its aria-label changes) and the chrome recolours; `/settings` → 外观 shows the same choice. Reloading a dark page shows no light flash.", "tracked": "", "evidence": "013 WI-10 (PR #25)", "limits": "chrome (`data-theme`) only; the reader's paper axis is F-031."},
+  {"id": "F-022", "name": "Degradation UI components", "area": "Settings & UI", "status": "partial", "what": "degrade banner, skeleton, and toast components (Track D).", "routes": [], "code": ["frontend/src/components/"], "tests": ["frontend/tests/components/", "tests/e2e/shell_4a/test_toast.py"], "adr": [], "confirm": "On the library page, creating a collection shows a toast (F-006). When any book's index status is `stale`, the Search tab shows the banner 「索引已过期，结果可能不全」 with a 重建索引 button that re-indexes the stale books.", "tracked": "", "evidence": "spec 010 · implementation 013 (PR #25)", "limits": "DEG-S3 / DEG-S4 have no backend data yet (#54/#55, 012)."},
+  {"id": "F-023", "name": "Request origin guard", "area": "Security", "status": "accepted", "what": "host allowlist (`READER3_ALLOWED_HOSTS`), optional token (`READER3_TOKEN`), cross-site request guard.", "routes": [], "code": ["src/reader3_app/web/server.py"], "tests": ["tests/unit/test_request_origin_guard.py"], "adr": ["ADR-0012"], "confirm": "`curl -i -H 'Host: evil.example' http://127.0.0.1:8123/api/health` → 400 \"Invalid host header\"; `curl -i -X POST -H 'Origin: https://evil.example' -H 'Content-Type: application/json' -d '{\"name\":\"x\"}' http://127.0.0.1:8123/api/collections` → 403 \"Cross-site request rejected\". Started with `READER3_TOKEN=secret`, `curl -i http://127.0.0.1:8123/api/settings` → 401 until `-H 'X-Reader3-Token: secret'` is added (`/api/health` stays open).", "tracked": "", "evidence": "008 · v1.5.0", "limits": "the browser UI does not send the token."},
+  {"id": "F-024", "name": "Provider egress single gate", "area": "Security", "status": "accepted", "what": "every outbound provider call passes through one HTTP gate.", "routes": [], "code": ["src/reader3_app/ai/providers/_http.py"], "tests": ["tests/unit/test_server_egress_gate.py"], "adr": ["ADR-0006"], "confirm": "`curl -X POST http://127.0.0.1:8123/api/settings/providers/ollama/test -H 'Content-Type: application/json' -d '{\"base_url\":\"file:///etc/passwd\",\"api_key\":\"x\"}'` returns `\"success\": false` with a message that scheme `file` is not allowed; the same call without `api_key` is refused with 400 before any request leaves.", "tracked": "", "evidence": "baseline", "limits": ""},
+  {"id": "F-025", "name": "Safe unpickling + path safety", "area": "Security", "status": "accepted", "what": "restricted unpickler for `book.pkl`; book IDs validated against enumerated folders; chapter path traversal blocked.", "routes": [], "code": ["src/reader3_app/safe_pickle.py", "src/reader3_app/safe_paths.py"], "tests": ["tests/unit/test_safe_pickle.py", "tests/contract/test_read_chapter_traversal.py"], "adr": ["ADR-0012"], "confirm": "`curl -i http://127.0.0.1:8123/read/no_such_book_data/0` returns 404, as does any book id that is not an enumerated `*_data` folder under the books dir. The unpickler itself is only verifiable through `tests/unit/test_safe_pickle.py`.", "tracked": "", "evidence": "baseline", "limits": ""},
+  {"id": "F-026", "name": "Book UUID resolution", "area": "Security", "status": "accepted", "what": "`book_uuid` ↔ `book_folder` resolution; cached hits re-validated against `ai_meta.json`; an unreadable file degrades to `uuid=None`.", "routes": [], "code": ["src/reader3_app/ai/books.py"], "tests": ["tests/unit/ (`test_book_uuid_*`)"], "adr": ["ADR-0003"], "confirm": "`cat books/{book_id}/ai_meta.json` shows `{\"book_uuid\": \"…\"}`; `curl http://127.0.0.1:8123/api/ai/conversations/{that uuid}` returns 200 with a `conversations` list, and a made-up UUID returns 404 \"Book not found\".", "tracked": "", "evidence": "PR #26 (`476f84d`)", "limits": ""},
+  {"id": "F-027", "name": "Server runtime options + health", "area": "Infra", "status": "accepted", "what": "`reader3-server --port` / `READER3_PORT`, `READER3_BOOKS_DIR`, `GET /api/health`.", "routes": ["cli: reader3-server", "GET /api/health"], "code": ["src/reader3_app/web/server.py", "src/reader3_app/web/routers/health.py"], "tests": ["tests/unit/test_resolve_port.py", "tests/contract/test_health_route.py"], "adr": [], "confirm": "`uv run reader3-server --port 9000` (or `READER3_PORT=9000 uv run reader3-server`) listens on 9000 and `curl http://127.0.0.1:9000/api/health` returns `{\"status\":\"ok\",\"version\":\"…\"}`; `READER3_BOOKS_DIR=/other/books` makes the library list that folder instead.", "tracked": "", "evidence": "v1.5.0", "limits": "`reader3-server` has no argument parser beyond `--port`: `--help` is ignored and starts the server."},
+  {"id": "F-028", "name": "Test net + CI", "area": "Infra", "status": "accepted", "what": "unit + contract lanes, API route snapshot, coverage gate, e2e baseline, soak runner; mirrored in CI.", "routes": [], "code": [".github/workflows/tests.yml", "scripts/soak_run.py", ".claude/tdd-guardian/config.json"], "tests": ["tests/contract/routes.snapshot", "tests/contract/test_route_inventory.py", "tests/e2e/baseline_1b/"], "adr": ["ADR-0010", "ADR-0011"], "confirm": "`uv run pytest tests/unit tests/contract` and `npm test` pass on a clean checkout; adding or renaming a route without editing `tests/contract/routes.snapshot` turns `tests/contract/test_route_inventory.py` red.", "tracked": "", "evidence": "008/009 · PR #19/#20", "limits": ""},
+  {"id": "F-029", "name": "Repo lints", "area": "Infra", "status": "accepted", "what": "testid naming, e2e selectors, token/hardcode, inline HTML, router-size gates.", "routes": [], "code": ["scripts/check_router_size.py", ".github/workflows/lint.yml"], "tests": ["tests/e2e/test_testid_dom_uniqueness.py"], "adr": ["ADR-0013", "ADR-0014"], "confirm": "`python3 scripts/check_router_size.py`, `python3 scripts/lint_testid_naming.py` and `uv run ruff check src/ tests/ scripts/` exit 0 on `master`.", "tracked": "", "evidence": "007/013", "limits": ""},
+  {"id": "F-030", "name": "Vite + TS frontend toolchain", "area": "Infra", "status": "accepted", "what": "Vite + TypeScript + Vitest; built `static/dist` shipped inside the wheel.", "routes": [], "code": ["frontend/", "src/reader3_app/web/vite_assets.py"], "tests": ["tests/integration/test_frontend_build.py", "tests/integration/test_wheel_includes_dist.py"], "adr": [], "confirm": "`npm run build` typechecks and writes `src/reader3_app/web/static/dist/manifest.json` plus hashed assets; the library page's HTML then references those hashed `/static/dist/assets/*` files.", "tracked": "", "evidence": "013 WI-9 (PR #25)", "limits": ""},
+  {"id": "F-031", "name": "Reader paper themes", "area": "Reader", "status": "stub", "what": "the reader's font popover shows four paper themes (白色 / 黄色 / 护眼 / 夜间); none has a listener, so the reading theme never changes.", "routes": [], "code": ["src/reader3_app/web/templates/reader.html"], "tests": ["tests/e2e/baseline_1b/test_read_presentation_anchoring.py (pins that clicking does not break annotations; cannot assert a theme change)"], "adr": [], "confirm": "In the reader open \"Aa\": the 主题 row shows 白色 / 黄色 / 护眼 / 夜间 greyed out with a not-allowed cursor; clicking any leaves 白色 highlighted and the page colour unchanged.", "tracked": "", "evidence": "debt #21 · baseline", "limits": "debt #21 (wire them or drop the testids); rewrite planned in the frontend plan WI-18."},
+  {"id": "F-032", "name": "Reader font-family picker", "area": "Reader", "status": "stub", "what": "the same popover offers four font families (系统字体 / 得到今楷 / 汉仪旗黑 / 思源宋体); none has a listener.", "routes": [], "code": ["src/reader3_app/web/templates/reader.html"], "tests": [], "adr": [], "confirm": "In the reader open \"Aa\": the 字体 row's four options are greyed out with a not-allowed cursor; clicking any leaves 系统字体 highlighted and the text font unchanged.", "tracked": "", "evidence": "spec D1 (`docs/plans/20260817-frontend-ui-refactor/spec-frontend-design.md`) · baseline", "limits": "frontend plan WI-18 / FB-R15 replaces it with a two-option picker (the three commercial fonts are unlicensed and unbundled)."},
+  {"id": "F-033", "name": "Page-turn click zones", "area": "Reader", "status": "stub", "what": "`rd-page-prev` / `rd-page-next` (\"Previous page\" / \"Next page\") exist in the reader DOM but are `display: none` and have no listener in any loaded script.", "routes": [], "code": ["src/reader3_app/web/templates/reader.html"], "tests": ["tests/e2e/baseline_1b/test_read_chapter_change_and_search.py (asserts they are never used)"], "adr": [], "confirm": "In the reader, clicking the left or right page edge does nothing; in DevTools `document.querySelector('[data-testid=\"rd-page-prev\"]')` exists but is hidden. Only the keyboard turns pages (F-009).", "tracked": "", "evidence": "debt #11 · baseline", "limits": "debt #11 (bind them or delete them with their testids)."},
+  {"id": "F-034", "name": "In-app book import (\"Add books\")", "area": "Library", "status": "stub", "what": "the library top bar's \"+ Add books\" button suggests in-app import, but it only opens a dialog telling the user to run the CLI; there is no file picker, drop zone, or upload route.", "routes": [], "code": ["src/reader3_app/web/templates/library.html", "frontend/src/library/index.ts"], "tests": [], "adr": [], "confirm": "On the library page click \"+ Add books\" (`lib-topbar-add-books`): the \"Add books\" dialog says to run `uv run reader3 path/to/book.epub` and refresh; OK closes it. No file chooser opens and no request is sent.", "tracked": "", "evidence": "debt #57 · baseline", "limits": "the upload / import route is debt #57 (012-storage-format); importing today is F-001 only."},
+  {"id": "F-035", "name": "Book delete", "area": "Library", "status": "absent", "what": "deleting a book from the app (route + library UI); today the only way is removing `books/{id}_data/` by hand.", "routes": [], "code": [], "tests": [], "adr": [], "confirm": "", "tracked": "debt #58 → 012-storage-format; frontend half FB-L18", "evidence": "", "limits": ""},
+  {"id": "F-036", "name": "Library JSON export", "area": "Settings & UI", "status": "stub", "what": "`/settings` → 导出与导入 has a 导出书库 JSON button; there is no export route, so it only shows a \"not supported\" line.", "routes": [], "code": ["frontend/src/settings/index.ts", "src/reader3_app/web/templates/settings.html"], "tests": ["tests/e2e/shell_4a/test_settings_rows.py (asserts 0 requests)"], "adr": [], "confirm": "On `/settings` click 导出书库 JSON: the status line reads 「导出书库 JSON 暂不支持，服务端还没有这条导出接口。」, nothing downloads, and DevTools Network shows no request.", "tracked": "", "evidence": "debt #53 · ruling D11 · baseline", "limits": "the export route is debt #53 (012-storage-format)."},
+  {"id": "F-037", "name": "Bulk re-index all books", "area": "Settings & UI", "status": "stub", "what": "`/settings` → 数据 has 重建全部索引 with a confirm dialog; the confirm only prints a \"not supported\" line, because no bulk re-index route exists.", "routes": [], "code": ["frontend/src/settings/index.ts", "src/reader3_app/web/templates/settings.html"], "tests": ["tests/e2e/shell_4a/test_settings_confirm.py (asserts 0 requests)"], "adr": [], "confirm": "On `/settings` click 重建全部索引 → dialog 「重建全部语义索引？」 → 重建索引: the status line reads 「批量重建索引暂不支持：请在终端对每本书运行 uv run reader3 --index <书目录>。」 and no request is sent.", "tracked": "", "evidence": "debt #52 · ruling D11 · baseline", "limits": "the route is debt #52 (012-storage-format); per-book indexing works (F-002, F-008)."},
+  {"id": "F-038", "name": "PDF format scope", "area": "Library", "status": "stub", "what": "the library sidebar lists a PDF type and the stats API accepts `scope=format:pdf`, but no PDF can be ingested; the scope is a placeholder that always counts zero.", "routes": ["GET /api/library/stats"], "code": ["src/reader3_app/web/templates/library.html", "src/reader3_app/web/routers/library.py"], "tests": ["tests/e2e/baseline_1b/test_library_nav_and_collections.py"], "adr": [], "confirm": "In the library sidebar under Types, the PDF button (`lib-sidebar-scope-pdf`) is disabled with the tooltip \"PDF not supported yet\" and a 0 badge; clicking it does nothing. `curl 'http://127.0.0.1:8123/api/library/stats?scope=format:pdf'` returns `books_total: 0`.", "tracked": "", "evidence": "004 · baseline", "limits": ""},
+  {"id": "F-039", "name": "Library chat all-books / collection scope", "area": "AI", "status": "stub", "what": "the library Chat tab shows \"All books\" and \"Collection\" scope buttons, but both are disabled; only single-book chat (F-017) exists.", "routes": [], "code": ["src/reader3_app/web/templates/library.html", "frontend/src/library/chat.ts"], "tests": [], "adr": [], "confirm": "On the library page open the Chat tab: \"All books\" and \"Collection\" are disabled with the tooltip \"Coming soon\"; clicking them does nothing and \"Single book\" stays active.", "tracked": "", "evidence": "013 WI-13 · baseline", "limits": "`spec-frontend-design.md` rules these placeholders are to be deleted rather than built."},
+  {"id": "F-040", "name": "Notes \"点评此书\" (review this book)", "area": "Notes", "status": "stub", "what": "the notes panel footer has a 点评此书 button (`rd-notes-review`) with no handler in any loaded script.", "routes": [], "code": ["src/reader3_app/web/templates/reader.html", "src/reader3_app/web/static/js/notes-panel.js"], "tests": [], "adr": [], "confirm": "In the reader click the rail's Notes: the footer shows 点评此书 next to 复制全部笔记; clicking 点评此书 does nothing (no dialog, no request), while 复制全部笔记 works.", "tracked": "", "evidence": "baseline", "limits": ""},
+  {"id": "F-041", "name": "Interactive API docs", "area": "Infra", "status": "unknown", "what": "FastAPI's default Swagger UI, OAuth2 redirect, OpenAPI schema and ReDoc routes are served because the app is built with FastAPI defaults; nothing here tests their behaviour.", "routes": ["GET /docs", "GET /docs/oauth2-redirect", "GET /openapi.json", "GET /redoc"], "code": ["src/reader3_app/web/server.py"], "tests": ["tests/contract/test_route_inventory.py (route presence only)"], "adr": [], "confirm": "Open `http://127.0.0.1:8123/docs` and `/redoc`: FastAPI's generated API pages load (their UI assets come from FastAPI's default CDN, so this needs network access); `curl http://127.0.0.1:8123/openapi.json` returns the schema.", "tracked": "", "evidence": "008 route snapshot · baseline", "limits": "with `READER3_TOKEN` set these pages need the token, which a browser cannot send (F-023)."}
+], "audit": [
+  {"date": "2026-09-27", "title": "Format extension + surface pass", "commit": "8e1cf48", "scope": "every row F-001..F-030 re-read against code, templates and `tests/contract/routes.snapshot` to fill the new `Routes` / `Confirm` / `Tracked` bullets; the `Limits` of every row plus the 009 debt table (#11, #21, #52, #53, #57, #58) and `spec-frontend-design.md` §D1 checked for surfaces with no behaviour. Added the `stub` / `absent` / `unknown` statuses and rows F-031..F-041.", "found": "F-017 claimed all-books / one-book / collection scope, but only single-book chat exists (`chat.ts` header; the other two buttons are disabled \"Coming soon\") — `What` corrected and F-039 split out; its status stays `accepted` for the single-book scope. #57, #52 and #53 were expected to be `absent` but each has a visible UI control (Add books, 重建全部索引, 导出书库 JSON), so they are `stub`. Two dead surfaces were not in any ledger row: the font-family picker (F-032) and 点评此书 (F-040). `reader3-server --help` starts the server (noted on F-027). F-010's `Code` pointed at `static/js/`, but the font-size wiring is an inline script in `reader.html`; the path was corrected.", "not_audited": "`Confirm` steps were derived from code and templates, not executed in a running app (only `uv run reader3 --help` was run). Lanes and e2e were not run. Whether the AI 偏好 toggles (显示消息时间, 自动推荐问题, 检索 片段数 / 上下文窗口) change behaviour was not checked. F-041 behaviour (CDN assets, offline) and epub.js / ChromaDB behaviour beyond what the rows' tests cover were not checked."},
+  {"date": "2026-09-27", "title": "Baseline seed", "commit": "8e1cf48", "scope": "rows F-001..F-030 seeded retroactively from code + tests at `8e1cf48`, statuses taken from plan write-backs and the 009 debt table.", "found": "—", "not_audited": "not re-run as an acceptance pass: no lane, e2e or manual check was executed for this seed; rows marked `baseline` carry no PR evidence."}
+]}
+</script>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #f7f7f5; --panel: #ffffff; --fg: #1b1d21; --muted: #5d636d; --line: #dcdfe4; --chip: #eef0f3;
+  --focus: #1f5fd6; --code-bg: #f0f1f4;
+  --accepted: #1e7a3c; --accepted-bg: #e3f4e8;
+  --partial: #8a5a00; --partial-bg: #fdf0d2;
+  --stub: #7a3fb0; --stub-bg: #f1e7fb;
+  --absent: #a0306b; --absent-bg: #fbe3ef;
+  --unknown: #0f7582; --unknown-bg: #ddf2f4;
+  --deprecated: #50565f; --deprecated-bg: #e8eaed;
+  --superseded: #1d58b8; --superseded-bg: #e1ebfb;
+  --removed: #b42318; --removed-bg: #fbe4e1;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #131519; --panel: #1b1e24; --fg: #e8eaee; --muted: #a3a9b3; --line: #2e333b; --chip: #252a31;
+    --focus: #7fb0ff; --code-bg: #242830;
+    --accepted: #6fd08f; --accepted-bg: #15301f;
+    --partial: #f2bd4b; --partial-bg: #3a2c0d;
+    --stub: #c9a2f5; --stub-bg: #2c1d40;
+    --absent: #f59ac4; --absent-bg: #3d1a2c;
+    --unknown: #6fd3de; --unknown-bg: #0f3035;
+    --deprecated: #b7bcc4; --deprecated-bg: #2a2e35;
+    --superseded: #86b2ff; --superseded-bg: #172a4a;
+    --removed: #ff8a80; --removed-bg: #3f1917;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg);
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Noto Sans", sans-serif; }
+main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 48px; }
+code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 12.5px; }
+code { background: var(--code-bg); padding: 0 4px; border-radius: 4px; overflow-wrap: anywhere; }
+h1 { font-size: 22px; margin: 0 0 4px; }
+h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; }
+.sub { color: var(--muted); margin: 0; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 18px 0; align-items: start; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+.counts { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 10px; }
+.count b { font-size: 20px; margin-right: 4px; }
+.count.zero { opacity: .45; }
+.bar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; background: var(--chip); }
+.bar span { display: block; height: 100%; }
+.area-row { display: grid; grid-template-columns: minmax(110px, 38%) 28px 1fr; gap: 8px; align-items: center; padding: 3px 0; }
+.area-row .n { color: var(--muted); text-align: right; }
+.area-row .bar { height: 8px; }
+.filters { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.chips .lbl { color: var(--muted); font-size: 12px; width: 52px; }
+button.chip { font: inherit; font-size: 12.5px; color: var(--fg); background: var(--chip); border: 1px solid var(--line);
+  border-radius: 999px; padding: 3px 10px; cursor: pointer; }
+button.chip[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+button:focus-visible, input:focus-visible, .row-head:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.search { display: flex; gap: 8px; }
+.search input { flex: 1; font: inherit; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; min-width: 0; }
+.search button { font: inherit; color: var(--fg); background: var(--chip); border: 1px solid var(--line); border-radius: 8px; padding: 0 12px; cursor: pointer; }
+.meta { color: var(--muted); font-size: 12.5px; margin: 0 0 8px; }
+.list { display: flex; flex-direction: column; gap: 6px; }
+.row { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+.row-head { all: unset; box-sizing: border-box; display: grid; grid-template-columns: 58px 1fr auto; gap: 4px 12px; width: 100%; padding: 9px 12px; cursor: pointer; border-radius: 8px; }
+.row-head .id { font-weight: 600; }
+.row-head .name { font-weight: 600; }
+.row-head .sm { grid-column: 2 / 4; color: var(--muted); font-size: 12.5px; }
+.row-head .sm .dot::before { content: "·"; margin: 0 6px; }
+.row-head .lim { grid-column: 2 / 4; font-size: 12.5px; color: var(--partial); }
+.badge { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 999px; white-space: nowrap; border: 1px solid currentColor; }
+.badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.s-accepted { color: var(--accepted); background: var(--accepted-bg); }
+.s-partial { color: var(--partial); background: var(--partial-bg); }
+.s-stub { color: var(--stub); background: var(--stub-bg); }
+.s-absent { color: var(--absent); background: var(--absent-bg); }
+.s-unknown { color: var(--unknown); background: var(--unknown-bg); }
+.s-deprecated { color: var(--deprecated); background: var(--deprecated-bg); }
+.s-superseded { color: var(--superseded); background: var(--superseded-bg); }
+.s-removed { color: var(--removed); background: var(--removed-bg); }
+.bar .s-accepted, .dotc.s-accepted { background: var(--accepted); }
+.bar .s-partial, .dotc.s-partial { background: var(--partial); }
+.bar .s-stub, .dotc.s-stub { background: var(--stub); }
+.bar .s-absent, .dotc.s-absent { background: var(--absent); }
+.bar .s-unknown, .dotc.s-unknown { background: var(--unknown); }
+/* Not-shipped statuses: dashed badge border, and a marker on the row head (CSS only). */
+.badge.s-stub, .badge.s-absent, .badge.s-unknown { border-style: dashed; }
+.row-head .badge.s-stub::after, .row-head .badge.s-absent::after, .row-head .badge.s-unknown::after {
+  content: "not shipped"; font-weight: 400; font-size: 11px; opacity: .85; padding-left: 5px; border-left: 1px dashed currentColor; }
+.row-head .lim { background: none; }
+.row-head .lim.s-stub { color: var(--stub); }
+.row-head .lim.s-absent { color: var(--absent); }
+.row-head .lim.s-unknown { color: var(--unknown); }
+.audit { margin-top: 28px; }
+.timeline { list-style: none; margin: 0; padding: 0 0 0 18px; border-left: 2px solid var(--line); display: flex; flex-direction: column; gap: 12px; }
+.timeline > li { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.timeline > li::before { content: ""; position: absolute; left: -25px; top: 14px; width: 10px; height: 10px; border-radius: 50%; background: var(--focus); border: 2px solid var(--bg); }
+.timeline .a-head { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.timeline .a-date { color: var(--muted); }
+.timeline .a-title { font-weight: 600; }
+.timeline dl { padding: 8px 0 0; margin-top: 8px; grid-template-columns: 96px 1fr; }
+.bar .s-deprecated, .dotc.s-deprecated { background: var(--deprecated); }
+.bar .s-superseded, .dotc.s-superseded { background: var(--superseded); }
+.bar .s-removed, .dotc.s-removed { background: var(--removed); }
+.dotc { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; }
+.chev { transition: transform .15s; display: inline-block; margin-left: 6px; color: var(--muted); }
+.row.open .chev { transform: rotate(90deg); }
+dl { margin: 0; padding: 4px 12px 12px 82px; display: grid; grid-template-columns: 80px 1fr; gap: 6px 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+dt { color: var(--muted); font-size: 12.5px; }
+dd { margin: 0; min-width: 0; }
+dd ul { margin: 0; padding: 0; list-style: none; }
+dd .mono { overflow-wrap: anywhere; }
+.empty { color: var(--muted); padding: 20px; text-align: center; }
+footer { color: var(--muted); font-size: 12px; margin-top: 24px; }
+@media (max-width: 720px) {
+  .grid { grid-template-columns: 1fr; }
+  dl { padding-left: 12px; grid-template-columns: 1fr; gap: 2px; }
+  dt { margin-top: 6px; }
+  .row-head { grid-template-columns: 50px 1fr; }
+  .row-head .badge { grid-column: 2; justify-self: start; }
+  .row-head .sm, .row-head .lim { grid-column: 1 / 3; }
+  .chips .lbl { width: 100%; }
+}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Reader3 Pro — Feature Ledger</h1>
+    <p class="sub" id="synced"></p>
+  </header>
+  <div class="grid">
+    <section class="panel" aria-labelledby="h-status"><h2 id="h-status">Status overview</h2><div class="counts" id="counts"></div><div class="bar" id="bar" role="img"></div></section>
+    <section class="panel" aria-labelledby="h-area"><h2 id="h-area">By area</h2><div id="areas"></div></section>
+  </div>
+  <section class="filters" aria-label="Filters">
+    <div class="chips" id="f-status"><span class="lbl">Status</span></div>
+    <div class="chips" id="f-area"><span class="lbl">Area</span></div>
+    <div class="search">
+      <input id="q" type="search" placeholder="Search id, name, what, routes, paths, confirm, tracked, limits…" aria-label="Search features">
+      <button type="button" id="reset">Reset</button>
+    </div>
+  </section>
+  <p class="meta" id="shown" aria-live="polite"></p>
+  <div class="list" id="list"></div>
+  <section class="audit" aria-labelledby="h-audit"><h2 id="h-audit">Audit log</h2><ol class="timeline" id="audit"></ol></section>
+  <footer>Rendered from the embedded <code>#ledger-data</code> JSON. Rules, update checklist and debt references live in <code>docs/feature-ledger.md</code>.</footer>
+</main>
+<script>
+(function () {
+  "use strict";
+  var DATA = JSON.parse(document.getElementById("ledger-data").textContent);
+  var F = DATA.features, STATUSES = DATA.statuses;
+  var AREAS = [];
+  F.forEach(function (f) { if (AREAS.indexOf(f.area) < 0) AREAS.push(f.area); });
+  var state = { status: [], area: [], q: "", open: [] };
+
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = String(text);
+    return e;
+  }
+  // Render `backtick` spans as <code> without ever using innerHTML on data.
+  function rich(parent, text) {
+    String(text).split("`").forEach(function (part, i) {
+      if (!part) return;
+      parent.appendChild(i % 2 ? el("code", null, part) : document.createTextNode(part));
+    });
+    return parent;
+  }
+  function baseStatus(s) { return String(s).split(/\s/)[0]; }
+  function badge(s) { return el("span", "badge s-" + baseStatus(s), s); }
+  function stackBar(bar, list) {
+    bar.textContent = "";
+    var parts = [];
+    STATUSES.forEach(function (s) {
+      var n = list.filter(function (f) { return baseStatus(f.status) === s; }).length;
+      if (!n) return;
+      var seg = el("span", "s-" + s);
+      seg.style.width = (100 * n / list.length) + "%";
+      seg.title = s + ": " + n;
+      bar.appendChild(seg);
+      parts.push(n + " " + s);
+    });
+    bar.setAttribute("aria-label", parts.join(", "));
+  }
+
+  // ---- URL hash <-> state ----
+  function readHash() {
+    var p = new URLSearchParams(location.hash.replace(/^#/, ""));
+    function list(k) { return (p.get(k) || "").split(",").filter(Boolean); }
+    state.status = list("status").filter(function (s) { return STATUSES.indexOf(s) >= 0; });
+    state.area = list("area").filter(function (a) { return AREAS.indexOf(a) >= 0; });
+    state.q = p.get("q") || "";
+    state.open = list("open");
+  }
+  function writeHash() {
+    var p = new URLSearchParams();
+    if (state.status.length) p.set("status", state.status.join(","));
+    if (state.area.length) p.set("area", state.area.join(","));
+    if (state.q) p.set("q", state.q);
+    if (state.open.length) p.set("open", state.open.join(","));
+    var h = p.toString();
+    history.replaceState(null, "", h ? "#" + h : location.pathname + location.search);
+  }
+
+  // ---- static parts ----
+  document.getElementById("synced").appendChild(rich(el("span"),
+    "Synced " + DATA.synced_at + " at commit `" + DATA.commit + "` from `" + DATA.synced_from +
+    "`, which is authoritative. This page is only a view of it."));
+  var AUDIT = DATA.audit || [];
+  if (AUDIT.length) document.getElementById("synced").appendChild(el("span", null, " · last audit " + AUDIT[0].date));
+
+  var counts = document.getElementById("counts");
+  STATUSES.forEach(function (s) {
+    var n = F.filter(function (f) { return baseStatus(f.status) === s; }).length;
+    var c = el("span", "count" + (n ? "" : " zero"));
+    c.appendChild(el("b", null, n));
+    c.appendChild(badge(s));
+    counts.appendChild(c);
+  });
+  stackBar(document.getElementById("bar"), F);
+
+  var areas = document.getElementById("areas");
+  AREAS.forEach(function (a) {
+    var fs = F.filter(function (f) { return f.area === a; });
+    var r = el("div", "area-row");
+    r.appendChild(el("span", null, a));
+    r.appendChild(el("span", "n", fs.length));
+    var b = el("div", "bar"); stackBar(b, fs); r.appendChild(b);
+    areas.appendChild(r);
+  });
+
+  function chips(container, values, key) {
+    values.forEach(function (v) {
+      var b = el("button", "chip", v);
+      b.type = "button";
+      b.dataset.value = v;
+      b.addEventListener("click", function () {
+        var arr = state[key], i = arr.indexOf(v);
+        if (i < 0) arr.push(v); else arr.splice(i, 1);
+        update();
+      });
+      container.appendChild(b);
+    });
+  }
+  chips(document.getElementById("f-status"), STATUSES, "status");
+  chips(document.getElementById("f-area"), AREAS, "area");
+
+  var q = document.getElementById("q");
+  q.addEventListener("input", function () { state.q = q.value; update(); });
+  document.getElementById("reset").addEventListener("click", function () {
+    state = { status: [], area: [], q: "", open: [] }; update();
+  });
+
+  // ---- feature list ----
+  function matches(f) {
+    if (state.status.length && state.status.indexOf(baseStatus(f.status)) < 0) return false;
+    if (state.area.length && state.area.indexOf(f.area) < 0) return false;
+    var needle = state.q.trim().toLowerCase();
+    if (!needle) return true;
+    var hay = [f.id, f.name, f.what, f.limits, f.confirm, f.tracked]
+      .concat(f.routes, f.code, f.tests, f.adr).join("\n").toLowerCase();
+    return needle.split(/\s+/).every(function (t) { return hay.indexOf(t) >= 0; });
+  }
+  function pathList(items) {
+    if (!items.length) return el("span", "sub", "—");
+    var ul = el("ul");
+    items.forEach(function (p) { var li = el("li", "mono"); rich(li, p); ul.appendChild(li); });
+    return ul;
+  }
+  // Statuses whose row head previews Limits (partial + the not-shipped ones).
+  var LIMITS_PREVIEW = ["partial", "stub", "absent", "unknown"];
+  function renderRow(f) {
+    var isOpen = state.open.indexOf(f.id) >= 0;
+    var row = el("article", "row" + (isOpen ? " open" : ""));
+    var head = el("button", "row-head");
+    head.type = "button";
+    head.setAttribute("aria-expanded", String(isOpen));
+    head.setAttribute("aria-controls", "d-" + f.id);
+    head.appendChild(el("span", "id mono", f.id));
+    var nm = el("span", "name", f.name); nm.appendChild(el("span", "chev", "›")); head.appendChild(nm);
+    head.appendChild(badge(f.status));
+    var sm = el("span", "sm");
+    sm.appendChild(el("span", null, f.area));
+    if (f.evidence) sm.appendChild(rich(el("span", "dot"), f.evidence));
+    head.appendChild(sm);
+    var base = baseStatus(f.status);
+    if (LIMITS_PREVIEW.indexOf(base) >= 0 && f.limits) head.appendChild(rich(el("span", "lim s-" + base), "Limits: " + f.limits));
+    head.addEventListener("click", function () {
+      var i = state.open.indexOf(f.id);
+      if (i < 0) state.open.push(f.id); else state.open.splice(i, 1);
+      update(f.id);
+    });
+    row.appendChild(head);
+    if (isOpen) {
+      var dl = el("dl"); dl.id = "d-" + f.id;
+      function add(label, node) { dl.appendChild(el("dt", null, label)); var dd = el("dd"); dd.appendChild(node); dl.appendChild(dd); }
+      // Every field renders only when non-empty (absent rows carry no Code/Tests/Evidence).
+      if (f.what) add("What", rich(el("span"), f.what));
+      if (f.routes && f.routes.length) add("Routes", pathList(f.routes));
+      if (f.code.length) add("Code", pathList(f.code));
+      if (f.tests.length) add("Tests", pathList(f.tests));
+      if (f.adr.length) add("ADR", el("span", "mono", f.adr.join(", ")));
+      if (f.confirm) add("Confirm", rich(el("span"), f.confirm));
+      if (f.tracked) add("Tracked", rich(el("span"), f.tracked));
+      if (f.evidence) add("Evidence", rich(el("span"), f.evidence));
+      if (f.limits) add("Limits", rich(el("span"), f.limits));
+      row.appendChild(dl);
+    }
+    return row;
+  }
+
+  function update(focusId) {
+    writeHash();
+    [["f-status", "status"], ["f-area", "area"]].forEach(function (p) {
+      document.querySelectorAll("#" + p[0] + " button.chip").forEach(function (b) {
+        b.setAttribute("aria-pressed", String(state[p[1]].indexOf(b.dataset.value) >= 0));
+      });
+    });
+    if (q.value !== state.q) q.value = state.q;
+    var list = document.getElementById("list");
+    list.textContent = "";
+    var shown = F.filter(matches);
+    shown.forEach(function (f) { list.appendChild(renderRow(f)); });
+    if (!shown.length) list.appendChild(el("div", "empty", "No features match these filters."));
+    document.getElementById("shown").textContent = "Showing " + shown.length + " of " + F.length + " features";
+    if (focusId) {
+      var h = document.querySelector('[aria-controls="d-' + focusId + '"]');
+      if (h) h.focus();
+    }
+  }
+
+  // ---- audit log (newest first, in data order) ----
+  var auditList = document.getElementById("audit");
+  if (!AUDIT.length) auditList.appendChild(el("li", "empty", "No audits recorded."));
+  AUDIT.forEach(function (a) {
+    var li = el("li");
+    var head = el("div", "a-head");
+    var t = el("time", "a-date mono", a.date); t.setAttribute("datetime", a.date); head.appendChild(t);
+    head.appendChild(el("span", "a-title", a.title));
+    head.appendChild(el("code", null, a.commit));
+    li.appendChild(head);
+    var dl = el("dl");
+    [["Scope", a.scope], ["Found", a.found], ["Not audited", a.not_audited]].forEach(function (p) {
+      if (!p[1]) return;
+      dl.appendChild(el("dt", null, p[0]));
+      dl.appendChild(rich(el("dd"), p[1]));
+    });
+    li.appendChild(dl);
+    auditList.appendChild(li);
+  });
+
+  window.addEventListener("hashchange", function () { readHash(); update(); });
+  readHash();
+  update();
+})();
+</script>
+</body>
+</html>

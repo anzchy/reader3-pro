@@ -139,6 +139,21 @@ deciding what to work on next, load the `plan-and-branch-map` skill** — it car
 authoritative milestone table, the branch-numbering rule, and the 「权威范围」 split between the
 two active plan folders.
 
+### Feature Ledger
+
+[`docs/feature-ledger.md`](docs/feature-ledger.md) is the as-built record of what the product can do
+(`F-NNN` rows: status, code, tests, evidence, known limits). Read it at session start instead of
+re-deriving "what exists" from code.
+
+**After every feature module is accepted — merged to `master` with its gating lanes green — update
+the ledger in the same PR or the plan write-back commit.** Add a row for a new capability, or edit
+the existing row (evidence, limits, `partial` → `accepted`). Never log planned or unmerged work there,
+never delete or renumber rows, and keep every `Code`/`Tests` path real. Rules and the checklist are
+at the top and bottom of that file.
+[`docs/feature-ledger.html`](docs/feature-ledger.html) is the status dashboard view of the same data;
+the `.md` is the source — regenerate its `ledger-data` block with `python3 scripts/build_feature_ledger.py`
+in the same change (never hand-edit it). CI runs `python3 scripts/build_feature_ledger.py --check`.
+
 ## Data Flow
 
 1. User processes `book.epub` → creates `books/book_data/` with `book.pkl` + images
