@@ -129,6 +129,7 @@
   - 重建持共享锁期间，notes 保存照常成功；独占写手在场时 notes 在 2 秒预算内 409（不是挂起）
   - ABA：notes 等锁 → 删书 → 同名重导入 → notes 醒来 → 409，新书的 `notes.json` 不变
   - 交叉获取（资源锁 → 书锁）与同栈重入都抛错，不死锁
+  - 来自 PR #26 审计的两条转入项：`process_epub` 的**每书准入**（同一本书两次导入并发，今天只有各自的 staging 锁）由书锁独占覆盖；锁等待与 `run_in_threadpool` / `async` 边界——持锁的同步段不得在事件循环线程上跑，释放不得跨线程
   - 测试矩阵：待 /tdd-guardian:design-tests
 - **ADR-0015**：已过 [ADR-0000](../../../adr/0000-use-adrs.md) 准入（§6 Q11），Proposed 稿已成。实现若推翻契约某项，先改本段再同步 ADR。ADR-0001 的 Revisit When（`_book_write_lock` 多进程）即此次重访。**本分支合入时 ADR 转 Accepted、本段换链接**（门槛 7）
 
@@ -164,9 +165,9 @@
   - **删除顺序**（§6 Q8 已裁定）:
     1. 非阻塞取该书**独占**锁；拿不到 → 409
     2. **锁内**复核书目录存在；不存在 → 404
-    3. 在全局集合锁下把该书从 `library_collections.json` 的所有集合里移除（集合锁与 [009 #60](./009-e2e-annotations.md#跨波欠账) 的修复是同一把；该修复未合入时本步先等它）
+    3. 在全局集合锁下把该书从 `library_collections.json` 的所有集合里移除（集合锁即 [009 #60](./009-e2e-annotations.md#跨波欠账) 已合入的那把：`library_collections.json.lock`）
     4. 书目录**原子改名**为墓碑 `books/.{book_folder}.deleted-{pid}/`，`fsync` 父目录——**这是提交点**：之前崩溃，书完好；之后崩溃，书已不在库里
-    5. 失效三处进程内缓存：`server._stats_cache`、搜索索引缓存、`ai/books.py` 的 `BookUuidResolver` 映射（它今天不查盘就返回缓存，见 [009 #61](./009-e2e-annotations.md#跨波欠账)）
+    5. 失效三处进程内缓存：`server._stats_cache`、搜索索引缓存、`ai/books.py` 的 `BookUuidResolver` 映射（[009 #61](./009-e2e-annotations.md#跨波欠账) 已让它命中时查盘，但删书仍主动失效，免得多一次扫描）
     6. 仅当请求带 `delete_conversations=true`（默认 `false`）才删该书按 `book_uuid` 存的对话；否则对话保留为孤儿。确认对话框问用户——归 014 WI-16b
     7. `rmtree` 墓碑
     8. 放锁
