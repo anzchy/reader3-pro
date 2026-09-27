@@ -7,7 +7,9 @@ Collections are user-defined groupings of processed book folders (e.g. `dracula_
 ## Storage
 
 - **File**: `config/library_collections.json` (gitignored)
-- **Write strategy**: atomic write (temp file + `os.replace`)
+- **Write strategy**: every write runs under an exclusive lock and goes through a temp file in the same directory, `fsync` of the file, `os.replace` onto `library_collections.json`, then `fsync` of the directory. If only the directory `fsync` fails, the change is already visible, so the call succeeds and logs a WARNING (the rename may not survive a power loss).
+- **Lock file**: `config/library_collections.json.lock` is the cross-process lock (`fcntl.flock`). It is created on first write and is expected to stay. Never delete it while the server runs: a writer that recreates it locks a different inode, and two writers then run at once.
+- **Scratch files**: a crash mid-write can leave `config/.library_collections.*.tmp` behind. They are never read, and are safe to delete when no writer is running.
 - **Schema version**: `1`
 
 Top-level shape:

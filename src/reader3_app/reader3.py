@@ -2,6 +2,7 @@
 Parses an EPUB file into a structured object that can be used to serve the book via a web interface.
 """
 
+import errno
 import fcntl
 import glob
 import hashlib
@@ -187,8 +188,11 @@ def extract_metadata_robust(book_obj) -> BookMetadata:
 # directory, validated by read-back, and only then swapped in one path at a
 # time. `book.pkl` is the commit marker: every reader keys a book's existence
 # on it, so it is written to the staging area first and swapped in LAST. A run
-# that dies at any point leaves either the old book or the new one, never a
-# half-published mixture, and never loses a user-owned byte.
+# that fails with an exception rolls back to the old book. A run that is killed
+# outright (SIGKILL, power loss) inside the commit window can leave the book
+# directory a mixture of old and new, but the old version's files are still in
+# its staging directory, and the next run refuses to touch the book until an
+# operator puts them back. No user-owned byte is lost in either case.
 
 
 class ArtifactValidationError(ValueError):
@@ -294,6 +298,137 @@ def _is_own_staging_name(leftover: str) -> bool:
     return suffix.isdigit()
 
 
+def _parked_asides(leftover: str) -> List[str]:
+    """The superseded artifacts a dead run parked in ``leftover`` and never published over.
+
+    Only a run killed inside the commit window, or one whose rollback failed,
+    leaves this shape: its marker ``book.pkl`` is still in staging (so the new
+    version never landed) and at least one ``*.superseded`` entry is beside it
+    (so the old version's files were already moved out of the book directory).
+    Those asides are then the only copies of the published artifacts. Top-level
+    entries only — an image whose EPUB name happens to end in ``.superseded``
+    must not count.
+
+    An ``OSError`` from listing ``leftover`` propagates. A directory that cannot
+    be read is not a directory known to hold nothing, and every caller has to
+    decide for itself what not knowing means.
+    """
+    names = os.listdir(leftover)
+    if 'book.pkl' not in names:
+        return []
+    return sorted(n for n in names if n.endswith('.superseded'))
+
+
+#: The only asides the commit ever creates, each mapped to the live path it
+#: was moved out of. Any other ``*.superseded`` name was not put there by this
+#: module, so nothing is known about where it belongs.
+_KNOWN_ASIDES: Dict[str, str] = {
+    'book.epub.superseded': 'book.epub',
+    'images.superseded': 'images',
+}
+
+
+def _describe_os_error(exc: OSError) -> str:
+    """``"EACCES: Permission denied"``: the errno name an operator can search for."""
+    name = errno.errorcode.get(exc.errno) if exc.errno is not None else None
+    if name and exc.strerror:
+        return f"{name}: {exc.strerror}"
+    return str(exc)
+
+
+def _unlanded_commit_message(
+    output_dir: str,
+    parked: List[Tuple[str, List[str]]],
+    uninspectable: Optional[List[Tuple[str, str]]] = None,
+) -> str:
+    """Tell the operator exactly how to put the published version back by hand.
+
+    Recovery is not automated because file names alone cannot say which side
+    of the rollback the dead run was on (a half-finished rollback and a
+    forward commit into a book without ``images/`` leave identical names), and
+    guessing wrong destroys the old images. Each move is one ``src -> dst``
+    line so the instructions can be followed — and checked — mechanically.
+
+    So every line that can be followed mechanically has to be safe to follow.
+    A move is written only for a known aside that exactly one leftover parks:
+    with two candidates for one live path, the message cannot know which is the
+    published version, so it lists both and leaves the choice to the operator.
+    An unrecognised ``*.superseded`` entry is listed, never mapped onto a live
+    path — for ``notes.json.superseded`` that path is the user's own notes, and
+    for a bare ``.superseded`` it is the book directory itself. A directory
+    holding either kind is marked to be kept, not deleted, because it then
+    still holds a copy nobody has put back. And no line naming a directory the
+    operator must not lose carries the word remove or delete.
+
+    ``uninspectable`` pairs a leftover that could not be listed with a
+    description of the error; it may hold parked files, so it is named for
+    inspection only.
+    """
+    book_dir = os.path.abspath(output_dir)
+    if parked:
+        lines = [
+            f"refusing to process {book_dir}: an earlier run was killed while swapping in "
+            f"a new version, so {book_dir} may be a mixed old/new version. The previous "
+            "version's files are parked in the staging directory below and are their "
+            "only copy. Put them back by hand, in this order:",
+        ]
+    else:
+        lines = [
+            f"refusing to process {book_dir}: a staging directory left by an earlier run "
+            "could not be read, so there is no telling whether it holds the previous "
+            "version's files. Nothing was changed. Resolve it by hand:",
+        ]
+
+    candidates: Dict[str, List[str]] = {}
+    for leftover, asides in parked:
+        for aside in asides:
+            if aside in _KNOWN_ASIDES:
+                candidates.setdefault(aside, []).append(
+                    os.path.join(os.path.abspath(leftover), aside)
+                )
+    for aside, paths in sorted(candidates.items()):
+        if len(paths) > 1:
+            live = os.path.join(book_dir, _KNOWN_ASIDES[aside])
+            lines.append(
+                f"  {live} was parked by more than one earlier run; inspect every "
+                "candidate and choose one to put back by hand:"
+            )
+            lines.extend(f"    candidate: {path}" for path in paths)
+
+    for leftover, asides in parked:
+        staging = os.path.abspath(leftover)
+        lines.append(f"  from {staging}:")
+        settled = True
+        for aside in asides:
+            aside_path = os.path.join(staging, aside)
+            live_name = _KNOWN_ASIDES.get(aside)
+            if live_name is None:
+                lines.append(
+                    f"    {aside_path} is not a file this program parks; inspect it by hand"
+                )
+                settled = False
+            elif len(candidates[aside]) > 1:
+                lines.append(f"    {aside_path} is one of the candidates listed above")
+                settled = False
+            else:
+                live = os.path.join(book_dir, live_name)
+                if os.path.lexists(live):
+                    lines.append(f"    remove {live}")
+                lines.append(f"    {aside_path} -> {live}")
+        if settled:
+            lines.append(f"    then delete {staging}")
+        else:
+            lines.append(f"    keep {staging} until resolved")
+
+    for leftover, error in uninspectable or []:
+        lines.append(
+            f"  inspect {os.path.abspath(leftover)} by hand; it may hold the only copy "
+            f"of the published version ({error})"
+        )
+    lines.append(f"Processing {book_dir} is refused until that is done.")
+    return "\n".join(lines)
+
+
 def _clear_staging_dirs(output_dir: str) -> None:
     """Remove staging directories left behind by a previous crashed run.
 
@@ -301,11 +436,23 @@ def _clear_staging_dirs(output_dir: str) -> None:
     concurrent reprocess of this same book. Deleting it would pull the floor out
     from under that run, so this refuses instead: two processes rebuilding one
     book at once is a mistake worth reporting, not racing.
+
+    A dead run's directory is usually debris, except when the run died inside
+    the commit window: then it holds the only copy of the published artifacts
+    (see :func:`_parked_asides`), and this refuses as well, touching nothing.
+    A leftover that cannot be listed refuses too: not being able to look is not
+    evidence that there is nothing to lose. The one exception is a leftover
+    that vanished between the glob and the listing, which holds nothing at all.
+    Every leftover is classified before any is deleted, so one directory's
+    refusal can never arrive after another's deletion.
     """
     normalized = os.path.normpath(output_dir)
+    deletable: List[str] = []
+    parked: List[Tuple[str, List[str]]] = []
+    uninspectable: List[Tuple[str, str]] = []
     # glob.escape: a book folder is named after the EPUB file, so it can legally
     # contain '*', '?' or '[' — none of which may be read as a pattern here.
-    for leftover in glob.glob(f"{glob.escape(normalized)}.staging-*"):
+    for leftover in sorted(glob.glob(f"{glob.escape(normalized)}.staging-*")):
         if not _is_own_staging_name(leftover):
             # Someone else's directory that merely matches the pattern. Not ours
             # to reason about, and certainly not ours to delete.
@@ -315,6 +462,22 @@ def _clear_staging_dirs(output_dir: str) -> None:
                 f"another process is already processing {normalized}; refusing to "
                 f"delete the staging directory it still holds a lock on: {leftover}"
             )
+        try:
+            asides = _parked_asides(leftover)
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            # Recorded, not raised: a later leftover may still be locked by a
+            # live run, and that refusal has to win.
+            uninspectable.append((leftover, _describe_os_error(exc)))
+            continue
+        if asides:
+            parked.append((leftover, asides))
+        else:
+            deletable.append(leftover)
+    if parked or uninspectable:
+        raise RuntimeError(_unlanded_commit_message(normalized, parked, uninspectable))
+    for leftover in deletable:
         shutil.rmtree(leftover, ignore_errors=True)
 
 
@@ -460,6 +623,13 @@ def _commit_staged_artifacts(staging: str, output_dir: str) -> None:
        staging, hence the same filesystem) before anything new lands, and any
        failure before the marker rolls all of them back together.
 
+       That is the whole guarantee, and it has two holes. A rollback step that
+       itself fails leaves its aside in staging (``process_epub`` then keeps
+       the directory), and a SIGKILL inside the window skips the rollback
+       entirely. Either way the live directory can be left mixed, but the
+       previous version's files are still in staging, and reprocessing refuses
+       until an operator restores them (see :func:`_clear_staging_dirs`).
+
     Nothing here enumerates, reads or writes any path other than the three
     generated ones, which is why user-owned files come through untouched.
     """
@@ -512,6 +682,39 @@ def _commit_staged_artifacts(staging: str, output_dir: str) -> None:
         raise
 
 
+def _discard_own_staging(staging: str) -> None:
+    """Drop this run's staging directory, unless it is the last copy of something.
+
+    A rollback step that failed leaves its ``*.superseded`` aside parked in
+    staging, and that aside is the only copy of the published version left.
+    Deleting it unconditionally would turn a recoverable inconsistency into
+    permanent loss. So staging is kept whenever it still holds an aside, or
+    cannot be listed to find out; the next run refuses and prints how to put
+    the files back. Only a staging tree known to hold nothing parked goes.
+    """
+    try:
+        asides = _parked_asides(staging)
+    except FileNotFoundError:
+        return
+    except OSError as exc:
+        print(
+            f"WARNING: kept {staging}: it could not be listed "
+            f"({_describe_os_error(exc)}), so it may hold the only copy of the "
+            f"published version",
+            file=sys.stderr,
+        )
+        return
+    if asides:
+        print(
+            f"WARNING: kept {staging}: the rollback left the previous version "
+            f"parked in it ({', '.join(asides)}), and that is its only copy; "
+            f"the next run will print how to put it back",
+            file=sys.stderr,
+        )
+        return
+    shutil.rmtree(staging, ignore_errors=True)
+
+
 # --- Main Conversion Logic ---
 
 def process_epub(epub_path: str, output_dir: str) -> Book:
@@ -537,10 +740,13 @@ def process_epub(epub_path: str, output_dir: str) -> Book:
     # Taken immediately, and held until the staging tree is gone: it is what a
     # later run consults to tell "still being written" from "left by a crash".
     lock_fd = _acquire_staging_lock(staging)
-    images_dir = os.path.join(staging, 'images')
-    os.makedirs(images_dir)
 
+    # Everything after the lock sits inside the try, makedirs included: a
+    # failure outside it would keep the fd, and with it the lock, for the life
+    # of the process, and every later run on this book would be refused.
     try:
+        images_dir = os.path.join(staging, 'images')
+        os.makedirs(images_dir)
         final_book, image_digests = _build_into_staging(
             book, metadata, epub_path, staging, images_dir
         )
@@ -548,7 +754,7 @@ def process_epub(epub_path: str, output_dir: str) -> Book:
         _commit_staged_artifacts(staging, output_dir)
     finally:
         os.close(lock_fd)
-        shutil.rmtree(staging, ignore_errors=True)
+        _discard_own_staging(staging)
 
     print(f"Saved structured data to {os.path.join(output_dir, 'book.pkl')}")
     return final_book

@@ -25,7 +25,8 @@
 
 隔离约定（`tests/unit/conftest.py` 那两条 autouse 围栏之外还要自己做的）：
 
-* `server.book_uuid_resolver.books_dir` 指向一个**不存在**的 tmp 路径。
+* `server.book_uuid_resolver.books_dir` 指向 tmp 下一个独立目录，里面只有
+  `{BOOK_ID}/ai_meta.json`（WI-3 起缓存命中要与它对账）。
   `folder_for_book_uuid()` 在缓存未命中时会 `scan()`，指向真实 `books/` 会走进
   开发者的书库；这里预先把映射塞进缓存，scan() 因此永远不会真的去列目录。
 * `server.ai_queue` 每个用例换一个新的 `AIRequestQueueManager`。它是模块级单例，
@@ -170,9 +171,16 @@ def lease_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Lease
 
     monkeypatch.setattr(server, "BOOKS_DIR", str(books_dir))
 
-    # books_dir 指向不存在的路径（硬要求）；映射预先塞进缓存，folder_for_book_uuid()
-    # 因此在缓存里就命中，scan() 不会被调用。
-    resolver = BookUuidResolver(str(tmp_path / "no_such_books_dir"))
+    # books_dir 指向 tmp 下一个独立目录（硬要求：绝不能是真实书库）；映射预先塞进缓存，
+    # folder_for_book_uuid() 因此在缓存里就命中，scan() 不会被调用。WI-3 起缓存命中
+    # 要和磁盘上的 ai_meta.json 对账，所以这里补一份持有 BOOK_UUID 的真文件——
+    # 只是 setup，不改任何断言。
+    resolver_books_dir = tmp_path / "no_such_books_dir"
+    (resolver_books_dir / BOOK_ID).mkdir(parents=True)
+    (resolver_books_dir / BOOK_ID / "ai_meta.json").write_text(
+        json.dumps({"book_uuid": BOOK_UUID}), encoding="utf-8"
+    )
+    resolver = BookUuidResolver(str(resolver_books_dir))
     resolver._uuid_to_folder[BOOK_UUID] = BOOK_ID
     resolver._folder_to_uuid[BOOK_ID] = BOOK_UUID
     monkeypatch.setattr(server, "book_uuid_resolver", resolver)

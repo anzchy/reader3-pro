@@ -35,10 +35,6 @@ from reader3_app.ai.books import BookUuidResolver, ensure_book_uuid
 #: therefore say which uuid it expects instead of only "some uuid".
 HEALTHY_UUID = "9f6a1e2c-0000-4000-8000-0000000000aa"
 
-#: Written over the healthy book *after* the scan. Any answer of this value is a
-#: re-read from disk; any answer of HEALTHY_UUID came out of the scan's cache.
-REWRITTEN_UUID = "9f6a1e2c-0000-4000-8000-0000000000bb"
-
 
 @pytest.fixture(autouse=True)
 def _work_in_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -195,7 +191,7 @@ def test_unreadable_meta_raises_oserror(books_dir: Path) -> None:
 
 
 def test_scan_skips_a_broken_book_and_says_which(
-    books_dir: Path, caplog: pytest.LogCaptureFixture
+    books_dir: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """L4: one unreadable book must not cost the whole library its startup scan.
 
@@ -213,15 +209,23 @@ def test_scan_skips_a_broken_book_and_says_which(
 
     # `book_uuid_for_folder` resolves lazily on a miss, so asking it straight
     # after `scan()` cannot tell "the scan resolved the healthy book" from "the
-    # scan skipped every book and the lazy read quietly covered for it" -- which
-    # is exactly the regression this case has to catch, and the one that turns
-    # startup resolution into a per-request disk read. Rewriting the file with a
-    # different uuid first separates the two: only a cache the scan itself filled
-    # can still answer HEALTHY_UUID.
-    _write_meta(books_dir, "healthy_data", json.dumps({"book_uuid": REWRITTEN_UUID}))
+    # scan skipped every book and the lazy miss path quietly covered for it" --
+    # which is exactly the regression this case has to catch. A hit validates
+    # against ai_meta.json on disk (a rewritten file must win, or a re-imported
+    # book keeps its predecessor's uuid), so the old "rewrite, expect the stale
+    # uuid" probe no longer separates the two. The miss path is what does:
+    # only a cache the scan itself filled can answer without reaching it.
+    miss_path_calls: list[str] = []
 
-    assert resolver.book_uuid_for_folder("healthy_data") == HEALTHY_UUID, (
-        "scan() did not resolve the healthy book; this answer was re-read from disk"
+    def _no_miss_path(books_dir_arg: str, folder: str) -> str:
+        miss_path_calls.append(folder)
+        return ensure_book_uuid(books_dir_arg, folder)
+
+    monkeypatch.setattr(books_module, "ensure_book_uuid", _no_miss_path)
+
+    assert resolver.book_uuid_for_folder("healthy_data") == HEALTHY_UUID
+    assert miss_path_calls == [], (
+        "scan() did not resolve the healthy book; the answer came from the lazy miss path"
     )
     assert resolver.folder_for_book_uuid(HEALTHY_UUID) == "healthy_data"
     assert broken.read_bytes() == before
