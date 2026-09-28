@@ -48,6 +48,8 @@
 > - `B1`｜`2026-09-28T15:13:15Z`｜`9be446c`｜`1e868c7bf811`｜`chromium-1234`｜`darwin-25.3.0`
 >   ——在 `9be446c` 的干净 detached worktree 里跑（被测树与该 SHA 逐字节一致；本声明所在的 commit 只改台账）；
 >   行用 `--ledger` 写回主工作区，10 次跑完前不提交。
+>   **判定：通过**——上面的核对命令输出恰好一行 `10 9be446c green 1e868c7bf811 chromium-1234 darwin-25.3.0`
+>   （2026-09-28T15:14:07Z – 15:22:26Z，每次 68 passed，53.8–56.4s）。只满足次数；机制挑战闸第 1、3 项仍须在最终候选上过。
 >
 > ⚠️ **次数数满 ≠ Phase 3 解锁。** §7 里另有**机制挑战闸**三项（干净 Linux / CI 环境、CPU 压力、
 > 随机化 pytest 收集顺序），原定三项都是阻塞性的——**2026-09-24 起第 2 项经维护者裁定降为不阻塞的记录项**，
@@ -69,6 +71,16 @@
 | 2026-09-25T22:31:21Z | 4178b8a | green | 61.65 | 1e868c7bf811 | chromium-1234 | darwin-25.3.0 | .claude/tdd-guardian/soak-logs/2026-09-25T223121Z-4178b8a-373044625-cdfb95.log |
 | 2026-09-27T04:00:05Z | 8e1cf48 | red | 94.83 | 1e868c7bf811 | chromium-1234 | darwin-25.3.0 | .claude/tdd-guardian/soak-logs/2026-09-27T040005Z-8e1cf48-760122083-28bd9f.log |
 | 2026-09-28T04:00:05Z | d3ceaf4 | green | 60.72 | 1e868c7bf811 | chromium-1234 | darwin-25.3.0 | .claude/tdd-guardian/soak-logs/2026-09-28T040005Z-d3ceaf4-644042416-3516fc.log |
+| 2026-09-28T15:14:07Z | 9be446c | green | 55.12 | 1e868c7bf811 | chromium-1234 | darwin-25.3.0 | .claude/tdd-guardian/soak-logs/2026-09-28T151407Z-9be446c-244729000-f79935.log |
+| 2026-09-28T15:15:03Z | 9be446c | green | 54.73 | 1e868c7bf811 | chromium-1234 | darwin-25.3.0 | .claude/tdd-guardian/soak-logs/2026-09-28T151503Z-9be446c-555512666-267c8f.log |
+| 2026-09-28T15:15:59Z | 9be446c | green | 56.35 | 1e868c7bf811 | chromium-1234 | darwin-25.3.0 | .claude/tdd-guardian/soak-logs/2026-09-28T151559Z-9be446c-500978291-2efb8b.log |
+| 2026-09-28T15:16:56Z | 9be446c | green | 54.89 | 1e868c7bf811 | chromium-1234 | darwin-25.3.0 | .claude/tdd-guardian/soak-logs/2026-09-28T151656Z-9be446c-958374416-144a97.log |
+| 2026-09-28T15:17:51Z | 9be446c | green | 54.42 | 1e868c7bf811 | chromium-1234 | darwin-25.3.0 | .claude/tdd-guardian/soak-logs/2026-09-28T151751Z-9be446c-970721333-52bc27.log |
+| 2026-09-28T15:18:46Z | 9be446c | green | 54.63 | 1e868c7bf811 | chromium-1234 | darwin-25.3.0 | .claude/tdd-guardian/soak-logs/2026-09-28T151846Z-9be446c-181060250-62869a.log |
+| 2026-09-28T15:19:41Z | 9be446c | green | 55.35 | 1e868c7bf811 | chromium-1234 | darwin-25.3.0 | .claude/tdd-guardian/soak-logs/2026-09-28T151941Z-9be446c-081453958-31848a.log |
+| 2026-09-28T15:20:37Z | 9be446c | green | 54.12 | 1e868c7bf811 | chromium-1234 | darwin-25.3.0 | .claude/tdd-guardian/soak-logs/2026-09-28T152037Z-9be446c-769938875-8cdc18.log |
+| 2026-09-28T15:21:32Z | 9be446c | green | 53.84 | 1e868c7bf811 | chromium-1234 | darwin-25.3.0 | .claude/tdd-guardian/soak-logs/2026-09-28T152132Z-9be446c-126970833-0e77bb.log |
+| 2026-09-28T15:22:26Z | 9be446c | green | 53.97 | 1e868c7bf811 | chromium-1234 | darwin-25.3.0 | .claude/tdd-guardian/soak-logs/2026-09-28T152226Z-9be446c-637035250-74d0a3.log |
 
 ---
 
