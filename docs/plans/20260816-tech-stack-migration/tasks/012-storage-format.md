@@ -27,12 +27,12 @@
 |---|---|---|
 | Phase 2b（011） | ✅ 已合入 | [011 §8 合入记录](./011-backend-refactor.md)（#7 仍是 ⚠️，剩余一半即本文 WI-5） |
 | Track D（010） | ✅ 已合入 | [进度盘 §1 状态板](../../20260824-frontend-backend-plan-progress.md) |
-| **soak 门槛** | ⏳ **仍阻塞开工** | 判据：[§7 soak 门槛](../plan-tech-stack-migration.md)；次数与跨度现算：[`soak-log.md` 表头](./soak-log.md) 的两条命令。**本文不写派生数与日期** |
+| **soak 门槛** | ⏳ **仍阻塞开工** | 判据：[§7 soak 门槛](../plan-tech-stack-migration.md)；~~次数与跨度现算~~本批进度现算（⬛ 2026-09-28 批次规则）：[`soak-log.md` 表头](./soak-log.md) 的批次命令。**本文不写派生数与日期** |
 | 机制挑战闸 | 不再阻塞（第 1、3 项 PASS；第 2 项经维护者裁定降为记录项，**是降级不是通过**） | 裁定：[§7 机制挑战闸](../plan-tech-stack-migration.md)；执行记录：[`soak-log.md`](./soak-log.md) |
 | **018 已合入** | ⏳ 未开（[任务书](./018-library-routes.md) 骨架待审） | 每书写协调契约（锁，[018 WI-2](./018-library-routes.md)）是 WI-6、WI-7、WI-12、WI-13 的前置；#56 列表路由（018 WI-4）是 WI-5、WI-10 的前置。状态看 [进度盘 §1](../../20260824-frontend-backend-plan-progress.md) |
 
 - **soak 未达标时 012 允许的**：写本任务书、评审、`/tdd-guardian:design-tests` 出测试矩阵、裁定开放问题（§6）。**012 不允许的**：开 012 分支写生产代码。
-  这条只管 012——`018-library-routes` 按 D1 裁定**就在 soak 等待期内做**，不受这条约束（它仍不得碰冻结集，见 §4 门槛 F）。
+  这条只管 012——`018-library-routes` 按 D1 裁定**就在 soak 等待期内做**，不受这条约束（~~它仍不得碰冻结集，见 §4 门槛 F~~ ⬛ 2026-09-28：门槛 F 已放宽，它碰冻结集的代价是 012 开工前要在新 `suite_hash` 上重跑一批，见 §4 门槛 F）。
 - **`soak_run.py --append` 只在 `master` 上跑**。分支上的运行只做核验、不进台账（[017 §4](./017-audit-followup.md) 引 011 §8 门槛 4）。
 - 每天那一行怎么追：[进度盘「现在该做什么」](../../20260824-frontend-backend-plan-progress.md)。
 
@@ -68,7 +68,10 @@
 - 真正移除 pickle 写入路径与 runtime fallback（ADR-0009：稳定一个大版本后）
 - DEG-S1–S4 的重做形态（014 / 前端计划 WI-16b）；DEG-S5（011 已交付）
 - `notes.json` / `ai_meta.json` / `chroma_db/` 自身的格式变更（ADR-0009「明确不做」）
-- 冻结集内的任何改动（§4 门槛 F）——包括 009 欠账 #49 / #50
+- ~~冻结集内的任何改动（§4 门槛 F）——包括 009 欠账 #49 / #50~~
+  ⬛ 2026-09-28：门槛 F 放宽后，冻结集改动不再是「数周计数清零」的代价，只是「开工前在新 `suite_hash` 上重跑一批」。
+  **009 欠账 #49（`helpers.py` 的 8 秒墙钟轮询）因此现在就可以付**——本文只记这一点，不把它收进 012 的范围；
+  兑付与排期仍以 [009 欠账表](./009-e2e-annotations.md#跨波欠账) 为准。#50 不在冻结集（`createAnnotation` 在 `src/`），不受此影响
 - **#51 / #53 / #56 / #58 与每书写协调契约本身**（归 [018](./018-library-routes.md)，§2.2）。012 只**使用** 018 的锁，不重新定义它
 - 009 表与 Track-D 台账的兑付方改写（[018 WI-1](./018-library-routes.md)）
 
@@ -272,15 +275,20 @@
 | 14 | 每书锁被 012 的写手遵守 | `--migrate`（WI-6）、generation swap 重建（WI-7）、批量重建（WI-12）、上传（WI-13）都持 018 的锁；与删书并发的测试证明不会重建已删目录、不会发布进正在删除的目录 | _待填_ |
 | 15 | Wave D 两条欠账 | WI-12 的逐本进度 / 失败处理 / 重叠规则有契约测试；WI-13 的新格式落盘与上传边界有测试；设置页 `reindex` 不再显示「暂不支持」 | _待填_ |
 | 16 | e2e 分组与 soak 计数 | 新增的每条 e2e 都登记进 `scripts/lint_e2e_groups.py` 的分组（验收目录进 `EXPECTED_ACCEPTANCE_PER_DIR`，或模块进 `UNGROUPED_E2E_MODULES` 并同步 `EXPECTED_UNGROUPED_ITEMS`）；`scripts/soak_run.py` 由此派生 `EXPECTED_NONBASELINE_ITEMS`，`verdict` 要求 `-m baseline_1b` 的 deselected **恰好**等于它——漏登记一条，合入后下一次 soak 就判 red | _待填_ |
-| F | **冻结区零字节改动** | 下列 8 条路径 `git diff --stat master... -- <paths>` 为空，`suite_hash` 与 [`soak-log.md`](./soak-log.md) 表头冻结值一致：`tests/e2e/baseline_1b/**`、`tests/e2e/conftest.py`、`tests/e2e/helpers.py`、`tests/e2e/test_harness_smoke.py`、`tests/fixtures/epub_corpus.py`、`tests/fixtures/epub_zip.py`、`tests/fixtures/ai_stub.py`、`tests/conftest.py`。路径清单的定义处是 `soak-log.md`「`suite_hash` 的取法」与 `scripts/soak_run.py` 的 `HASH_COVERED_PATHS`，冲突以那里为准 | _待填_ |
-| R | **红灯必查根因** | 分支存续期间，`baseline_1b` 与 e2e lane **每一次**红都在 §8「红灯记录」追一行：时间、commit、失败用例、根因（产品缺陷 / 测试缺陷 / 环境）、处置 commit。**不允许以「重跑变绿」结案**——重跑只用来复现，不用来消红。根因归「测试缺陷」且落在冻结集的，按 [§7](../plan-tech-stack-migration.md) 清零规则处理并如实记账，不得绕开。表为空或每行根因齐全才算过 | _待填_ |
+| F | ~~**冻结区零字节改动**~~ → **开工 `suite_hash` ＝ 最后一次通过批次的 `suite_hash`**（⬛ 2026-09-28 维护者裁定放宽，见本表下方注） | ~~下列 8 条路径 `git diff --stat master... -- <paths>` 为空，`suite_hash` 与 [`soak-log.md`](./soak-log.md) 表头冻结值一致：`tests/e2e/baseline_1b/**`、`tests/e2e/conftest.py`、`tests/e2e/helpers.py`、`tests/e2e/test_harness_smoke.py`、`tests/fixtures/epub_corpus.py`、`tests/fixtures/epub_zip.py`、`tests/fixtures/ai_stub.py`、`tests/conftest.py`。~~ **新判据**：012 开工 commit 算出的 `suite_hash` 与 [`soak-log.md`](./soak-log.md) 最后一次 10/10 通过批次所跑的 `suite_hash` 逐字相同；分支上若动了下列 8 条冻结路径，合入前须在合并头的新 `suite_hash` 上重跑一批并通过（批次规则见 [§7](../plan-tech-stack-migration.md)）：`tests/e2e/baseline_1b/**`、`tests/e2e/conftest.py`、`tests/e2e/helpers.py`、`tests/e2e/test_harness_smoke.py`、`tests/fixtures/epub_corpus.py`、`tests/fixtures/epub_zip.py`、`tests/fixtures/ai_stub.py`、`tests/conftest.py`。路径清单的定义处是 `soak-log.md`「`suite_hash` 的取法」与 `scripts/soak_run.py` 的 `HASH_COVERED_PATHS`，冲突以那里为准 | _待填_ |
+| R | **红灯必查根因** | 分支存续期间，`baseline_1b` 与 e2e lane **每一次**红都在 §8「红灯记录」追一行：时间、commit、失败用例、根因（产品缺陷 / 测试缺陷 / 环境）、处置 commit。**不允许以「重跑变绿」结案**——重跑只用来复现，不用来消红。根因归「测试缺陷」且落在冻结集的，按 [§7](../plan-tech-stack-migration.md) ~~清零规则~~批次规则 2 / 3（⬛ 2026-09-28：批次终止，修复后在新 `suite_hash` 上重开一批）处理并如实记账，不得绕开。表为空或每行根因齐全才算过 | _待填_ |
 | 17 | 欠账回写 | 009 表里兑付方为 012 的每一行（#35、#52、#54、#55、#57——届时 018 那一批已把另外四行改走）状态改为已结清（附 commit）或写明转出去向（那四行由 [018 WI-1](./018-library-routes.md) 改走、由 018 结清） | _待填_ |
 | 18 | ADR 回写 | ADR-0009 → Accepted、compliance 更新；ADR-0007 compliance 更新 | _待填_ |
 | 19 | 合入前 CI 全绿 | PR 上 `pull_request` 触发的 `tests.yml` 与 `lint.yml` 全绿后才合入（PR 先开，CI 才会跑） | _待填_ |
 
 - 不得设 `TDD_GUARD_BYPASS`。
-- **门槛 3 与 R 为什么是硬门槛**（2026-09-26 加，出自「跳过 soak 的代价评估」）：本分支引入的缺陷——崩溃安全发布、每书锁、generation swap、删书与写手并发——**天然是间歇性的**，表现与 flaky 测试无法区分。soak 证明的只是基线在一个本地剖面下攒到了 10 次绿，不是 flaky 率上界（[§7](../plan-tech-stack-migration.md) 界定段）；所以「红了就重跑」会把真竞态藏进重跑里。门槛 R 管的是判读纪律，门槛 3 让崩溃安全不再只靠 E2E 当判官。
-- `EXPECTED_BASELINE_ITEMS` 不许变——它一变就说明碰了冻结集。（门槛 16 改的是验收 / 白名单两个常量，不是这一个。）
+- **⬛ 2026-09-28 维护者裁定：门槛 F 放宽。** 原文「冻结区零字节改动」的目的是保护数周积累的 soak 计数；
+  [§7](../plan-tech-stack-migration.md) 改为批次规则后，重开一批只要 10–15 分钟，这份保护不再值那个代价。
+  新判据只要求「开工时的 `suite_hash` 与最后一次通过批次一致」——冻结路径**可以改**，但**任何改动都需要一批新的 10 次**
+  （外加机制挑战闸第 3 项对新 `suite_hash` 重跑，§7 批次规则 4）。连带：009 欠账 #49 现在可付（见 §2.3）。
+  评审记录：[`review-soak-gate-20260928.md`](../review-soak-gate-20260928.md) §6 问题 2。
+- **门槛 3 与 R 为什么是硬门槛**（2026-09-26 加，出自「跳过 soak 的代价评估」）：本分支引入的缺陷——崩溃安全发布、每书锁、generation swap、删书与写手并发——**天然是间歇性的**，表现与 flaky 测试无法区分。soak 证明的只是基线~~在一个本地剖面下攒到了 10 次绿~~（⬛ 2026-09-28：候选版本在一个本地剖面下跑通了一批 10 次）不是 flaky 率上界（[§7](../plan-tech-stack-migration.md) 批次规则 5）；所以「红了就重跑」会把真竞态藏进重跑里。门槛 R 管的是判读纪律，门槛 3 让崩溃安全不再只靠 E2E 当判官。
+- `EXPECTED_BASELINE_ITEMS` 不许变——它一变就说明碰了冻结集。（⬛ 2026-09-28：门槛 F 放宽后碰冻结集本身不再禁止，但这条仍成立——改它等于改 `baseline_1b` 的条数，属于冻结集改动，须按门槛 F 新判据重跑一批。）（门槛 16 改的是验收 / 白名单两个常量，不是这一个。）
 - #51 / #53 / #56 / #58 的兑付不在本表：它们的出口闸在 [018 §4](./018-library-routes.md)。门槛 13 / 14 只验「012 的改动没把 018 的路由与锁弄坏」；018 若按其 WI-6 挂起条款把 #53 转出，门槛 13 的「导出」一格标注不适用。
 
 ---
@@ -293,8 +301,8 @@
 - **012 的写手漏持锁**：本分支新增三个写手（`--migrate`、generation swap 重建、上传）外加批量重建，任何一个不持 018 的每书锁，就会与删书竞争——把已删目录重新建出来，或把产物发布进正在删除的目录。缓解：所有写手只用 018 的契约，门槛 14 用并发测试证明。锁本身的失败模式（锁文件位置、不复活规则、与 notes 锁的顺序）归 [018 §5](./018-library-routes.md)。
 - **索引查询侧漏改**：generation swap 只改写侧、`_client_and_collection` 仍开固定名集合，结果是「重建成功、查询打空」。缓解：WI-7 把查询侧写进目标，验收第 3 条可区分新旧 chunk。
 - **存储泄漏在 `book_store` 之外**：`list_book_ids`、`load_book_index` 的 freshness、`_load_book` 直读 pkl——漏一处，新格式书就在那条路径上「不存在」或缓存永不失效。缓解：WI-4 验收的 grep 条。
-- **soak 收集计数**：新 e2e 没登记分组，`soak_run.py` 的 deselected 精确比对就对不上，合入后 master 上下一次 soak 判 red（不是清零台账，但会让「全绿」断档、推迟 014）。缓解：门槛 16；合入前在分支上跑一次 `soak_run.py`（只核验、不 `--append`）。
-- **冻结集诱惑**：`acceptance_p3` 的 fixture 在 `tests/fixtures/deg_assertions.py`（不在冻结集），但 e2e 的 `conftest.py` / `helpers.py` 在——任何「顺手改一下 helper」都会清零 soak。
+- **soak 收集计数**：新 e2e 没登记分组，`soak_run.py` 的 deselected 精确比对就对不上，合入后 master 上下一次 soak 判 red（~~不是清零台账，但会让「全绿」断档~~ ⬛ 2026-09-28：会终止当时的批次，须查根因后重开，推迟 014）。缓解：门槛 16；合入前在分支上跑一次 `soak_run.py`（只核验、不 `--append`）。
+- **冻结集诱惑**：`acceptance_p3` 的 fixture 在 `tests/fixtures/deg_assertions.py`（不在冻结集），但 e2e 的 `conftest.py` / `helpers.py` 在——任何「顺手改一下 helper」都会~~清零 soak~~让最后一次通过的批次不再覆盖当前套件、须重跑一批（⬛ 2026-09-28 门槛 F 放宽：代价变小，但仍不是零）。
 - **router 体量**：`library.py` 已不小，#55 / #57 的新路由（加上 018 已加的）可能逼出新 router 模块。
 - **磁盘峰值**：双写期 + staging 期间每本书约三份数据（ADR-0007 / ADR-0009 Negative）；generation swap 期间索引也是两份。
 

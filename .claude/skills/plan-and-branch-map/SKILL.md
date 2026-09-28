@@ -92,20 +92,26 @@ missing until 2026-09-01, which is how 009 kept reading as "Tasks drafted" with 
 M1b's two gates are both met: **G1** on 2026-09-05 (unlocks Phase 4A / 013) and **G2** on
 2026-09-06. `suite_hash` was **re-frozen** at `1e868c7bf811` on 2026-09-21 (prior value
 `2747100dadf6` is void). Two consequences you need before touching anything: **Phase 3 / 012 is
-still blocked — now only by the soak count (≥10 runs / ≥5 workdays).** History, condensed: on
+still blocked — now only by the soak gate: one declared batch of exactly 10 consecutive first-try
+green full runs on a single `commit` / `suite_hash` / browser / os / lock (no calendar span; rule
+adopted 2026-09-28, replacing ≥10 runs / ≥5 workdays; defined in §7 of `plan-tech-stack-migration.md`).** History, condensed: on
 2026-09-21 fixing a real data-loss bug (009 debt #9) required re-judging a frozen test, so the
 ledger and all three of §7's **mechanism-challenge gates** were reset together — a deliberate,
 recorded trade. Against the new hash, items 1 (clean Linux) and 3 (random collection order)
 re-passed; item 2 (CPU pressure) measured FAIL on 2026-09-23, was attributed to a test-fixture
 fault in frozen `helpers.py` (not a product defect), and on **2026-09-24 was downgraded by
 maintainer ruling to non-blocking / record-only** — downgraded, not passed (its fix is 009 debt
-#49). So the mechanism gates no longer block 012; the soak ledger was **not** reset by that ruling.
+#49). So the mechanism gates no longer block 012 (but under the 2026-09-28 rule, item 1 must re-pass on the final candidate `commit` and item 3 must hold for the current `suite_hash`); the soak ledger was **not** reset by that ruling.
 The ruling lives in §7 of `plan-tech-stack-migration.md` (below discipline 3); results, the
 attribution evidence ("第 2 项归因"), and the current count live only in `soak-log.md` — do not
-restate them. Waiting alone will not clear the count: it needs `soak --append` runs on `master`.
+restate them. Waiting alone will not clear the gate: it needs a batch of `soak --append` runs on `master`, and
+the first batch may only be declared after the 2026-09-27 red is attributed; pre-2026-09-28 rows
+count toward no batch.
 And **any byte changed under
 `tests/e2e/baseline_1b/**`, `tests/e2e/conftest.py`, `helpers.py`, `test_harness_smoke.py`, or the
-four `tests/fixtures/` files resets that count to zero** — docstrings included. Progress and the
+four `tests/fixtures/` files changes `suite_hash`, so no earlier batch covers the suite any more —
+a fresh 10-run batch is needed** (docstrings included). Since 2026-09-28 that costs ~10–15 min, not
+weeks, and 012's gate F allows such changes as long as the batch is re-run. Progress and the
 frozen value are defined only in
 [`tasks/soak-log.md`](docs/plans/20260816-tech-stack-migration/tasks/soak-log.md); do not restate
 them elsewhere.
