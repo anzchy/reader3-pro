@@ -306,6 +306,11 @@ UNGROUPED_E2E_MODULES = {
     # 就要动 `baseline_1b/` 的改动里一并迁入，同批撤条目并给 `EXPECTED_BASELINE_ITEMS`
     # 加上去」。
     "tests/e2e/test_conflict_settled_text_keeps_its_base_etag.py",
+    # 选区工具条关掉之后不得被 epub.js 的下一拍 `selected` 重新打开（K2 copy 的 soak 抖动）。
+    # 内容上它是 K-2 家族，落白名单的理由与上面几条一字不差：迁进 `baseline_1b/` 会改
+    # `suite_hash` 并把 soak 计数清零；到期条件同样是「下一次本来就要动 `baseline_1b/` 的
+    # 改动里一并迁入，同批撤条目并给 `EXPECTED_BASELINE_ITEMS` 加上去」。
+    "tests/e2e/test_selection_toolbar_stays_closed.py",
 }
 
 # 上面几个白名单模块在一次 `tests/e2e --collect-only` 里贡献的 item 数。
@@ -359,7 +364,12 @@ UNGROUPED_E2E_MODULES = {
 # `--collect-only` 实测值**。一条钉住静默覆盖本身，两条钉住这枚基准令牌的另外两条边界
 # （跟着自己的写前进、随编辑会话结束而清空），外加一条「没有第三方时照旧保存成功」的
 # 退化护栏；三条边界各自被逐一破坏验证过只红对应的那一条。
-EXPECTED_UNGROUPED_ITEMS = 55
+#
+# 55 → **63**（2026-09-28，fix/selection-toolbar-reopen）：新增
+# `tests/e2e/test_selection_toolbar_stays_closed.py`，**+8 是执行过的 `--collect-only`
+# 实测值**（四条关闭路径 copy / ask_ai / escape / outer_mousedown × 两个时机
+# after_first_tick / before_first_tick；全量 256）。
+EXPECTED_UNGROUPED_ITEMS = 63
 
 # 派生值，不是字面量。见文件头「为什么必须派生」。
 EXPECTED_E2E_ITEMS = (
