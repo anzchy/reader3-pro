@@ -38,6 +38,7 @@
 |---|---|---|---|---|---|---|---|
 | 2026-09-23T10:51:23Z | baddc61 | green | 56.63 | 1e868c7bf811 | chromium-1234 | darwin-25.3.0 | .claude/tdd-guardian/soak-logs/2026-09-23T105123Z-baddc61-253060125-89fc9e.log |
 | 2026-09-25T22:31:21Z | 4178b8a | green | 61.65 | 1e868c7bf811 | chromium-1234 | darwin-25.3.0 | .claude/tdd-guardian/soak-logs/2026-09-25T223121Z-4178b8a-373044625-cdfb95.log |
+| 2026-09-27T04:00:05Z | 8e1cf48 | red | 94.83 | 1e868c7bf811 | chromium-1234 | darwin-25.3.0 | .claude/tdd-guardian/soak-logs/2026-09-27T040005Z-8e1cf48-760122083-28bd9f.log |
 
 ---
 

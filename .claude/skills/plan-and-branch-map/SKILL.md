@@ -117,5 +117,5 @@ frontend branches have no task files.
 
 ### Shipped features (implemented; see code, not specs)
 
-Keyword + semantic search · multi-provider AI with RAG · 3-pane library with collections and bulk
-indexing · Dedao-style UI · full-screen paginated reader with annotations.
+See the feature ledger [`docs/feature-ledger.md`](../../../docs/feature-ledger.md) — the single
+definition site. When a milestone here flips to ✅ Merged, update the ledger in the same write-back.

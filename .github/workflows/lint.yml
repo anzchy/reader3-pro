@@ -1,8 +1,9 @@
 # 007 步骤 0.5 与 0.8 的三条 lint（`contracts` job），以及 0.2 的两重 wheel 检查（`wheel` job）。
 # 迁移计划 §7 Phase 0 的退出条件要求它们「在 CI 里生效」。
 # 2026-09-19 起 `contracts` 里多了第四条：011 WI-4 的 router 体量门禁。
+# 2026-09-27 起多了第五条：功能台账 md↔html 漂移检查（build_feature_ledger.py --check）。
 #
-# 四条 lint 都是零依赖的标准库脚本，所以 `contracts` 这个 job 不装任何东西——
+# 五条 lint 都是零依赖的标准库脚本，所以 `contracts` 这个 job 不装任何东西——
 # 不 uv sync、不 pip install。**wheel 检查故意另起一个 job**，因为它要 `uv build`：
 # 混进 `contracts` 就会把「零依赖」这个性质弄丢，那条性质是让 lint 在最早期、
 # 还没有 tests/ 的分支上也能跑起来的前提。
@@ -27,7 +28,7 @@
 # 现在补回了一半——开 PR 时会跑，直接 push 到分支时仍然不跑。**
 # 分支上攒的违规最晚在开 PR 那一刻现形，不再拖到发版那天。两个补偿手段仍在：
 #   - `workflow_dispatch`：想验的时候在 Actions 页面手点，或 `gh workflow run lint.yml`
-#   - 本地：`python3 scripts/lint_e2e_selectors.py`（另三条同理）零依赖，随手能跑
+#   - 本地：`python3 scripts/lint_e2e_selectors.py`（另四条同理）零依赖，随手能跑
 name: lint
 
 on:
@@ -47,7 +48,7 @@ concurrency:
 
 jobs:
   contracts:
-    name: 契约 lint（testid ＋ token ＋ router 体量）
+    name: 契约 lint（testid ＋ token ＋ router 体量 ＋ 功能台账）
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -56,8 +57,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      # 四条分开跑，且不用 `&&` 串联：失败时要能一眼看出是哪一条，
-      # 而不是「第一条挂了，后三条没跑，不知道它们是绿是红」。
+      # 五条分开跑，且不用 `&&` 串联：失败时要能一眼看出是哪一条，
+      # 而不是「第一条挂了，后四条没跑，不知道它们是绿是红」。
       - name: 选择器 lint（tests/e2e/ 只许用 data-testid 与 ARIA）
         run: python3 scripts/lint_e2e_selectors.py
 
@@ -80,6 +81,14 @@ jobs:
       - name: router 体量门禁（≤ 500 行，唯一具名豁免 chat.py ≤ 550 且带到期条件）
         if: always()
         run: python3 scripts/check_router_size.py
+
+      # docs/feature-ledger.html 的 `ledger-data` 块由 docs/feature-ledger.md 生成，不许手改。
+      # `--check` 先做全量校验（行语法、路径存在、路由认领），再比对生成结果与已提交的块；
+      # 任一不符即红。修法永远是改 md、bump Synced 行，然后本地跑
+      # `python3 scripts/build_feature_ledger.py` 重新生成——而不是去改 html。
+      - name: 功能台账漂移检查（html 的 ledger-data 块必须等于从 md 生成的结果）
+        if: always()
+        run: python3 scripts/build_feature_ledger.py --check
 
   wheel:
     name: wheel 内容 ＋ 装出来能跑（0.2）

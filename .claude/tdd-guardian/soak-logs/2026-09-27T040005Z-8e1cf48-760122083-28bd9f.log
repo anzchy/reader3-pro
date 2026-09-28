@@ -1,0 +1,60 @@
+# soak run 2026-09-27T04:00:05Z @ 8e1cf48
+# collect-only: 68/248 tests collected (180 deselected) in 0.44s
+# summary: 1 failed, 67 passed, 180 deselected in 94.83s
+# pytest rc: 1
+# verdict: red recordable=True
+# reason: failed == 1（≠ 0）
+
+.....F..............................................................     [100%]
+=================================== FAILURES ===================================
+____ test_k2_copy_action_puts_the_selected_text_on_the_clipboard[chromium] _____
+
+page = <Page url='http://127.0.0.1:58944/read/smoke_data/0'>
+live_server = 'http://127.0.0.1:58944'
+e2e_books_dir = PosixPath('/private/var/folders/_k/kf42wzb57vl8c_1vcs01hp7c0000gn/T/pytest-of-jackcheng/pytest-1130/e2e0/books')
+
+    def test_k2_copy_action_puts_the_selected_text_on_the_clipboard(
+        page: Page, live_server: str, e2e_books_dir: Path
+    ) -> None:
+        """K-2 `copy`（S1 · L5 剪贴板判据）：按下之后剪贴板里就是选中的那段文字。
+    
+        `copySelection()` 只做三件事：从 iframe 的 `contentWindow.getSelection()` 取字符串、
+        `navigator.clipboard.writeText`、`closeSelectionToolbarIfOpen()`。本条把第二件与第三件
+        分别钉住：只钉剪贴板，工具条不关也绿；只钉工具条，写进剪贴板的是空串也绿。
+    
+        **权限在用例内授予，不动 conftest。** `grant_permissions` 作用在 `page.context` 上，
+        origin 取 `live_server`（fixture 给的正是带端口的 base URL）。没有这一句时
+        `readText()` 会以 `NotAllowedError` 抛出，而不是返回空串——所以这句本身也是有判据的。
+    
+        什么改动会让它红：`copy` 这个 `data-action` 改名、`copySelection` 改成读外层
+        document 的 selection（iframe 里的选区在外层是空的，剪贴板会变成空串）、
+        或者末尾那次关工具条被删掉。
+        """
+        page.context.grant_permissions(["clipboard-read", "clipboard-write"], origin=live_server)
+    
+        frame = open_reader(page, live_server, BOOK_ID, 0, CH0_ANCHOR)
+        select_in_frame(frame, CH0_QUOTE)
+        page.get_by_test_id("rd-anno-copy").click()
+    
+        clipboard = page.evaluate("() => navigator.clipboard.readText()")
+        assert clipboard == CH0_QUOTE, (
+            f"剪贴板里是 {clipboard!r}，不是选中的 {CH0_QUOTE!r}。"
+        )
+    
+        # 第二件事：`closeSelectionToolbarIfOpen()` 也跑到了。与剪贴板那条互不覆盖。
+>       expect(page.get_by_test_id("rd-anno-toolbar")).not_to_be_visible()
+E       AssertionError: Locator expected not to be visible
+E       Actual value: visible 
+E       Call log:
+E         - Expect "not_to_be_visible" with timeout 5000ms
+E         - waiting for get_by_test_id("rd-anno-toolbar")
+E           13 × locator resolved to <div role="toolbar" aria-hidden="true" class="is-visible" id="annotation-toolbar" data-testid="rd-anno-toolbar">…</div>
+E              - unexpected value "visible"
+
+tests/e2e/baseline_1b/test_kernel_actions_and_url.py:285: AssertionError
+--------------------------- Captured stdout teardown ---------------------------
+
+[e2e] 已拦下的外部请求域：['https://fonts.googleapis.com']
+=========================== short test summary info ============================
+FAILED tests/e2e/baseline_1b/test_kernel_actions_and_url.py::test_k2_copy_action_puts_the_selected_text_on_the_clipboard[chromium]
+1 failed, 67 passed, 180 deselected in 94.83s (0:01:34)
