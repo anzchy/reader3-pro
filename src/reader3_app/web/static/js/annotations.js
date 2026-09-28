@@ -404,6 +404,19 @@
     return { classes, ids, meta, noteText };
   }
 
+  function sameRange(sel, range) {
+    if (!sel || sel.rangeCount !== 1 || !range) return false;
+    try {
+      const current = sel.getRangeAt(0);
+      return (
+        current.compareBoundaryPoints(Range.START_TO_START, range) === 0 &&
+        current.compareBoundaryPoints(Range.END_TO_END, range) === 0
+      );
+    } catch {
+      return false;
+    }
+  }
+
   function rangeFromCfi(cfi, contents, doc) {
     if (!cfi) return null;
     if (contents && typeof contents.range === "function") {
@@ -631,6 +644,7 @@
       this.currentAnnotationIds = [];
       this.editingNoteId = null;
       this.lastSelectionAt = 0;
+      this.dismissedRange = null;
       this.selectedColor = "yellow";
       this.renderer = new AnnotationRenderer(contentEl, () => window.Reader3Epub?.getContents?.());
     }
@@ -936,11 +950,16 @@
       const range = rangeFromCfi(String(cfiRange), contents, doc);
       if (!range) return;
       const sel = doc?.defaultView?.getSelection?.();
-      if (sel) {
+      // Rewriting an unchanged selection fires `selectionchange`, which makes epub.js emit
+      // `selected` again ~250ms later: a self-sustaining loop that reopens a closed toolbar.
+      if (sel && !sameRange(sel, range)) {
         sel.removeAllRanges();
         sel.addRange(range);
       }
       this.lastSelectionAt = Date.now();
+      // epub.js still emits one trailing `selected` for the user's own selection; if the
+      // toolbar was closed on this very range in the meantime, keep it closed.
+      if (this.dismissedRange && sameRange(sel, this.dismissedRange)) return;
       this.handleSelectionRange(range);
     }
 
@@ -986,6 +1005,7 @@
 
     openToolbarAt(x, y) {
       if (!this.toolbar) return;
+      this.dismissedRange = null;
       this.toolbar.classList.add("is-visible");
       this.toolbar.style.left = `${Math.round(x)}px`;
       this.toolbar.style.top = `${Math.round(y)}px`;
@@ -996,6 +1016,7 @@
     closeSelectionToolbarIfOpen() {
       if (!this.toolbar?.classList.contains("is-visible")) return false;
       this.toolbar.classList.remove("is-visible");
+      this.dismissedRange = this.currentRange || null;
       return true;
     }
 

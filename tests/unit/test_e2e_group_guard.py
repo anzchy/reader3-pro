@@ -188,7 +188,10 @@ CANONICAL_ACCEPTANCE_ITEMS = 125
 # `tests/e2e/test_conflict_settled_text_keeps_its_base_etag.py`，**实测 4 条 item**，不参数化。
 # 它与上一条同住 DEG-S5 对话框，但问的是收尾之后那次保存带的是哪一版令牌，判据不重叠。
 # 落白名单的理由与到期动作写在 `scripts/lint_e2e_groups.py` 的白名单注释里，本文件不复述。
-CANONICAL_UNGROUPED_ITEMS = 55
+# 55 → 63：2026-09-28 fix/selection-toolbar-reopen 新增
+# `tests/e2e/test_selection_toolbar_stays_closed.py`，**实测 8 条 item**（4 条关闭路径 × 2 个时机）。
+# 落白名单的理由与到期动作写在 `scripts/lint_e2e_groups.py` 的白名单注释里，本文件不复述。
+CANONICAL_UNGROUPED_ITEMS = 63
 # 140 → 149：同上，`shell_4a` 的 9 条。
 # 149 → 183：2026-09-24 013 WI-10 往 `shell_4a` 加的 34 条（见上面 26 → 60 那条注释）。
 # 183 → 184：同上，深色 OS 回归 1 条。
@@ -196,7 +199,8 @@ CANONICAL_UNGROUPED_ITEMS = 55
 # 211 → 243：2026-09-25 013 WI-13 的 32 条（见上面 88 → 120 那条注释；全量实测 243）。
 # 243 → 244：2026-09-25 013 终审 RV-1 的 1 条（见上面 120 → 121 那条注释；全量实测 244）。
 # 244 → 248：2026-09-25 013 终审 RV-14 的 4 条（见上面 121 → 125 那条注释；全量实测 248）。
-CANONICAL_E2E_ITEMS = 248
+# 248 → 256：2026-09-28 fix/selection-toolbar-reopen 的 8 条白名单 item（见上面 55 → 63；全量实测 256）。
+CANONICAL_E2E_ITEMS = 256
 
 #: **已激活**的 acceptance 组，与 `scripts/lint_e2e_groups.py` 的
 #: `ACTIVATED_ACCEPTANCE_DIRS` 各写一份——本文件是守卫的独立 oracle，不从被测脚本 import
@@ -381,6 +385,9 @@ def test_real_tree_collection_is_a_partition_and_counts_match() -> None:
         # 017 WI-7（审计 #4）：收尾放进编辑器的那一版，必须连着它自己的基准令牌。
         # 同上，理由与到期动作在 `scripts/lint_e2e_groups.py` 的白名单注释里。
         f"{E2E_REL}/test_conflict_settled_text_keeps_its_base_etag.py",
+        # 2026-09-28 fix/selection-toolbar-reopen：关掉的选区工具条不得被 epub.js 的下一拍重开。
+        # 同上，理由与到期动作在 `scripts/lint_e2e_groups.py` 的白名单注释里。
+        f"{E2E_REL}/test_selection_toolbar_stays_closed.py",
     }, f"白名单的内容变了：{sorted(whitelist)}（加项要写理由，且它必须真的贡献 item）"
 
     # (1) 划分：恰好一个组 marker，或模块在白名单里。双 marker 也红。
