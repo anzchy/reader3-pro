@@ -1,0 +1,8 @@
+# soak run 2026-09-28T04:00:05Z @ d3ceaf4
+# collect-only: 68/248 tests collected (180 deselected) in 0.12s
+# summary: 68 passed, 180 deselected in 60.72s
+# pytest rc: 0
+# verdict: green recordable=True
+
+....................................................................     [100%]
+68 passed, 180 deselected in 60.72s (0:01:00)
