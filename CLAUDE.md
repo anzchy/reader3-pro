@@ -46,6 +46,21 @@ chmod 600 config/ai_settings.json
 
 **Supported providers**: `anthropic`, `openai`, `gemini`, `openrouter`, `ollama`
 
+### Tests and Checks
+```bash
+uv run pytest tests/unit tests/contract      # backend unit + API contract (the commit-gated lane)
+npm test                                     # frontend Vitest (also commit-gated)
+npm run typecheck                            # frontend tsc
+uv run pytest tests/e2e --browser chromium   # Playwright E2E (push-gated)
+uv run ruff check src/ tests/ scripts/       # lint -- do NOT run `ruff format`; line length is a cap, not a format target
+uv run mypy src/
+python3 scripts/check_router_size.py         # router size gate; the other scripts/lint_*.py run the same way
+python3 scripts/build_feature_ledger.py --check   # feature ledger md↔html drift
+```
+
+The authoritative lane definitions (commands, which trigger gates them) are in
+`.claude/tdd-guardian/config.json`; CI mirrors them in `.github/workflows/{tests,lint}.yml`.
+
 ## Architecture
 
 ### Four-Layer Architecture
