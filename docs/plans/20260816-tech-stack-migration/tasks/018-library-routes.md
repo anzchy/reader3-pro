@@ -12,7 +12,7 @@
 > 以下一律**只链接不复述**（「搬，不抄」）：欠账正文与验收列 → [009 跨波欠账表](./009-e2e-annotations.md#跨波欠账)；
 > D1 裁定理由 → [012 §6 D1](./012-storage-format.md)；API 冻结规则 → [ADR-0011](../../../adr/0011-api-v1-freeze.md)；
 > 外部输入面的边界 → [ADR-0012](../../../adr/0012-security-boundaries.md)；写入协议 → [ADR-0007](../../../adr/0007-crash-safe-publish-protocol.md)；
-> soak 判据与清零规则 → [§7](../plan-tech-stack-migration.md)；soak 当期计数与机制挑战闸记录 → [`soak-log.md`](./soak-log.md)；
+> soak 判据（⬛ 2026-09-28 起为批次规则）→ [§7](../plan-tech-stack-migration.md)；soak 批次状态与机制挑战闸记录 → [`soak-log.md`](./soak-log.md)；
 > 分支编号 → [§9](../plan-tech-stack-migration.md)；执行顺序 → [进度盘](../../20260824-frontend-backend-plan-progress.md)；
 > 014 WI-16b 的各项与延后总表 → [前端计划 §「延后项」与 WI-16b](../../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md)。
 >
@@ -29,7 +29,7 @@
 | 本任务书评审通过 | ✅ 2026-09-26 | 本文 §6 全部裁定 |
 
 - **不等 soak**（D1）。本分支在 soak 等待期内做完并合入；~~代价是它**不得碰冻结集**（§4 门槛 F）——它合进 `master`，改一个字节就清零 soak 计数。~~（⬛ 2026-09-28：soak 改为批次规则、012 门槛 F 同日放宽——碰冻结集不再禁止，代价是 012 开工前要在新 `suite_hash` 上重跑一批；仍应避免无谓改动。判据见 [§7](../plan-tech-stack-migration.md) 与 [012 §4 门槛 F](./012-storage-format.md)。）
-- **`soak_run.py --append` 只在 `master` 上跑**。分支上的运行只做核验、不进台账（[017 §4](./017-audit-followup.md)）。这是流程约束，`scripts/soak_run.py` 本身**不检查分支**（它只在覆盖路径有未进索引的改动时拒绝 `--append`）。
+- **`soak_run.py --append` 只在 `master` 上跑**。分支上的运行只做核验、不进台账（[017 §4](./017-audit-followup.md)）。这是流程约束，`scripts/soak_run.py` 本身**不检查分支**（~~它只在覆盖路径有未进索引的改动时拒绝 `--append`~~ ⬛ 2026-09-29：它现在要求**整棵工作树**干净才放行 `--append`，批次在被测 SHA 的干净 detached worktree 里跑、`--ledger` 写回主工作区台账，见 [`soak-log.md` 表头](./soak-log.md)）。
 
 ---
 
@@ -196,7 +196,7 @@
 - **先说清楚这条账的现状**：#31 **已于 2026-09-20 结清**（[#31 行](./009-e2e-annotations.md#跨波欠账) 状态列）。`tests.yml` 的 `e2e` job 已存在（干净 ubuntu、`uv sync --frozen`、记 Chromium 版本、`soak_run.py --log-dir soak-ci-logs` 要 68/68、再跑 `-m "not baseline_1b"`）；机制挑战闸第 1 项已在它上面 PASS（[`soak-log.md` 机制挑战闸执行记录](./soak-log.md)，run 35584711194）。**本 WI 不建 job**
 - **「补 soak 的环境多样性那一半」这个说法不成立**：CI 的运行**不进 soak 台账**，这是写定的——
   - `tests.yml` 的 `e2e` job 头注释：结果记进机制挑战闸表，「不往 soak 台账追行」，「不传 `--append`」
-  - [§7 清零规则](../plan-tech-stack-migration.md) 第 2 条：`browser` 或 `os` 变了就清零。CI 行的 `os` 是 `linux-*`、本地是 `darwin-*`，混进去每换一次就清零一次
+  - [§7 清零规则](../plan-tech-stack-migration.md) 第 2 条：`browser` 或 `os` 变了就清零。CI 行的 `os` 是 `linux-*`、本地是 `darwin-*`，混进去每换一次就清零一次（⬛ 2026-09-28 批次规则 3：读作「就不是同一批」——一行 linux 混进批次窗口，该批判 FAIL）
   - 所以「环境多样性」由 CI job 以**独立信号**的形式提供（每次跑都是一次干净 Linux 的 68/68 首次通过核验），不是填台账的行
 - **目标**:
   1. **对账**：修掉仍把 #31 写成「没建」「待定」的地方——009 #31 行兑付方列（WI-1 已改）、§7「该补偿至今没有建出来」一段（**§7 不归本文改**，见本 WI 末尾）、`tests.yml` 的 `e2e` job 头注释里「一个触发器都不新增」「日常 commit 与 PR 一律不跑」两句（2026-09-23 已加 `pull_request → master`，文件头注释已更新，job 注释没跟上；`.github/workflows/` 不在冻结集）
@@ -229,8 +229,8 @@
 | 7 | 锁契约 | WI-2 验收的跨进程互斥、`SIGKILL` 释放、各写手不复活目录、共享写手 2 秒内 409、ABA 身份复核、交叉获取抛错六类测试齐全；ADR-0015 在本分支合入的同一 PR 里由 Proposed 转 **Accepted**（§6 Q11） | _待填_ |
 | 8 | 每条欠账一个 commit 结清 | 009 表 #51 / #56 / #58 / #53 / #31 各行状态改为已结清并附 commit | _待填_ |
 | 9 | #31 的 CI 核验 | 合并头上至少一次 `workflow_dispatch` 的 `tests.yml` 运行，`e2e` job 绿、`attempt=1`；PR 的 `pull_request` 运行同样绿。run id 按 WI-7 的记录位置落档 | _待填_ |
-| 10 | 合入后 soak 一次 | 合入后在 `master` 上跑一次 `soak_run.py --append`，green，`suite_hash` 仍是冻结值；这一行记进台账（它是正常计数行，commit 变不清零） | _待填_ |
-| F | **冻结区零字节改动** | 下列 8 条路径 `git diff --stat master... -- <paths>` 为空，`suite_hash` 与 [`soak-log.md`](./soak-log.md) 表头冻结值一致：`tests/e2e/baseline_1b/**`、`tests/e2e/conftest.py`、`tests/e2e/helpers.py`、`tests/e2e/test_harness_smoke.py`、`tests/fixtures/epub_corpus.py`、`tests/fixtures/epub_zip.py`、`tests/fixtures/ai_stub.py`、`tests/conftest.py`。路径清单的定义处是 `soak-log.md`「`suite_hash` 的取法」与 `scripts/soak_run.py` 的 `HASH_COVERED_PATHS`，冲突以那里为准 | _待填_ |
+| 10 | 合入后 soak 一次 | 合入后在 `master` 上跑一次 `soak_run.py --append`，green，`suite_hash` 仍是冻结值；这一行记进台账（~~它是正常计数行，commit 变不清零~~ ⬛ 2026-09-29：批次规则下单独一行不计入任何批次，只证明合入头没把 `baseline_1b` 弄红；012 开工要的批次见 [012 §4 门槛 F](./012-storage-format.md)） | _待填_ |
+| F | ~~**冻结区零字节改动**~~（⬛ 2026-09-28 随 [012 门槛 F](./012-storage-format.md) 放宽：冻结区可以改，但改了就须在合并头的新 `suite_hash` 上重跑一批并通过，否则 012 开工时对不上最后一次通过批次；仍应避免无谓改动。下面原判据保留作「没动冻结区」时的核对方式） | 下列 8 条路径 `git diff --stat master... -- <paths>` 为空，`suite_hash` 与 [`soak-log.md`](./soak-log.md) 表头冻结值一致：`tests/e2e/baseline_1b/**`、`tests/e2e/conftest.py`、`tests/e2e/helpers.py`、`tests/e2e/test_harness_smoke.py`、`tests/fixtures/epub_corpus.py`、`tests/fixtures/epub_zip.py`、`tests/fixtures/ai_stub.py`、`tests/conftest.py`。路径清单的定义处是 `soak-log.md`「`suite_hash` 的取法」与 `scripts/soak_run.py` 的 `HASH_COVERED_PATHS`，冲突以那里为准 | _待填_ |
 | R | **红灯必查根因** | 分支存续期间，`baseline_1b` 与 e2e lane（含 CI `e2e` job）**每一次**红都在 §8「红灯记录」追一行：时间、commit、失败用例、根因（产品缺陷 / 测试缺陷 / 环境）、处置 commit。**不允许以「重跑变绿」结案**。表为空或每行根因齐全才算过 | _待填_ |
 | 11 | 合入前 CI 全绿 | PR 上 `pull_request` 触发的 `tests.yml`（`unit` ＋ `e2e`）与 `lint.yml` 全绿后才合入（PR 先开，CI 才会跑——不是「CI 绿后开 PR」） | _待填_ |
 
@@ -247,10 +247,10 @@
 - **与 notes 锁死锁**：书锁与 notes 资源锁若获取顺序不一，可死锁。缓解：固定「书锁 → 资源锁」＋ 交叉获取抛错的测试（WI-2 契约项 2 / 7）。
 - **ABA**：等锁期间书被删又被同名重导入，醒来的写手写进新书。缓解：WI-2 契约项 6 身份复核。
 - **契约之外的隐患**（写进 ADR-0015 的「不保证」一节，本分支不修）：`FileResponse` 在读完前书被删；ChromaDB 不支持多进程访问，查询不持书锁；对话「both」存储模式是两次发布，需要 revision；`_BOOK_THREAD_LOCKS` 注册表只增不减；ADR-0007 里「跨设备 rename 降级为复制」一句不成立（跨设备 `rename` 直接 `EXDEV` 失败）——012 Q2 的新 ADR 取代 ADR-0007 时一并改。
-- **e2e 污染共享语料**：删书测试若动了 `baseline_1b` 用的会话库，会让 soak 在 `master` 上变红（清零）。缓解：WI-5 的独立库 ＋ 独立服务；不在分组目录放 `conftest.py`（裸 `from conftest import BOOK_ID` 会断）。
+- **e2e 污染共享语料**：删书测试若动了 `baseline_1b` 用的会话库，会让 soak 在 `master` 上变红（~~清零~~ ⬛ 2026-09-28：终止当时的批次）。缓解：WI-5 的独立库 ＋ 独立服务；不在分组目录放 `conftest.py`（裸 `from conftest import BOOK_ID` 会断）。
 - **soak 收集计数**：新 e2e 漏登记分组，合入后下一次 soak 的 deselected 对不上就判 red。缓解：门槛 6。
 - **冻结集诱惑**：共享 fixture 想放 `tests/e2e/conftest.py` 或改 `helpers.py`——那两个都在冻结集里。缓解：新 fixture 放 `tests/fixtures/` 下的非冻结模块。
-- **把 CI 行当 soak 行**：有人照 #31 行旧措辞「手点 dispatch 补台账行」去 `--append`，一次就按清零规则第 2 条清零。缓解：WI-7 对账掉旧措辞；WI-8 硬拦截。
+- **把 CI 行当 soak 行**：有人照 #31 行旧措辞「手点 dispatch 补台账行」去 `--append`，一次就按清零规则第 2 条清零（⬛ 2026-09-28：读作让当时的批次判 FAIL）。缓解：WI-7 对账掉旧措辞；WI-8 硬拦截。
 - **router 体量**：列表 ＋ 删书 ＋ 导出塞进 `library.py`（已 333 行）会逼近 500。缓解：新 router 模块（§6 Q4），012 的 #55 / #57 还要往这里加。
 - **#51 的无条件写**：不带 `If-Match` 的旧客户端仍可覆盖（加法式的代价）。缓解：四个写入端都认 `If-Match`，本仓前端全部带上（§6 Q5）。
 

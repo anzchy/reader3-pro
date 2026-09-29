@@ -124,8 +124,10 @@ testpaths = ["tests"]
 # empty set (policy-core completion bar #1: "lane discovered zero tests is a failure").
 addopts = "--strict-markers"
 # The six group markers below partition tests/e2e (one marker per subdirectory);
-# the phase table, the group contents and the soak rules are defined ONCE in
-# docs/plans/20260816-tech-stack-migration/tasks/009-e2e-annotations.md section 0.5.
+# the phase table and the group contents are defined ONCE in
+# docs/plans/20260816-tech-stack-migration/tasks/009-e2e-annotations.md section 0.5;
+# the soak rules (batch rule) are defined ONCE in
+# docs/plans/20260816-tech-stack-migration/plan-tech-stack-migration.md section 7.
 # Item counts live in scripts/lint_e2e_groups.py. Point at those; do not copy them here.
 markers = [
     "slow: takes more than a second; excluded from the tight loop",

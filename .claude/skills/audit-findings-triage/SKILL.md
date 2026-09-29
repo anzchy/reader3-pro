@@ -82,8 +82,12 @@ Never classify on severity alone. For each finding answer:
   claim just as much as a product bug does — the claim is "this behaviour is now guarded".
 - **C. What does the fix cost?** Specifically: does it touch the frozen set
   (`tests/e2e/baseline_1b/**`, `tests/e2e/conftest.py`, `helpers.py`, `test_harness_smoke.py`,
-  `tests/fixtures/{epub_corpus,epub_zip,ai_stub}.py`, `tests/conftest.py`)? Any byte there resets
-  the soak count and voids the mechanism gates — see `tasks/soak-log.md` for the current value.
+  `tests/fixtures/{epub_corpus,epub_zip,ai_stub}.py`, `tests/conftest.py`)? Any byte there changes
+  `suite_hash`, so no passed soak batch covers the suite any more: a fresh 10-run batch and a re-run
+  of mechanism gate item 3 (random collection order) are needed before 012 can start (batch rule,
+  `plan-tech-stack-migration.md` §7; 012 gate F). Since 2026-09-28 that is ~10–15 min, not weeks —
+  still a real cost, not a reset of accumulated progress. See `tasks/soak-log.md` for the current
+  value and batch status.
 
 Then:
 

@@ -29,8 +29,8 @@
 
 **判定的三态（写进脚本 docstring，这里只钉结果）**：
 `green`（可记账）、`red` 且可记账（真失败：`failed > 0`，其余全为 0，`passed + failed == 期望`——
-§7 要求任意一次 red 清零，所以真红**必须**进台账）、`red` 且**不可记账**（skipped / deselected /
-errors / 条数不符 / 一条没跑——这些不是「一次全量运行」，记进去既不是绿也不是那种该清零的红）。
+§7 要求任意一次 red 终止批次，所以真红**必须**进台账）、`red` 且**不可记账**（skipped / deselected /
+errors / 条数不符 / 一条没跑——这些不是「一次全量运行」，记进去既不是绿也不是那种该终止批次的红）。
 矩阵原文「其余四种不写台账并以非零退出码结束」对应最后一态。
 
 **本条不替代 `test_e2e_group_guard.py` 的 skip 轴静态性质**：runner 只在 G2 跑三次，
@@ -170,7 +170,7 @@ def test_verdict_refuses_to_call_a_partial_run_green(
 
 
 def test_a_genuine_failure_is_red_and_recordable() -> None:
-    """真失败（failed > 0、无 skip / deselect / error、passed + failed == 期望）记为 red 且**必须**进台账——§7：任意一次 red 清零。"""
+    """真失败（failed > 0、无 skip / deselect / error、passed + failed == 期望）记为 red 且**必须**进台账——§7：任意一次 red 终止批次。"""
     soak = _soak()
     n = _expected()
     v = soak.verdict(soak.parse_summary(f"{n - 2} passed, 2 failed in 100.0s"), n)
@@ -305,7 +305,7 @@ def test_parser_agrees_with_real_pytest_output(
 
 
 def test_zero_tests_ran_is_never_recordable(tmp_path: Path) -> None:
-    """`no tests ran` 不是绿、也不是那种该清零的红——policy-core 第 1 条：零用例是失败。"""
+    """`no tests ran` 不是绿、也不是那种该终止批次的红——policy-core 第 1 条：零用例是失败。"""
     soak = _soak()
     suite = tmp_path / "tests_empty"
     suite.mkdir()
@@ -573,7 +573,7 @@ def test_a_green_summary_from_a_process_that_died_is_not_recordable(tmp_path: Pa
     这是审计 #15 的可复现形态，不是假想的——一个装在 conftest 里的钩子（或任何在收尾阶段炸掉
     的 plugin）就能造出「summary 全绿 ＋ 进程非零退出」。本条同时断两件事：
     (a) 光看 summary 的判定确实会把它判成可记账的绿（所以旧实现真的会记账）；
-    (b) 加进退出码之后它被拒，且是**环境错误**而不是 red——红要清零计数，而这次运行连
+    (b) 加进退出码之后它被拒，且是**环境错误**而不是 red——红要终止批次，而这次运行连
         「跑完了」都不成立，不该动计数。
     """
     soak = _soak()
@@ -704,7 +704,7 @@ def test_append_row_refuses_to_write_while_another_process_holds_the_ledger_lock
     """锁被别人拿着时拒写；锁一放开就写得进去。
 
     无锁实现的失败形态是**丢行**：两次 soak 撞在一起，各自「读全文 → 插一行 → 覆写」，后写的
-    直接盖掉先写的那一行。丢掉的可能正是一次该让计数清零的 red，而台账上看不出任何异样——
+    直接盖掉先写的那一行。丢掉的可能正是一次该终止批次的 red，而台账上看不出任何异样——
     第三行永远是第三行。用「别人持锁时必须拒绝」来断这件事，是因为它可判定；
     直接去赛跑两个进程只能得到一条概率性用例。
     """
@@ -858,7 +858,7 @@ def test_a_log_write_failure_exits_with_the_environment_code_not_the_red_code(tm
     """产物目录不可用时退 3（环境错误），不是 1（red 且已记账），也不是一屏 traceback。
 
     退出码 1 在本脚本的契约里恰好是「red 且已（或可）记账」。让 `OSError` 逃出去，进程正好以 1
-    收场——调用方会把一次**没写成的绿**当成一次记过账的红，而 §7 规定任意一次 red 清零计数。
+    收场——调用方会把一次**没写成的绿**当成一次记过账的红，而 §7 规定任意一次 red 终止批次。
     """
     soak = _soak()
     n = _expected()

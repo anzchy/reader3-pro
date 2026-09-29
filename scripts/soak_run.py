@@ -16,8 +16,8 @@
 | 形态 | result | 记账 | 理由 |
 |---|---|---|---|
 | 全绿 | green | 是 | — |
-| 真失败（`failed > 0`，无 skip/deselect/error，`passed + failed == 期望`） | red | **是** | §7：任意一次 red 清零。真红不进台账，清零规则就失效 |
-| skipped / deselected / errors 非零、条数不符、一条没跑 | red | **否**，退出码 2 | 这不是「一次全量运行」；记成红会清掉一个没跑过的计数，记成绿是假绿 |
+| 真失败（`failed > 0`，无 skip/deselect/error，`passed + failed == 期望`） | red | **是** | §7 批次规则 2：任意一次 red 终止当前批次。真红不进台账，批次规则就失效 |
+| skipped / deselected / errors 非零、条数不符、一条没跑 | red | **否**，退出码 2 | 这不是「一次全量运行」；记成红会让一次没跑完的运行终止批次，记成绿是假绿 |
 
 矩阵原文「其余四种不写台账并以非零退出码结束」对应第三态。
 
@@ -45,7 +45,7 @@ soak 运行器里执行任意命令」，而校验只看输出末 12 位像不�
 
 **pytest 的退出码是判据的一部分**（`classify_exit_code()`）。只看 summary 文本会把「打印完
 `65 passed` 之后 plugin/atexit 炸了」记成绿：那一行是真的，那次运行不是。规则——`rc == 0` 才
-可能绿；`rc == 1` 只在 summary 自洽地报了 failed/errors 时接受（那是该清零的真红）；其余任何
+可能绿；`rc == 1` 只在 summary 自洽地报了 failed/errors 时接受（那是该终止批次的真红）；其余任何
 退出码（含 2 中断、3 internal error、5 no tests collected、124 本脚本的超时）一律判为
 **不可记账的环境错误**，退出码 3。
 
@@ -301,7 +301,7 @@ def verdict(summary: Summary, expected_passed: int, expected_deselected: int = 0
         )
     if not reasons:
         return Verdict("green", True, [])
-    # 真失败且其余全为 0、条数对得上 ⇒ 是一次应当清零计数的 red，必须进台账。
+    # 真失败且其余全为 0、条数对得上 ⇒ 是一次应当终止批次的 red，必须进台账。
     return Verdict("red", full_run, reasons)
 
 
@@ -624,8 +624,8 @@ def browser_label() -> str:
 
     两级退化（构建号 → 包版本 → `chromium-unknown`）都**只捕获具体异常并留下 debug 痕迹**
     （AGENTS.md 异常三档的第 3 档：失败无所谓要说得出为什么，且至少 log 到 debug）。
-    为什么无所谓：`browser` 这一列的用途是「换了浏览器就清零」，取不到精确构建号会让清零
-    变迟钝，但**不会**让一次运行被误判成绿；反过来，为一列标签取不到就中断落账，会把一次
+    为什么无所谓：`browser` 这一列的用途是「换了浏览器就不是同一批」，取不到精确构建号会让这条
+    判据变迟钝，但**不会**让一次运行被误判成绿；反过来，为一列标签取不到就中断落账，会把一次
     真跑出来的绿丢掉。宽 `except Exception` 不行的理由也在这里——它会把 `KeyboardInterrupt`
     以外的一切（包括 playwright 内部的真 bug）压成一句 `chromium-unknown`。
     """
@@ -744,7 +744,7 @@ def append_row(ledger: Path, row: str) -> None:
 
     **读—改—写全程持锁，落盘走原子替换。** 台账就是 G2 的证据本身：两次 soak 撞在一起时，
     无锁的「读全文 → 插一行 → 覆写」会让后写的那份直接盖掉先写的那一行——丢掉的可能正是一次
-    该清零计数的 red，而丢失在台账上无痕（第三行永远是第三行）。
+    该终止批次的 red，而丢失在台账上无痕（第三行永远是第三行）。
     """
     with _ledger_lock(ledger):
         lines = ledger.read_text(encoding="utf-8").splitlines()

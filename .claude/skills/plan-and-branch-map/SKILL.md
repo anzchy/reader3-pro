@@ -77,8 +77,8 @@ Do not invent a new number without updating that table.
 | MD — design degradation states | `010-design-degradation-states` | **frontend** | ✅ Merged (PR #24) **— merged 2026-09-24, merge commit `671f580` (branch tip `4fb33c9`: all nine exit gates green after rulings D-2 / D-5 / D-6 / D-8). Work items are WI-1 – WI-8 in the frontend plan.** |
 | M2 — backend refactor | `011-backend-refactor` | migration | ✅ Merged (PR #22) **— merged 2026-09-22 with 9 ✅ ＋ 1 ⚠️: gate #7 was partial, its blocking formally revoked rather than passed. CI on `4af73cc` was green (tests 35733667011, lint 35733681164), which retired the earlier "green only on the local profile" qualifier.** |
 | M2-债 — audit follow-up | `017-audit-followup` | migration | ✅ Merged (PR #23) **— merged 2026-09-23, merge commit `6df5026`. The 22 must/should findings from the post-merge audit of PR #22. Three lanes re-run green on the merge head before merging. This does NOT retire 011's ⚠️: that gate is #7 (bench C1), whose remaining half is debt #35 and lands in 012.** |
-| M4a-债 — library routes not tied to the new format | `018-library-routes` | migration | Tasks drafted **(skeleton 2026-09-26, under review.) — 2026-09-26 ruling D1: takes 013-deferred debts #51 / #56 / #58 / #53 plus a per-book write-coordination contract, and the closing reconciliation of 009 debt #31 (the CI `e2e` job already exists since 2026-09-20; CI runs never append to the soak ledger); runs during the soak wait, before 012. Rationale lives in `tasks/012-storage-format.md` §6 D1. The 009 debt-table owner column and `test_track_d_ledger.py` still say 012 until 018 kicks off and rewrites them in one batch.** |
-| M3 — storage migration | `012-storage-format` | migration | Tasks drafted **(skeleton 2026-09-26, under review; still blocked by soak). Keeps #35 / #54 / #55 and, as its last wave, #57 (acceptance requires new-format output) and #52 (needs the generation swap).** |
+| M4a-债 — library routes not tied to the new format | `018-library-routes` | migration | Tasks drafted **(skeleton 2026-09-26, under review.) — 2026-09-26 ruling D1: takes 013-deferred debts #51 / #56 / #58 / #53 plus a per-book write-coordination contract, and the closing reconciliation of 009 debt #31 (the CI `e2e` job already exists since 2026-09-20; CI runs never append to the soak ledger); runs before 012 (it was scheduled into the soak wait; since the 2026-09-28 batch rule there is no multi-week wait left). Rationale lives in `tasks/012-storage-format.md` §6 D1. The 009 debt-table owner column and `test_track_d_ledger.py` still say 012 until 018 kicks off and rewrites them in one batch.** |
+| M3 — storage migration | `012-storage-format` | migration | Tasks drafted **(skeleton 2026-09-26, under review. The soak batch requirement is met — see `tasks/soak-log.md`; still blocked by 018 not yet merged and by mechanism gate item 1 not yet re-passed on the final candidate `commit`; entry conditions in `tasks/012-storage-format.md` §1, gate F in §4.) Keeps #35 / #54 / #55 and, as its last wave, #57 (acceptance requires new-format output) and #52 (needs the generation swap).** |
 | M4a — TS shell + settings + library | `013-ts-frontend-shell` | **frontend** | ✅ Merged (PR #25) **— merged 2026-09-26, merge commit `1ec5ff7`. Work items WI-9 – WI-13 plus the Track D implementation items; the reader-side and backend-dependent halves are pinned to 014 (WI-16 / WI-16b) and 012 debts #51–#58 (#51 / #53 / #56 / #58 re-assigned to 018 on 2026-09-26).** |
 | M4b — TS reader | `014-ts-frontend-reader` | **frontend** | WI-14 – WI-19 (incl. inserted WI-16b, library-side deferred acceptance) |
 | M5 — launch + PWA | `015-launch-experience` | migration (CLI) ＋ **frontend** (PWA) | Allocated / WI-20 |
@@ -91,27 +91,31 @@ means the branch exists and carries commits, but its exit gates are not all met 
 missing until 2026-09-01, which is how 009 kept reading as "Tasks drafted" with six commits on it.
 M1b's two gates are both met: **G1** on 2026-09-05 (unlocks Phase 4A / 013) and **G2** on
 2026-09-06. `suite_hash` was **re-frozen** at `1e868c7bf811` on 2026-09-21 (prior value
-`2747100dadf6` is void). Two consequences you need before touching anything: **Phase 3 / 012 is
-still blocked — now only by the soak gate: one declared batch of exactly 10 consecutive first-try
-green full runs on a single `commit` / `suite_hash` / browser / os / lock (no calendar span; rule
-adopted 2026-09-28, replacing ≥10 runs / ≥5 workdays; defined in §7 of `plan-tech-stack-migration.md`).** History, condensed: on
+`2747100dadf6` is void). Two consequences you need before touching anything: **the soak gate is now a batch rule —
+one declared batch of exactly 10 consecutive first-try green full runs on a single `commit` /
+`suite_hash` / browser / os / lock (no calendar span; rule adopted 2026-09-28, replacing ≥10 runs /
+≥5 workdays; defined in §7 of `plan-tech-stack-migration.md`). A batch has passed (see
+`soak-log.md`), so Phase 3 / 012 is no longer waiting on soak runs; what still blocks it is 018
+not being merged, and mechanism gate item 1 re-passing on the final candidate `commit`.** History, condensed: on
 2026-09-21 fixing a real data-loss bug (009 debt #9) required re-judging a frozen test, so the
 ledger and all three of §7's **mechanism-challenge gates** were reset together — a deliberate,
 recorded trade. Against the new hash, items 1 (clean Linux) and 3 (random collection order)
 re-passed; item 2 (CPU pressure) measured FAIL on 2026-09-23, was attributed to a test-fixture
 fault in frozen `helpers.py` (not a product defect), and on **2026-09-24 was downgraded by
 maintainer ruling to non-blocking / record-only** — downgraded, not passed (its fix is 009 debt
-#49). So the mechanism gates no longer block 012 (but under the 2026-09-28 rule, item 1 must re-pass on the final candidate `commit` and item 3 must hold for the current `suite_hash`); the soak ledger was **not** reset by that ruling.
+#49). Under the 2026-09-28 rule, item 1 must re-pass on the final candidate `commit` and item 3
+must hold for the current `suite_hash`; item 2 stays record-only.
 The ruling lives in §7 of `plan-tech-stack-migration.md` (below discipline 3); results, the
-attribution evidence ("第 2 项归因"), and the current count live only in `soak-log.md` — do not
-restate them. Waiting alone will not clear the gate: it needs a batch of `soak --append` runs on `master`, and
-the first batch may only be declared after the 2026-09-27 red is attributed; pre-2026-09-28 rows
-count toward no batch.
+attribution evidence ("第 2 项归因"), batch declarations and verdicts live only in `soak-log.md` —
+do not restate them. Verdicts are scripted: `uv run python scripts/soak_run.py --verdict <batch ID>`
+(exit 0 = PASS). `--append` requires the whole working tree clean, so batches run in a clean
+detached worktree of the SHA under test with `--ledger` pointing back at the main ledger.
 And **any byte changed under
 `tests/e2e/baseline_1b/**`, `tests/e2e/conftest.py`, `helpers.py`, `test_harness_smoke.py`, or the
 four `tests/fixtures/` files changes `suite_hash`, so no earlier batch covers the suite any more —
-a fresh 10-run batch is needed** (docstrings included). Since 2026-09-28 that costs ~10–15 min, not
-weeks, and 012's gate F allows such changes as long as the batch is re-run. Progress and the
+a fresh 10-run batch (plus a re-run of mechanism gate item 3) is needed** (docstrings included).
+Since 2026-09-28 that costs ~10–15 min, not weeks, and 012's gate F allows such changes as long as
+the batch is re-run. Progress and the
 frozen value are defined only in
 [`tasks/soak-log.md`](docs/plans/20260816-tech-stack-migration/tasks/soak-log.md); do not restate
 them elsewhere.

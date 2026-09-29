@@ -27,14 +27,15 @@
 |---|---|---|
 | Phase 2b（011） | ✅ 已合入 | [011 §8 合入记录](./011-backend-refactor.md)（#7 仍是 ⚠️，剩余一半即本文 WI-5） |
 | Track D（010） | ✅ 已合入 | [进度盘 §1 状态板](../../20260824-frontend-backend-plan-progress.md) |
-| **soak 门槛** | ⏳ **仍阻塞开工** | 判据：[§7 soak 门槛](../plan-tech-stack-migration.md)；~~次数与跨度现算~~本批进度现算（⬛ 2026-09-28 批次规则）：[`soak-log.md` 表头](./soak-log.md) 的批次命令。**本文不写派生数与日期** |
-| 机制挑战闸 | 不再阻塞（第 1、3 项 PASS；第 2 项经维护者裁定降为记录项，**是降级不是通过**） | 裁定：[§7 机制挑战闸](../plan-tech-stack-migration.md)；执行记录：[`soak-log.md`](./soak-log.md) |
+| **soak 门槛** | ~~⏳ **仍阻塞开工**~~ ⬛ 2026-09-29：批次次数已满足（判决见 [`soak-log.md` 批次声明](./soak-log.md)）；开工时还须 §4 门槛 F（开工 `suite_hash` ＝ 最后一次通过批次的）成立 | 判据：[§7 soak 门槛](../plan-tech-stack-migration.md)；~~次数与跨度现算~~批次判决（⬛ 2026-09-28 批次规则）：`uv run python scripts/soak_run.py --verdict <批次 ID>`，批次声明在 [`soak-log.md` 表头](./soak-log.md)。**本文不写派生数与日期** |
+| 机制挑战闸 | ~~不再阻塞（第 1、3 项 PASS；~~ ⬛ 2026-09-28 批次规则 4：**第 1 项仍阻塞**，须在最终候选 `commit` 上首次通过（此前的 PASS 跑在更早的 `commit` 上，不自动覆盖）；第 3 项对当前 `suite_hash` 成立；第 2 项经维护者裁定降为记录项，**是降级不是通过** | 裁定：[§7 机制挑战闸](../plan-tech-stack-migration.md)；执行记录：[`soak-log.md`](./soak-log.md) |
 | **018 已合入** | ⏳ 未开（[任务书](./018-library-routes.md) 骨架待审） | 每书写协调契约（锁，[018 WI-2](./018-library-routes.md)）是 WI-6、WI-7、WI-12、WI-13 的前置；#56 列表路由（018 WI-4）是 WI-5、WI-10 的前置。状态看 [进度盘 §1](../../20260824-frontend-backend-plan-progress.md) |
 
-- **soak 未达标时 012 允许的**：写本任务书、评审、`/tdd-guardian:design-tests` 出测试矩阵、裁定开放问题（§6）。**012 不允许的**：开 012 分支写生产代码。
-  这条只管 012——`018-library-routes` 按 D1 裁定**就在 soak 等待期内做**，不受这条约束（~~它仍不得碰冻结集，见 §4 门槛 F~~ ⬛ 2026-09-28：门槛 F 已放宽，它碰冻结集的代价是 012 开工前要在新 `suite_hash` 上重跑一批，见 §4 门槛 F）。
+- **soak 未达标时 012 允许的**（⬛ 2026-09-29：批次次数已满足，这条现在读作「进入条件未全部满足时」）：写本任务书、评审、`/tdd-guardian:design-tests` 出测试矩阵、裁定开放问题（§6）。**012 不允许的**：开 012 分支写生产代码。
+  这条只管 012——`018-library-routes` 按 D1 裁定**就在 soak 等待期内做**（⬛ 2026-09-29：等待期已不存在，018 仍排在 012 之前），不受这条约束（~~它仍不得碰冻结集，见 §4 门槛 F~~ ⬛ 2026-09-28：门槛 F 已放宽，它碰冻结集的代价是 012 开工前要在新 `suite_hash` 上重跑一批，见 §4 门槛 F）。
 - **`soak_run.py --append` 只在 `master` 上跑**。分支上的运行只做核验、不进台账（[017 §4](./017-audit-followup.md) 引 011 §8 门槛 4）。
-- 每天那一行怎么追：[进度盘「现在该做什么」](../../20260824-frontend-backend-plan-progress.md)。
+  ⬛ 2026-09-29：`--append` 现要求**整棵工作树**干净，所以批次在被测 `master` SHA 的干净 detached worktree 里跑、用 `--ledger` 写回主工作区台账（做法见 [`soak-log.md` 表头](./soak-log.md)「追加前的干净检查」）。
+- ~~每天那一行怎么追~~（⬛ 2026-09-29：批次规则下不再是「每天一行」）：[进度盘「现在该做什么」](../../20260824-frontend-backend-plan-progress.md)。
 
 ---
 

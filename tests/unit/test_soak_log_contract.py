@@ -5,7 +5,8 @@
 **为什么给一份 Markdown 写单测。** 因为这里被断的不是文风，是两条**可判定的集合关系**：
 `suite_hash` 的覆盖面必须 (a) 罩住冻结套件真正 import 的每一个文件，(b) 与四个尚未激活的
 acceptance 目录不相交。(a) 破了就是「假绿」——套件变了而哈希没变，十次绿里混进了测别的东西
-的那几次；(b) 破了就是「误清零」——一个还没激活的组改一行，把 soak 计数打回零。两者都不是
+的那几次；(b) 破了就是「误清零」——一个还没激活的组改一行，把 soak 计数打回零（2026-09-28 起按 §7 批次规则读作：
+让已通过的批次无端失效、须重跑一批）。两者都不是
 读者复核表头时能稳定看出来的，所以写成用例。
 
 **本文件只解析文档，不执行 `suite_hash` 命令，也不比对它的输出。**
@@ -382,7 +383,7 @@ def test_hash_command_covers_exactly_the_eight_documented_paths_in_order():
     """八条路径，逐字、同序、不多不少。
 
     列表等值比较而不是集合比较：少一条 ＝ 那个文件改了哈希不变（假绿），多一条 ＝ 一个与
-    baseline 无关的文件把计数清零（误清零）。两侧误差各有代价，所以两侧都断。
+    baseline 无关的文件把计数清零（误清零；批次规则下读作「让已通过的批次无端失效」）。两侧误差各有代价，所以两侧都断。
     """
     actual = covered_paths(hash_command_block(read_soak_log()))
     assert actual == EXPECTED_HASH_PATHS, (
@@ -487,6 +488,8 @@ def test_header_names_the_shared_and_excluded_files_by_path():
     )
 
 
+# 「三类清零触发器」是 §7 原文的名字；2026-09-28 起它们读作「不是同一批」（§7 批次规则 3），
+# 表头那三行指针与本用例钉的形状都不变，所以用例名照旧。
 def test_three_reset_triggers_are_pointers_to_plan_section7():
     text = read_soak_log()
     linked = plan_link_lines(text)

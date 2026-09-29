@@ -1,8 +1,8 @@
 """失败时把浏览器侧证据 dump 出来，用于给 baseline_1b 那族 8 秒超时归因。
 
 为什么是一个 `-p` 插件而不是一条新用例：
-  - `tests/e2e/conftest.py` 与 `helpers.py` 在冻结集里，动一个字节就清零 soak 台账
-    并作废三道机制闸；
+  - `tests/e2e/conftest.py` 与 `helpers.py` 在冻结集里，动一个字节就改变 `suite_hash`，已通过的
+    soak 批次不再覆盖、须重跑一批并重跑机制闸（2026-09-28 起的批次规则；写这段时是「清零台账」）；
   - `tests/e2e/` 根下的新文件虽然不在 `suite_hash` 的覆盖面内，但要改
     `scripts/lint_e2e_groups.py` 的收集数常量，而且只能**复现**那条流程，
     观察不到真正红掉的那几条冻结用例；

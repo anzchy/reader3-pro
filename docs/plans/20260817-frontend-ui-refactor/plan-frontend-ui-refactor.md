@@ -1124,7 +1124,7 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 
 > **裁定 D14（2026-09-25，用户裁定 R4）——FA-08 / FB-L15 按偏离交付，不是延后。**
 > - 书卡**不**加 `role="button"`；保留卡内「Read {title}」链接，另加 Space 激活（`frontend/src/library/index.ts:309`，C13.16 由 `tests/e2e/shell_4a/test_library_functional.py` 守）。`aria-label` 含书名、Enter 与 Space 都能进阅读器，两项照做；与矩阵原文的差别只有 role。
-> - 理由：冻结的 `baseline_1b` 靠 `get_by_role("link", name="Read {title}")` 点进书卡（`test_read_paths.py:280`、`test_library_nav_and_collections.py:339`）。改成 button 要么删链接（冻结用例红、soak 清零），要么在 button 里套链接（交互元素嵌套）。
+> - 理由：冻结的 `baseline_1b` 靠 `get_by_role("link", name="Read {title}")` 点进书卡（`test_read_paths.py:280`、`test_library_nav_and_collections.py:339`）。改成 button 要么删链接（冻结用例红、soak 清零——⬛ 2026-09-28 批次规则下读作「须在新 `suite_hash` 上重跑一批」），要么在 button 里套链接（交互元素嵌套）。
 > - 矩阵行 FB-L15、FA-08 标偏离并链到本条。
 
 > **L7 不修（2026-09-25，用户裁定 R5，won't-fix）**：`--r3-dwell-toast` 缺失时 `showToast` 照旧抛错。理由：这个 token 是设计 token 合同的一部分（WI-11 验收 4），缺了是构建坏了，失败要响；静默回落到一个常数会把「token 没接上」藏起来。已记录的 `frontend/tests/shared/toast.test.ts`（`toThrow(/--r3-dwell-toast/)`）守着这条行为。
