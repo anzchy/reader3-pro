@@ -34,9 +34,14 @@ soak 运行器里执行任意命令」，而校验只看输出末 12 位像不�
 第二把钥匙。要给哈希加一条路径，台账与这份白名单必须一起改，否则本脚本会大声拒绝——
 「改覆盖面」是一次应当留下两处签名的动作。
 
-**取值前要求工作树对覆盖路径干净**（`git status --porcelain -- <paths>` 为空），否则拒绝落账
-——`git ls-files -s` 读的是索引，改了没 add 的断言不会体现在哈希里，那正是清零规则要堵的假绿
-路径（台账表头「取哈希前必须先确认工作树干净」一节）。
+**`--append` 前要求整棵工作树干净**（`dirty_worktree()`：`git status --porcelain=v1 -z
+--untracked-files=all`，豁免台账本身，以及有效 log 目录下**未跟踪的 `*.log`**——且该目录与哈希覆盖
+路径互不包含、目录下没有 git 跟踪的 `*.py`，否则不豁免；规则见 `dirty_worktree()`），任何一条脏条目
+都拒绝落账，退出码 2。只查覆盖路径不够：`git ls-files -s` 读的是索引，改了没 add 的断言不会体现在哈希里；
+而覆盖路径之外的野文件（根目录一个 `conftest.py`、一处改过的 lint 脚本）照样能改变那次运行，
+哈希却一字不变——这两条都是批次规则要堵的假绿路径（台账表头「取哈希前必须先确认工作树干净」
+一节）。开发中的工作树本来就脏，正确做法是在干净的 detached worktree 里跑、`--ledger` 指回
+主仓库的台账。dry run 只打印提示；`--no-precheck` 只在 `--parse-summary` 模式下生效。
 
 **pytest 的退出码是判据的一部分**（`classify_exit_code()`）。只看 summary 文本会把「打印完
 `65 passed` 之后 plugin/atexit 炸了」记成绿：那一行是真的，那次运行不是。规则——`rc == 0` 才
@@ -61,9 +66,20 @@ commit、真 suite_hash 的绿——零条用例的绿。单测要验证落账�
     uv run python scripts/soak_run.py --append        # 同上，且可记账时把行插到分隔行正下方
     uv run python scripts/soak_run.py --parse-summary out.txt [--ledger X --no-precheck]
                                                       # 不跑 lane，只解析一份 summary（单测喂合成输入用）
+    uv run python scripts/soak_run.py --verdict B1 [--ledger X]
+                                                      # 只读：按台账表头的批次声明判一批，打印一行
+                                                      # `PASS B1 10/10（首 ts – 末 ts）` 或 `FAIL B1: <理由>`
 
 退出码：0 = green；1 = red 且已（或可）记账；2 = 不可记账（拒绝）；3 = 环境/解析错误
 （含：台账/log 写入失败、pytest 退出码与 summary 不自洽、套件超时、`--parse-summary --append`）。
+
+`--verdict` 自成一套、只有两档：0 = PASS；1 = 其余一切（FAIL、未知批次 ID、声明重复或不合形状、
+台账缺失或读不了、与 `--append` / `--parse-summary` 同用）。它在参数解析后立刻分派，
+不取哈希、不做前置检查、不跑 pytest、不建 log 目录、不调 git——只读台账。
+
+argparse 自己的用法错误（如 `--verdict` 后面没给值、未知参数）在进入上面任何一套之前就以
+**退出码 2** 结束并打印 `usage:`——那是 argparse 退出的，不是本脚本判的；`--verdict` 的
+「只有 0 / 1 两档」只对参数解析成功之后的路径成立。
 """
 
 from __future__ import annotations
@@ -113,6 +129,10 @@ EXIT_ENVIRONMENT = 3
 SUITE_TIMEOUT_S = 1800.0
 #: 借 GNU `timeout(1)` 的约定：124 = 因超时被杀。pytest 自己不会返回它，所以不会与真实退出码混淆。
 RC_TIMEOUT = 124
+
+#: 前置检查里每一次 git 调用（`git status`、`git ls-files`）的上限。挂死的 git（锁住的索引、
+#: 网络文件系统）超时即视为「前置检查无法执行」，退出码 3——绝不因为等不到就当干净放行。
+GIT_PRECHECK_TIMEOUT_S = 60.0
 
 #: 台账被并发追加时等锁的上限。超过就报错退出，绝不「等不到锁就直接写」。
 LEDGER_LOCK_TIMEOUT_S = 30.0
@@ -483,11 +503,120 @@ def suite_hash(ledger_text: str, cwd: Path) -> str:
     return value
 
 
-def dirty_covered_paths(ledger_text: str, cwd: Path) -> List[str]:
-    """覆盖路径里有未 add 的改动 ⇒ 哈希记的是索引里的旧内容，不是刚跑过的那份。"""
-    paths = hash_covered_paths(ledger_text)
-    out = _git(["status", "--porcelain", "--", *paths], cwd)
-    return [ln for ln in out.splitlines() if ln.strip()]
+def _is_exempt(path: str, exempt_files: Sequence[str], exempt_dirs: Sequence[str]) -> bool:
+    """文件全等；目录按 `/` 段边界——`soak-logs/x` 算，`soak-logs-evil/x` 不算。"""
+    if path in exempt_files:
+        return True
+    return any(path == d or path.startswith(d + "/") for d in exempt_dirs)
+
+
+def dirty_entries(
+    porcelain_z: str,
+    exempt_files: Sequence[str],
+    exempt_dirs: Sequence[str],
+    untracked_log_dirs: Sequence[str] = (),
+) -> List[str]:
+    """解析 `git status --porcelain=v1 -z --untracked-files=all`，返回不被豁免覆盖的每一条。
+
+    返回形式（Q5）：git 在 `-z` 下报的原样路径（不加引号，非 ASCII 原样）；重命名/复制返回
+    **新**路径；顺序即 porcelain 顺序。重命名/复制的记录是 `XY NEW\\0ORIG\\0`——X 为 `R`/`C`
+    就带 orig 尾巴，不管 Y 是空格还是 `M`（`RM`/`CM` = 改名后又在工作树里改过）。
+    重命名/复制只有新旧两条路径都豁免才算豁免：把非豁免文件挪进日志目录不能把它洗白。
+    记录不合形状直接抛 `RuntimeError`——宁可拒绝落账，也不把看不懂的输出当干净。
+
+    `untracked_log_dirs`：只豁免其下 `??`（未跟踪）且以 `.log` 结尾的条目——改过的已跟踪 log、
+    野 `.py`、任何非 log 文件照报。`exempt_dirs` 保留「任何状态都豁免」的旧口径，供纯函数单测用；
+    `dirty_worktree` 不再把日志目录放进 `exempt_dirs`。
+    """
+    tokens = porcelain_z.split("\0")
+    if tokens and tokens[-1] == "":
+        tokens.pop()
+    out: List[str] = []
+    i = 0
+    while i < len(tokens):
+        rec = tokens[i]
+        i += 1
+        if len(rec) < 4 or rec[2] != " ":
+            raise RuntimeError(f"git status 的记录不合 porcelain v1 形状：{rec!r}")
+        xy, path = rec[:2], rec[3:]
+        paths = [path]
+        if xy[0] in "RC":
+            if i >= len(tokens):
+                raise RuntimeError(f"重命名/复制记录缺原路径：{rec!r}")
+            paths.append(tokens[i])
+            i += 1
+        if xy == "??" and path.endswith(".log") and _is_exempt(path, (), untracked_log_dirs):
+            continue
+        if not all(_is_exempt(p, exempt_files, exempt_dirs) for p in paths):
+            out.append(path)
+    return out
+
+
+def _rel_inside(path: Path, cwd: Path) -> Optional[str]:
+    """`path` 在 `cwd` 树内 ⇒ 相对 posix 路径；树外（或就是树根本身）⇒ None，即不豁免。"""
+    try:
+        rel = path.resolve().relative_to(cwd.resolve())
+    except ValueError:
+        return None
+    s = rel.as_posix()
+    # 日志目录就是仓库根时 rel 是 "."——豁免它等于豁免整棵树，fail closed：不豁免。
+    return None if s in ("", ".") else s
+
+
+def _overlaps(a: str, b: str) -> bool:
+    """两条仓库相对 posix 路径相等或一条在另一条之内（按 `/` 段边界）。"""
+    return a == b or a.startswith(b + "/") or b.startswith(a + "/")
+
+
+def _git_precheck(args: Sequence[str], cwd: Path) -> bytes:
+    """前置检查专用的 git 调用：参数列表、无 shell、带超时。超时 ⇒ `RuntimeError`（退出码 3 那条路）。"""
+    try:
+        return subprocess.run(  # noqa: S603
+            ["git", *args],
+            cwd=cwd,
+            capture_output=True,
+            check=True,
+            timeout=GIT_PRECHECK_TIMEOUT_S,
+        ).stdout
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"git {' '.join(args)} 超时（>{GIT_PRECHECK_TIMEOUT_S:g}s），前置检查无法执行") from exc
+
+
+def log_dir_exemptible(rel_log_dir: str, cwd: Path) -> bool:
+    """日志目录能不能拿到（仅限未跟踪 `*.log` 的）豁免。
+
+    日志目录豁免必须 fail closed，否则 `--append --log-dir tests/e2e` 就能把套件里改过的文件
+    或一个野 `conftest.py` 整个藏起来。规则三条，任一不满足即**整体不豁免**：
+    1. 只豁免目录下**未跟踪**（`??`）且以 `.log` 结尾的条目——本脚本只往里写 `*.log`；已跟踪
+       log 被改、目录里冒出 `.py` 或别的文件，一律照报（见 `dirty_entries`）。
+       默认目录 `.claude/tdd-guardian/soak-logs` 本身有已跟踪的历史 log，这条规则让它照常可用：
+       历史 log 不改就不出现在 `git status` 里，新 log 是未跟踪的 `*.log`。
+    2. 目录与 `HASH_COVERED_PATHS` 任一条相等或互相包含（`tests`、`tests/e2e`、
+       `tests/e2e/baseline_1b/x`）——覆盖面里的任何东西都不许靠日志目录洗白。
+    3. 目录下有 git 跟踪的 `*.py`（`git ls-files -z -- <dir>`）——那是代码目录，不是日志目录。
+    """
+    if any(_overlaps(rel_log_dir, p) for p in HASH_COVERED_PATHS):
+        return False
+    tracked = _git_precheck(["--literal-pathspecs", "ls-files", "-z", "--", rel_log_dir], cwd)
+    names = tracked.decode("utf-8", errors="surrogateescape").split("\0")
+    return not any(n.endswith(".py") for n in names)
+
+
+def dirty_worktree(cwd: Path, ledger: Path, log_dir: Path) -> List[str]:
+    """整棵工作树的脏条目（去掉台账本身与日志目录）。
+
+    薄包装：豁免集合由 `resolve()` + `relative_to(cwd)` 决定——台账/日志目录在树外就没有
+    豁免（按相对名字转移豁免会让树外台账洗白树内同名文件）。git 用参数列表调用，不经 shell；
+    `-z` 免掉非 ASCII 路径的八进制引号，`--untracked-files=all` 防止一个野文件藏在折叠的
+    `?? dir/` 后面。gitignore 掉的文件 git 不报，这里也不算（计划里的既定取舍）。
+    git 失败（不是仓库等）抛 `CalledProcessError`，超时抛 `RuntimeError`，绝不返回 `[]`——
+    失败不能开门。日志目录的豁免口径见 `log_dir_exemptible()`。
+    """
+    exempt_files = [r for r in (_rel_inside(ledger, cwd),) if r is not None]
+    porcelain = _git_precheck(["status", "--porcelain=v1", "-z", "--untracked-files=all"], cwd)
+    rel_log = _rel_inside(log_dir, cwd)
+    log_dirs = [rel_log] if rel_log is not None and log_dir_exemptible(rel_log, cwd) else []
+    return dirty_entries(porcelain.decode("utf-8", errors="surrogateescape"), exempt_files, (), log_dirs)
 
 
 def browser_label() -> str:
@@ -649,6 +778,234 @@ def build_log_path(log_dir: Path, ts: str, commit: str, token: Optional[str] = N
 
 
 # ---------------------------------------------------------------------------
+# 批次声明
+# ---------------------------------------------------------------------------
+
+#: 起始 ts 的唯一格式。先用正则钉死位数（`strptime` 的 `%m` 会收一位数的月），再交 `strptime` 验日期真实性。
+BATCH_TS_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+_BATCH_TS_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
+_BATCH_ID_RE = re.compile(r"[A-Za-z0-9_-]+")
+_BATCH_COMMIT_RE = re.compile(r"[0-9a-f]{7,40}")
+_BATCH_HASH_RE = re.compile(r"[0-9a-f]{12}")
+
+#: 候选行：`> -` 项目符号后紧跟一个反引号记号，且行内出现分隔符（全角 `｜` 或 ASCII `|`）。
+#: ASCII `|` 也算候选（裁定 Q1）：只认全角的话，一行打错分隔符的声明会被**静默忽略**，而不是报错。
+_BATCH_CANDIDATE_RE = re.compile(r"^>\s*-\s*`[^`]*`")
+#: 完整声明：六个反引号字段、全角 `｜` 分隔，字段 6 之后只许空白。注解（「终止」「判定」）写续行。
+_BATCH_DECL_RE = re.compile(r"^>\s*-\s*" + "｜".join([r"`([^`]*)`"] * 6) + r"\s*$")
+
+
+class BatchDeclarationError(ValueError):
+    """批次声明不合形状或 ID 重复。整次解析失败——B2 的笔误挡住 B1 的判决，是刻意的 fail closed。"""
+
+
+@dataclass(frozen=True)
+class BatchDeclaration:
+    """台账表头「批次声明」的一行。批次身份的唯一来源（表里没有批次列）。"""
+
+    batch_id: str
+    start_ts: datetime  # UTC-aware
+    commit: str
+    suite_hash: str
+    browser: str
+    os: str
+
+
+def _parse_batch_ts(value: str, line: str) -> datetime:
+    if not _BATCH_TS_RE.fullmatch(value):
+        raise BatchDeclarationError(f"起始 ts 须为 `{BATCH_TS_FORMAT}`，得到 {value!r}：{line}")
+    try:
+        parsed = datetime.strptime(value, BATCH_TS_FORMAT)
+    except ValueError as exc:
+        raise BatchDeclarationError(f"起始 ts 不是真实时刻 {value!r}：{line}") from exc
+    return parsed.replace(tzinfo=timezone.utc)
+
+
+def parse_batch_declarations(text: str) -> Dict[str, BatchDeclaration]:
+    """从台账全文解析批次声明，返回 `{批次 ID: 声明}`（按出现顺序）。纯函数，不读盘。
+
+    严格、fail closed：任一候选行不能完整匹配六字段语法、任一字段形状不对、或 ID 重复，
+    都对**整次**解析抛 `BatchDeclarationError`，信息里带出那一行。
+    只按 `\\n` 切行：`str.splitlines` 还会在 `\\x85`、`\\u2028` 等字符上断行，把一行声明劈成两半。
+    """
+    out: Dict[str, BatchDeclaration] = {}
+    for raw in text.split("\n"):
+        line = raw.rstrip("\r")
+        if not _BATCH_CANDIDATE_RE.match(line) or ("｜" not in line and "|" not in line):
+            continue
+        shown = line.strip()
+        m = _BATCH_DECL_RE.match(line)
+        if m is None:
+            raise BatchDeclarationError(f"批次声明须为六个反引号字段、全角 `｜` 分隔、其后无文字：{shown}")
+        batch_id, ts, commit, suite_hash_, browser, os_ = m.groups()
+        if not _BATCH_ID_RE.fullmatch(batch_id):
+            raise BatchDeclarationError(f"批次 ID 只许 `[A-Za-z0-9_-]`，得到 {batch_id!r}：{shown}")
+        start_ts = _parse_batch_ts(ts, shown)
+        if not _BATCH_COMMIT_RE.fullmatch(commit):
+            raise BatchDeclarationError(f"commit 须为 7–40 位小写十六进制，得到 {commit!r}：{shown}")
+        if not _BATCH_HASH_RE.fullmatch(suite_hash_):
+            raise BatchDeclarationError(f"suite_hash 须为 12 位小写十六进制，得到 {suite_hash_!r}：{shown}")
+        if not browser.strip():
+            raise BatchDeclarationError(f"browser 不能为空：{shown}")
+        if not os_.strip():
+            raise BatchDeclarationError(f"os 不能为空：{shown}")
+        if batch_id in out:
+            raise BatchDeclarationError(f"批次 ID {batch_id!r} 重复声明：{shown}")
+        out[batch_id] = BatchDeclaration(batch_id, start_ts, commit, suite_hash_, browser, os_)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# 批次判决
+# ---------------------------------------------------------------------------
+
+#: 一批的行数。「连续 10 次全量绿」里的 10。
+BATCH_SIZE = 10
+
+#: 判决逐列核对的顺序＝台账列序（裁定 Q4）。一行多列不符时只报第一列。
+_VERDICT_COLUMNS: Tuple[str, ...] = ("commit", "result", "suite_hash", "browser", "os")
+
+
+@dataclass(frozen=True)
+class LedgerRow:
+    """台账第一张表的一条数据行，单元格原样保留（可能不足八列，由判决报错而不是这里吞掉）。"""
+
+    cells: Tuple[str, ...]
+
+    def _cell(self, name: str) -> str:
+        i = CANONICAL_COLUMNS.index(name)
+        return self.cells[i] if i < len(self.cells) else ""
+
+    @property
+    def ts_utc(self) -> str:
+        return self._cell("ts_utc")
+
+    @property
+    def commit(self) -> str:
+        return self._cell("commit")
+
+    @property
+    def result(self) -> str:
+        return self._cell("result")
+
+    @property
+    def duration_s(self) -> str:
+        return self._cell("duration_s")
+
+    @property
+    def suite_hash(self) -> str:
+        return self._cell("suite_hash")
+
+    @property
+    def browser(self) -> str:
+        return self._cell("browser")
+
+    @property
+    def os(self) -> str:
+        return self._cell("os")
+
+    @property
+    def log(self) -> str:
+        return self._cell("log")
+
+
+@dataclass(frozen=True)
+class BatchVerdict:
+    """一批的判决。`rows` 是窗口里选中的行（至多 `BATCH_SIZE` 条）；表完整性失败时为空。"""
+
+    passed: bool
+    reason: str
+    rows: Tuple[LedgerRow, ...]
+
+
+def _split_ledger_row(line: str) -> Tuple[str, ...]:
+    """与契约测试 `split_row` 同口径：去掉首尾空管道，逐格 strip。"""
+    cells = line.strip().split("|")
+    if cells and cells[0].strip() == "":
+        cells = cells[1:]
+    if cells and cells[-1].strip() == "":
+        cells = cells[:-1]
+    return tuple(c.strip() for c in cells)
+
+
+def ledger_rows(text: str) -> List[LedgerRow]:
+    """读台账**第一张表**的数据行（表头 ＋ 分隔行之后的连续 `|` 块）。纯函数，不读盘。
+
+    与 `append_row` 和契约测试 `first_table` 同一条规则：空行即表尾，其后的 `|` 行不算。
+    按 `str.splitlines` 切行——契约解析器就是这么切的，两者必须逐行一致。
+    """
+    block: List[str] = []
+    for line in text.splitlines():
+        if line.strip().startswith("|"):
+            block.append(line)
+        elif block:
+            break
+    out: List[LedgerRow] = []
+    for line in block[2:]:
+        cells = _split_ledger_row(line)
+        if cells:
+            out.append(LedgerRow(cells))
+    return out
+
+
+def _parse_row_ts(value: str) -> Optional[datetime]:
+    if not _BATCH_TS_RE.fullmatch(value):
+        return None
+    try:
+        return datetime.strptime(value, BATCH_TS_FORMAT).replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def batch_verdict(decl: BatchDeclaration, rows: Sequence[LedgerRow]) -> BatchVerdict:
+    """按声明判一批。纯函数，不改入参。
+
+    - 表完整性（Q2）：**每一条**数据行的 `ts_utc` 都必须可解析，不论在不在窗口里。
+    - 窗口：第一条 `ts_utc >= 起始 ts` 的行起、按台账顺序的前 `BATCH_SIZE` 条。只往后看——
+      起始之前的行不算；第十条之后的行不看。窗口内的外来行不跳过（不许「先按身份过滤再取 10」）。
+    - 窗口内逐行：时序倒退到起始之前、不足八列、或 commit / result / suite_hash / browser / os
+      与声明不符（result 须为 green），即判败，只报第一处（Q4 列序、Q6 优先于 incomplete）。
+    - 无违规且不足 `BATCH_SIZE` 条：`incomplete: N/10`。
+    """
+    parsed: List[datetime] = []
+    for i, row in enumerate(rows, start=1):
+        ts = _parse_row_ts(row.ts_utc)
+        if ts is None:
+            return BatchVerdict(False, f"台账第 {i} 条数据行的 ts_utc 无法解析：{row.ts_utc!r}", ())
+        parsed.append(ts)
+
+    first = next((i for i, ts in enumerate(parsed) if ts >= decl.start_ts), len(rows))
+    window = tuple(rows[first : first + BATCH_SIZE])
+    start_shown = decl.start_ts.strftime(BATCH_TS_FORMAT)
+    expected = {
+        "commit": decl.commit,
+        "result": "green",
+        "suite_hash": decl.suite_hash,
+        "browser": decl.browser,
+        "os": decl.os,
+    }
+    for pos, (row, ts) in enumerate(zip(window, parsed[first:]), start=1):
+        where = f"批次 {decl.batch_id} 第 {pos}/{BATCH_SIZE} 行 {row.ts_utc}"
+        if ts < decl.start_ts:
+            return BatchVerdict(False, f"{where}：时序倒退，早于起始 {start_shown}", window)
+        if len(row.cells) != len(CANONICAL_COLUMNS):
+            return BatchVerdict(
+                False, f"{where}：应为 {len(CANONICAL_COLUMNS)} 列，实有 {len(row.cells)} 列", window
+            )
+        for column in _VERDICT_COLUMNS:
+            observed = getattr(row, column)
+            if observed != expected[column]:
+                return BatchVerdict(
+                    False, f"{where}：{column} 为 {observed!r}，声明为 {expected[column]!r}", window
+                )
+    if len(window) < BATCH_SIZE:
+        return BatchVerdict(False, f"incomplete: {len(window)}/{BATCH_SIZE}", window)
+    return BatchVerdict(
+        True, f"{BATCH_SIZE}/{BATCH_SIZE}（{window[0].ts_utc} – {window[-1].ts_utc}）", window
+    )
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -658,7 +1015,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--append", action="store_true", help="可记账时把行追加进台账（默认只打印）")
     p.add_argument("--ledger", type=Path, default=LEDGER_PATH, help="台账路径（单测用 tmp 副本）")
     p.add_argument("--parse-summary", type=Path, default=None, help="不跑 lane，只解析这份 summary 文本（`-` = stdin）")
-    p.add_argument("--no-precheck", action="store_true", help="跳过「覆盖路径工作树干净」的前置检查（只在 --parse-summary 下有意义）")
+    p.add_argument("--no-precheck", action="store_true", help="跳过「整棵工作树干净」的前置检查（只在 --parse-summary 下有意义）")
     p.add_argument("--log-dir", type=Path, default=None, help="log 产物目录（默认 .claude/tdd-guardian/soak-logs/）")
     p.add_argument(
         "--allow-synthetic-append",
@@ -668,6 +1025,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "对 canonical 台账与仓库内的任何路径一律拒绝"
         ),
     )
+    p.add_argument("--verdict", default=None, metavar="BATCH_ID", help="只读：判台账里这一批是否通过，打印一行 PASS / FAIL")
     p.add_argument("--expected", type=int, default=EXPECTED_BASELINE_ITEMS, help=argparse.SUPPRESS)
     # 默认值故意是 None 而不是常量：deselected 该是多少，是 LANE_ARGS 这次调用形态的性质。
     # --parse-summary 模式下这份 summary 不是本脚本跑出来的，脚本无从知道对面用了什么 -m，
@@ -699,9 +1057,60 @@ def synthetic_append_refusal(ledger: Path, allowed: bool) -> Optional[str]:
     return None
 
 
+def effective_log_dir(args: argparse.Namespace, real_append: bool) -> Path:
+    """本次运行的 log 目录，三选一：显式 `--log-dir` 原样返回；真跑 ＋ 落账用 `DEFAULT_LOG_DIR`；
+    其余（parse 模式、dry run）一律新建临时目录，免得单测或一次试跑往 `.claude/` 下留文件。
+
+    `main()` 在前置检查**之前**算一次，同一个值既交给 `dirty_worktree` 做豁免、也交给 log 写入——
+    两处各算一遍，批次的第 2 次运行就会被第 1 次留下的 log 挡住。相对路径不在这里解析。
+    """
+    if args.log_dir is not None:
+        return Path(args.log_dir)
+    if real_append:
+        return DEFAULT_LOG_DIR
+    return Path(tempfile.mkdtemp(prefix="soak-"))
+
+
+EXIT_VERDICT_PASS = 0
+EXIT_VERDICT_FAIL = 1
+
+
+def run_verdict(batch_id: str, ledger: Path) -> int:
+    """`--verdict` 的全部动作：读台账 → 解析声明 → 判一批 → 打印一行。只读，不碰 git / pytest。"""
+    try:
+        text = ledger.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        print(f"FAIL {batch_id}: 读不了台账 {ledger}：{exc}")
+        return EXIT_VERDICT_FAIL
+    try:
+        decls = parse_batch_declarations(text)
+    except BatchDeclarationError as exc:
+        print(f"FAIL {batch_id}: 批次声明解析失败（{ledger}）：{exc}")
+        return EXIT_VERDICT_FAIL
+    decl = decls.get(batch_id)
+    if decl is None:
+        known = "、".join(decls) or "（无）"
+        print(f"FAIL {batch_id}: 台账里没有批次 {batch_id} 的声明（已声明：{known}）")
+        return EXIT_VERDICT_FAIL
+    v = batch_verdict(decl, ledger_rows(text))
+    if v.passed:
+        print(f"PASS {batch_id} {v.reason}")
+        return EXIT_VERDICT_PASS
+    print(f"FAIL {batch_id}: {v.reason}")
+    return EXIT_VERDICT_FAIL
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = _build_parser().parse_args(argv)
     ledger: Path = args.ledger
+
+    # ---- `--verdict`：只读判决，最先分派——在取哈希、前置检查、pytest、log 目录之前 ----
+    if args.verdict is not None:
+        conflicts = [flag for flag, on in (("--append", args.append), ("--parse-summary", args.parse_summary is not None)) if on]
+        if conflicts:
+            print(f"[soak] 拒绝：`--verdict` 是只读判决，不能与 {' / '.join(conflicts)} 同用")
+            return EXIT_VERDICT_FAIL
+        return run_verdict(args.verdict, ledger)
 
     # ---- 最先做的判定：合成 summary 不许落进 canonical 台账（见 synthetic_append_refusal） ----
     if args.parse_summary is not None and args.append:
@@ -721,29 +1130,40 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     else:
         hash_source_text = ledger_text
 
-    # ---- 前置检查：覆盖路径的工作树必须干净（真跑时强制；parse 模式可跳） ----
+    # ---- 有效 log 目录：先于前置检查算一次，豁免与写入用同一个值（见 effective_log_dir） ----
+    real_append = args.append and args.parse_summary is None
+    try:
+        log_dir = effective_log_dir(args, real_append)
+    except OSError as exc:
+        print(f"[soak] 无法准备 log 目录：{exc}")
+        return EXIT_ENVIRONMENT
+
+    # ---- 前置检查：整棵工作树必须干净（真跑时强制；parse 模式可跳） ----
     if args.parse_summary is None or not args.no_precheck:
         try:
-            dirty = dirty_covered_paths(hash_source_text, REPO_ROOT)
-        except (RuntimeError, subprocess.CalledProcessError) as exc:
+            dirty = dirty_worktree(REPO_ROOT, ledger, log_dir)
+        except (RuntimeError, OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             print(f"无法执行前置检查：{exc}")
             return EXIT_ENVIRONMENT
         if dirty and args.append:
-            print("拒绝落账：suite_hash 覆盖路径里有未进索引的改动，哈希记的会是旧内容——先 git add：")
-            for ln in dirty:
-                print(f"  {ln}")
+            print(
+                "拒绝落账：工作树不干净（台账与本次 log 目录之外有改动或未跟踪文件），"
+                "这次运行测的不是 suite_hash 与 commit 所指的那份代码："
+            )
+            for entry in dirty:
+                print(f"  {entry}")
+            print(
+                "请在干净的 detached worktree 里跑：`git worktree add --detach <dir> HEAD`，"
+                "然后在 <dir> 里执行 `python scripts/soak_run.py --append --ledger <主仓库的 soak-log.md 绝对路径>`。"
+            )
             return EXIT_UNRECORDABLE
         if dirty:
-            print("提示：覆盖路径里有未进索引的改动（本次不落账，仅打印）：")
-            for ln in dirty:
-                print(f"  {ln}")
+            print("提示：工作树不干净（dry run，不落账，仅打印；--append 时会被拒绝）：")
+            for entry in dirty:
+                print(f"  {entry}")
 
     # ---- 取 summary：真跑 or 解析 ----
-    # 只有「真跑 ＋ 落账」才把产物写进仓库内的默认目录；parse 模式与 dry run 一律进临时目录，
-    # 免得单测或一次试跑往 .claude/ 下留文件。
-    real_append = args.append and args.parse_summary is None
     try:
-        log_dir: Path = args.log_dir or (DEFAULT_LOG_DIR if real_append else Path(tempfile.mkdtemp(prefix="soak-")))
         log_dir.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         print(f"[soak] 无法准备 log 目录：{exc}")
