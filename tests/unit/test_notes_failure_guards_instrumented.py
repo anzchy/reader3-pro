@@ -1,12 +1,12 @@
-"""009 欠账 #43 part (i) WI-6 · W6-C6：八个已识别的「请求前失败守卫」各自保有诊断上报。
+"""009 欠账 #43 part (i) WI-6 · W6-C6：十个已识别的「请求前失败守卫」各自保有诊断上报。
 
-**它守的是什么。** `annotations.js` 写路径上有八个出口在**发请求之前**就放弃了：没选区、没书章
+**它守的是什么。** `annotations.js` 写路径上有十个出口在**发请求之前**就放弃了：没选区、没书章
 上下文、没有可删的 id、空正文、没有待决冲突……WI-6 让它们每一个都经
 `reportNotesWriteFailure({op, requested: false, …})` 说话。Playwright 用例（W6-C1/C4/C5）验的是
 它们**现在**的可观测行为；本条是一道源码层面的**保持**守卫：以后有人把其中一个改回裸
 `return;`、或把上报挪到 `return` 之后变成死代码，这里当场红，并点名是哪一个。
 
-**它不声称什么。** 这不是闭包：不扫全文件的 `return;`，也没有「允许静默」名单。新加的第九个
+**它不声称什么。** 这不是闭包：不扫全文件的 `return;`，也没有「允许静默」名单。新加的第十一个
 静默出口不会让它红——那一条保证矩阵的决议记录明确放弃了（全文件 `return;` 有 58 处，绝大多数
 是普通 UI 守卫，没法用文本规则把它们和写路径出口分开）。
 
@@ -56,7 +56,8 @@ SLICED_FUNCTIONS = (
 _NO_RANGE = r"if\s*\(\s*!this\.currentRange\s*\|\|\s*!this\.contentEl\s*\)"
 _NO_CONTEXT = r"if\s*\(\s*!ctx\.bookId\s*\|\|\s*ctx\.chapterIndex\s*==\s*null\s*\)"
 
-#: （函数，守卫身份，守卫条件的模式，期望 op）。八行，与 e2e 那边的 `W6_GUARD_OP_REGISTRY` 同一组 op。
+#: （函数，守卫身份，守卫条件的模式，期望 op）。十行，与 e2e 那边的 `W6_GUARD_OP_REGISTRY` 同一组 op
+#: （末两行是 009 #50 接进诊断环的两道请求前守卫，2026-09-30）。
 INSTRUMENTED: Tuple[Tuple[str, str, str, str], ...] = (
     ("createAnnotation", "missing range/content", _NO_RANGE, "create-no-selection"),
     ("createAnnotation", "missing book/chapter context", _NO_CONTEXT, "create-no-context"),
@@ -66,6 +67,8 @@ INSTRUMENTED: Tuple[Tuple[str, str, str, str], ...] = (
     ("saveNote", "empty trimmed text", r"if\s*\(\s*!text\s*\)", "save-empty-text"),
     ("resolveConflict", "no pending conflict", r"if\s*\(\s*!c\s*\)", "conflict-no-pending"),
     ("deleteAnnotations", "missing context", _NO_CONTEXT, "delete-no-context"),
+    ("createAnnotation", "offset snapshot unavailable", r"if\s*\(\s*!offsets\s*\)", "create-no-offsets"),
+    ("createAnnotation", "empty quote", r"if\s*\(\s*!quote\s*\)", "create-empty-quote"),
 )
 
 #: 409 体里服务端告知的版本，直接赋值（P1–P4）。
@@ -253,7 +256,7 @@ def _check_guard(
     # `return;` 之后整条护栏照样 1 passed。
     #
     # 判据取「上报必须是块里的第一条语句」：`no_comments` 已经把注释抹成空格，所以正确的
-    # 八个登记位在这里都是纯空白。比逐个点名 `return` / `throw` / `break` 强的地方在于，
+    # 十个登记位在这里都是纯空白。比逐个点名 `return` / `throw` / `break` 强的地方在于，
     # 它不需要预先想全所有能让下一行变成死代码的写法。代价是以后若真有登记位需要先算一
     # 个值再上报，这里会红——那是 fail-closed 的一侧，且失败信息直接把拦下的那段文本抄给
     # 你看。
@@ -284,7 +287,7 @@ def test_known_notes_failure_guards_retain_reporting() -> None:
     spans = {name: _slice_function(no_comments, skeleton, name) for name in SLICED_FUNCTIONS}
 
     problems: List[str] = []
-    assert len({row[3] for row in INSTRUMENTED}) == len(INSTRUMENTED) == 8, "登记表不是八个互不相同的 op"
+    assert len({row[3] for row in INSTRUMENTED}) == len(INSTRUMENTED) == 10, "登记表不是十个互不相同的 op"
     for function, guard, pattern, op in INSTRUMENTED:
         msg = _check_guard(no_comments, skeleton, spans[function], function, guard, pattern, op)
         if msg:
@@ -327,14 +330,14 @@ def test_known_notes_failure_guards_retain_reporting() -> None:
 # 017 WI-13（审计 #21）：检查器自身的变异用例
 # ---------------------------------------------------------------------------
 #
-# 上面那条测试只在 `annotations.js` **当前**这一版上跑。它绿，可能是因为八个登记位真的
+# 上面那条测试只在 `annotations.js` **当前**这一版上跑。它绿，可能是因为十个登记位真的
 # 守着契约，也可能是因为检查器根本不会红——二者在那条测试里不可区分。审计 #21 命中的正是
 # 后者：`_BLOCK_TAIL_RE` 只看块尾，于是「把 `return` 挪到上报前面」这种把上报变成死代码的
 # 写法，逐字满足尾部形状，整条护栏照样 `1 passed`。
 #
 # 所以这里把检查器本身放到台上：喂它一份合成的、结构与真文件同形的 JS，逐个注入已知的破坏
 # 写法，要求每一条都被拒、且拒绝理由指名道姓。每个用例都对应检查器里的一段判据——删掉那段
-# 判据，对应的用例立刻红。合成源而不是改真文件，是因为真文件里八个登记位共用两个逐字相同的
+# 判据，对应的用例立刻红。合成源而不是改真文件，是因为真文件里十个登记位共用两个逐字相同的
 # 守卫条件，在那上面注入会同时惊动别的登记位，红的原因就说不清了。
 
 _SYNTHETIC_GUARD_PATTERN = r"if\s*\(\s*!text\s*\)"
@@ -376,7 +379,7 @@ def test_the_checker_accepts_the_shape_it_is_meant_to_accept() -> None:
 def test_the_checker_ignores_comments_before_the_report() -> None:
     """边界：注释不是可执行语句，不许被「上报必须是第一条语句」误伤。
 
-    八个真登记位里有几处在块里写了说明性注释，`_views` 会把它们抹成空格；这条用例把那个
+    十个真登记位里有几处在块里写了说明性注释，`_views` 会把它们抹成空格；这条用例把那个
     依赖钉死——若有人把 head 判据改成直接看原始源码，这里当场红，而真文件那条测试也会跟着
     红得莫名其妙。
     """

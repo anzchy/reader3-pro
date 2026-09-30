@@ -141,7 +141,7 @@ def test_保留我的成功之后紧接着再保存一次不许误冲突(
     _fill_and_save(page, NOTE_AFTER)
 
     expect(page.get_by_test_id(DIALOG_TESTID)).to_be_hidden()
-    wait_for_note_text(e2e_books_dir, BOOK_ID, note_id, NOTE_AFTER)
+    wait_for_note_text(e2e_books_dir, BOOK_ID, note_id, NOTE_AFTER, page=page)
 
 
 def test_没有第三方时采用远端之后的保存照旧成功(
@@ -162,7 +162,7 @@ def test_没有第三方时采用远端之后的保存照旧成功(
     _fill_and_save(page, NOTE_AFTER)
 
     expect(page.get_by_test_id(DIALOG_TESTID)).to_be_hidden()
-    wait_for_note_text(e2e_books_dir, BOOK_ID, note_id, NOTE_AFTER)
+    wait_for_note_text(e2e_books_dir, BOOK_ID, note_id, NOTE_AFTER, page=page)
 
 
 def test_钉子不许活过这一轮编辑(
@@ -206,4 +206,4 @@ def test_钉子不许活过这一轮编辑(
     _fill_and_save(page, NOTE_AFTER_2)
 
     expect(page.get_by_test_id(DIALOG_TESTID)).to_be_hidden()
-    wait_for_note_text(e2e_books_dir, BOOK_ID, note_id, NOTE_AFTER_2)
+    wait_for_note_text(e2e_books_dir, BOOK_ID, note_id, NOTE_AFTER_2, page=page)

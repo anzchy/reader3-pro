@@ -286,7 +286,7 @@ def test_w7_editing_a_note_changes_its_body_and_nothing_else(
 
     # 等在**被改的那个量**上。等条数在这里等不到任何东西：PUT 不改条数，
     # `wait_for_notes(..., 2)` 会在第一次轮询就带着旧正文返回（helpers 里写了理由）。
-    wait_for_note_text(e2e_books_dir, BOOK_ID, W7_TARGET_ID, W7_NEW_BODY)
+    wait_for_note_text(e2e_books_dir, BOOK_ID, W7_TARGET_ID, W7_NEW_BODY, page=page)
 
     # 往返收尾 + 「刷新后终态仍是恰好 2 条」。expected_count=2 是本条给出的等号右边，
     # 不是「至少 2 条」。

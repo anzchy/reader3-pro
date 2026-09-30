@@ -164,11 +164,12 @@ def other_context(browser: Browser) -> Iterator[BrowserContext]:
 def _click_awaiting_write(page: Page, locator, what: str) -> None:  # type: ignore[no-untyped-def]
     """点下去，并且**先把这次写的响应等到手**，再让调用方去轮询磁盘。
 
-    `wait_for_notes()` / `wait_for_note_text()` 是纯 Python 的 sleep 轮询：整个窗口里一次都
-    没调进 Playwright。而同步 Playwright 的 route 回调是 Python 函数，只在主协程调进
-    Playwright 时才被派发——`conftest` 给每个 context 都挂了一道 `**/*` 的出网闸，于是
-    **每一个**请求都要过这样一个回调。点完按钮直接去轮盘，这次写就卡在回调上跑不动，
-    轮询等满超时：**产品行为完全正确也会红**。这正是 #43 那族 flake 的机制（审计 #8）。
+    `wait_for_notes()` / `wait_for_note_text()` 在 009 #49（019 WI-2）之前是纯 Python 的 sleep
+    轮询，整个窗口里一次都没调进 Playwright。而同步 Playwright 的 route 回调是 Python 函数，
+    只在主协程调进 Playwright 时才被派发——`conftest` 给每个 context 都挂了一道 `**/*` 的
+    出网闸，于是**每一个**请求都要过这样一个回调。当时点完按钮直接去轮盘，这次写就卡在回调上
+    跑不动，轮询等满超时：**产品行为完全正确也会红**。这正是 #43 那族 flake 的机制（审计 #8）。
+    现在两个轮询都改为泵浏览器，这里先把响应等到手仍是更硬的一道。
 
     这里刻意不限定方法名：从这个按钮出去的、发往 notes API 的那次写就是「相关的写」，
     把它写死成 POST/PUT 只会在实现换方法时把一条真断言变成挂死。
@@ -231,7 +232,7 @@ def _run_conflict_round(
     page.get_by_test_id("rd-anno-note").click()
     page.get_by_test_id("rd-note-editor-input").fill(NOTE_A0)
     _click_awaiting_write(page, page.get_by_test_id("rd-note-editor-primary"), "A 建 A0")
-    records = wait_for_notes(books_dir, BOOK_ID, EXPECTED_NOTE_COUNT)
+    records = wait_for_notes(books_dir, BOOK_ID, EXPECTED_NOTE_COUNT, page=page)
     note_id = str(records[0]["id"])
     assert records[0]["note_text"] == NOTE_A0
 
@@ -245,7 +246,7 @@ def _run_conflict_round(
     _open_note_editor_on_mark(page, frame_a, note_id)
     page.get_by_test_id("rd-note-editor-input").fill(NOTE_A1)
     _click_awaiting_write(page, page.get_by_test_id("rd-note-editor-primary"), "A 改成 A1")
-    wait_for_note_text(books_dir, BOOK_ID, note_id, NOTE_A1)
+    wait_for_note_text(books_dir, BOOK_ID, note_id, NOTE_A1, page=page)
 
     # ---- 4. B 拿着过期版本写 B ⇒ 冲突 -------------------------------------------------------
     _open_note_editor_on_mark(page_b, frame_b, note_id)
@@ -292,7 +293,7 @@ def _run_conflict_round(
     try:
         dialog.get_by_test_id(branch.exit_testid).click()
         expect(dialog).to_be_hidden()
-        final = wait_for_note_text(books_dir, BOOK_ID, note_id, branch.settled_text)
+        final = wait_for_note_text(books_dir, BOOK_ID, note_id, branch.settled_text, page=page_b)
     finally:
         page_b.remove_listener("request", _record)
 
@@ -344,7 +345,7 @@ def _run_conflict_round(
     mark.click()
     expect(page.get_by_test_id("rd-anno-toolbar")).to_be_visible()
     _click_awaiting_write(page, page.get_by_test_id("rd-anno-delete"), "清场删除")
-    wait_for_notes(books_dir, BOOK_ID, EMPTY_NOTE_COUNT)
+    wait_for_notes(books_dir, BOOK_ID, EMPTY_NOTE_COUNT, page=page)
 
 
 def test_deg_s5_concurrent_note_edit_shows_conflict_dialog_and_loses_nothing(

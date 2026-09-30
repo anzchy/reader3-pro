@@ -474,7 +474,7 @@ def test_w9a_cjk_marker_keeps_quote_prefix_suffix_on_codepoint_boundaries(
     select_in_frame(frame, ASTRAL_QUOTE)
     page.get_by_test_id("rd-anno-type-marker").click()
 
-    landed = wait_for_notes(e2e_books_dir, BOOK_ID_CJK, 2)
+    landed = wait_for_notes(e2e_books_dir, BOOK_ID_CJK, 2, page=page)
     astral_records = [r for r in landed if r["quote"] == ASTRAL_QUOTE]
     assert len(astral_records) == 1, (
         f"落库里 quote == {ASTRAL_QUOTE!r} 的不是恰好一条，而是 {len(astral_records)} 条："
@@ -622,7 +622,7 @@ def test_w9b_cjk_note_body_survives_edit_and_reload(
     page.get_by_test_id("rd-note-editor-primary").click()
 
     # 等在**被改的那个量**上：PUT 不改条数，等条数会立刻带着旧正文返回（helpers 里写了理由）。
-    updated = wait_for_note_text(e2e_books_dir, BOOK_ID_CJK, W9B_TARGET_ID, W9B_NEW_BODY)
+    updated = wait_for_note_text(e2e_books_dir, BOOK_ID_CJK, W9B_TARGET_ID, W9B_NEW_BODY, page=page)
     assert list(updated["note_text"]) == list(W9B_NEW_BODY), (
         f"盘上的 note_text 逐码点不等于填进去的那一段：{list(updated['note_text'])}"
     )

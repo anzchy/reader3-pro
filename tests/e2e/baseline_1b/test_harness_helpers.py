@@ -200,7 +200,7 @@ def test_notes_isolation_gives_every_round_the_same_initial_state(
         select_in_frame(frame, "Alpha prose")
         page.get_by_test_id("rd-anno-type-marker").click()
 
-        records = wait_for_notes(e2e_books_dir, BOOK_ID, 1)
+        records = wait_for_notes(e2e_books_dir, BOOK_ID, 1, page=page)
         assert records[0]["quote"] == "Alpha prose"
         ids.append(records[0]["id"])
 

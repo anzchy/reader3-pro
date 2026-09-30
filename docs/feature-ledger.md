@@ -343,7 +343,7 @@ Paths are written out in full from the repo root (e.g. `src/reader3_app/reader3.
 - **Code:** `src/reader3_app/notes_service.py`, `src/reader3_app/models/annotations.py`, `src/reader3_app/web/static/js/annotations.js` · ADR-0005
 - **Tests:** `tests/e2e/test_notes_write_failure_is_attributable.py`, `tests/e2e/test_stored_cfi_must_agree_with_quote.py`
 - **Confirm:** In the reader select a sentence: the toolbar offers color dots, Marker / Wavy / Underline, Add Note, Copy, Delete, Ask AI. Pick Marker, then Add Note → "Write your thoughts..." → Save; the rail's Notes button lists it (「共N条笔记」), it survives a reload, and `books/{book_id}_data/notes.json` holds it.
-- **Evidence:** 006 · closed selection toolbar stays closed, PR #28 (`26bce1d`, merge `865e7eb`)
+- **Evidence:** 006 · closed selection toolbar stays closed, PR #28 (`26bce1d`, merge `865e7eb`) · create failures (rejected POST and the two pre-request guards) report into the notes diagnostic ring, 019 (`d259f6f`, 009 #50)
 - **Limits:** text-only anchoring, CFI always null (#6–#8); `PUT` accepts only `note_text` (#29). Reader-side split is 014. The notes panel's 点评此书 button is dead (see F-040).
 
 #### F-019 Note write-conflict handling — partial

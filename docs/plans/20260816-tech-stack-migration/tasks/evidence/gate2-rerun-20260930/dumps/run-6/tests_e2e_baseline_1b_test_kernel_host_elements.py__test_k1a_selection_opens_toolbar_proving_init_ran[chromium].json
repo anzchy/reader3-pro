@@ -1,0 +1,46 @@
+{
+  "test": "tests/e2e/baseline_1b/test_kernel_host_elements.py::test_k1a_selection_opens_toolbar_proving_init_ran[chromium]",
+  "fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 55,
+      "settled": 60,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "perf": [
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 65,
+      "reqStart": 68,
+      "respStart": 68,
+      "respEnd": 68,
+      "dur": 3
+    }
+  ],
+  "diag": [],
+  "url": "http://127.0.0.1:59770/read/smoke_data/0",
+  "late_fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 55,
+      "settled": 60,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "late_perf": [
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 65,
+      "reqStart": 68,
+      "respStart": 68,
+      "respEnd": 68,
+      "dur": 3
+    }
+  ],
+  "late_diag": []
+}

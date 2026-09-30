@@ -1,0 +1,102 @@
+{
+  "test": "tests/e2e/baseline_1b/test_write_cjk_boundary.py::test_w9a_cjk_marker_keeps_quote_prefix_suffix_on_codepoint_boundaries[chromium]",
+  "fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data/2",
+      "sent": 42,
+      "settled": 45,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "POST",
+      "url": "/api/notes/cjk_data/2",
+      "sent": 87,
+      "settled": 94,
+      "status": 201,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data/2",
+      "sent": 94,
+      "settled": 97,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "perf": [
+    {
+      "name": "/api/notes/cjk_data/2",
+      "start": 48,
+      "reqStart": 49,
+      "respStart": 50,
+      "respEnd": 50,
+      "dur": 3
+    },
+    {
+      "name": "/api/notes/cjk_data/2",
+      "start": 100,
+      "reqStart": 101,
+      "respStart": 102,
+      "respEnd": 102,
+      "dur": 3
+    }
+  ],
+  "diag": [],
+  "url": "http://127.0.0.1:57502/read/cjk_data/2",
+  "late_fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data/2",
+      "sent": 42,
+      "settled": 45,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "POST",
+      "url": "/api/notes/cjk_data/2",
+      "sent": 87,
+      "settled": 94,
+      "status": 201,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data/2",
+      "sent": 94,
+      "settled": 97,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "late_perf": [
+    {
+      "name": "/api/notes/cjk_data/2",
+      "start": 48,
+      "reqStart": 49,
+      "respStart": 50,
+      "respEnd": 50,
+      "dur": 3
+    },
+    {
+      "name": "/api/notes/cjk_data/2",
+      "start": 93,
+      "reqStart": 94,
+      "respStart": 96,
+      "respEnd": 96,
+      "dur": 4
+    },
+    {
+      "name": "/api/notes/cjk_data/2",
+      "start": 100,
+      "reqStart": 101,
+      "respStart": 102,
+      "respEnd": 102,
+      "dur": 3
+    }
+  ],
+  "late_diag": []
+}

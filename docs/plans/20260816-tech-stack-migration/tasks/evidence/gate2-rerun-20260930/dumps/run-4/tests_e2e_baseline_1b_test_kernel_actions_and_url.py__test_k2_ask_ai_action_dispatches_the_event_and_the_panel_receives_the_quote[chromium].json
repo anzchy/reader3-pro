@@ -1,0 +1,46 @@
+{
+  "test": "tests/e2e/baseline_1b/test_kernel_actions_and_url.py::test_k2_ask_ai_action_dispatches_the_event_and_the_panel_receives_the_quote[chromium]",
+  "fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/1",
+      "sent": 87,
+      "settled": 91,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "perf": [
+    {
+      "name": "/api/notes/smoke_data/1",
+      "start": 93,
+      "reqStart": 96,
+      "respStart": 97,
+      "respEnd": 97,
+      "dur": 4
+    }
+  ],
+  "diag": [],
+  "url": "http://127.0.0.1:58646/read/smoke_data/1",
+  "late_fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/1",
+      "sent": 87,
+      "settled": 91,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "late_perf": [
+    {
+      "name": "/api/notes/smoke_data/1",
+      "start": 93,
+      "reqStart": 96,
+      "respStart": 97,
+      "respEnd": 97,
+      "dur": 4
+    }
+  ],
+  "late_diag": []
+}

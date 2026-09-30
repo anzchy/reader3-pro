@@ -119,7 +119,10 @@ SUBPROCESS_TIMEOUT_S = 300
 # 的「常量的变更史」里，本文件不复述——两处只需数字相等）。
 # 67 → 68：2026-09-21 欠账 #44 的回归闸从白名单迁入 `baseline_1b`（同批 W-5a-③ 改判，
 # `suite_hash` 本来就要变，两件事合并只清零一次）。
-CANONICAL_BASELINE_ITEMS = 68
+# 68 → 76：2026-09-30 009 #62，WI-4 of 019: moved 8 items——
+# `test_selection_toolbar_stays_closed.py` 从白名单迁入 `baseline_1b`（**实测 8 条 item**，
+# 4 条关闭路径 × 2 个时机）；白名单同批 72 → 64，总数 265 不变。
+CANONICAL_BASELINE_ITEMS = 76
 CANONICAL_ACCEPTANCE_PER_DIR: Dict[str, int] = {
     "acceptance_4b1": 8,
     "acceptance_p3": 4,
@@ -191,7 +194,15 @@ CANONICAL_ACCEPTANCE_ITEMS = 125
 # 55 → 63：2026-09-28 fix/selection-toolbar-reopen 新增
 # `tests/e2e/test_selection_toolbar_stays_closed.py`，**实测 8 条 item**（4 条关闭路径 × 2 个时机）。
 # 落白名单的理由与到期动作写在 `scripts/lint_e2e_groups.py` 的白名单注释里，本文件不复述。
-CANONICAL_UNGROUPED_ITEMS = 63
+# 63 → 71：2026-09-30 009 #50，WI-1 of 019: +8——已登记的
+# `tests/e2e/test_notes_write_failure_is_attributable.py` 新增 8 条 item（W1-C11/C12/C13、
+# W6-C6 ×2、W6-C7 ×2、W6-C8），**实测**白名单 71。
+# 71 → 72：2026-09-30 009 #49，WI-2 of 019: +1——新增
+# `tests/e2e/test_disk_poll_pumps_inflight_write.py`（WI2-E2），**实测 1 条 item**，白名单 72。
+# 72 → 64：2026-09-30 009 #62，WI-4 of 019: moved 8 items——
+# `tests/e2e/test_selection_toolbar_stays_closed.py` 迁入 `baseline_1b/`（见上面 68 → 76），
+# 白名单条目撤掉；**实测**白名单 64、baseline 76。一段换一段，`CANONICAL_E2E_ITEMS` 不动。
+CANONICAL_UNGROUPED_ITEMS = 64
 # 140 → 149：同上，`shell_4a` 的 9 条。
 # 149 → 183：2026-09-24 013 WI-10 往 `shell_4a` 加的 34 条（见上面 26 → 60 那条注释）。
 # 183 → 184：同上，深色 OS 回归 1 条。
@@ -200,7 +211,9 @@ CANONICAL_UNGROUPED_ITEMS = 63
 # 243 → 244：2026-09-25 013 终审 RV-1 的 1 条（见上面 120 → 121 那条注释；全量实测 244）。
 # 244 → 248：2026-09-25 013 终审 RV-14 的 4 条（见上面 121 → 125 那条注释；全量实测 248）。
 # 248 → 256：2026-09-28 fix/selection-toolbar-reopen 的 8 条白名单 item（见上面 55 → 63；全量实测 256）。
-CANONICAL_E2E_ITEMS = 256
+# 256 → 264：2026-09-30 009 #50，WI-1 of 019: +8（见上面 63 → 71；全量实测 264）。
+# 264 → 265：2026-09-30 009 #49，WI-2 of 019: +1（见上面 71 → 72；全量实测 265）。
+CANONICAL_E2E_ITEMS = 265
 
 #: **已激活**的 acceptance 组，与 `scripts/lint_e2e_groups.py` 的
 #: `ACTIVATED_ACCEPTANCE_DIRS` 各写一份——本文件是守卫的独立 oracle，不从被测脚本 import
@@ -385,9 +398,11 @@ def test_real_tree_collection_is_a_partition_and_counts_match() -> None:
         # 017 WI-7（审计 #4）：收尾放进编辑器的那一版，必须连着它自己的基准令牌。
         # 同上，理由与到期动作在 `scripts/lint_e2e_groups.py` 的白名单注释里。
         f"{E2E_REL}/test_conflict_settled_text_keeps_its_base_etag.py",
-        # 2026-09-28 fix/selection-toolbar-reopen：关掉的选区工具条不得被 epub.js 的下一拍重开。
-        # 同上，理由与到期动作在 `scripts/lint_e2e_groups.py` 的白名单注释里。
-        f"{E2E_REL}/test_selection_toolbar_stays_closed.py",
+        # （2026-09-30 009 #62，WI-4 of 019：`test_selection_toolbar_stays_closed.py`
+        # 到期迁入 `baseline_1b/`，此处条目撤掉。）
+        # 009 #49（019 WI-2，WI2-E2）：盘上轮询期间在途的写必须出得了门（helpers 机制护栏）。
+        # 与前面几条一样，理由在 `scripts/lint_e2e_groups.py` 的白名单注释里。
+        f"{E2E_REL}/test_disk_poll_pumps_inflight_write.py",
     }, f"白名单的内容变了：{sorted(whitelist)}（加项要写理由，且它必须真的贡献 item）"
 
     # (1) 划分：恰好一个组 marker，或模块在白名单里。双 marker 也红。

@@ -1,0 +1,46 @@
+{
+  "test": "tests/e2e/baseline_1b/test_read_chapter_change_and_search.py::test_r5_in_reader_search_highlights_the_hit_inside_the_iframe[chromium-cjk]",
+  "fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data/0",
+      "sent": 47,
+      "settled": 52,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "perf": [
+    {
+      "name": "/api/notes/cjk_data/0",
+      "start": 54,
+      "reqStart": 57,
+      "respStart": 58,
+      "respEnd": 59,
+      "dur": 5
+    }
+  ],
+  "diag": [],
+  "url": "http://127.0.0.1:57502/read/cjk_data/0?q=%E5%92%96%E5%95%A1&occurrence=0",
+  "late_fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data/0",
+      "sent": 47,
+      "settled": 52,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "late_perf": [
+    {
+      "name": "/api/notes/cjk_data/0",
+      "start": 54,
+      "reqStart": 57,
+      "respStart": 58,
+      "respEnd": 59,
+      "dur": 5
+    }
+  ],
+  "late_diag": []
+}

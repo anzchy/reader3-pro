@@ -1,0 +1,46 @@
+{
+  "test": "tests/e2e/baseline_1b/test_kernel_host_elements.py::test_k1a_seven_annotation_host_elements_are_present[chromium]",
+  "fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 71,
+      "settled": 75,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "perf": [
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 76,
+      "reqStart": 79,
+      "respStart": 79,
+      "respEnd": 80,
+      "dur": 3
+    }
+  ],
+  "diag": [],
+  "url": "http://127.0.0.1:58646/read/smoke_data/0",
+  "late_fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 71,
+      "settled": 75,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "late_perf": [
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 76,
+      "reqStart": 79,
+      "respStart": 79,
+      "respEnd": 80,
+      "dur": 3
+    }
+  ],
+  "late_diag": []
+}

@@ -9,6 +9,7 @@
   - 本文件落在 `scripts/` 下，用 `PYTHONPATH=scripts pytest -p e2e_diag_dump` 挂上去
     （`scripts/` 不是包，所以走 `PYTHONPATH` 而不是 `-p scripts.e2e_diag_dump`）。
     冻结集零改动、收集数不变，而且观察的就是红掉的那一条用例本身。
+    （⬛ 2026-09-30：「冻结集零改动」是写这段时的事实；019 为 #49 / #62 已改过冻结集，本文件自身仍不在其中。）
 
 **光看诊断环不够，这是第二版加网络与 console 的理由。**
 011 证过「写成功不往环里记东西」，所以环空只等于「没有**被报告的写失败**」。
@@ -23,9 +24,11 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import pathlib
+import re
 import time
 
 import pytest
@@ -35,6 +38,12 @@ _OUT = pathlib.Path(os.environ.get("E2E_DIAG_OUT", "e2e-diag")).resolve()
 _EVENTS: dict[str, dict] = {}
 _LATE: dict[str, dict] = {}
 _NOTES_MARK = "/api/notes"
+# 文件名 = 净化后的前缀（截 120）+ 完整 nodeid 的 sha256 前 12 位（019 WI-7，审计 #1）。
+# 旧写法只截前 150 个字符：W6-C7 的两个参数共享前 152 个字符，后写的静默盖掉先写的；
+# 截的还是字符不是字节，CJK 参数能撑爆 NAME_MAX。判据钉在 `tests/unit/test_e2e_diag_dump_names.py`。
+_UNSAFE = re.compile(r"[^A-Za-z0-9._\[\]-]")
+_PREFIX_MAX = 120
+_DIGEST_LEN = 12
 
 
 # 浏览器侧的 fetch 台账。**必须是注入脚本，不能是 page.on(...) 监听器。**
@@ -105,8 +114,14 @@ def _r3_diag_capture(request):
 def pytest_runtest_makereport(item, call):
     report = yield
     rep = report.get_result()
-    # 只在 call 阶段的失败上动手：此时 page fixture 还没拆，页面仍活着。
-    if rep.when != "call" or not rep.failed:
+    # 只在 call 阶段动手：此时 page fixture 还没拆，页面仍活着。缺省只 dump 失败；
+    # `E2E_DIAG_ALWAYS=1` 时每条都 dump（019 WI-2 / 009 #49 的压力臂：全绿的一轮若不 dump，
+    # 「慢请求簇没了」就只剩「没有失败」撑着）。开关在**钩子执行时**读，不像 `_OUT` 那样
+    # 在 import 时定死；只认字面 "1"，"0" / 空串都是关。判据钉在
+    # `tests/unit/test_e2e_diag_dump_always.py`。
+    if rep.when != "call":
+        return
+    if not rep.failed and os.environ.get("E2E_DIAG_ALWAYS") != "1":
         return
     page = item.funcargs.get("page") if hasattr(item, "funcargs") else None
     if page is None:
@@ -145,7 +160,17 @@ def pytest_runtest_makereport(item, call):
 
 def _write(record: dict) -> None:
     _OUT.mkdir(parents=True, exist_ok=True)
-    safe = record["test"].replace("/", "_").replace(":", "_")[:150]
-    (_OUT / f"{safe}.json").write_text(
+    (_OUT / _dump_name(record["test"])).write_text(
         json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+
+
+def _dump_name(nodeid: str) -> str:
+    """nodeid → dump 文件名。前缀只给人看；区分全靠摘要，所以摘要**总是**追加、且取自完整 nodeid。
+
+    用 sha256 不用 `hash()`：call 阶段与 teardown 阶段的两次写必须落进同一个文件，
+    不能随 `PYTHONHASHSEED` 变。前缀纯 ASCII，整个名字至多 138 字节。
+    """
+    prefix = _UNSAFE.sub("_", nodeid)[:_PREFIX_MAX]
+    digest = hashlib.sha256(nodeid.encode("utf-8")).hexdigest()[:_DIGEST_LEN]
+    return f"{prefix}-{digest}.json"

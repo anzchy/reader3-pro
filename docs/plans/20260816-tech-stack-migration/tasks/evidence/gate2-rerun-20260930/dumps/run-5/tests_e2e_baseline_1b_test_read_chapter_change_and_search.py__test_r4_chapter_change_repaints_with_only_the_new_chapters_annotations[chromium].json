@@ -1,0 +1,142 @@
+{
+  "test": "tests/e2e/baseline_1b/test_read_chapter_change_and_search.py::test_r4_chapter_change_repaints_with_only_the_new_chapters_annotations[chromium]",
+  "fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 73,
+      "settled": 75,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 155,
+      "settled": 158,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/1",
+      "sent": 1515,
+      "settled": 1519,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/1",
+      "sent": 1597,
+      "settled": 1600,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "perf": [
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 79,
+      "reqStart": 80,
+      "respStart": 81,
+      "respEnd": 81,
+      "dur": 2
+    },
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 161,
+      "reqStart": 163,
+      "respStart": 164,
+      "respEnd": 164,
+      "dur": 3
+    },
+    {
+      "name": "/api/notes/smoke_data/1",
+      "start": 1521,
+      "reqStart": 1523,
+      "respStart": 1524,
+      "respEnd": 1524,
+      "dur": 3
+    },
+    {
+      "name": "/api/notes/smoke_data/1",
+      "start": 1603,
+      "reqStart": 1604,
+      "respStart": 1606,
+      "respEnd": 1606,
+      "dur": 3
+    }
+  ],
+  "diag": [],
+  "url": "http://127.0.0.1:59206/read/smoke_data/1#",
+  "late_fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 73,
+      "settled": 75,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 155,
+      "settled": 158,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/1",
+      "sent": 1515,
+      "settled": 1519,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/1",
+      "sent": 1597,
+      "settled": 1600,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "late_perf": [
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 79,
+      "reqStart": 80,
+      "respStart": 81,
+      "respEnd": 81,
+      "dur": 2
+    },
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 161,
+      "reqStart": 163,
+      "respStart": 164,
+      "respEnd": 164,
+      "dur": 3
+    },
+    {
+      "name": "/api/notes/smoke_data/1",
+      "start": 1521,
+      "reqStart": 1523,
+      "respStart": 1524,
+      "respEnd": 1524,
+      "dur": 3
+    },
+    {
+      "name": "/api/notes/smoke_data/1",
+      "start": 1603,
+      "reqStart": 1604,
+      "respStart": 1606,
+      "respEnd": 1606,
+      "dur": 3
+    }
+  ],
+  "late_diag": []
+}

@@ -1,0 +1,110 @@
+{
+  "test": "tests/e2e/baseline_1b/test_kernel_actions_and_url.py::test_k6a_direct_entry_stamps_the_chapter_from_the_url[chromium-cjk-ch2]",
+  "fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data/2",
+      "sent": 71,
+      "settled": 76,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "POST",
+      "url": "/api/notes/cjk_data/2",
+      "sent": 123,
+      "settled": 129,
+      "status": 201,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data/2",
+      "sent": 129,
+      "settled": 131,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "perf": [
+    {
+      "name": "/api/notes/cjk_data/2",
+      "start": 78,
+      "reqStart": 79,
+      "respStart": 80,
+      "respEnd": 80,
+      "dur": 3
+    },
+    {
+      "name": "/api/notes/cjk_data/2",
+      "start": 130,
+      "reqStart": 131,
+      "respStart": 132,
+      "respEnd": 132,
+      "dur": 3
+    },
+    {
+      "name": "/api/notes/cjk_data/2",
+      "start": 136,
+      "reqStart": 136,
+      "respStart": 137,
+      "respEnd": 137,
+      "dur": 1
+    }
+  ],
+  "diag": [],
+  "url": "http://127.0.0.1:58646/read/cjk_data/2",
+  "late_fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data/2",
+      "sent": 71,
+      "settled": 76,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "POST",
+      "url": "/api/notes/cjk_data/2",
+      "sent": 123,
+      "settled": 129,
+      "status": 201,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data/2",
+      "sent": 129,
+      "settled": 131,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "late_perf": [
+    {
+      "name": "/api/notes/cjk_data/2",
+      "start": 78,
+      "reqStart": 79,
+      "respStart": 80,
+      "respEnd": 80,
+      "dur": 3
+    },
+    {
+      "name": "/api/notes/cjk_data/2",
+      "start": 130,
+      "reqStart": 131,
+      "respStart": 132,
+      "respEnd": 132,
+      "dur": 3
+    },
+    {
+      "name": "/api/notes/cjk_data/2",
+      "start": 136,
+      "reqStart": 136,
+      "respStart": 137,
+      "respEnd": 137,
+      "dur": 1
+    }
+  ],
+  "late_diag": []
+}

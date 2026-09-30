@@ -79,7 +79,7 @@ def bypass_write(page: Page, live_server: str, books_dir: Path, note_id: str, te
         data=json.dumps({"note_text": text}),
     )
     assert resp.ok, f"旁路写没成功（{resp.status}），服务端版本没前进"
-    wait_for_note_text(books_dir, BOOK_ID, note_id, text)
+    wait_for_note_text(books_dir, BOOK_ID, note_id, text, page=page)
 
 
 def read_etag(page: Page, live_server: str) -> str:

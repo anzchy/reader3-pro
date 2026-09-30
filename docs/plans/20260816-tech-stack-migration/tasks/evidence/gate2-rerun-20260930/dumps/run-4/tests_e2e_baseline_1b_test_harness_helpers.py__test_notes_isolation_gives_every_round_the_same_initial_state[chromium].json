@@ -1,0 +1,102 @@
+{
+  "test": "tests/e2e/baseline_1b/test_harness_helpers.py::test_notes_isolation_gives_every_round_the_same_initial_state[chromium]",
+  "fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 50,
+      "settled": 52,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "POST",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 90,
+      "settled": 95,
+      "status": 201,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 95,
+      "settled": 97,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "perf": [
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 60,
+      "reqStart": 61,
+      "respStart": 62,
+      "respEnd": 62,
+      "dur": 2
+    },
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 105,
+      "reqStart": 106,
+      "respStart": 107,
+      "respEnd": 107,
+      "dur": 2
+    }
+  ],
+  "diag": [],
+  "url": "http://127.0.0.1:58646/read/smoke_data/0",
+  "late_fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 50,
+      "settled": 52,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "POST",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 90,
+      "settled": 95,
+      "status": 201,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 95,
+      "settled": 97,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "late_perf": [
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 60,
+      "reqStart": 61,
+      "respStart": 62,
+      "respEnd": 62,
+      "dur": 2
+    },
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 100,
+      "reqStart": 102,
+      "respStart": 103,
+      "respEnd": 103,
+      "dur": 3
+    },
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 105,
+      "reqStart": 106,
+      "respStart": 107,
+      "respEnd": 107,
+      "dur": 2
+    }
+  ],
+  "late_diag": []
+}

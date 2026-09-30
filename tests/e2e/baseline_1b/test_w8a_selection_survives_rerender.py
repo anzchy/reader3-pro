@@ -129,7 +129,7 @@ def test_标注重绘之后手上的选区仍然能写成标注(
 
     page.get_by_test_id("rd-anno-type-wavy").click()
 
-    landed = wait_for_notes(e2e_books_dir, BOOK_ID, EXPECTED_AFTER_RERENDER)
+    landed = wait_for_notes(e2e_books_dir, BOOK_ID, EXPECTED_AFTER_RERENDER, page=page)
 
     by_quote = {r["quote"]: r for r in landed}
     assert set(by_quote) == {SEEDED_QUOTE, NEW_QUOTE}, (

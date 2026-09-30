@@ -186,6 +186,11 @@ baseline 全部 skipped、push gate 全绿。「扫顶层」是这类检查最�
   Toast 仍停留 N 毫秒）、C11.15（加载后把 token 改成 1500 / 7000 毫秒，真实停留跟着走，×2）。
   矩阵早就把这三行派给 e2e lane，此前一直没写。Toast 属于书库页切片，进 `shell_4a`。
   `EXPECTED_UNGROUPED_ITEMS`（55）与 `EXPECTED_BASELINE_ITEMS`（68）不变。
+- `EXPECTED_BASELINE_ITEMS` 68 → **76**（2026-09-30，009 #62，WI-4 of 019: moved 8 items）：
+  `test_selection_toolbar_stays_closed.py` 从白名单迁入 `baseline_1b`，**+8 是执行过的
+  `--collect-only` 实测值**（四条关闭路径 × 两个时机）。这是它白名单注释里写的到期条件：019
+  本来就要动 `baseline_1b/`、`suite_hash` 无论如何都要变，一并迁入只清零一次。白名单条目同批撤掉，
+  `EXPECTED_UNGROUPED_ITEMS` 同批 −8（72 → 64），派生总数 265 不变。
 """
 
 from __future__ import annotations
@@ -216,7 +221,7 @@ BASELINE_MARKER = "baseline_1b"
 ACCEPTANCE_MARKERS = GROUP_MARKERS[1:]
 
 # `tests/e2e/baseline_1b/` 下的期望 item 数。**实测值**（变更史见文件头）。
-EXPECTED_BASELINE_ITEMS = 68
+EXPECTED_BASELINE_ITEMS = 76
 
 # 四个 acceptance 目录各自的期望 item 数。合计由此派生，不另写字面量。
 #   acceptance_4b1：R-6b ×3（Wave 4）＋ K-1b ＋ K-6b ＋ W-5b ×3（{marker, wavy, underline}，
@@ -283,12 +288,16 @@ UNGROUPED_E2E_MODULES = {
     # 放白名单而不是 `baseline_1b`，理由与当年 w8a 一样是 `suite_hash` 覆盖面——迁进冻结
     # 目录就要清零 soak 计数。到期条件：下一次**本来就要**动 `baseline_1b/`、`suite_hash`
     # 无论如何都要变的改动里，把本文件一并迁入并撤掉这一条（`EXPECTED_BASELINE_ITEMS` 同批加）。
+    # ⬛ 2026-09-30：上面的到期条件已在 019 上触发但未执行，按 009 欠账 #65 明确推迟——
+    # 新到期条件：在 master 上宣布第一个批次（012 开工前那一批）之前迁入，让同一批一并覆盖。
     "tests/e2e/test_notes_write_failure_is_attributable.py",
     # 017 WI-5（审计 #3、#9）：快照回落写下的 `cfi` 不得是一条失效 Range 算出来的。
     # 内容上它是 W-8a 家族（写路径、同一个「重绘作废选区」现场），但判据问的是**屏幕**
     # 而不是盘。落白名单的理由与上面那条一字不差：迁进 `baseline_1b/` 会改 `suite_hash`
     # 并把 soak 计数清零。到期条件也一样——下一次本来就要动 `baseline_1b/` 的改动里
     # 一并迁入，同批撤掉这一条并给 `EXPECTED_BASELINE_ITEMS` 加上去。
+    # ⬛ 2026-09-30：上面的到期条件已在 019 上触发但未执行，按 009 欠账 #65 明确推迟——
+    # 新到期条件：在 master 上宣布第一个批次（012 开工前那一批）之前迁入，让同一批一并覆盖。
     "tests/e2e/test_stored_cfi_must_agree_with_quote.py",
     # 017 WI-6（审计 #5）：冲突对话框同一时刻只许有一次收尾在飞。它驱动的是 DEG-S5
     # 对话框，与 `acceptance_2a/test_deg_s5_write_conflict.py` 同一块 UI，但那一条是
@@ -298,6 +307,8 @@ UNGROUPED_E2E_MODULES = {
     # `baseline_1b/` 会改 `suite_hash` 并把 soak 计数清零；到期条件同样是「下一次本来
     # 就要动 `baseline_1b/` 的改动里一并迁入，同批撤条目并给 `EXPECTED_BASELINE_ITEMS`
     # 加上去」。
+    # ⬛ 2026-09-30：上面的到期条件已在 019 上触发但未执行，按 009 欠账 #65 明确推迟——
+    # 新到期条件：在 master 上宣布第一个批次（012 开工前那一批）之前迁入，让同一批一并覆盖。
     "tests/e2e/test_conflict_resolution_single_flight.py",
     # 017 WI-7（审计 #4）：收尾放进编辑器的那一版，必须连着它自己的基准令牌。与上一条
     # 同住 DEG-S5 对话框，但问的是**收尾之后**那次保存带的是哪一版令牌，不是两次点击之间
@@ -305,12 +316,15 @@ UNGROUPED_E2E_MODULES = {
     # 迁进 `baseline_1b/` 会改 `suite_hash` 并把 soak 计数清零；到期条件同样是「下一次本来
     # 就要动 `baseline_1b/` 的改动里一并迁入，同批撤条目并给 `EXPECTED_BASELINE_ITEMS`
     # 加上去」。
+    # ⬛ 2026-09-30：上面的到期条件已在 019 上触发但未执行，按 009 欠账 #65 明确推迟——
+    # 新到期条件：在 master 上宣布第一个批次（012 开工前那一批）之前迁入，让同一批一并覆盖。
     "tests/e2e/test_conflict_settled_text_keeps_its_base_etag.py",
-    # 选区工具条关掉之后不得被 epub.js 的下一拍 `selected` 重新打开（K2 copy 的 soak 抖动）。
-    # 内容上它是 K-2 家族，落白名单的理由与上面几条一字不差：迁进 `baseline_1b/` 会改
-    # `suite_hash` 并把 soak 计数清零；到期条件同样是「下一次本来就要动 `baseline_1b/` 的
-    # 改动里一并迁入，同批撤条目并给 `EXPECTED_BASELINE_ITEMS` 加上去」。
-    "tests/e2e/test_selection_toolbar_stays_closed.py",
+    # 009 #49（019 WI-2，WI2-E2）：盘上轮询期间，在途的写必须出得了门——钉的是
+    # `wait_for_notes` 泵浏览器这件机制本身（旧 `time.sleep` 循环体上它确定地红）。
+    # 不并进 `baseline_1b/`：它是 helpers 的机制护栏，不是 009 的业务用例；且根下新文件
+    # 不在 `HASH_COVERED_PATHS` 里，放这里不额外移动 `suite_hash`。到期条件：无——
+    # 它与任何组都正交，是长期住户（与 `test_testid_dom_uniqueness.py` 同类）。
+    "tests/e2e/test_disk_poll_pumps_inflight_write.py",
 }
 
 # 上面几个白名单模块在一次 `tests/e2e --collect-only` 里贡献的 item 数。
@@ -369,7 +383,21 @@ UNGROUPED_E2E_MODULES = {
 # `tests/e2e/test_selection_toolbar_stays_closed.py`，**+8 是执行过的 `--collect-only`
 # 实测值**（四条关闭路径 copy / ask_ai / escape / outer_mousedown × 两个时机
 # after_first_tick / before_first_tick；全量 256）。
-EXPECTED_UNGROUPED_ITEMS = 63
+#
+# 63 → **71**（2026-09-30，009 #50，WI-1 of 019: +8）：白名单里已登记的
+# `tests/e2e/test_notes_write_failure_is_attributable.py` 新增 8 条 item（W1-C11 / W1-C12 /
+# W1-C13 各 1、W6-C6 ×2、W6-C7 ×2、W6-C8 1；W1-C8 是原地改判，不增条数）。**+8 是执行过的
+# `--collect-only` 实测值**（baseline 68 / 白名单 71 / 全量 264）。
+#
+# 71 → **72**（2026-09-30，009 #49，WI-2 of 019: +1）：新增
+# `tests/e2e/test_disk_poll_pumps_inflight_write.py`（WI2-E2，1 条，不参数化）。**+1 是执行过的
+# `--collect-only` 实测值**（baseline 68 / 白名单 72 / 全量 265）。
+#
+# 72 → **64**（2026-09-30，009 #62，WI-4 of 019: moved 8 items）：
+# `tests/e2e/test_selection_toolbar_stays_closed.py` 迁入 `baseline_1b/`，白名单条目已撤，
+# `EXPECTED_BASELINE_ITEMS` 同批 68 → 76。**−8 是执行过的 `--collect-only` 实测值**
+# （baseline 76 / 白名单 64 / 全量 265，总数不变）。
+EXPECTED_UNGROUPED_ITEMS = 64
 
 # 派生值，不是字面量。见文件头「为什么必须派生」。
 EXPECTED_E2E_ITEMS = (

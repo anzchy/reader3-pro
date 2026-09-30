@@ -242,7 +242,7 @@ def test_k2_type_actions_create_an_annotation_of_that_type(
     select_in_frame(frame, CH0_QUOTE)
     page.get_by_test_id(action_testid).click()
 
-    records = wait_for_notes(e2e_books_dir, BOOK_ID, K2_EXPECTED_AFTER_CREATE)
+    records = wait_for_notes(e2e_books_dir, BOOK_ID, K2_EXPECTED_AFTER_CREATE, page=page)
     assert records[0]["type"] == expected_type, (
         f"按下 {action_testid} 之后落库的 type 是 {records[0]['type']!r}，"
         f"不是期望的 {expected_type!r}。"
@@ -316,7 +316,7 @@ def test_k2_note_action_opens_the_editor_and_the_save_lands_a_note_record(
     page.get_by_test_id("rd-note-editor-input").fill(K2_NOTE_TEXT)
     page.get_by_test_id("rd-note-editor-primary").click()
 
-    records = wait_for_notes(e2e_books_dir, BOOK_ID, K2_EXPECTED_AFTER_CREATE)
+    records = wait_for_notes(e2e_books_dir, BOOK_ID, K2_EXPECTED_AFTER_CREATE, page=page)
     assert records[0]["type"] == "note", (
         f"经 rd-anno-note 存下的那条 type 是 {records[0]['type']!r}，不是 'note'"
     )
@@ -373,7 +373,7 @@ def test_k2_delete_action_removes_the_clicked_annotation_from_disk(
     expect(page.get_by_test_id("rd-anno-toolbar")).to_be_visible()
     page.get_by_test_id("rd-anno-delete").click()
 
-    wait_for_notes(e2e_books_dir, BOOK_ID, K2_EXPECTED_AFTER_DELETE)
+    wait_for_notes(e2e_books_dir, BOOK_ID, K2_EXPECTED_AFTER_DELETE, page=page)
     frame = open_reader(page, live_server, BOOK_ID, 0, CH0_ANCHOR)
     expect(frame.get_by_test_id("rd-anno-span")).to_have_count(K2_EXPECTED_AFTER_DELETE)
     assert read_notes(e2e_books_dir, BOOK_ID) == [], (
@@ -480,7 +480,7 @@ def test_k6a_direct_entry_stamps_the_chapter_from_the_url(
     select_in_frame(frame, quote)
     page.get_by_test_id("rd-anno-type-marker").click()
 
-    records = wait_for_notes(e2e_books_dir, book_id, K2_EXPECTED_AFTER_CREATE)
+    records = wait_for_notes(e2e_books_dir, book_id, K2_EXPECTED_AFTER_CREATE, page=page)
     assert records[0]["chapter_index"] == chapter_index, (
         f"直接进入 /read/{book_id}/{chapter_index} 建的标注，"
         f"落库 chapter_index 是 {records[0]['chapter_index']}，不是 URL 里的 {chapter_index}。"
@@ -550,7 +550,7 @@ def test_k6a_in_page_chapter_turn_stamps_the_new_chapter(
     select_in_frame(frame, CJK_CH1_QUOTE)
     page.get_by_test_id("rd-anno-type-marker").click()
 
-    records = wait_for_notes(e2e_books_dir, BOOK_ID_CJK, K2_EXPECTED_AFTER_CREATE)
+    records = wait_for_notes(e2e_books_dir, BOOK_ID_CJK, K2_EXPECTED_AFTER_CREATE, page=page)
     assert records[0]["chapter_index"] == K6_EXPECTED_IN_URL_CHAPTER, (
         f"站内翻到第 {K6_EXPECTED_IN_URL_CHAPTER} 章之后建的标注，落库 chapter_index 是 "
         f"{records[0]['chapter_index']}，不是 URL 里的 {K6_EXPECTED_IN_URL_CHAPTER}。"

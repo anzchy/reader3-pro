@@ -1,0 +1,46 @@
+{
+  "test": "tests/e2e/baseline_1b/test_harness_helpers.py::test_select_in_frame_builds_the_requested_selection[chromium-cjk-mid-sentence]",
+  "fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data/0",
+      "sent": 67,
+      "settled": 70,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "perf": [
+    {
+      "name": "/api/notes/cjk_data/0",
+      "start": 73,
+      "reqStart": 74,
+      "respStart": 74,
+      "respEnd": 75,
+      "dur": 2
+    }
+  ],
+  "diag": [],
+  "url": "http://127.0.0.1:58646/read/cjk_data/0",
+  "late_fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data/0",
+      "sent": 67,
+      "settled": 70,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "late_perf": [
+    {
+      "name": "/api/notes/cjk_data/0",
+      "start": 73,
+      "reqStart": 74,
+      "respStart": 74,
+      "respEnd": 75,
+      "dur": 2
+    }
+  ],
+  "late_diag": []
+}

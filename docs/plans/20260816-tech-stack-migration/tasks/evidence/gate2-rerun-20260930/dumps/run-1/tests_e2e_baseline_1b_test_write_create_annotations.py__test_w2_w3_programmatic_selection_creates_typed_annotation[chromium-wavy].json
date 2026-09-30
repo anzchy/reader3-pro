@@ -1,0 +1,46 @@
+{
+  "test": "tests/e2e/baseline_1b/test_write_create_annotations.py::test_w2_w3_programmatic_selection_creates_typed_annotation[chromium-wavy]",
+  "fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/1",
+      "sent": 54,
+      "settled": 61,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "perf": [
+    {
+      "name": "/api/notes/smoke_data/1",
+      "start": 63,
+      "reqStart": 66,
+      "respStart": 67,
+      "respEnd": 67,
+      "dur": 4
+    }
+  ],
+  "diag": [],
+  "url": "http://127.0.0.1:56904/read/smoke_data/1",
+  "late_fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/1",
+      "sent": 54,
+      "settled": 61,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "late_perf": [
+    {
+      "name": "/api/notes/smoke_data/1",
+      "start": 63,
+      "reqStart": 66,
+      "respStart": 67,
+      "respEnd": 67,
+      "dur": 4
+    }
+  ],
+  "late_diag": []
+}

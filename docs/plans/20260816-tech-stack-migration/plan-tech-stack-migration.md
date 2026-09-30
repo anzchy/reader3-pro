@@ -733,6 +733,8 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 | M1b-债 | 欠账 #22 字号/间距慢一拍（合入 009 后、冻结 G2 前的一条独立小分支） | `016-settings-apply-order` | A（兑付记在 [`tasks/009` 欠账表 #22](./tasks/009-e2e-annotations.md)，不另开 task 文件） |
 | M2-债 | 011 合入后的全量审计欠账：44 条 findings 中判为 must / should 的 22 条 | `017-audit-followup` | A（任务展开写在 [`tasks/017-audit-followup.md`](./tasks/017-audit-followup.md)） |
 | M4a-债 | 013 延后的后端半边中**不依赖 012 存储格式**的四条（#51 / #56 / #58 / #53）＋ 每书写协调契约 ＋ 009 欠账 #31 收尾对账（job 已于 2026-09-20 建成并结清；018 只核验合并头与改掉过期措辞） | `018-library-routes` | A（[任务文件](./tasks/018-library-routes.md)，2026-09-26 评审通过、待开工；分拆裁定见 [`tasks/012` §6 D1](./tasks/012-storage-format.md)） |
+| M1b / M2-债 | 冻结集欠账窗口：009 #49 / #50 / #62 ＋ 017 finding #10（2026-09-30 分配；兑付记在 009 / 017 各自的表上，不另开 task 文件） | `019-frozen-set-debts` | A |
+| ⟂ | `Reader3Epub.getDebugState()` 只读状态观测面（2026-09-30 分配） | `020-debug-state` | 独立计划 [`20260928-debug-state-getter.md`](../20260928-debug-state-getter.md) |
 
 M1b 与 MD 可与 M1/M2 交错推进；M4a 可与 M2/M3 交错推进；**M3 与 M4b 严格串行**。
 
@@ -766,8 +768,8 @@ must / should 两桶共 22 条落在本分支。**它从 `master` 开、不回 0
 [`018-library-routes.md`](./tasks/018-library-routes.md)（~~骨架，2026-09-26~~ ⬛ 2026-09-30：评审通过、待开工）。
 
 > ⬛ 2026-09-30：**冻结集欠账窗口**（009 #49 / #50、017 finding #10、009 欠账表中 PR #28 遗留那一行；排在 `018` 之前，
-> 理由与位置见[进度盘](../20260824-frontend-backend-plan-progress.md)）走一条 016 式的小分支，**编号在它开分支时才在上表分配**，
-> 此前任何文件都不得写死编号。它同 016 一样是欠账兑付、不是新里程碑，兑付记在 009 / 017 各自的表上，不另开 task 文件。
+> 理由与位置见[进度盘](../20260824-frontend-backend-plan-progress.md)）走一条 016 式的小分支，~~**编号在它开分支时才在上表分配**，
+> 此前任何文件都不得写死编号。~~（⬛ 2026-09-30 同日：与 debug-state 一起在一个 `master` 提交里分配，窗口 = `019-frozen-set-debts`，debug-state = `020-debug-state`，见上表。）它同 016 一样是欠账兑付、不是新里程碑，兑付记在 009 / 017 各自的表上，不另开 task 文件。
 
 **前端分支（010 / 013 / 014 与 015 的 PWA 部分）不再有独立任务文件**——它们的工作项以
 `### WI-N:` 的形式直接写在 [前端计划正文](../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) 里，

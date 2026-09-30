@@ -1,0 +1,46 @@
+{
+  "test": "tests/e2e/baseline_1b/test_write_overlap_and_disambiguation.py::test_w10a_write_path_anchors_the_last_of_25_identical_phrases[chromium]",
+  "fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/repeat_data/0",
+      "sent": 48,
+      "settled": 52,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "perf": [
+    {
+      "name": "/api/notes/repeat_data/0",
+      "start": 55,
+      "reqStart": 57,
+      "respStart": 57,
+      "respEnd": 58,
+      "dur": 3
+    }
+  ],
+  "diag": [],
+  "url": "http://127.0.0.1:59206/read/repeat_data/0",
+  "late_fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/repeat_data/0",
+      "sent": 48,
+      "settled": 52,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "late_perf": [
+    {
+      "name": "/api/notes/repeat_data/0",
+      "start": 55,
+      "reqStart": 57,
+      "respStart": 57,
+      "respEnd": 58,
+      "dur": 3
+    }
+  ],
+  "late_diag": []
+}

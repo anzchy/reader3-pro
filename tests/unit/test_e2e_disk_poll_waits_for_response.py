@@ -1,7 +1,11 @@
 """WI-15（审计 #8）：e2e 里「轮询磁盘」之前，必须先把那次写的响应等到手。
 
-`helpers.wait_for_notes()` / `wait_for_note_text()` 是**纯 Python 的轮询**——`time.sleep`
-加读文件，整个窗口里一次都没调进 Playwright。而同步 Playwright 的 route 回调是 Python
+`helpers.wait_for_notes()` / `wait_for_note_text()` **写这条护栏时**是纯 Python 的轮询——
+`time.sleep` 加读文件，整个窗口里一次都没调进 Playwright。（⬛ 2026-09-30，009 #49 / 019 WI-2：
+两者现在收必填的 `page`，轮询节拍是 `page.wait_for_timeout(50)`，轮询期间会泵浏览器，钉在
+`tests/unit/test_e2e_disk_poll_pumps_the_browser.py`。本护栏的顺序契约照旧有效：先把响应等到手
+再读盘，是比「轮询期间顺带泵一下」更强的判据。下面的机制描述是当年的状态。）
+而同步 Playwright 的 route 回调是 Python
 函数，只在主协程调进 Playwright 时才被派发；`tests/e2e/conftest.py` 给每个 context 都挂了
 一道 `**/*` 的出网闸，于是**每一个**请求都要经过一个这样的回调。
 
@@ -189,9 +193,9 @@ def audit_source(source: str, function: str, *, label: str = "<源码>") -> List
             problems.append(
                 f"{label}:{poll.lineno}：`{_called_name(poll)}(...)` 之前最近的那次点击"
                 f"（第 {step.lineno} 行 `{expr}()`）没有裹在 "
-                "`with page.expect_response(...)` 里。盘上轮询是纯 Python 的 sleep，"
-                "期间同步 route 回调（含 conftest 那道 `**/*` 出网闸）跑不了，"
-                "这次写会卡在回调上直到轮询超时——产品行为正确也会红。"
+                "`with page.expect_response(...)` 里。盘上轮询在 009 #49 之前是纯 Python 的 sleep，"
+                "期间同步 route 回调（含 conftest 那道 `**/*` 出网闸）跑不了，写会卡到轮询超时；"
+                "现在轮询会泵浏览器，但先把写的响应等到手，轮询超时才只可能是「落盘没到」。"
             )
 
     if not problems and checked == 0:

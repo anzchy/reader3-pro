@@ -70,10 +70,17 @@ CAPACITY_CEILING = 200
 DIAG_CONSOLE_RE = re.compile(r"^\[Annotations\] notes write failed (\{.*\})$")
 DIAG_CONSOLE_PREFIX = "[Annotations] notes write failed"
 
-#: `createAnnotation` 那条已兑付出口（`:1318`）自己的 console 行前缀——W1-C8 **正向**断它还在。
-LEGACY_CREATE_REJECTED_PREFIX = "[Annotations] createAnnotation: 写入被拒"
-#: 同一出口的 toast 文案前缀（`annotations.js` 的 `标注没能保存（{status}），请重试`）。
-LEGACY_CREATE_TOAST_PREFIX = "标注没能保存"
+#: `createAnnotation` 各失败出口改接 helper 之前自带的 console 行前缀（`写入被拒` / `选区已失效…` /
+#: `算出空 quote…` 三条都以它开头）。009 #50 之后它是**必须不出现**的前缀：出现即说明某个出口
+#: 还在绕开 `reportNotesWriteFailure` 自己打日志（W1-C8 / W1-C11..C13 / W6-C6..C8 反向断它）。
+LEGACY_CREATE_CONSOLE_PREFIX = "[Annotations] createAnnotation:"
+#: 建标注的 POST 失败时的 toast 文案（`annotations.js`：`标注没能保存（{status}），请重试`，
+#: 没有响应时不带括号）。字面量钉死，不从实现里推。
+CREATE_REJECTED_TOAST_500 = "标注没能保存（500），请重试"
+CREATE_REJECTED_TOAST_409 = "标注没能保存（409），请重试"
+CREATE_NO_RESPONSE_TOAST = "标注没能保存，请重试"
+CREATE_NO_OFFSETS_TOAST = "这段选区已失效，请重新选中再试"
+CREATE_EMPTY_QUOTE_TOAST = "没取到选中的文字，请重新选中再试"
 
 #: 一条 ring 条目至少带的字段（WI-1 验收条件）。
 ENTRY_KEYS = ("op", "id", "status", "ok", "requested", "t")
@@ -648,6 +655,12 @@ def test_w1_c9_console_payload_is_a_superset_of_the_ring_entry(
     assert parsed[6]["ok"] is True, parsed[6]
     assert parsed[7]["requested"] is False, parsed[7]
     assert len(set(messages)) == len(FAILURE_SHAPE_TABLE), "八条 console 行不两两相异——一个常量串冒充了多行"
+    # 019 WI-8（WI8-E4）：没传 detail 的调用，负载里就没有 detail 这个键，键序恰好七个。
+    for i, p in enumerate(parsed):
+        assert list(p) == ["op", "requested", "status", "ok", "id", "t", "message"], (
+            f"第 {i} 条 console 负载的键序不对：{list(p)}"
+        )
+        assert "detail" not in p, f"第 {i} 条没传 detail 却带了：{p}"
 
 
 def test_w1_c5_one_invocation_exactly_one_of_each_effect(
@@ -793,11 +806,13 @@ def test_w1_c7_a_toast_never_intercepts_a_pointer_aimed_at_the_note_editor_prima
     page.get_by_test_id("rd-note-editor-primary").click()
 
 
-def test_w1_c8_legacy_toast_site_still_surfaces_logs_and_is_not_wired_to_the_helper(
+def test_w1_c8_back_to_back_create_rejections_each_report_through_the_helper_with_no_legacy_line(
     page: Page, live_server: str, e2e_books_dir: Path
 ) -> None:
-    """W1-C8 · S3：已兑付的 `createAnnotation` 被拒出口（`:1318`）背靠背触发两次——文案、自己的
-    console 行、单例与非遮挡都还在，且**没有**被改接到 `reportNotesWriteFailure` 上。"""
+    """W1-C8 · S3（009 #50 改判）：`createAnnotation` 的 POST 被拒出口背靠背触发两次 ⇒ 两条
+    `op:"create"`/`status:500` 的 ring 条目、两条 `notes write failed` 行、零条遗留行；文案、单例与
+    非遮挡照旧。改判理由（规则 12）：维护者 2026-09-30 对 009 #50 的裁定把建标注出口从遗留通道
+    改接到 `reportNotesWriteFailure`，原先「ring 为空、遗留行在」的断言按设计反转，文案从前缀改成全等。"""
     _install_page_latch(page)
     errors = _console_errors(page)
     _route_notes(page, method="POST", mode="fulfill500")
@@ -811,28 +826,35 @@ def test_w1_c8_legacy_toast_site_still_surfaces_logs_and_is_not_wired_to_the_hel
 
     events = _latch(page)["toastEvents"]
     assert events[1]["insertedAt"] - events[0]["insertedAt"] < TOAST_LIFETIME_MS, (
-        "the two legacy toasts did not overlap — `liveCount == 1` proves nothing here; re-tighten the flow"
+        "the two create toasts did not overlap — `liveCount == 1` proves nothing here; re-tighten the flow"
         f"（间隔 {events[1]['insertedAt'] - events[0]['insertedAt']:.0f}ms）"
     )
     assert len(events) == 2, f"两次调用应当是两个 toast 事件：{events}"
     assert all(e["liveCount"] == 1 for e in events), f"toast 叠起来了：{events}"
     for e in events:
-        assert e["text"].startswith(LEGACY_CREATE_TOAST_PREFIX) and "500" in e["text"], (
-            f"遗留出口的 toast 文案没到 DOM（或丢了状态码插值）：{e['text']!r}"
+        assert e["text"] == CREATE_REJECTED_TOAST_500, (
+            f"建标注被拒的 toast 文案不对（或丢了状态码插值）：{e['text']!r}"
         )
-        assert e["pointerEvents"] == "none", f"遗留调用点没继承 pointer-events:none：{e}"
+        assert e["pointerEvents"] == "none", f"建标注出口的 toast 没继承 pointer-events:none：{e}"
 
-    window = errors[base_errors:]
-    legacy = [m for m in window if m.text.startswith(LEGACY_CREATE_REJECTED_PREFIX)]
-    assert len(legacy) == 2, f"遗留 console 行应当恰好两条：{[m.text for m in window]}"
-    for m in legacy:
-        payload = m.args[1].json_value()
-        assert payload["status"] == 500, f"遗留 console 行的第二实参没带 status 500：{payload}"
-    assert not [m for m in window if m.text.startswith(DIAG_CONSOLE_PREFIX)], (
-        "已兑付出口被改接到了 reportNotesWriteFailure（出现了 notes write failed 行）——WI-1 要求它们逐字节不动"
-    )
-    ring = _diag_entries(page)
-    assert ring == [], f"已兑付出口不该往 Reader3NotesDiag 里记任何东西：{ring}"
+    ring = _diag_entries(page) or []
+    assert len(ring) == 2, f"两次被拒应当恰好两条 ring 条目（009 #50）：{ring}"
+    for e in ring:
+        assert e["op"] == "create" and e["status"] == 500 and e["requested"] is True and e["ok"] is False, (
+            f"建标注被拒的 ring 条目字段不对：{e}"
+        )
+
+    window = _app_errors(errors[base_errors:])
+    legacy = [m for m in window if m.text.startswith(LEGACY_CREATE_CONSOLE_PREFIX)]
+    assert legacy == [], f"建标注出口还在打遗留 console 行：{[m.text for m in legacy]}"
+    diag = [m for m in window if DIAG_CONSOLE_RE.match(m.text)]
+    assert len(diag) == 2, f"应当恰好两条 notes write failed 行：{[m.text for m in window]}"
+    for m, e in zip(diag, ring):
+        payload = json.loads(DIAG_CONSOLE_RE.match(m.text).group(1))  # type: ignore[union-attr]
+        assert {k: payload[k] for k in ENTRY_KEYS} == {k: e[k] for k in ENTRY_KEYS}, (
+            f"console 负载与 ring 条目不一致：\n  console {payload}\n  ring    {e}"
+        )
+        assert payload["message"] == CREATE_REJECTED_TOAST_500, f"console 负载的 message 不是 toast 文案：{payload}"
 
     # 落盘断言放在最后：文件轮询不能先把 toast 寿命耗掉（Race note §0.2）。
     assert read_notes(e2e_books_dir, BOOK_ID) == [], "500 没有真的注入上：有东西落盘了"
@@ -1011,7 +1033,7 @@ def test_w3_c6_a_failed_edit_response_never_advances_the_client_etag(
     after = f"after-{token}"
     page.get_by_test_id("rd-note-editor-input").fill(after)
     page.get_by_test_id("rd-note-editor-primary").click()
-    wait_for_note_text(e2e_books_dir, BOOK_ID, seed["note_id"], after)
+    wait_for_note_text(e2e_books_dir, BOOK_ID, seed["note_id"], after, page=page)
 
     writes = wire.writes_after(i_fail)
     assert writes, f"失败之后没有观察到任何写请求：{wire.entries[i_fail:]}"
@@ -1080,7 +1102,7 @@ def test_w3_c5_the_success_path_is_unchanged(
     edited = f"edited-{token}"
     page.get_by_test_id("rd-note-editor-input").fill(edited)
     page.get_by_test_id("rd-note-editor-primary").click()
-    record = wait_for_note_text(e2e_books_dir, BOOK_ID, seed["note_id"], edited)
+    record = wait_for_note_text(e2e_books_dir, BOOK_ID, seed["note_id"], edited, page=page)
     assert record["id"] == seed["note_id"]
 
     expect(page.get_by_test_id("rd-note-editor")).not_to_be_visible()
@@ -1293,7 +1315,7 @@ def test_w4_c3_multi_id_partial_failure_keeps_progress_and_reports_per_id(
         ) from None
     _wait_until(page, _DELETE_ENTRY_JS, f"[{fail_position}] 一条 op == 'delete' 的失败条目")
 
-    wait_for_notes(e2e_books_dir, BOOK_ID, 1)
+    wait_for_notes(e2e_books_dir, BOOK_ID, 1, page=page)
     settle_marks(page, frame, 1)
     on_disk = {r["id"] for r in read_notes(e2e_books_dir, BOOK_ID)}
     assert on_disk == {fail_id}, (
@@ -1333,7 +1355,7 @@ def test_w4_c5_a_failed_delete_response_never_advances_the_client_etag(
     clear_selection_and_drain(page, frame)
     select_in_frame(frame, CH0_QUOTE)
     page.get_by_test_id("rd-anno-type-wavy").click()
-    wait_for_notes(e2e_books_dir, BOOK_ID, 2)
+    wait_for_notes(e2e_books_dir, BOOK_ID, 2, page=page)
 
     writes = wire.writes_after(i_fail)
     assert writes, f"失败之后没有观察到任何写请求：{wire.entries[i_fail:]}"
@@ -1439,7 +1461,7 @@ def test_w4_c7_the_failure_is_not_sticky_a_later_recolor_still_creates(
         raise AssertionError(
             f"第二次（未拦截的）改色没有发出建新的那次 POST——失败被粘住了（{type(exc).__name__}）"
         ) from None
-    wait_for_notes(e2e_books_dir, BOOK_ID, 1)
+    wait_for_notes(e2e_books_dir, BOOK_ID, 1, page=page)
     settle_marks(page, run.frame, 1)
     after = read_notes(e2e_books_dir, BOOK_ID)
 
@@ -1480,7 +1502,7 @@ def test_w4_c4_the_success_path_is_unchanged(
     base_updated = _updated(page)
     page.get_by_test_id("rd-anno-delete").click()
 
-    assert wait_for_notes(e2e_books_dir, BOOK_ID, 0) == []
+    assert wait_for_notes(e2e_books_dir, BOOK_ID, 0, page=page) == []
     settle_marks(page, frame, 0)
     _wait_until(
         page,
@@ -1646,7 +1668,7 @@ def test_w5_c3_a_failed_keep_mine_never_advances_the_client_etag_and_the_retry_l
 
     # 重试：对话框开着时唯一够得着的控件就是它自己里面的按钮。
     page.get_by_test_id("rd-conflict-keep-mine").click()
-    wait_for_note_text(e2e_books_dir, BOOK_ID, run.note_id, run.mine)
+    wait_for_note_text(e2e_books_dir, BOOK_ID, run.note_id, run.mine, page=page)
 
     writes = run.wire.writes_after(i_fail)
     assert writes, f"失败之后没有观察到任何写请求：{run.wire.entries[i_fail:]}"
@@ -1682,7 +1704,7 @@ def test_w5_c4_both_resolution_branches_on_the_success_path(
 
     if branch == "keep-mine":
         page.get_by_test_id("rd-conflict-keep-mine").click()
-        wait_for_note_text(e2e_books_dir, BOOK_ID, run.note_id, run.mine)
+        wait_for_note_text(e2e_books_dir, BOOK_ID, run.note_id, run.mine, page=page)
         expect(page.get_by_test_id("rd-conflict-dialog")).not_to_be_visible()
         post = read_notes(e2e_books_dir, BOOK_ID)
         assert_bystanders_unchanged(pre, post, changed_ids={run.note_id})
@@ -1714,10 +1736,12 @@ def test_w5_c4_both_resolution_branches_on_the_success_path(
 # Unit: 不发请求的静默出口 — WI-6（＋ 修订 A3）
 # ===========================================================================
 #
-# 律：**`requested: false` ⟺ 这一窗口里 `/api/notes/**` 上零请求；八个已识别的请求前失败
-# 守卫各自保有诊断上报。** 正向：W6-C1/C4/C5；反向：W6-C2/C3。本律**不**声称闭包：
-# `createAnnotation` 里三个已兑付出口按计划延后、走的是另一条通道（矩阵 §12 第 7 条），
-# 所以「ring 是空的」只能读成「这八个守卫一个都没触发」，不能读成「什么都没失败」。
+# 律：**`requested: false` ⟺ 这一窗口里 `/api/notes/**` 上零请求；十个已识别的请求前失败
+# 守卫各自保有诊断上报。** 正向：W6-C1/C4/C5/C6/C7；反向：W6-C2/C3。
+# `createAnnotation` 的出口已经全部闭合（009 #50，019 WI-1）：原先按计划延后、走另一条通道的
+# 三个出口——POST 失败（`op:"create"`，带 status）与两道请求前守卫 `create-no-offsets` /
+# `create-empty-quote`——都改接到了 `reportNotesWriteFailure`，W6-C8 把全部七个失败出口串起来
+# 断「一次调用恰好一条上报」。所以在建标注这条路上，「ring 是空的」就是「没有失败」。
 #
 # 路由只有一种：`mode="observe"`——只数、`fallback()`，不 fulfill、不 abort。它是观察者
 # 不是替身，所以本单元没有集成义务要还（§9）。
@@ -1736,8 +1760,11 @@ W6_NAMED_GUARD_OPS = (
 W6_UI_EXIT_OPS = ("delete-no-ids", "save-empty-text")
 #: 修订 A3 追加的两个防御性出口（W6-C5）。
 W6_DEFENSIVE_EXIT_OPS = ("conflict-no-pending", "delete-no-context")
-#: 八个守卫 op 的登记表。新加一个守卫却复用既有 op，会让它的长度与集合大小对不上。
-W6_GUARD_OP_REGISTRY = W6_NAMED_GUARD_OPS + W6_UI_EXIT_OPS + W6_DEFENSIVE_EXIT_OPS
+#: 009 #50（019 WI-1）改接的两道 `createAnnotation` 请求前守卫（W6-C6 / W6-C7）。命名沿用
+#: 兄弟守卫的 `<入口>-<原因>` 惯例（父级裁定 D1）；「指名 create」落在 POST 出口的 `op:"create"` 上。
+W6_CREATE_EXIT_OPS = ("create-no-offsets", "create-empty-quote")
+#: 十个守卫 op 的登记表。新加一个守卫却复用既有 op，会让它的长度与集合大小对不上。
+W6_GUARD_OP_REGISTRY = W6_NAMED_GUARD_OPS + W6_UI_EXIT_OPS + W6_DEFENSIVE_EXIT_OPS + W6_CREATE_EXIT_OPS
 
 #: 把 `Reader3Ctx` 置空、把地址改成非阅读器路径，然后调用一次 `expr`；无论成败都复原。
 #: 只 `replaceState` 走不到路径回落：`getReaderContext` 先读 `window.Reader3Ctx`，而它在
@@ -1797,9 +1824,11 @@ def test_w6_c1_four_named_guards_record_distinct_ops_with_no_request_and_no_traf
 ) -> None:
     """W6-C1 · S5：四个点名守卫各触发一次 ⇒ 四条 `requested:false`/`status:null` 条目、op 两两不同、
     路由层零请求、四个 toast 事件（单例、不拦指针）、盘上什么都没有。"""
-    # 登记表自检：八个守卫、八个互不相同的 op。W6-C4/C5 的「与其余各个不同」都靠它。
-    assert len(W6_GUARD_OP_REGISTRY) == len(set(W6_GUARD_OP_REGISTRY)) == 8, (
-        f"守卫 op 登记表不是八个互不相同的 op：{W6_GUARD_OP_REGISTRY}"
+    # 登记表自检：十个守卫、十个互不相同的 op。W6-C4/C5 的「与其余各个不同」都靠它。
+    # 8 → 10（规则 12）：009 #50 把 `create-no-offsets` / `create-empty-quote` 两道守卫接进了
+    # 诊断环（父级裁定 D1），登记表因此多两项；判据没有放宽，仍是「长度 == 集合大小 == 字面量」。
+    assert len(W6_GUARD_OP_REGISTRY) == len(set(W6_GUARD_OP_REGISTRY)) == 10, (
+        f"守卫 op 登记表不是十个互不相同的 op：{W6_GUARD_OP_REGISTRY}"
     )
     _install_page_latch(page)
     state = _route_notes(page, mode="observe")
@@ -1987,7 +2016,7 @@ def test_w6_c2_a_valid_create_issues_traffic_and_records_nothing(
     except PlaywrightError as exc:
         raise AssertionError(f"有效选区上的建没有发出 POST（{type(exc).__name__}）") from None
     wait_for_write_activity_settled(page)
-    wait_for_notes(e2e_books_dir, BOOK_ID, 1)
+    wait_for_notes(e2e_books_dir, BOOK_ID, 1, page=page)
     notes = read_notes(e2e_books_dir, BOOK_ID)
 
     assert _writes(state.counts) - _writes(before) >= 1, (
@@ -2023,7 +2052,7 @@ def test_w6_c3_the_recolor_composite_on_the_green_path(
         f"() => window.__r3latch.updatedEvents >= {base_updated + 1}",
         "成功的改色派发 reader3:annotations:updated",
     )
-    after = wait_for_notes(e2e_books_dir, BOOK_ID, 1)
+    after = wait_for_notes(e2e_books_dir, BOOK_ID, 1, page=page)
     wait_for_write_activity_settled(page)
     settle_marks(page, frame, 1)
     after = read_notes(e2e_books_dir, BOOK_ID)
@@ -2043,6 +2072,498 @@ def test_w6_c3_the_recolor_composite_on_the_green_path(
 
 
 # ===========================================================================
+# Unit: createAnnotation 的失败出口全部走 reportNotesWriteFailure — 009 #50（019 WI-1）
+# ===========================================================================
+#
+# 律（报告数守恒）：**一次失败的 `createAnnotation` 调用恰好产出一条 ring 条目、一个 toast
+# 事件、一条 `[Annotations] notes write failed {json}` 行、零条遗留 `createAnnotation:` 行**；
+# 不派发 `reader3:annotations:updated`，盘上什么都没有。`requested:false` ⟺ 这次调用在
+# `/api/notes` 上零请求。成功的调用零条目、零 toast（W6-C2 与 W6-C8 的最后一步）。
+#
+# 两道请求前守卫靠**公开面**`window.Reader3AnnotationUI` 注入 `currentRange` / `currentOffsets`
+# 触发（与 W6-C1 同一手法），驱动的是真的 `createAnnotation`，不是它的复刻。
+
+#: 一次真的 `createAnnotation`（marker 黄）。
+_CREATE_JS = """async () => {
+  await window.Reader3AnnotationUI.createAnnotation({ type: "marker", color: "yellow" });
+}"""
+
+#: 一个不在正文文本索引里的游离 Range：`rangeAnchoredIn` 为假、`offsetFromNode` 取不到偏移。
+#: `snapshot` 为 null 时不留快照；给了就原样作 `currentOffsets`。
+_DETACHED_RANGE_CREATE_JS = """async ({ snapshot }) => {
+  const ui = window.Reader3AnnotationUI;
+  const d = ui.contentEl.ownerDocument;
+  const t = d.createTextNode("x");
+  const r = d.createRange();
+  r.setStart(t, 0);
+  r.setEnd(t, 1);
+  ui.currentRange = r;
+  ui.currentOffsets = snapshot;
+  await ui.createAnnotation({ type: "marker", color: "yellow" });
+}"""
+
+#: 019 WI-8：同上，但在调用**之前**量出正文文本索引的长度 `L` 与 `Reader3Ctx.chapterIndex`，
+#: 给 `create-no-offsets` 的 `detail` 当期望值。`L` 是测试自有的计算：同一个拒收过滤器
+#: （`buildTextIndex` 的那一个——偏移轴就是它定义的），产品过滤器一改这里就得跟着改。
+_DETACHED_RANGE_CREATE_MEASURED_JS = """async ({ snapshot }) => {
+  const ui = window.Reader3AnnotationUI;
+  const d = ui.contentEl.ownerDocument;
+  const w = d.createTreeWalker(ui.contentEl, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (!node.nodeValue) return NodeFilter.FILTER_REJECT;
+      const parent = node.parentElement;
+      if (!parent) return NodeFilter.FILTER_REJECT;
+      if (parent.closest("script, style, #annotation-toolbar, #note-editor, #note-tooltip")) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+  let L = 0;
+  while (w.nextNode()) L += w.currentNode.nodeValue.length;
+  const ctxChapter = window.Reader3Ctx ? window.Reader3Ctx.chapterIndex : null;
+  const t = d.createTextNode("x");
+  const r = d.createRange();
+  r.setStart(t, 0);
+  r.setEnd(t, 1);
+  ui.currentRange = r;
+  ui.currentOffsets = snapshot;
+  await ui.createAnnotation({ type: "marker", color: "yellow" });
+  return { L, ctxChapter };
+}"""
+
+#: 019 WI-8：ring 条目的**确切**键序（`recordNotesDiag` 的字面顺序）。`ENTRY_KEYS` 只是「至少带」，
+#: 多一个键它看不见——而 `detail` 恰恰必须只进 console、不进 ring。
+RING_KEY_ORDER = ["op", "requested", "status", "ok", "id", "t"]
+#: console 负载的确切键序；只有 `create-no-offsets` 在末尾多一个 `detail`。
+PAYLOAD_KEY_ORDER = RING_KEY_ORDER + ["message"]
+
+
+def _diag_payloads_since(errors: List[ConsoleMessage], base: Dict[str, int]) -> List[Dict[str, Any]]:
+    """基线之后每条 `notes write failed` 行解析出的 JSON 负载（dict 保留 JSON 里的键序）。"""
+    window = _app_errors(errors[base["errors"]:])
+    return [
+        json.loads(m.group(1))
+        for m in (DIAG_CONSOLE_RE.match(x.text) for x in window)
+        if m
+    ]
+
+#: 把活选区塌成一个点（修订 A4：先断 `hasRange` 前置条件，再 `cloneRange()`）。
+_COLLAPSED_RANGE_CREATE_JS = """async () => {
+  const ui = window.Reader3AnnotationUI;
+  const pre = { hasRange: ui.currentRange !== null && ui.currentRange !== undefined };
+  if (!pre.hasRange) return { pre, ran: false };
+  const r = ui.currentRange.cloneRange();
+  r.collapse(true);
+  ui.currentRange = r;
+  ui.currentOffsets = null;
+  await ui.createAnnotation({ type: "marker", color: "yellow" });
+  return { pre, ran: true };
+}"""
+
+#: 游离 Range ＋ 一张可用但为空的快照（修订 A4：chapterIndex 取自 `window.Reader3Ctx`，
+#: 与 `getReaderContext()` 同源；不是数就不调用）。
+_COLLAPSED_SNAPSHOT_CREATE_JS = """async () => {
+  const ui = window.Reader3AnnotationUI;
+  const chapterIndex = window.Reader3Ctx ? window.Reader3Ctx.chapterIndex : undefined;
+  if (typeof chapterIndex !== "number") return { chapterIndex: String(chapterIndex), ran: false };
+  const d = ui.contentEl.ownerDocument;
+  const t = d.createTextNode("x");
+  const r = d.createRange();
+  r.setStart(t, 0);
+  r.setEnd(t, 1);
+  ui.currentRange = r;
+  ui.currentOffsets = { chapterIndex, start: 3, end: 3 };
+  await ui.createAnnotation({ type: "marker", color: "yellow" });
+  return { chapterIndex, ran: true };
+}"""
+
+
+def _create_baseline(page: Page, errors: List[ConsoleMessage], where: str) -> Dict[str, int]:
+    assert _diag_entries(page) == [], f"[{where}] 触发之前 ring 就不是空的：{_diag_entries(page)}"
+    return {
+        "toasts": len(_latch(page)["toastEvents"]),
+        "errors": len(errors),
+        "updated": _updated(page),
+    }
+
+
+def _assert_single_create_report(
+    page: Page,
+    errors: List[ConsoleMessage],
+    base: Dict[str, int],
+    *,
+    where: str,
+    op: str,
+    requested: bool,
+    status: Optional[int],
+    toast_text: str,
+) -> Dict[str, Any]:
+    """一次失败的 `createAnnotation` ⇒ 恰好一条条目 / 一个 toast / 一条诊断行 / 零条遗留行 / 不派发 updated。
+
+    ring 在 toast 之前同步写入（`reportNotesWriteFailure` 先 record 再 showToast），所以等到
+    toast 之后直接读 ring 就是确定的终态，不再额外等待。
+    """
+    _wait_until(page, _toasts_at_least(base["toasts"] + 1), f"[{where}] 一个 toast 事件")
+
+    entries = _diag_entries(page) or []
+    assert len(entries) == 1, f"[{where}] 一次失败的建应当恰好一条 ring 条目：{entries}"
+    entry = entries[0]
+    assert set(entry) >= set(ENTRY_KEYS), f"[{where}] ring 条目缺字段：{sorted(set(ENTRY_KEYS) - set(entry))}"
+    assert entry["op"] == op, f"[{where}] op 不对：期望 {op!r}，实际 {entry}"
+    assert entry["requested"] is requested, f"[{where}] requested 应当是 {requested}：{entry}"
+    if status is None:
+        assert entry["status"] is None, f"[{where}] 没有响应时 status 必须是 null：{entry}"
+    else:
+        assert entry["status"] == status, f"[{where}] status 应当是 {status}：{entry}"
+    assert entry["ok"] is False, f"[{where}] 失败条目的 ok 应当是 False：{entry}"
+    assert entry["id"] is None, f"[{where}] 建标注没有 id 可带：{entry}"
+
+    toasts = _latch(page)["toastEvents"][base["toasts"]:]
+    assert len(toasts) == 1, f"[{where}] 应当恰好一个 toast 事件：{toasts}"
+    assert toasts[0]["text"] == toast_text, f"[{where}] toast 文案不对：{toasts[0]['text']!r}"
+    assert toasts[0]["pointerEvents"] == "none", f"[{where}] toast 会拦指针：{toasts[0]}"
+    assert toasts[0]["liveCount"] == 1, f"[{where}] toast 叠起来了：{toasts[0]}"
+
+    window = _app_errors(errors[base["errors"]:])
+    legacy = [m for m in window if m.text.startswith(LEGACY_CREATE_CONSOLE_PREFIX)]
+    assert legacy == [], f"[{where}] 还有遗留 createAnnotation console 行：{[m.text for m in legacy]}"
+    diag = [m for m in window if DIAG_CONSOLE_RE.match(m.text)]
+    assert len(diag) == 1, f"[{where}] 应当恰好一条 notes write failed 行：{[m.text for m in window]}"
+    payload = json.loads(DIAG_CONSOLE_RE.match(diag[0].text).group(1))  # type: ignore[union-attr]
+    assert {k: payload[k] for k in ENTRY_KEYS} == {k: entry[k] for k in ENTRY_KEYS}, (
+        f"[{where}] console 负载与 ring 条目不一致：\n  console {payload}\n  ring    {entry}"
+    )
+    assert payload["message"] == toast_text, f"[{where}] console 负载的 message 不是 toast 文案：{payload}"
+
+    assert _updated(page) - base["updated"] == 0, f"[{where}] 失败的建却派发了 reader3:annotations:updated"
+    return entry
+
+
+def test_w1_c11_create_post_500_produces_exactly_one_attributable_entry(
+    page: Page, live_server: str, e2e_books_dir: Path
+) -> None:
+    """W1-C11 · S1：建标注的 POST 被 fulfill(500) ⇒ 一条 `op:"create"`/`status:500`/`requested:true`
+    条目、toast 全等 `标注没能保存（500），请重试`、一条诊断行、零遗留行、一次 POST、盘上为空。"""
+    _install_page_latch(page)
+    errors = _console_errors(page)
+    state = _route_notes(page, mode="fulfill500", method="POST")
+    frame = open_ch0(page, live_server, expected_marks=0)
+    select_in_frame(frame, CH0_QUOTE)
+    base = _create_baseline(page, errors, "create-500")
+
+    page.evaluate(_CREATE_JS)
+    _assert_single_create_report(
+        page, errors, base,
+        where="create-500", op="create", requested=True, status=500, toast_text=CREATE_REJECTED_TOAST_500,
+    )
+    assert state.counts["POST"] == 1 and _writes(state.counts) == 1, (
+        f"一次调用应当恰好一次 POST：{dict(state.counts)}"
+    )
+    assert read_notes(e2e_books_dir, BOOK_ID) == [], "500 没有真的注入上：有东西落盘了"
+
+
+def test_w1_c12_create_post_aborted_gives_status_null_and_the_generic_toast(
+    page: Page, live_server: str, e2e_books_dir: Path
+) -> None:
+    """W1-C12 · S3：POST 被 abort（`resp === null`）⇒ `status:null` 但 `requested:true`（发出去了、
+    没回来），toast 全等 `标注没能保存，请重试`（不带括号）。"""
+    _install_page_latch(page)
+    errors = _console_errors(page)
+    state = _route_notes(page, mode="abort", method="POST")
+    frame = open_ch0(page, live_server, expected_marks=0)
+    select_in_frame(frame, CH0_QUOTE)
+    base = _create_baseline(page, errors, "create-abort")
+
+    page.evaluate(_CREATE_JS)
+    _assert_single_create_report(
+        page, errors, base,
+        where="create-abort", op="create", requested=True, status=None, toast_text=CREATE_NO_RESPONSE_TOAST,
+    )
+    assert state.counts["POST"] == 1, f"一次调用应当恰好一次 POST：{dict(state.counts)}"
+    assert read_notes(e2e_books_dir, BOOK_ID) == [], "abort 没有真的注入上：有东西落盘了"
+
+
+def test_w1_c13_409_then_409_after_resync_two_requests_one_report(
+    page: Page, live_server: str, e2e_books_dir: Path
+) -> None:
+    """W1-C13 · S3：每次 POST 都回 409 ⇒ 线上两次 POST（原请求 ＋ 一次重同步重试），报告只有一条
+    `status:409`。请求数与报告数分开断，咬的是「每次 fetch 报一次」。"""
+    _install_page_latch(page)
+    errors = _console_errors(page)
+    wire = _install_wire_log(page)
+    state = _route_notes(page, mode="conflict", method="POST", wire_log=wire)
+    frame = open_ch0(page, live_server, expected_marks=0)
+    select_in_frame(frame, CH0_QUOTE)
+    base = _create_baseline(page, errors, "create-409")
+
+    page.evaluate(_CREATE_JS)
+    wait_for_write_activity_settled(page)
+    _assert_single_create_report(
+        page, errors, base,
+        where="create-409", op="create", requested=True, status=409, toast_text=CREATE_REJECTED_TOAST_409,
+    )
+    assert _writes(state.counts) == 2 and state.counts["POST"] == 2, (
+        f"409 → 重同步 → 409 应当恰好两次 POST：{dict(state.counts)}"
+    )
+    assert read_notes(e2e_books_dir, BOOK_ID) == [], "409 没有真的注入上：有东西落盘了"
+
+
+def _assert_guard_create_report(
+    page: Page,
+    errors: List[ConsoleMessage],
+    state: SimpleNamespace,
+    before: Counter,
+    base: Dict[str, int],
+    e2e_books_dir: Path,
+    *,
+    op: str,
+    where: str,
+    toast_text: str,
+) -> None:
+    entry = _assert_single_create_report(
+        page, errors, base, where=where, op=op, requested=False, status=None, toast_text=toast_text,
+    )
+    _assert_guard_entry(entry, op, where)
+    others = [o for o in W6_GUARD_OP_REGISTRY if o != op]
+    assert entry["op"] not in others, f"[{where}] op 与另一个守卫的 op 相撞：{entry}"
+    assert _total(state.counts) - _total(before) == 0, (
+        f"[{where}] 守卫触发期间 /api/notes/** 上有请求：before={dict(before)} after={dict(state.counts)}"
+        "——`requested: false` 与线上事实矛盾"
+    )
+    assert read_notes(e2e_books_dir, BOOK_ID) == [], f"[{where}] 守卫触发却有东西落盘了"
+
+
+@pytest.mark.parametrize("route_in", ["detached_range", "wrong_chapter_snapshot"])
+def test_w6_c6_create_no_offsets_guard_reports_requested_false_and_sends_nothing(
+    page: Page, live_server: str, e2e_books_dir: Path, route_in: str
+) -> None:
+    """W6-C6 · S3：`resolveOffsets` 取不到偏移的两条路（游离 Range 无快照 / 快照章号不符）⇒
+    一条 `create-no-offsets` 守卫条目、零请求、toast 全等 `这段选区已失效，请重新选中再试`。"""
+    _install_page_latch(page)
+    errors = _console_errors(page)
+    state = _route_notes(page, mode="observe")
+    frame = open_ch0(page, live_server, expected_marks=0)
+    select_in_frame(frame, CH0_QUOTE)
+    before = Counter(state.counts)
+    base = _create_baseline(page, errors, route_in)
+
+    snapshot = None if route_in == "detached_range" else {"chapterIndex": 99, "start": 0, "end": 5}
+    got = page.evaluate(_DETACHED_RANGE_CREATE_MEASURED_JS, {"snapshot": snapshot})
+    _assert_guard_create_report(
+        page, errors, state, before, base, e2e_books_dir,
+        op="create-no-offsets", where=route_in, toast_text=CREATE_NO_OFFSETS_TOAST,
+    )
+
+    # 019 WI-8（WI8-E1）：「没有快照」与「快照来自别的章」必须在上报里分得开。
+    # `hasSnapshot` 读的是**原始** `currentOffsets`——读 `offsetsUsable` 之后的值，章号不符
+    # 那一路也会报 false，两种状态又糊成一种。
+    assert got["ctxChapter"] == 0, f"[{route_in}] 前提：Reader3Ctx.chapterIndex 应当是 0：{got}"
+    L = got["L"]
+    assert isinstance(L, int) and L > len(CH0_QUOTE), f"[{route_in}] 前提：正文文本索引长度不对：{got}"
+    entries = _diag_entries(page) or []
+    assert len(entries) == 1, entries
+    assert list(entries[0]) == RING_KEY_ORDER, (
+        f"[{route_in}] ring 条目的键序必须恰好是 {RING_KEY_ORDER}：{list(entries[0])}"
+    )
+    assert "detail" not in entries[0], f"[{route_in}] detail 进了 ring：{entries[0]}"
+    payloads = _diag_payloads_since(errors, base)
+    assert len(payloads) == 1, payloads
+    payload = payloads[0]
+    assert "detail" in payload, (
+        f"[{route_in}] create-no-offsets 的 console 负载没带 detail——分不清没快照还是快照章号不符：{payload}"
+    )
+    assert list(payload) == PAYLOAD_KEY_ORDER + ["detail"], f"[{route_in}] 负载键序不对：{list(payload)}"
+    detail = payload["detail"]
+    # 显式断键在：JSON 会把 undefined 直接丢掉，不能让「缺键」冒充 null。
+    assert "snapshotChapter" in detail, f"[{route_in}] detail 缺 snapshotChapter：{detail}"
+    if route_in == "detached_range":
+        want = {"hasSnapshot": False, "snapshotChapter": None, "chapterIndex": 0, "textLength": L}
+    else:
+        want = {"hasSnapshot": True, "snapshotChapter": 99, "chapterIndex": 0, "textLength": L}
+    assert detail == want, f"[{route_in}] detail 不对：\n  实际 {detail}\n  期望 {want}"
+
+
+@pytest.mark.parametrize("route_in", ["collapsed_range", "collapsed_snapshot"])
+def test_w6_c7_create_empty_quote_guard_reports_requested_false_and_sends_nothing(
+    page: Page, live_server: str, e2e_books_dir: Path, route_in: str
+) -> None:
+    """W6-C7 · S3：`start === end` 的两条路（活选区塌成点 / 可用但为空的快照）⇒ 一条
+    `create-empty-quote` 守卫条目、零请求、toast 全等 `没取到选中的文字，请重新选中再试`。"""
+    _install_page_latch(page)
+    errors = _console_errors(page)
+    state = _route_notes(page, mode="observe")
+    frame = open_ch0(page, live_server, expected_marks=0)
+    select_in_frame(frame, CH0_QUOTE)
+    before = Counter(state.counts)
+    base = _create_baseline(page, errors, route_in)
+
+    if route_in == "collapsed_range":
+        got = page.evaluate(_COLLAPSED_RANGE_CREATE_JS)
+        assert got["pre"] == {"hasRange": True}, f"[{route_in}] 触发前没有活选区——本步不成立：{got}"
+    else:
+        got = page.evaluate(_COLLAPSED_SNAPSHOT_CREATE_JS)
+        assert got["ran"] and isinstance(got["chapterIndex"], int), (
+            f"[{route_in}] window.Reader3Ctx.chapterIndex 不是数——快照无从对上章号，本步不成立：{got}"
+        )
+    _assert_guard_create_report(
+        page, errors, state, before, base, e2e_books_dir,
+        op="create-empty-quote", where=route_in, toast_text=CREATE_EMPTY_QUOTE_TOAST,
+    )
+
+
+def test_w6_c8_every_create_exit_in_sequence_yields_exactly_one_report_each_in_order(
+    page: Page, live_server: str, e2e_books_dir: Path
+) -> None:
+    """W6-C8 · S4：`createAnnotation` 的七个失败出口在同一页里依次各触发一次，最后一次有效的建 ⇒
+    报告流与调用流一一对应：三个投影（op / requested / status）逐位相等、七个 toast、七条诊断行、
+    零遗留行、线上 POST 1+1+2+1 = 5、成功一步不加条目、盘上恰好一条。"""
+    _install_page_latch(page)
+    errors = _console_errors(page)
+    wire = _install_wire_log(page)
+    _route_notes(page, mode="observe")
+    post_mode = {"mode": "pass"}
+
+    def _switch(route: Route) -> None:
+        # 后注册的路由先被调用：非目标一律 fallback 给 observe（再落到冻结的出网闸）。
+        mode = post_mode["mode"]
+        if route.request.method != "POST" or mode == "pass":
+            route.fallback()
+        elif mode == "fulfill500":
+            route.fulfill(status=500, content_type="application/json", body='{"detail":"injected"}')
+        elif mode == "abort":
+            route.abort()
+        elif mode == "conflict":
+            etag = wire.last_2xx_etag_before(len(wire))
+            route.fulfill(status=409, content_type="application/json", body=json.dumps({"etag": etag, "annotation": None}))
+        else:  # pragma: no cover - 用例写错了 mode
+            route.fallback()
+            raise AssertionError(f"未知 post_mode {mode!r}")
+
+    page.route("**/api/notes/**", _switch)
+    frame = open_ch0(page, live_server, expected_marks=0)
+    base = _create_baseline(page, errors, "w6-c8")
+
+    def _post_count() -> int:
+        return sum(1 for e in wire.entries if e[0] == "req" and e[1] == "POST")
+
+    base_posts = _post_count()
+
+    def _fire_500() -> None:
+        post_mode["mode"] = "fulfill500"
+        select_in_frame(frame, CH0_QUOTE)
+        page.evaluate(_CREATE_JS)
+
+    def _fire_no_offsets() -> None:
+        select_in_frame(frame, CH0_QUOTE)
+        page.evaluate(_DETACHED_RANGE_CREATE_JS, {"snapshot": None})
+
+    def _fire_abort() -> None:
+        post_mode["mode"] = "abort"
+        select_in_frame(frame, CH0_QUOTE)
+        page.evaluate(_CREATE_JS)
+
+    def _fire_empty_quote() -> None:
+        select_in_frame(frame, CH0_QUOTE)
+        got = page.evaluate(_COLLAPSED_RANGE_CREATE_JS)
+        assert got["pre"] == {"hasRange": True}, f"[empty-quote] 触发前没有活选区：{got}"
+
+    def _fire_409() -> None:
+        post_mode["mode"] = "conflict"
+        select_in_frame(frame, CH0_QUOTE)
+        page.evaluate(_CREATE_JS)
+        wait_for_write_activity_settled(page)
+
+    def _fire_no_selection() -> None:
+        page.evaluate(
+            """async () => {
+              const ui = window.Reader3AnnotationUI;
+              ui.currentRange = null;
+              await ui.createAnnotation({ type: "marker", color: "yellow" });
+            }"""
+        )
+
+    def _fire_no_context() -> None:
+        select_in_frame(frame, CH0_QUOTE)
+        got = page.evaluate(_WITHOUT_READER_CONTEXT_JS, {"which": "create", "probeId": None})
+        assert got["pre"] == {"hasRange": True, "hasContent": True}, f"[no-context] 触发前没有活选区：{got}"
+        assert got["ran"] and got["restored"], f"[no-context] 上下文没有复原：{got}"
+
+    steps: List[tuple] = [
+        ("500", _fire_500),
+        ("no-offsets", _fire_no_offsets),
+        ("abort", _fire_abort),
+        ("empty-quote", _fire_empty_quote),
+        ("409", _fire_409),
+        ("no-selection", _fire_no_selection),
+        ("no-context", _fire_no_context),
+    ]
+    for i, (name, fire) in enumerate(steps, start=1):
+        fire()
+        _wait_until(page, _toasts_at_least(base["toasts"] + i), f"[{name}] 第 {i} 个 toast 事件")
+        got_len = len(_diag_entries(page) or [])
+        assert got_len == i, f"[{name}] 第 {i} 步之后 ring 应当恰好 {i} 条，实际 {got_len} 条"
+
+    # 最后一次有效的建：路由放行，真的落盘。
+    post_mode["mode"] = "pass"
+    select_in_frame(frame, CH0_QUOTE)
+    try:
+        with page.expect_response(
+            lambda r: r.request.method == "POST" and NOTES_ENDPOINT_MARKER in r.url
+        ):
+            page.evaluate(_CREATE_JS)
+    except PlaywrightError as exc:
+        raise AssertionError(f"有效的建没有发出 POST（{type(exc).__name__}）") from None
+    wait_for_write_activity_settled(page)
+    notes = wait_for_notes(e2e_books_dir, BOOK_ID, 1, page=page)
+
+    entries = _diag_entries(page) or []
+    assert [e["op"] for e in entries] == [
+        "create", "create-no-offsets", "create", "create-empty-quote",
+        "create", "create-no-selection", "create-no-context",
+    ], f"报告流的 op 序列不对：{[e['op'] for e in entries]}"
+    assert [e["requested"] for e in entries] == [True, False, True, False, True, False, False], (
+        f"报告流的 requested 序列不对：{[e['requested'] for e in entries]}"
+    )
+    assert [e["status"] for e in entries] == [500, None, None, None, 409, None, None], (
+        f"报告流的 status 序列不对：{[e['status'] for e in entries]}"
+    )
+    assert all(e["ok"] is False for e in entries), f"有失败条目的 ok 不是 False：{entries}"
+
+    toasts = _latch(page)["toastEvents"][base["toasts"]:]
+    assert len(toasts) == 7, f"七次失败 ＋ 一次成功应当恰好七个 toast 事件：{[t['text'] for t in toasts]}"
+
+    window = _app_errors(errors[base["errors"]:])
+    legacy = [m for m in window if m.text.startswith(LEGACY_CREATE_CONSOLE_PREFIX)]
+    assert legacy == [], f"还有遗留 createAnnotation console 行：{[m.text for m in legacy]}"
+    diag = [m for m in window if DIAG_CONSOLE_RE.match(m.text)]
+    assert len(diag) == 7, f"应当恰好七条 notes write failed 行：{[m.text for m in window]}"
+    payloads = [json.loads(DIAG_CONSOLE_RE.match(m.text).group(1)) for m in diag]  # type: ignore[union-attr]
+    assert [{k: p[k] for k in ENTRY_KEYS} for p in payloads] == [{k: e[k] for k in ENTRY_KEYS} for e in entries], (
+        f"console 负载与 ring 条目逐位不一致：\n  console {payloads}\n  ring    {entries}"
+    )
+    for p, t in zip(payloads, toasts):
+        assert p["message"] == t["text"], f"console 负载的 message 与同次 toast 文案不一致：{p} / {t['text']!r}"
+
+    assert _post_count() - base_posts == 5, (
+        f"线上 POST 应当恰好 1(500)+1(abort)+2(409 重试)+1(成功) = 5 次，实际 {_post_count() - base_posts} 次"
+    )
+    assert len(notes) == 1 and notes[0]["quote"] == CH0_QUOTE, f"有效的建应当恰好落盘一条选中的文字：{notes}"
+
+    # 019 WI-8（WI8-E3）：七个出口里只有 create-no-offsets 带 detail，且放在 message 之后；
+    # 每条 ring 条目恰好六个键、顺序固定——这是「其余 op 的负载字节不变」的护栏
+    # （值由上面的投影相等钉住，这里钉键集与键序）。
+    for p, e in zip(payloads, entries):
+        assert list(e) == RING_KEY_ORDER, f"ring 条目键序不对：{list(e)}（{e}）"
+        extra = ["detail"] if p["op"] == "create-no-offsets" else []
+        assert list(p) == PAYLOAD_KEY_ORDER + extra, f"{p['op']} 的 console 负载键序不对：{list(p)}"
+    no_offsets = [p for p in payloads if p["op"] == "create-no-offsets"]
+    assert len(no_offsets) == 1, no_offsets
+    d = no_offsets[0]["detail"]
+    assert d["hasSnapshot"] is False and d["snapshotChapter"] is None and d["chapterIndex"] == 0, (
+        f"W6-C8 的 no-offsets 一步不留快照，detail 应当如实说出来：{d}"
+    )
+
+
+# ===========================================================================
 # Unit: 成功路径护栏 create → edit → delete，不装任何路由 — WI-7
 # ===========================================================================
 #
@@ -2053,8 +2574,9 @@ def test_w6_c3_the_recolor_composite_on_the_green_path(
 #
 # **不装任何 `page.route`。** 冻结 conftest 的 context 级出网闸是一个 Python 处理函数，
 # 同步 Playwright 只在 Python 调进 Playwright 时才服务它，所以每一次触发写的点击都包在
-# `page.expect_response(...)` 里，再 `wait_for_write_activity_settled`，最后才进纯 Python 的
-# `wait_for_notes` 轮询。不自带任何 sleep（W7-C1 的约束）。
+# `page.expect_response(...)` 里，再 `wait_for_write_activity_settled`，最后才进
+# `wait_for_notes(..., page=page)` 轮询（009 #49 起它用 `page.wait_for_timeout` 泵事件，
+# 不再是纯 Python 的 `time.sleep`）。本用例不自带任何 sleep（W7-C1 的约束）。
 #
 # **旁观条放在第 1 章**（矩阵原文 `pre` 期望 `[]`，这里偏离一处并写明理由）：
 # `assert_bystanders_unchanged` 在零条旁观时**按设计直接抛**（空转就是它要防的事），所以
@@ -2162,7 +2684,7 @@ def test_w7_c1_create_edit_delete_round_trip_is_exact_and_silent(
     page.get_by_test_id("rd-note-editor-input").fill(body1)
     _w7_click_expecting(page, "rd-note-editor-primary", "POST", "新建笔记")
     wait_for_write_activity_settled(page)
-    after_create = wait_for_notes(e2e_books_dir, BOOK_ID, 2)
+    after_create = wait_for_notes(e2e_books_dir, BOOK_ID, 2, page=page)
     settle_marks(page, frame, 1)
     expect(page.get_by_test_id("rd-note-editor")).not_to_be_visible()
 
@@ -2204,7 +2726,7 @@ def test_w7_c1_create_edit_delete_round_trip_is_exact_and_silent(
     page.get_by_test_id("rd-note-editor-input").fill(body2)
     _w7_click_expecting(page, "rd-note-editor-primary", "PUT", "编辑笔记")
     wait_for_write_activity_settled(page)
-    edited = wait_for_note_text(e2e_books_dir, BOOK_ID, note_id, body2)
+    edited = wait_for_note_text(e2e_books_dir, BOOK_ID, note_id, body2, page=page)
     expect(page.get_by_test_id("rd-note-editor")).not_to_be_visible()
     after_edit = read_notes(e2e_books_dir, BOOK_ID)
 
@@ -2224,7 +2746,7 @@ def test_w7_c1_create_edit_delete_round_trip_is_exact_and_silent(
     select_in_frame(frame, CH0_QUOTE)
     _w7_click_expecting(page, "rd-anno-delete", "DELETE", "删除标注")
     wait_for_write_activity_settled(page)
-    wait_for_notes(e2e_books_dir, BOOK_ID, 1)
+    wait_for_notes(e2e_books_dir, BOOK_ID, 1, page=page)
     settle_marks(page, frame, 0)
     latch = _w7_observe(page, errors, live_server, "删之后")
     updated_total += latch["updatedEvents"]
