@@ -101,7 +101,7 @@ Each feature section is headed `#### F-NNN Name — status` and carries bullets 
 | F-015 | Per-book AI request queue | AI | accepted | 011/017 |
 | F-016 | Conversation threads + export | AI | accepted | 002 · baseline |
 | F-017 | Library-panel chat | AI | accepted | 004/013 · PR #25 |
-| F-018 | Annotations + notes | Notes | partial | 006 |
+| F-018 | Annotations + notes | Notes | partial | 006 · PR #28 |
 | F-019 | Note write-conflict handling | Notes | partial | 011/017 |
 | F-020 | Settings page + API | Settings & UI | accepted | 002 · 013 WI-12 · PR #25 |
 | F-021 | Light/dark theme (no FOUC) | Settings & UI | accepted | 013 WI-10 · PR #25 |
@@ -211,7 +211,7 @@ Paths are written out in full from the repo root (e.g. `src/reader3_app/reader3.
 
 #### F-035 Book delete — absent
 - **What:** deleting a book from the app (route + library UI); today the only way is removing `books/{id}_data/` by hand.
-- **Tracked:** debt #58 → 012-storage-format; frontend half FB-L18
+- **Tracked:** debt #58 → 018-library-routes; frontend half FB-L18
 
 #### F-038 PDF format scope — stub
 - **What:** the library sidebar lists a PDF type and the stats API accepts `scope=format:pdf`, but no PDF can be ingested; the scope is a placeholder that always counts zero.
@@ -343,7 +343,7 @@ Paths are written out in full from the repo root (e.g. `src/reader3_app/reader3.
 - **Code:** `src/reader3_app/notes_service.py`, `src/reader3_app/models/annotations.py`, `src/reader3_app/web/static/js/annotations.js` · ADR-0005
 - **Tests:** `tests/e2e/test_notes_write_failure_is_attributable.py`, `tests/e2e/test_stored_cfi_must_agree_with_quote.py`
 - **Confirm:** In the reader select a sentence: the toolbar offers color dots, Marker / Wavy / Underline, Add Note, Copy, Delete, Ask AI. Pick Marker, then Add Note → "Write your thoughts..." → Save; the rail's Notes button lists it (「共N条笔记」), it survives a reload, and `books/{book_id}_data/notes.json` holds it.
-- **Evidence:** 006
+- **Evidence:** 006 · closed selection toolbar stays closed, PR #28 (`26bce1d`, merge `865e7eb`)
 - **Limits:** text-only anchoring, CFI always null (#6–#8); `PUT` accepts only `note_text` (#29). Reader-side split is 014. The notes panel's 点评此书 button is dead (see F-040).
 
 #### F-019 Note write-conflict handling — partial
@@ -378,7 +378,7 @@ Paths are written out in full from the repo root (e.g. `src/reader3_app/reader3.
 - **Tests:** `tests/e2e/shell_4a/test_settings_rows.py` (asserts 0 requests)
 - **Confirm:** On `/settings` click 导出书库 JSON: the status line reads 「导出书库 JSON 暂不支持，服务端还没有这条导出接口。」, nothing downloads, and DevTools Network shows no request.
 - **Evidence:** debt #53 · ruling D11 · baseline
-- **Limits:** the export route is debt #53 (012-storage-format).
+- **Limits:** the export route is debt #53 (018-library-routes).
 
 #### F-037 Bulk re-index all books — stub
 - **What:** `/settings` → 数据 has 重建全部索引 with a confirm dialog; the confirm only prints a "not supported" line, because no bulk re-index route exists.

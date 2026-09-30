@@ -94,7 +94,9 @@
 
 **明确不做**：`lru_cache` 失效。三处缓存（`search_service.py` 两处、`web/server.py` 一处）的 key 都不含 mtime，所以重新处理之后服务器还会继续供旧 `Book`。这是**另一个 bug**，和数据丢失叠加但不同源，计划里也没给它派活。
 
-> ⚠️ **未分配**：`lru_cache` 失效目前不在任何里程碑名下。它天然属于 011（`book_store` 三处 loader 合并——那次会同时碰到全部三处缓存）。开 011 的骨架时把它收进去，别让它就这么漂着。
+> ⚠️ ~~**未分配**：`lru_cache` 失效目前不在任何里程碑名下。~~它天然属于 011（`book_store` 三处 loader 合并——那次会同时碰到全部三处缓存）。开 011 的骨架时把它收进去，别让它就这么漂着。
+>
+> ⬛ **2026-09-30：已在 011 付清，「未分配」作废。** 两份 `book.pkl` 缓存由 `1be7387`（2026-09-07）并进 `book_store`，键带 `st_mtime_ns` ＋ `st_size`；`search_service` 的索引缓存由 `a4e5f49`（2026-09-20，011 WI-8）同样把 stat 纳入键。两个 commit 都是 `master` 的祖先（`git merge-base --is-ancestor <sha> master`）。
 
 ---
 
@@ -181,7 +183,7 @@ testid 全部合规；现有模板与生成 DOM 回贴了其中 152 个，反向
 `.github/workflows/lint.yml` 里分三步跑，均为 0 违规。
 
 > **2026-08-23：`lint.yml` 改成只在发版时触发**（`release.published` ＋ `v*` tag push ＋
-> 手动 `workflow_dispatch`），日常 push 与 PR 都不再跑。退出条件里「在 CI 里生效」仍然成立，
+> 手动 `workflow_dispatch`），日常 push ~~与 PR~~ 都不再跑（⬛ 2026-09-24 起向 `master` 开 PR 也触发，`58ef602`；现行触发条件以 `lint.yml` / `tests.yml` 头部注释为准）。退出条件里「在 CI 里生效」仍然成立，
 > 但**生效的频率降了**：中间攒的违规要等到发版那天才会一次性暴露。三条 lint 都是零依赖
 > 标准库脚本，本地 `python3 scripts/lint_*.py` 随手能跑——把它当成发版前的关门检查，
 > 别当成写代码时的实时护栏。触发条件的定义在 `lint.yml` 的头部注释，此处不重述。
@@ -201,6 +203,8 @@ testid 全部合规；现有模板与生成 DOM 回贴了其中 152 个，反向
 > `max_retries` 现在会出现在示例文件里，因为它本来就在 `default_settings_dict()` 里、也本来就会被写进用户的 `config/ai_settings.json`。**这不是把它「接通」**——见下。
 >
 > 示例文件与默认值的漂移目前没有护栏。**一条 `assert json.load(example) == default_settings_dict()` 的单测归 008**，本分支不建（007 的 `tests/` 才刚有雏形）。
+>
+> ⬛ **2026-09-30：这条单测从没写过**（008 没接，`tests/` 里至今无一处引用 `ai_settings.example`），漂移仍无护栏。改挂到 012 的出口复核，见 [012 §6](./012-storage-format.md#6-开放问题)；是否要写由那里定，本文不再追。
 
 **`max_retries` 不在 0.6 里。** 它能填、能存、能读回、`settings.js` 也在渲染，但没有任何 provider 消费它。删掉还是接通都是行为变更，归 Phase 2——技术栈计划 Phase 2 有专门一条。别顺手在 007 里处理掉。
 

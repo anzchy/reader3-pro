@@ -21,7 +21,7 @@
 | 合入前门禁 | 本地 tdd-guardian `push` 两条 lane 全绿：unit **654 passed**（15.4s）、packaging wheel smoke **1 passed**（27.0s）；覆盖率门禁 PASS（lines/statements 83.67% ≥ 70%、branches 67.62% ≥ 52%），七条 `criticalPaths` 全 PASS | `/tdd-guardian:gate push` |
 | CI 首次实跑 | `tests.yml` 的 run `32920941852`，`workflow_dispatch` on `master`（sha `8a9b3aa`），**全绿**——「静态检查 ＋ unit lane（含覆盖率门禁）」job success | `gh run view 32920941852` |
 
-> **PR 页面上没有绿灯，这是设计如此，不是坏了。** §7 定的规矩：`tests.yml` 与 `lint.yml` 都只在发版与 `workflow_dispatch` 时触发，**都不设 required check**。日常门禁在本地 tdd-guardian，上表「合入前门禁」那一行就是这次合入的实际凭据。
+> **PR 页面上没有绿灯，这是设计如此，不是坏了。** §7 定的规矩：`tests.yml` 与 `lint.yml` 都只在发版与 `workflow_dispatch` 时触发（⬛ 2026-09-24 起向 `master` 开 PR 也触发，`58ef602`；现行触发条件以 `tests.yml` 文件头注释为准），**都不设 required check**。日常门禁在本地 tdd-guardian，上表「合入前门禁」那一行就是这次合入的实际凭据。
 >
 > **CI 那一行的道理与 007 完全同构，值得记一笔。** `workflow_dispatch` 只对**默认分支上存在的 workflow** 生效——`tests.yml` 是本分支新建的，合入之前 `master` 上没有它，所以 008 建的这套测试 CI 在合入之前**根本点不动**。run `32920941852` 是它第一次真的能跑，也是 unit lane 与覆盖率门禁第一次在干净环境里被验过。007 合入时 `lint.yml` 踩的是同一个坑，那一节里已经写过一遍。
 >
@@ -55,7 +55,7 @@ ls .github/workflows/
 
 **现在的配置有个坑，得先补。** `.claude/tdd-guardian/config.json` 里 `coverageMode` 是 `"no-decrease"`。它的语义是：**首次运行、以及每次切换分支**，把当时的覆盖率记为基线并直接通过；此后只在**下降**时拦截。
 
-放在别的项目里这是个合理默认。放在这个计划里不是——因为这个计划**一个里程碑一个分支**（007 → 008 → 010 → 011 → 012 → 013 → 015）。每开一个新分支，基线就重记一次。结果是七个互不相干的「没有下降」检查，**全局地板不存在**。012 把覆盖率从 78% 做到 55%，只要它是在自己分支上一路降下去的，门禁一次都不会响。
+放在别的项目里这是个合理默认。放在这个计划里不是——因为这个计划**一个里程碑一个分支**~~（007 → 008 → 010 → 011 → 012 → 013 → 015）~~（⬛ 2026-09-30：分支的先后只在[看板「现在该做什么」与 §2](../../20260824-frontend-backend-plan-progress.md#现在该做什么) 定义，此处不复述）。每开一个新分支，基线就重记一次。结果是七个互不相干的「没有下降」检查，**全局地板不存在**。012 把覆盖率从 78% 做到 55%，只要它是在自己分支上一路降下去的，门禁一次都不会响。
 
 **建议**：008 收尾时把 `coverageMode` 切成 `"absolute"`，阈值就用现在配置里已经写好的 `lines 70 / branches 60`。理由很简单——那两个数字正是 Phase 1a 的**退出目标**，在 008 之前它们够不着（所以现在用 no-decrease 是对的），在 008 之后它们必须够得着。门槛从「相对」换成「绝对」的时刻，就是目标从「够不着」变成「够得着」的时刻。
 
@@ -119,6 +119,8 @@ ls .github/workflows/
 | 总体 `branches 60` | 54.56 | **011**（拆完 `web/server.py` 之后重估；那一个文件占了全仓 444/1096 条分支） |
 
 > `book_store.py` 仍然不配，理由同上面那段（零匹配判 FAIL）。011 建了它再加。
+>
+> ⬛ **2026-09-30：这四张欠条 011 没有付，也没有任何地方在追。** 实测 `.claude/tdd-guardian/config.json` 今天的值：全局 `lines 70 / branches 52`；`criticalPaths` 的 branches 为 `notes_service.py` 83、`search_service.py` 56、`ai/books.py` 72、`ai/conversations.py` 55（`web/server.py` 58、`book_store.py` 压语句 100）。对照上表期望（notes 90 / search 85 / ai 核心 80 / 总体 branches 60），四条都未达成。**改挂到 012 的出口复核**，见 [012 §6](./012-storage-format.md#6-开放问题)：付、调期望、还是显式注销，在那里定；本表只留作来源。
 
 ---
 
@@ -271,7 +273,7 @@ e2e lane 留给 009 接。
 > 默认分支上的 workflow 生效，所以这个文件在 008 合入 master 之前跑不起来。
 > **合入后第一件事**：`gh workflow run tests.yml`。
 
-**门禁在本地，不在 GitHub——2026-08-24 改。** 全仓 CI 统一为**仅发版触发**（`release.published` ＋ `push.tags`），所以上面这个工作流**不设 required check**：一个日常不跑的检查设成 required，只会把每个 PR 卡死在「Expected — Waiting for status」上。
+**门禁在本地，不在 GitHub——2026-08-24 改。** 全仓 CI 统一为**仅发版触发**（`release.published` ＋ `push.tags`）（⬛ 2026-09-24 起向 `master` 开 PR 也触发，`58ef602`；现行触发条件以 `tests.yml` 文件头注释为准），所以上面这个工作流**不设 required check**：一个日常不跑的检查设成 required，只会把每个 PR 卡死在「Expected — Waiting for status」上。
 
 门禁改由 `.claude/tdd-guardian/config.json` 的两条 lane 承担，它们已经配好了时机：`unit` 在 `taskCompleted` / `commit`，`e2e` 在 `push`。**008 的退出条件因此从「CI 成为合并门槛」改为「本地门禁真的会拦下红的提交」**——要在退出前实测一次：故意写一个失败用例，确认 `commit` 被拦。
 
@@ -373,7 +375,7 @@ grep -rn "pinned behaviour\|Characterisation" tests/   # 刻画测试：记录�
 | 坏掉的 `book.pkl`，两个 loader 给两种答案：`search_service` 抛（跨书搜索整个死掉），`web.server` 吞（那本书从书库静默消失） | `tests/unit/test_fixture_damaged_bookdir.py` | 011（先定哪个对） |
 | 服务端搜索偏移量按**码点**计，DOM/JS 按 **UTF-16 码元**计；BMP 内两者相等，遇到 emoji 就错位。Phase 4 打算把服务端算的偏移直接交给前端 | `tests/fixtures/unicode_corpus.py` ＋ `tests/unit/test_fixture_unicode_corpus.py` | ~~014~~ **已在 008 修**（`4f665a3`，偏移改按 UTF-16 码元计） |
 | `BOOKS_DIR` 是 import 时读环境变量的模块级常量，没有任何按请求注入的口子 | `tests/contract/conftest.py` 头部第 1 条 | 011（拆 router 时一并解决） |
-| 5 处无正当理由的 `except Exception`（首页索引统计静默偏小、坏 `ai_settings.json` 被默认值覆盖后一次 save 抹掉 API key、坏会话文件静默消失、标注读不出来被 `save` 永久抹除 ×2） | 代码里的 `# noqa: BLE001 - FIXME(...)` | **5 处修掉 3 处**（坏 `ai_settings.json` 抹 API key、标注读不出被 `save` 永久抹除 ×2），余 2 处仍归 011：首页索引统计静默偏小、坏会话文件静默消失 |
+| 5 处无正当理由的 `except Exception`（首页索引统计静默偏小、坏 `ai_settings.json` 被默认值覆盖后一次 save 抹掉 API key、坏会话文件静默消失、标注读不出来被 `save` 永久抹除 ×2） | 代码里的 `# noqa: BLE001 - FIXME(...)` | **5 处修掉 3 处**（坏 `ai_settings.json` 抹 API key、标注读不出被 `save` 永久抹除 ×2），余 2 处仍归 011：首页索引统计静默偏小、坏会话文件静默消失。⬛ 2026-09-30：011 已合入，这 2 处没付——`FIXME(011)` 仍在 `web/routers/library.py`（首页索引统计）与 `ai/conversations.py`（坏会话文件）；改挂 012 出口复核，见 [012 §6](./012-storage-format.md#6-开放问题) |
 
 > 上表**只列有下游归属的**。其余的在测试 docstring 里各自说明，捞法见上面那两条命令。
 > 这张表本身也会漂——它是导航，不是事实来源；哪一行与测试 docstring 冲突，以 docstring 为准。

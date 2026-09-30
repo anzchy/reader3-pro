@@ -1,6 +1,6 @@
 # 012-storage-format —— 任务
 
-- **状态**: 骨架，待审（2026-09-26）。分支**未开**；本文只做开工前的范围与闸门登记，没有一项已实施。D1 与 Q1–Q6 已裁定（§6）
+- **状态**: 评审进行中：D1、Q1–Q6 已裁定，Q7+ 待裁（§6）；分支未开（⬛ 2026-09-30，原「骨架，待审（2026-09-26）」）。本文只做开工前的范围与闸门登记，没有一项已实施
 - **对应阶段**: Phase 3「存储去 pickle 化」＝ 里程碑 **M3**（[§9 编号表](../plan-tech-stack-migration.md)）
 - **计划文件夹**: [`20260816-tech-stack-migration/`](../plan-tech-stack-migration.md)（归属 **A**）
 - **上游**: [`018-library-routes`](./018-library-routes.md)（[§9](../plan-tech-stack-migration.md) 的 M4a-债）先于本分支合入，本分支在它之上开工；顺序的定义处是 [进度盘 §2](../../20260824-frontend-backend-plan-progress.md)
@@ -27,9 +27,9 @@
 |---|---|---|
 | Phase 2b（011） | ✅ 已合入 | [011 §8 合入记录](./011-backend-refactor.md)（#7 仍是 ⚠️，剩余一半即本文 WI-5） |
 | Track D（010） | ✅ 已合入 | [进度盘 §1 状态板](../../20260824-frontend-backend-plan-progress.md) |
-| **soak 门槛** | ~~⏳ **仍阻塞开工**~~ ⬛ 2026-09-29：批次次数已满足（判决见 [`soak-log.md` 批次声明](./soak-log.md)）；开工时还须 §4 门槛 F（开工 `suite_hash` ＝ 最后一次通过批次的）成立 | 判据：[§7 soak 门槛](../plan-tech-stack-migration.md)；~~次数与跨度现算~~批次判决（⬛ 2026-09-28 批次规则）：`uv run python scripts/soak_run.py --verdict <批次 ID>`，批次声明在 [`soak-log.md` 表头](./soak-log.md)。**本文不写派生数与日期** |
-| 机制挑战闸 | ~~不再阻塞（第 1、3 项 PASS；~~ ⬛ 2026-09-28 批次规则 4：**第 1 项仍阻塞**，须在最终候选 `commit` 上首次通过（此前的 PASS 跑在更早的 `commit` 上，不自动覆盖）；第 3 项对当前 `suite_hash` 成立；第 2 项经维护者裁定降为记录项，**是降级不是通过** | 裁定：[§7 机制挑战闸](../plan-tech-stack-migration.md)；执行记录：[`soak-log.md`](./soak-log.md) |
-| **018 已合入** | ⏳ 未开（[任务书](./018-library-routes.md) 骨架待审） | 每书写协调契约（锁，[018 WI-2](./018-library-routes.md)）是 WI-6、WI-7、WI-12、WI-13 的前置；#56 列表路由（018 WI-4）是 WI-5、WI-10 的前置。状态看 [进度盘 §1](../../20260824-frontend-backend-plan-progress.md) |
+| **soak 门槛** | ~~⏳ **仍阻塞开工**~~ ~~⬛ 2026-09-29：批次次数已满足（判决见 [`soak-log.md` 批次声明](./soak-log.md)）；开工时还须 §4 门槛 F（开工 `suite_hash` ＝ 最后一次通过批次的）成立~~ ⬛ 2026-09-30：⏳ **仍阻塞**——已通过的批次不单独放行 012，开工要在本分支将开的那个 `commit` 上新跑一批 10/10，见 [plan §7「012 开工核验」](../plan-tech-stack-migration.md#012-开工核验2026-09-30-维护者裁定) | 判据：[§7 soak 门槛](../plan-tech-stack-migration.md)；~~次数与跨度现算~~批次判决（⬛ 2026-09-28 批次规则）：`uv run python scripts/soak_run.py --verdict <批次 ID>`，批次声明在 [`soak-log.md` 表头](./soak-log.md)。**本文不写派生数与日期** |
+| 机制挑战闸 | ~~不再阻塞（第 1、3 项 PASS；~~ ⬛ 2026-09-28 批次规则 4：**第 1 项仍阻塞**，须在最终候选 `commit` 上首次通过（此前的 PASS 跑在更早的 `commit` 上，不自动覆盖）；第 3 项对当前 `suite_hash` 成立；第 2 项经维护者裁定降为记录项，**是降级不是通过**。⬛ 2026-09-30：「最终候选」＝ 新批次所在的那个 `commit`；第 3 项仅在 `suite_hash` 变了时重跑，见 [012 开工核验](../plan-tech-stack-migration.md#012-开工核验2026-09-30-维护者裁定) | 裁定：[§7 机制挑战闸](../plan-tech-stack-migration.md)；执行记录：[`soak-log.md`](./soak-log.md) |
+| **018 已合入** | ⏳ 未开（[任务书](./018-library-routes.md) 评审通过、待开工；⬛ 2026-09-30：排在冻结集欠账窗口之后，顺序见[进度盘](../../20260824-frontend-backend-plan-progress.md)） | 每书写协调契约（锁，[018 WI-2](./018-library-routes.md)）是 WI-6、WI-7、WI-12、WI-13 的前置；#56 列表路由（018 WI-4）是 WI-5、WI-10 的前置。状态看 [进度盘 §1](../../20260824-frontend-backend-plan-progress.md) |
 
 - **soak 未达标时 012 允许的**（⬛ 2026-09-29：批次次数已满足，这条现在读作「进入条件未全部满足时」）：写本任务书、评审、`/tdd-guardian:design-tests` 出测试矩阵、裁定开放问题（§6）。**012 不允许的**：开 012 分支写生产代码。
   这条只管 012——`018-library-routes` 按 D1 裁定**就在 soak 等待期内做**（⬛ 2026-09-29：等待期已不存在，018 仍排在 012 之前），不受这条约束（~~它仍不得碰冻结集，见 §4 门槛 F~~ ⬛ 2026-09-28：门槛 F 已放宽，它碰冻结集的代价是 012 开工前要在新 `suite_hash` 上重跑一批，见 §4 门槛 F）。
@@ -73,6 +73,7 @@
   ⬛ 2026-09-28：门槛 F 放宽后，冻结集改动不再是「数周计数清零」的代价，只是「开工前在新 `suite_hash` 上重跑一批」。
   **009 欠账 #49（`helpers.py` 的 8 秒墙钟轮询）因此现在就可以付**——本文只记这一点，不把它收进 012 的范围；
   兑付与排期仍以 [009 欠账表](./009-e2e-annotations.md#跨波欠账) 为准。#50 不在冻结集（`createAnnotation` 在 `src/`），不受此影响
+  ⬛ 2026-09-30：#49 / #50 排进 018 之前的冻结集欠账窗口，仍不属于 012，顺序见[进度盘](../../20260824-frontend-backend-plan-progress.md)
 - **#51 / #53 / #56 / #58 与每书写协调契约本身**（归 [018](./018-library-routes.md)，§2.2）。012 只**使用** 018 的锁，不重新定义它
 - 009 表与 Track-D 台账的兑付方改写（[018 WI-1](./018-library-routes.md)）
 
@@ -84,7 +85,7 @@
 
 | Wave | WI | 走 workflow |
 |---|---|---|
-| A 格式与读写 | WI-1 – WI-5 | ✅（WI-1 的字段冻结部分是文档，TODO(审)） |
+| A 格式与读写 | WI-1 – WI-5 | ✅（WI-1 的字段冻结部分是文档，待裁，§6 Q7） |
 | B 迁移与索引 | WI-6、WI-7 | ✅ |
 | C 可见性与日落 | WI-8 – WI-11，**做的顺序 WI-9 → WI-10 → WI-8 → WI-11** | WI-8/9/10 ✅；WI-11 ❌（文档 + 版本号） |
 | D 末波欠账 | WI-12（#52）、WI-13（#57） | ✅ |
@@ -95,7 +96,7 @@
 ### WI-1: 版本化中立格式落地（写入器 + 八步提交）
 
 - **目标**: `manifest.json` + `chapters.jsonl` 写入器，按 ADR-0007 八步落盘；冻结字段集合与格式版本号
-- **涉及文件**: `src/reader3_app/reader3.py`（新写入函数，与 `save_to_pickle` 并列）；可能新增 `src/reader3_app/book_format.py` TODO(审)
+- **涉及文件**: `src/reader3_app/reader3.py`（新写入函数，与 `save_to_pickle` 并列）；可能新增 `src/reader3_app/book_format.py`（待裁，§6 Q8）
 - **依赖**: ADR-0007（八步）、ADR-0009（Decision Outcome）、ADR-0003（`book_uuid` 是否并入 manifest，§6 Q3）
 - **验收（种子）**:
   - 八步每一步前后注入中断，目录状态只落在 `missing` 或 `valid`，永不 `corrupt`
@@ -113,7 +114,7 @@
   - 指纹不匹配**不阻断** `load_book()`（A1 分级降级）
   - `NOTES_FINGERPRINT_KEY` 与 `tests/fixtures/deg_assertions.py` 的约定一致（键名若改，改那一处）
   - 测试矩阵：待 /tdd-guardian:design-tests
-- TODO(审): 今天 `src/` 里**没有** `book_fingerprint`（grep 零命中），而 Phase 3 验收把它当已有函数用。本 WI 是否算 Phase 3 清单的隐含项，需确认。
+- 本 WI 是否算 Phase 3 清单的隐含项：待裁，§6 Q9。
 
 ### WI-3: 摄取双写 + 三态读取
 
@@ -158,7 +159,7 @@
   - 全仓 grep 不到「为取元数据而 `load_book_cached`」
   - 018 的列表路由返回的书名在本 WI 前后逐项相等（[#56 验收列](./009-e2e-annotations.md#跨波欠账)「书名与 `load_book_metadata()` 一致」换了实现仍成立）
   - 测试矩阵：待 /tdd-guardian:design-tests
-- TODO(审): #35 兑付方列写「012 开工时重新裁定优先级」——开工当天裁定并回写该格。#56 兑付方列的「与 #35 同批」一句不在本文改，由 [018 WI-1](./018-library-routes.md) 改。
+- #35 的优先级：待裁，§6 Q10。#56 兑付方列的「与 #35 同批」一句不在本文改，由 [018 WI-1](./018-library-routes.md) 改。
 
 ### WI-6: `reader3 --migrate <book_id>`
 
@@ -214,13 +215,13 @@
 - **涉及文件**: `web/routers/library.py`（或 018 落的列表 router；新路由受 `check_router_size.py` 约束）
 - **依赖**: **018 的 #56 列表路由已合入**；WI-3（三态）；WI-6（迁移进度要有 HTTP 可观察的迁移）。
   草稿曾把本 WI 排在 #56（旧 WI-15）之前，顺序是倒的；#56 移去 018 后该倒置自然消失
-- TODO(审): 书卡角标取值域不是 `storage_format()` 三态（[A5 订正注](../plan-tech-stack-migration.md)），由 010 定义——开工前核对 010 的定义处。
+- 书卡角标取值域：待裁，§6 Q11。
 - 测试矩阵：待 /tdd-guardian:design-tests
 
 ### WI-11: pickle 写路径日落计划
 
 - **目标**: 钉死「停写 pkl」与「删 runtime fallback」两个版本号，写进代码/CHANGELOG 并回填 ADR-0009；`READER3_ALLOW_PICKLE` 的开关语义按 ADR-0007 两个时间窗实现
-- **涉及文件**: `docs/adr/0009-book-format-manifest-jsonl.md`、CHANGELOG（TODO(审)：仓库根今天**没有** CHANGELOG 文件，ADR-0009 却要求写进「代码/CHANGELOG」——新建还是只写代码常量）、`pyproject.toml`（版本号）
+- **涉及文件**: `docs/adr/0009-book-format-manifest-jsonl.md`、CHANGELOG（待裁，§6 Q12）、`pyproject.toml`（版本号）
 - **依赖**: WI-3
 - **验收**: ADR-0009 Decision Outcome 的「版本号未钉死」一句被替换为具体号；ADR-0009 Status → Accepted（其 Revisit When 第一条）
 - 不走 workflow（文档 + 版本号）
@@ -288,6 +289,7 @@
   新判据只要求「开工时的 `suite_hash` 与最后一次通过批次一致」——冻结路径**可以改**，但**任何改动都需要一批新的 10 次**
   （外加机制挑战闸第 3 项对新 `suite_hash` 重跑，§7 批次规则 4）。连带：009 欠账 #49 现在可付（见 §2.3）。
   评审记录：[`review-soak-gate-20260928.md`](../review-soak-gate-20260928.md) §6 问题 2。
+- **⬛ 2026-09-30：门槛 F 的「最后一次通过批次」收紧为「本分支开分支的那个 `commit` 上新跑的那一批」**——不论 `suite_hash` 变没变，都要新跑一批；机制闸第 1 项在同一 `commit` 上首次通过，第 3 项只在 `suite_hash` 变了时重跑。唯一定义处：[plan §7「012 开工核验」](../plan-tech-stack-migration.md#012-开工核验2026-09-30-维护者裁定)。
 - **门槛 3 与 R 为什么是硬门槛**（2026-09-26 加，出自「跳过 soak 的代价评估」）：本分支引入的缺陷——崩溃安全发布、每书锁、generation swap、删书与写手并发——**天然是间歇性的**，表现与 flaky 测试无法区分。soak 证明的只是基线~~在一个本地剖面下攒到了 10 次绿~~（⬛ 2026-09-28：候选版本在一个本地剖面下跑通了一批 10 次）不是 flaky 率上界（[§7](../plan-tech-stack-migration.md) 批次规则 5）；所以「红了就重跑」会把真竞态藏进重跑里。门槛 R 管的是判读纪律，门槛 3 让崩溃安全不再只靠 E2E 当判官。
 - `EXPECTED_BASELINE_ITEMS` 不许变——它一变就说明碰了冻结集。（⬛ 2026-09-28：门槛 F 放宽后碰冻结集本身不再禁止，但这条仍成立——改它等于改 `baseline_1b` 的条数，属于冻结集改动，须按门槛 F 新判据重跑一批。）（门槛 16 改的是验收 / 白名单两个常量，不是这一个。）
 - #51 / #53 / #56 / #58 的兑付不在本表：它们的出口闸在 [018 §4](./018-library-routes.md)。门槛 13 / 14 只验「012 的改动没把 018 的路由与锁弄坏」；018 若按其 WI-6 挂起条款把 #53 转出，门槛 13 的「导出」一格标注不适用。
@@ -297,7 +299,7 @@
 ## 5. 风险
 
 - **标注静默错位**：逐章文本相等 ≠ CFI 路径不变（附录 A「最可能的失败模式」）。缓解：WI-6 的 iframe E2E 是硬门槛，不是可选项。
-- **指纹口径漂移**：WI-2 的指纹若把解析器版本算进去，任何 `reader3.py` 改动都会让全库标注判 stale。TODO(审)：解析器版本号的 bump 规则。
+- **指纹口径漂移**：WI-2 的指纹若把解析器版本算进去，任何 `reader3.py` 改动都会让全库标注判 stale。解析器版本号的 bump 规则：待裁，§6 Q13。
 - **双写期 marker 语义**：见 §6 Q2；定错了会让「新 pkl 挨着旧 manifest」成为可达状态。
 - **012 的写手漏持锁**：本分支新增三个写手（`--migrate`、generation swap 重建、上传）外加批量重建，任何一个不持 018 的每书锁，就会与删书竞争——把已删目录重新建出来，或把产物发布进正在删除的目录。缓解：所有写手只用 018 的契约，门槛 14 用并发测试证明。锁本身的失败模式（锁文件位置、不复活规则、与 notes 锁的顺序）归 [018 §5](./018-library-routes.md)。
 - **索引查询侧漏改**：generation swap 只改写侧、`_client_and_collection` 仍开固定名集合，结果是「重建成功、查询打空」。缓解：WI-7 把查询侧写进目标，验收第 3 条可区分新旧 chunk。
@@ -320,6 +322,13 @@
 | Q4 | 指纹比对与 ADR-0005 运行时文本重匹配：并存还是取代 | ADR-0005 Revisit When | ✅ **已裁定（2026-09-26）**：**并存**。指纹相等 → 跳过重匹配（快路径）；不等 → 走 ADR-0005 重匹配，**不**据此作废标注 |
 | Q5 | `--migrate-all` / 未迁移清单归 WI-6、WI-11 还是后续版本 | ADR-0009 Decision Outcome | ✅ **已裁定（2026-09-26）**：都进 **WI-6**（见该 WI）。停写 pkl 之前用户必须有一条命令迁完整库 |
 | Q6 | 日落版本号：ADR-0009 写「当前 `pyproject.toml` 版本 `1.4.0`」，今天是 `1.5.0`——ADR 的基线已过期，日落号要按哪个起算 | ADR-0009 Decision Outcome、`pyproject.toml` | ✅ **已裁定（2026-09-26，维护者）**：按 **minor** 节奏，从 **N = 发布 012 的那一版**（大概率 1.6.0）起算：N 双写；N+1 停写 pkl（前提：`--migrate-all` 已随某一版发布）；N+2 删 runtime fallback。ADR-0009 写「从 N 起算」，不写字面版本号；WI-11 在发版时把 N 填成实数 |
+| Q7 | WI-1 的「字段冻结」是文档：写在 ADR-0009、`BookManifest` 的 docstring，还是 WI-1 自带的格式说明——哪一处是定义处 | WI-1、§3 分组表 | ⏳ 待裁（2026-09-30 由原地 TODO 移来）。owner：012 开工核验前 |
+| Q8 | 是否新增 `src/reader3_app/book_format.py`，还是写入器留在 `reader3.py` 与 `save_to_pickle` 并列 | WI-1 涉及文件 | ⏳ 待裁（同上）。owner：Q2 原型出结果时；最迟 012 开工核验前 |
+| Q9 | 今天 `src/` 里**没有** `book_fingerprint`（grep 零命中），而 Phase 3 验收把它当已有函数用——WI-2 是否算 Phase 3 清单的隐含项 | WI-2 | ⏳ 待裁（同上）。owner：012 开工核验前 |
+| Q10 | #35 兑付方列写「012 开工时重新裁定优先级」——裁定后回写该格 | WI-5、[009 欠账表](./009-e2e-annotations.md#跨波欠账) | ⏳ 待裁（同上）。owner：012 开分支当天，WI-5 开工前 |
+| Q11 | 书卡角标取值域不是 `storage_format()` 三态（[A5 订正注](../plan-tech-stack-migration.md)），由 010 定义——核对 010 的定义处 | WI-10 | ⏳ 待裁（同上）。owner：012 开工核验前 |
+| Q12 | 仓库根今天**没有** CHANGELOG，ADR-0009 却要求写进「代码/CHANGELOG」——新建还是只写代码常量 | WI-11 | ⏳ 待裁（同上）。owner：WI-11 开工前 |
+| Q13 | 解析器版本号的 bump 规则（WI-2 指纹若含解析器版本，任何 `reader3.py` 改动都会让全库标注判 stale） | WI-2、§5 指纹口径漂移 | ⏳ 待裁（同上）。owner：WI-2 开工前 |
 
 ---
 

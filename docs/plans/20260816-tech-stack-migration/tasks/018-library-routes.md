@@ -1,6 +1,6 @@
 # 018-library-routes —— 任务
 
-- **状态**: 骨架，待审（2026-09-26）。分支**未开**；本文只做开工前的范围与闸门登记，没有一项已实施
+- **状态**: 评审通过、待开工（任务书 2026-09-26 评审通过，§6 Q1–Q12 全部裁定）。分支**未开**，没有一项已实施。2026-09-28 批次规则取消 soak 等待期后，本分支是挡在 012 前面的关键路径（顺序见 [进度盘 §2](../../20260824-frontend-backend-plan-progress.md)；⬛ 2026-09-30：排在冻结集欠账窗口之后开工，WI-8 规则同日订正，见 §6 Q10）
 - **对应阶段**: M4a-债（013 延后到后端的欠账兑付之一部分，[§9 编号表](../plan-tech-stack-migration.md)）。不是新里程碑，与 016 / 017 同类
 - **计划文件夹**: [`20260816-tech-stack-migration/`](../plan-tech-stack-migration.md)（归属 **A**）
 - **上游**: `013`（✅ 已合入）、`017`（✅ 已合入）；从 `master` 开
@@ -28,8 +28,8 @@
 | 017 已合入 | ✅ | [017 任务文件](./017-audit-followup.md)、进度盘 §1 |
 | 本任务书评审通过 | ✅ 2026-09-26 | 本文 §6 全部裁定 |
 
-- **不等 soak**（D1）。本分支在 soak 等待期内做完并合入；~~代价是它**不得碰冻结集**（§4 门槛 F）——它合进 `master`，改一个字节就清零 soak 计数。~~（⬛ 2026-09-28：soak 改为批次规则、012 门槛 F 同日放宽——碰冻结集不再禁止，代价是 012 开工前要在新 `suite_hash` 上重跑一批；仍应避免无谓改动。判据见 [§7](../plan-tech-stack-migration.md) 与 [012 §4 门槛 F](./012-storage-format.md)。）
-- **`soak_run.py --append` 只在 `master` 上跑**。分支上的运行只做核验、不进台账（[017 §4](./017-audit-followup.md)）。这是流程约束，`scripts/soak_run.py` 本身**不检查分支**（~~它只在覆盖路径有未进索引的改动时拒绝 `--append`~~ ⬛ 2026-09-29：它现在要求**整棵工作树**干净才放行 `--append`，批次在被测 SHA 的干净 detached worktree 里跑、`--ledger` 写回主工作区台账，见 [`soak-log.md` 表头](./soak-log.md)）。
+- **不等 soak**（D1）。本分支~~在 soak 等待期内~~做完并合入（⬛ 2026-09-30：批次规则下已无「等待期」；009 #49 / #50 在本分支**之前**的冻结集欠账窗口里兑付，本分支的锁、删书、并发路径在修好的 harness 上测，顺序见[进度盘](../../20260824-frontend-backend-plan-progress.md)）；~~代价是它**不得碰冻结集**（§4 门槛 F）——它合进 `master`，改一个字节就清零 soak 计数。~~（⬛ 2026-09-28：soak 改为批次规则、012 门槛 F 同日放宽——碰冻结集不再禁止，代价是 012 开工前要在新 `suite_hash` 上重跑一批；仍应避免无谓改动。判据见 [§7](../plan-tech-stack-migration.md) 与 [012 §4 门槛 F](./012-storage-format.md)。）
+- **`soak_run.py --append` 只在 `master` 上跑**（⬛ 2026-09-30 订正：判据是「被测 `HEAD` 是 `origin/master` 的祖先」，不是「当前分支叫 `master`」，见 WI-8 / §6 Q10）。分支上的运行只做核验、不进台账（[017 §4](./017-audit-followup.md)）。这是流程约束，`scripts/soak_run.py` 本身~~**不检查分支**~~今天还不检查（WI-8 落地后改为机器拦截）（~~它只在覆盖路径有未进索引的改动时拒绝 `--append`~~ ⬛ 2026-09-29：它现在要求**整棵工作树**干净才放行 `--append`，批次在被测 SHA 的干净 detached worktree 里跑、`--ledger` 写回主工作区台账，见 [`soak-log.md` 表头](./soak-log.md)）。
 
 ---
 
@@ -49,7 +49,7 @@
 
 ### 2.2 非范围
 
-- 冻结集 8 条路径的任何改动（§4 门槛 F）——包括 009 欠账 #49 / #50
+- 冻结集 8 条路径的任何改动（§4 门槛 F）——包括 009 欠账 #49 / #50（⬛ 2026-09-30：#49 / #50 连同 017 finding #10 在本分支**之前**的冻结集欠账窗口兑付，不归本分支；顺序见[进度盘](../../20260824-frontend-backend-plan-progress.md)）
 - **#52**（批量重建索引）与 **#57**（上传）：留在 012 末波，理由见 [012 §6 D1](./012-storage-format.md)
 - 新存储格式、三态读取、`load_book_metadata()` 改读 manifest（#35）：012。本分支的路由只经 `book_store` 读，不碰格式
 - 014 WI-16b 的书库页 UI（等 #56 / #58 的第 8、17、19、20、24 项）：本分支只交付路由，UI 归 014
@@ -207,9 +207,11 @@
 
 ### WI-8: `soak_run.py --append` 硬拦截
 
-- **目标**: 把「soak 台账只收 `master` 上、工作站上的行」从流程约束变成机器拦截（§6 Q10）。`--append` 时：环境变量 `GITHUB_ACTIONS` 存在 → 拒绝；当前分支不是 `master` → 拒绝；都以非零退出码并说明原因。不带 `--append` 的核验跑法不受影响
+- **目标**: 把「soak 台账只收 `master` 上、工作站上的行」从流程约束变成机器拦截（§6 Q10）。`--append` 时：环境变量 `GITHUB_ACTIONS` 存在 → 拒绝；~~当前分支不是 `master` → 拒绝~~；都以非零退出码并说明原因。不带 `--append` 的核验跑法不受影响
+  - ⬛ 2026-09-30 订正（§6 Q10）：第二条改为 **`git merge-base --is-ancestor HEAD origin/master` 不成功 → 拒绝**。原判据「当前分支是 `master`」会拒掉正确流程——批次按 `soak-log.md` 表头在被测 SHA 的**干净 detached worktree** 里跑，那里没有分支名。新判据下，`master` 上某个 SHA 的 detached worktree 放行，未合入的特性分支 SHA 拒绝。`origin/master` 解析不出来时怎么报错交给 design-tests，不是新规则
 - **涉及文件**: `scripts/soak_run.py`（不在冻结集——冻结集是 `HASH_COVERED_PATHS` 所列 8 条路径，本脚本不在其中；改它不改 `suite_hash`，开工当天复核）、它的单元测试
-- **验收（种子）**: 三种情形各一条测试——CI 环境 ＋ `--append` → 拒绝；非 `master` ＋ `--append` → 拒绝；`master` ＋ 非 CI ＋ `--append` → 放行（用假 git / 假环境，不真跑 soak）
+- **验收（种子）**: ~~三种情形各一条测试——CI 环境 ＋ `--append` → 拒绝；非 `master` ＋ `--append` → 拒绝；`master` ＋ 非 CI ＋ `--append` → 放行~~（用假 git / 假环境，不真跑 soak）
+  - ⬛ 2026-09-30 按订正后的规则，至少四条：CI 环境 ＋ `--append` → 拒绝；`HEAD` 不是 `origin/master` 的祖先（未合入的特性分支 SHA）＋ `--append` → 拒绝；`master` 分支上 ＋ 非 CI ＋ `--append` → 放行；**`master` 上某个 SHA 的 detached worktree ＋ `--append` → 放行**
 - 测试矩阵：待 /tdd-guardian:design-tests
 
 ---
@@ -229,8 +231,8 @@
 | 7 | 锁契约 | WI-2 验收的跨进程互斥、`SIGKILL` 释放、各写手不复活目录、共享写手 2 秒内 409、ABA 身份复核、交叉获取抛错六类测试齐全；ADR-0015 在本分支合入的同一 PR 里由 Proposed 转 **Accepted**（§6 Q11） | _待填_ |
 | 8 | 每条欠账一个 commit 结清 | 009 表 #51 / #56 / #58 / #53 / #31 各行状态改为已结清并附 commit | _待填_ |
 | 9 | #31 的 CI 核验 | 合并头上至少一次 `workflow_dispatch` 的 `tests.yml` 运行，`e2e` job 绿、`attempt=1`；PR 的 `pull_request` 运行同样绿。run id 按 WI-7 的记录位置落档 | _待填_ |
-| 10 | 合入后 soak 一次 | 合入后在 `master` 上跑一次 `soak_run.py --append`，green，`suite_hash` 仍是冻结值；这一行记进台账（~~它是正常计数行，commit 变不清零~~ ⬛ 2026-09-29：批次规则下单独一行不计入任何批次，只证明合入头没把 `baseline_1b` 弄红；012 开工要的批次见 [012 §4 门槛 F](./012-storage-format.md)） | _待填_ |
-| F | ~~**冻结区零字节改动**~~（⬛ 2026-09-28 随 [012 门槛 F](./012-storage-format.md) 放宽：冻结区可以改，但改了就须在合并头的新 `suite_hash` 上重跑一批并通过，否则 012 开工时对不上最后一次通过批次；仍应避免无谓改动。下面原判据保留作「没动冻结区」时的核对方式） | 下列 8 条路径 `git diff --stat master... -- <paths>` 为空，`suite_hash` 与 [`soak-log.md`](./soak-log.md) 表头冻结值一致：`tests/e2e/baseline_1b/**`、`tests/e2e/conftest.py`、`tests/e2e/helpers.py`、`tests/e2e/test_harness_smoke.py`、`tests/fixtures/epub_corpus.py`、`tests/fixtures/epub_zip.py`、`tests/fixtures/ai_stub.py`、`tests/conftest.py`。路径清单的定义处是 `soak-log.md`「`suite_hash` 的取法」与 `scripts/soak_run.py` 的 `HASH_COVERED_PATHS`，冲突以那里为准 | _待填_ |
+| 10 | ~~合入后 soak 一次~~（⬛ 2026-09-30 被 [plan §7「012 开工核验」](../plan-tech-stack-migration.md#012-开工核验2026-09-30-维护者裁定) 取代：012 开工要在它开分支的那个 `commit` 上新跑一批，合入头红不红由那一批覆盖；本门槛不再单独要求，原文保留） | 合入后在 `master` 上跑一次 `soak_run.py --append`，green，`suite_hash` 仍是冻结值；这一行记进台账（~~它是正常计数行，commit 变不清零~~ ⬛ 2026-09-29：批次规则下单独一行不计入任何批次，只证明合入头没把 `baseline_1b` 弄红；012 开工要的批次见 [012 §4 门槛 F](./012-storage-format.md)） | _待填_ |
+| F | ~~**冻结区零字节改动**~~（⬛ 2026-09-28 随 [012 门槛 F](./012-storage-format.md) 放宽：冻结区可以改，但改了就须在合并头的新 `suite_hash` 上重跑一批并通过，否则 012 开工时对不上最后一次通过批次；仍应避免无谓改动。下面原判据保留作「没动冻结区」时的核对方式。⬛ 2026-09-30：012 开工一律新跑一批，见 [plan §7「012 开工核验」](../plan-tech-stack-migration.md#012-开工核验2026-09-30-维护者裁定)；本门槛只剩「别无谓动冻结区」的约束） | 下列 8 条路径 `git diff --stat master... -- <paths>` 为空，`suite_hash` 与 [`soak-log.md`](./soak-log.md) 表头冻结值一致：`tests/e2e/baseline_1b/**`、`tests/e2e/conftest.py`、`tests/e2e/helpers.py`、`tests/e2e/test_harness_smoke.py`、`tests/fixtures/epub_corpus.py`、`tests/fixtures/epub_zip.py`、`tests/fixtures/ai_stub.py`、`tests/conftest.py`。路径清单的定义处是 `soak-log.md`「`suite_hash` 的取法」与 `scripts/soak_run.py` 的 `HASH_COVERED_PATHS`，冲突以那里为准 | _待填_ |
 | R | **红灯必查根因** | 分支存续期间，`baseline_1b` 与 e2e lane（含 CI `e2e` job）**每一次**红都在 §8「红灯记录」追一行：时间、commit、失败用例、根因（产品缺陷 / 测试缺陷 / 环境）、处置 commit。**不允许以「重跑变绿」结案**。表为空或每行根因齐全才算过 | _待填_ |
 | 11 | 合入前 CI 全绿 | PR 上 `pull_request` 触发的 `tests.yml`（`unit` ＋ `e2e`）与 `lint.yml` 全绿后才合入（PR 先开，CI 才会跑——不是「CI 绿后开 PR」） | _待填_ |
 
@@ -274,7 +276,7 @@
 | Q7 | #53 导出 schema | WI-6 | metadata ＋ annotations；对话只在 `?include=conversations`；不含章节正文；整库（维护者取舍）。见 WI-6 | ✅ 已裁定 |
 | Q8 | 删书对集合 / 对话的处置；墓碑清理时机 | WI-5 | 集合成员在提交点前移除；对话**删时问**——`delete_conversations` 参数默认 `false`，确认框归 014 WI-16b（维护者取舍）；墓碑在启动与每次删书前清扫，清扫持锁。见 WI-5 | ✅ 已裁定 |
 | Q9 | CI 运行记录落在哪 | WI-7 | `soak-log.md` 新开「CI 运行记录」一节；本文 §8 只放链接 | ✅ 已裁定 |
-| Q10 | `soak_run.py --append` 硬拦截 | WI-8 | 要：`GITHUB_ACTIONS` 或非 `master` 即拒绝，独立小 WI | ✅ 已裁定 |
+| Q10 | `soak_run.py --append` 硬拦截 | WI-8 | 要：`GITHUB_ACTIONS` 或~~非 `master`~~ 即拒绝，独立小 WI。⬛ 2026-09-30 订正：第二条改为「`git merge-base --is-ancestor HEAD origin/master` 不成功即拒绝」——`master` SHA 的 detached worktree 放行、未合入的特性分支 SHA 拒绝；测试须含「detached worktree ＋ `--append` → 放行」。条文见 WI-8 | ✅ 已裁定（2026-09-30 订正） |
 | Q11 | ADR-0015 是否过 ADR-0000 准入 | WI-2 收尾 | 过（跨模块、长期、多个写手共同遵守）；契约正文搬进 ADR，合入即 Accepted（门槛 7） | ✅ 已裁定 |
 | Q12 | 删后再导入同一 EPUB 算同一本书还是新书（原型暴露：集合按目录名引用会悄悄挂回，对话按 `book_uuid` 引用挂不回，两种引用不一致） | WI-5 | **新书**：什么都不挂回。集合成员在删书时移除（WI-5 第 3 步），对话随新 `book_uuid` 自然不挂回；写手等锁醒来按 `book_uuid` 复核（WI-2 契约项 6）（维护者取舍） | ✅ 已裁定 |
 
