@@ -325,6 +325,11 @@ UNGROUPED_E2E_MODULES = {
     # 不在 `HASH_COVERED_PATHS` 里，放这里不额外移动 `suite_hash`。到期条件：无——
     # 它与任何组都正交，是长期住户（与 `test_testid_dom_uniqueness.py` 同类）。
     "tests/e2e/test_disk_poll_pumps_inflight_write.py",
+    # 020 WI-2：`Reader3Epub.getDebugState()` 只读观测面的真浏览器验收（E1–E4）。理由与
+    # 上面那几条 `suite_hash` 明账**不同**：它不是哪个组欠着的用例，而是给工具（agent、
+    # E2E）用的观测面，与 009 的各组正交——和 `test_testid_dom_uniqueness.py` 同类。
+    # 因此**没有到期条件**，不打算迁进 `baseline_1b/`。
+    "tests/e2e/test_debug_state.py",
 }
 
 # 上面几个白名单模块在一次 `tests/e2e --collect-only` 里贡献的 item 数。
@@ -397,7 +402,11 @@ UNGROUPED_E2E_MODULES = {
 # `tests/e2e/test_selection_toolbar_stays_closed.py` 迁入 `baseline_1b/`，白名单条目已撤，
 # `EXPECTED_BASELINE_ITEMS` 同批 68 → 76。**−8 是执行过的 `--collect-only` 实测值**
 # （baseline 76 / 白名单 64 / 全量 265，总数不变）。
-EXPECTED_UNGROUPED_ITEMS = 64
+#
+# 64 → **68**（2026-10-01，020-debug-state WI-2，rebase 到 019 合入后的 master 上重数: +4）：新增
+# `tests/e2e/test_debug_state.py`（E1–E4 各一条，不参数化）。**+4 是执行过的 `--collect-only`
+# 实测值**（baseline 76 / 白名单 68 / 全量 269）。
+EXPECTED_UNGROUPED_ITEMS = 68
 
 # 派生值，不是字面量。见文件头「为什么必须派生」。
 EXPECTED_E2E_ITEMS = (
