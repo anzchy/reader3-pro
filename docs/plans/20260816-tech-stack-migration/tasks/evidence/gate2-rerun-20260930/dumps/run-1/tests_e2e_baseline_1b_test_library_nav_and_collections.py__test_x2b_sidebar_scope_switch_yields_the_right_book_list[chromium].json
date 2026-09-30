@@ -1,0 +1,10 @@
+{
+  "test": "tests/e2e/baseline_1b/test_library_nav_and_collections.py::test_x2b_sidebar_scope_switch_yields_the_right_book_list[chromium]",
+  "fetch": [],
+  "perf": [],
+  "diag": "__NO_RING__",
+  "url": "http://127.0.0.1:56904/",
+  "late_fetch": [],
+  "late_perf": [],
+  "late_diag": "__NO_RING__"
+}

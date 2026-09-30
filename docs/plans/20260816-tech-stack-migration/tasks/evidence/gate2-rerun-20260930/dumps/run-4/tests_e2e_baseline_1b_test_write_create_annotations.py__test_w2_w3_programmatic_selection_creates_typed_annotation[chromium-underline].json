@@ -1,0 +1,46 @@
+{
+  "test": "tests/e2e/baseline_1b/test_write_create_annotations.py::test_w2_w3_programmatic_selection_creates_typed_annotation[chromium-underline]",
+  "fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/1",
+      "sent": 52,
+      "settled": 56,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "perf": [
+    {
+      "name": "/api/notes/smoke_data/1",
+      "start": 59,
+      "reqStart": 62,
+      "respStart": 63,
+      "respEnd": 63,
+      "dur": 4
+    }
+  ],
+  "diag": [],
+  "url": "http://127.0.0.1:58646/read/smoke_data/1",
+  "late_fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/1",
+      "sent": 52,
+      "settled": 56,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "late_perf": [
+    {
+      "name": "/api/notes/smoke_data/1",
+      "start": 59,
+      "reqStart": 62,
+      "respStart": 63,
+      "respEnd": 63,
+      "dur": 4
+    }
+  ],
+  "late_diag": []
+}

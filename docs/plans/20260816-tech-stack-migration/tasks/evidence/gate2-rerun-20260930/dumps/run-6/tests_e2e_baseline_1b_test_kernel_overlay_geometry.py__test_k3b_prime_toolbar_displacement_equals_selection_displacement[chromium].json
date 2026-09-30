@@ -1,0 +1,78 @@
+{
+  "test": "tests/e2e/baseline_1b/test_kernel_overlay_geometry.py::test_k3b_prime_toolbar_displacement_equals_selection_displacement[chromium]",
+  "fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/repeat_data/0",
+      "sent": 75,
+      "settled": 79,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/repeat_data/0",
+      "sent": 158,
+      "settled": 161,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "perf": [
+    {
+      "name": "/api/notes/repeat_data/0",
+      "start": 85,
+      "reqStart": 87,
+      "respStart": 88,
+      "respEnd": 88,
+      "dur": 4
+    },
+    {
+      "name": "/api/notes/repeat_data/0",
+      "start": 167,
+      "reqStart": 169,
+      "respStart": 171,
+      "respEnd": 171,
+      "dur": 3
+    }
+  ],
+  "diag": [],
+  "url": "http://127.0.0.1:59770/read/repeat_data/0",
+  "late_fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/repeat_data/0",
+      "sent": 75,
+      "settled": 79,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/repeat_data/0",
+      "sent": 158,
+      "settled": 161,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "late_perf": [
+    {
+      "name": "/api/notes/repeat_data/0",
+      "start": 85,
+      "reqStart": 87,
+      "respStart": 88,
+      "respEnd": 88,
+      "dur": 4
+    },
+    {
+      "name": "/api/notes/repeat_data/0",
+      "start": 167,
+      "reqStart": 169,
+      "respStart": 171,
+      "respEnd": 171,
+      "dur": 3
+    }
+  ],
+  "late_diag": []
+}

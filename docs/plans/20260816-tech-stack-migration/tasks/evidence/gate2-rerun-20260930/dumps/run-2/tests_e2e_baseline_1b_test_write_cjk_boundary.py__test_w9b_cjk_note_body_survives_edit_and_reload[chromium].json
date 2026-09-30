@@ -1,0 +1,94 @@
+{
+  "test": "tests/e2e/baseline_1b/test_write_cjk_boundary.py::test_w9b_cjk_note_body_survives_edit_and_reload[chromium]",
+  "fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data/1",
+      "sent": 54,
+      "settled": 58,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data",
+      "sent": 109,
+      "settled": 117,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "perf": [
+    {
+      "name": "/api/notes/cjk_data/1",
+      "start": 63,
+      "reqStart": 65,
+      "respStart": 65,
+      "respEnd": 65,
+      "dur": 3
+    },
+    {
+      "name": "/api/notes/cjk_data",
+      "start": 118,
+      "reqStart": 119,
+      "respStart": 119,
+      "respEnd": 120,
+      "dur": 2
+    }
+  ],
+  "diag": [],
+  "url": "http://127.0.0.1:57502/read/cjk_data/1",
+  "late_fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data/1",
+      "sent": 54,
+      "settled": 58,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data",
+      "sent": 109,
+      "settled": 117,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data/1",
+      "sent": 135,
+      "settled": null,
+      "status": null,
+      "error": null
+    }
+  ],
+  "late_perf": [
+    {
+      "name": "/api/notes/cjk_data/1",
+      "start": 63,
+      "reqStart": 65,
+      "respStart": 65,
+      "respEnd": 65,
+      "dur": 3
+    },
+    {
+      "name": "/api/notes/cjk_data",
+      "start": 118,
+      "reqStart": 119,
+      "respStart": 119,
+      "respEnd": 120,
+      "dur": 2
+    },
+    {
+      "name": "/api/notes/cjk_data/1",
+      "start": 143,
+      "reqStart": 144,
+      "respStart": 145,
+      "respEnd": 145,
+      "dur": 2
+    }
+  ],
+  "late_diag": []
+}

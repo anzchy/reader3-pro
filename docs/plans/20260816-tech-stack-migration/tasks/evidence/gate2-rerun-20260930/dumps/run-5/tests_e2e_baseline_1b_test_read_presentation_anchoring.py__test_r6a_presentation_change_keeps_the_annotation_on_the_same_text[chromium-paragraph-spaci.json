@@ -1,0 +1,78 @@
+{
+  "test": "tests/e2e/baseline_1b/test_read_presentation_anchoring.py::test_r6a_presentation_change_keeps_the_annotation_on_the_same_text[chromium-paragraph-spacing-plus-minus]",
+  "fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 69,
+      "settled": 72,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 152,
+      "settled": 155,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "perf": [
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 74,
+      "reqStart": 76,
+      "respStart": 77,
+      "respEnd": 77,
+      "dur": 3
+    },
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 157,
+      "reqStart": 159,
+      "respStart": 160,
+      "respEnd": 160,
+      "dur": 3
+    }
+  ],
+  "diag": [],
+  "url": "http://127.0.0.1:59206/read/smoke_data/0",
+  "late_fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 69,
+      "settled": 72,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 152,
+      "settled": 155,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "late_perf": [
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 74,
+      "reqStart": 76,
+      "respStart": 77,
+      "respEnd": 77,
+      "dur": 3
+    },
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 157,
+      "reqStart": 159,
+      "respStart": 160,
+      "respEnd": 160,
+      "dur": 3
+    }
+  ],
+  "late_diag": []
+}

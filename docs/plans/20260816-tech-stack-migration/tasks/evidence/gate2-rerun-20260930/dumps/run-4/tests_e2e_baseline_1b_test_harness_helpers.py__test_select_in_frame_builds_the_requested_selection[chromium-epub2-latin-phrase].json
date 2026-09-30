@@ -1,0 +1,46 @@
+{
+  "test": "tests/e2e/baseline_1b/test_harness_helpers.py::test_select_in_frame_builds_the_requested_selection[chromium-epub2-latin-phrase]",
+  "fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 91,
+      "settled": 98,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "perf": [
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 122,
+      "reqStart": 124,
+      "respStart": 125,
+      "respEnd": 126,
+      "dur": 4
+    }
+  ],
+  "diag": [],
+  "url": "http://127.0.0.1:58646/read/smoke_data/0",
+  "late_fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 91,
+      "settled": 98,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "late_perf": [
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 122,
+      "reqStart": 124,
+      "respStart": 125,
+      "respEnd": 126,
+      "dur": 4
+    }
+  ],
+  "late_diag": []
+}

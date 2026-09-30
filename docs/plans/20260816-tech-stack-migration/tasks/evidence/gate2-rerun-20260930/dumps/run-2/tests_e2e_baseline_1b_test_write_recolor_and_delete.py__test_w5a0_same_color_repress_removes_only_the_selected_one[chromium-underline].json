@@ -1,0 +1,78 @@
+{
+  "test": "tests/e2e/baseline_1b/test_write_recolor_and_delete.py::test_w5a0_same_color_repress_removes_only_the_selected_one[chromium-underline]",
+  "fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 46,
+      "settled": 48,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 128,
+      "settled": 131,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "perf": [
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 53,
+      "reqStart": 55,
+      "respStart": 56,
+      "respEnd": 56,
+      "dur": 2
+    },
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 136,
+      "reqStart": 137,
+      "respStart": 139,
+      "respEnd": 139,
+      "dur": 3
+    }
+  ],
+  "diag": [],
+  "url": "http://127.0.0.1:57502/read/smoke_data/0",
+  "late_fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 46,
+      "settled": 48,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 128,
+      "settled": 131,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "late_perf": [
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 53,
+      "reqStart": 55,
+      "respStart": 56,
+      "respEnd": 56,
+      "dur": 2
+    },
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 136,
+      "reqStart": 137,
+      "respStart": 139,
+      "respEnd": 139,
+      "dur": 3
+    }
+  ],
+  "late_diag": []
+}

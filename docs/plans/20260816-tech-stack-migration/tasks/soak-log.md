@@ -1031,6 +1031,59 @@ GET https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600&disp
 >   （`annotations.js`）被改动时一并付；付时把第 2 项在同一压力配方下重跑一次记档。
 > - [欠账 #48](./009-e2e-annotations.md)（「一次尝试 = 跑几遍」）随之失去对象，已结清。
 
+### ⬛ #49 修后：压力臂 6 跑 0 红，第 2 项记录性重跑绿（2026-09-30，`019-frozen-set-debts` @ `789602c`）
+
+> **不是批次，不落台账。** 两个臂都没加 `--append`，上面的台账表一行没动；这里只记证据。
+> 冻结集在本分支变了（`helpers.py`、`baseline_1b/**`），`suite_hash` **`1e868c7bf811` → `6dcbb1110288`**
+> （取法同上方「`suite_hash` 的取法」，在 `789602c` 的干净索引上算）。新值上的第一批、第 3 项重跑、
+> 第 1 项在最终候选 `commit` 上重过，按[迁移计划 §7「012 开工核验」](../plan-tech-stack-migration.md)在合入后进行，本节不代劳。
+
+**修法**（[009 欠账 #49](./009-e2e-annotations.md)，`40a0fce`）：`wait_for_notes` / `wait_for_note_text`
+轮询间隔从 `time.sleep(0.05)` 换成 `page.wait_for_timeout(50)`——同步 Playwright 只在主线程进 Playwright
+调用时才派发 route 回调，`time.sleep` 期间 conftest 的 `**/*` 出站闸饿死，写请求出不了门。8s 上限**没动**。
+
+**不靠压力的确定性复现**（先于压力臂，是本条从推断落到实测的那一步）：新用例
+`tests/e2e/test_disk_poll_pumps_inflight_write.py` 让页面 200ms 后自己发起建标注、测试侧不做任何
+Playwright 调用直接进 `wait_for_notes`。对**旧** sleep 体，它在无压力的机器上稳定红：
+`AssertionError: 8.0s 内 notes.json 没有稳定到 1 条，实际 0 条：[]`（`helpers.py:825`）；换成泵之后绿。
+
+**压力臂**（同 2026-09-23 v6 归因臂的配方：`hw.ncpu`=10 个 shell 忙等 ＋ `-p e2e_diag_dump`，6 跑）。
+证据目录 [`evidence/gate2-rerun-20260930/`](./evidence/gate2-rerun-20260930/)（`diag_loop.sh` 相对 v6 版只改两处：
+`cd` 到本分支 worktree、加 `export E2E_DIAG_ALWAYS=1`）。
+
+| 跑 | 结果 | lane 结束时 load | 本跑 max(reqStart−start) |
+|---|---|---|---|
+| 1 | 🟢 `76 passed, 189 deselected in 66.52s` | 10.56 | 6 ms |
+| 2 | 🟢 `76 passed … in 64.20s` | 12.70 | 13 ms |
+| 3 | 🟢 `76 passed … in 64.09s` | 12.97 | 12 ms |
+| 4 | 🟢 `76 passed … in 64.61s` | 13.42 | 5 ms |
+| 5 | 🟢 `76 passed … in 64.34s` | 12.37 | 7 ms |
+| 6 | 🟢 `76 passed … in 64.46s` | 13.40 | 5 ms |
+
+压前 load 2.85。全部 `/api/notes` perf 条目（`perf` ＋ `late_perf`，`reqStart > 0`）n=1624：min 0、中位 2、
+**max 13 ms**，≥1000ms 的 0 条，`reqStart == 0` 排除 0 条。对照 v6：7/25 条慢请求 **8007 / 8040 / 8151 ms**。
+「上线前排队 ≈8s」的簇消失了。
+
+**三处必须写明的口径**：
+- **仪器不同。** v6 只在红时 dump，本臂 `E2E_DIAG_ALWAYS=1` 每条都 dump——v6 的 25 条来自红用例，
+  本臂的 1624 条来自全部用例。两边的 max 可以并排看，比例不能直接比。
+- **空洞检查的期望值订正为 75，不是 76。** 每跑恰好 75 个 dump；缺的永远是同一条
+  `test_harness_helpers.py::test_notes_isolation_resets_on_setup_and_again_on_teardown`——它不要 `page`
+  fixture，`scripts/e2e_diag_dump.py` 对无 `page` 的用例按设计不写。所以上限是 76 − 1 = 75，
+  每跑 75 = 全覆盖，不是漏采。
+- 本臂 load 峰值约 1.3× 核数，低于 v6 的 23–30；压力**有无**已被 2026-09-23 的数据证明比**大小**更相关
+  （见上方「第 2 项复跑」），但这个差照记。
+
+**第 2 项记录性重跑**（gate-2 record-only, not a batch）：`soak_run.py --log-dir evidence/gate2-rerun-20260930/soak`，
+无 `--append`。压力源是本文件「第 2 项 —— CPU 压力下」那段 burn 代码，**但从文件跑**
+（[`evidence/gate2-attribution-20260923/burn.py`](./evidence/gate2-attribution-20260923/burn.py)，内容相同）：
+原样的 `python3 - 10 240 <<'PY'` 在本机 Homebrew Python 3.14（macOS 默认 spawn）下子进程起不来——
+`FileNotFoundError: …/<stdin>`，spawn 要按文件重新导入 `__main__`。第一次尝试因此是**无压力**跑
+（`76 passed in 64.37s`，load 12.41 → 5.21，一路下降），不算数，照记；第二次从文件跑：
+压前 load **1.90**，lane 结束时（burn 仍在）**11.38**，`76 passed, 189 deselected in 68.98s`，
+`verdict: green`，`suite_hash 6dcbb1110288`，`[soak] dry run：未写台账`。跑前跑后
+`git diff --quiet -- soak-log.md` 都是 0。
+
 ### 第 1 项 —— 干净 Linux / CI：**FAIL**（2026-09-20 真跑三次，三次都红）
 
 载体是 `.github/workflows/tests.yml` 的第二个 job `e2e`（9 步），2026-09-20 加入，同时兑付了

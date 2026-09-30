@@ -1,0 +1,198 @@
+{
+  "test": "tests/e2e/baseline_1b/test_kernel_actions_and_url.py::test_k6a_in_page_chapter_turn_stamps_the_new_chapter[chromium]",
+  "fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data/0",
+      "sent": 85,
+      "settled": 88,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data/0",
+      "sent": 167,
+      "settled": 170,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data/1",
+      "sent": 936,
+      "settled": 939,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data/1",
+      "sent": 1017,
+      "settled": 1020,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "POST",
+      "url": "/api/notes/cjk_data/1",
+      "sent": 1427,
+      "settled": 1434,
+      "status": 201,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data/1",
+      "sent": 1434,
+      "settled": 1438,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "perf": [
+    {
+      "name": "/api/notes/cjk_data/0",
+      "start": 90,
+      "reqStart": 91,
+      "respStart": 92,
+      "respEnd": 92,
+      "dur": 2
+    },
+    {
+      "name": "/api/notes/cjk_data/0",
+      "start": 172,
+      "reqStart": 174,
+      "respStart": 175,
+      "respEnd": 175,
+      "dur": 3
+    },
+    {
+      "name": "/api/notes/cjk_data/1",
+      "start": 941,
+      "reqStart": 943,
+      "respStart": 944,
+      "respEnd": 944,
+      "dur": 3
+    },
+    {
+      "name": "/api/notes/cjk_data/1",
+      "start": 1023,
+      "reqStart": 1024,
+      "respStart": 1024,
+      "respEnd": 1025,
+      "dur": 2
+    },
+    {
+      "name": "/api/notes/cjk_data/1",
+      "start": 1440,
+      "reqStart": 1441,
+      "respStart": 1441,
+      "respEnd": 1441,
+      "dur": 2
+    }
+  ],
+  "diag": [],
+  "url": "http://127.0.0.1:58646/read/cjk_data/1#",
+  "late_fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data/0",
+      "sent": 85,
+      "settled": 88,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data/0",
+      "sent": 167,
+      "settled": 170,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data/1",
+      "sent": 936,
+      "settled": 939,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data/1",
+      "sent": 1017,
+      "settled": 1020,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "POST",
+      "url": "/api/notes/cjk_data/1",
+      "sent": 1427,
+      "settled": 1434,
+      "status": 201,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data/1",
+      "sent": 1434,
+      "settled": 1438,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "late_perf": [
+    {
+      "name": "/api/notes/cjk_data/0",
+      "start": 90,
+      "reqStart": 91,
+      "respStart": 92,
+      "respEnd": 92,
+      "dur": 2
+    },
+    {
+      "name": "/api/notes/cjk_data/0",
+      "start": 172,
+      "reqStart": 174,
+      "respStart": 175,
+      "respEnd": 175,
+      "dur": 3
+    },
+    {
+      "name": "/api/notes/cjk_data/1",
+      "start": 941,
+      "reqStart": 943,
+      "respStart": 944,
+      "respEnd": 944,
+      "dur": 3
+    },
+    {
+      "name": "/api/notes/cjk_data/1",
+      "start": 1023,
+      "reqStart": 1024,
+      "respStart": 1024,
+      "respEnd": 1025,
+      "dur": 2
+    },
+    {
+      "name": "/api/notes/cjk_data/1",
+      "start": 1432,
+      "reqStart": 1434,
+      "respStart": 1435,
+      "respEnd": 1435,
+      "dur": 2
+    },
+    {
+      "name": "/api/notes/cjk_data/1",
+      "start": 1440,
+      "reqStart": 1441,
+      "respStart": 1441,
+      "respEnd": 1441,
+      "dur": 2
+    }
+  ],
+  "late_diag": []
+}

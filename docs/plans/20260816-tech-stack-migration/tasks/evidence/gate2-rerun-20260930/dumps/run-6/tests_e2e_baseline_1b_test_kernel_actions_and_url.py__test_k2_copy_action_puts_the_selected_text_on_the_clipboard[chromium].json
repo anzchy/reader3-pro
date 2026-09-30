@@ -1,0 +1,54 @@
+{
+  "test": "tests/e2e/baseline_1b/test_kernel_actions_and_url.py::test_k2_copy_action_puts_the_selected_text_on_the_clipboard[chromium]",
+  "fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 74,
+      "settled": 81,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "perf": [
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 78,
+      "reqStart": 81,
+      "respStart": 82,
+      "respEnd": 82,
+      "dur": 4
+    }
+  ],
+  "diag": [],
+  "url": "http://127.0.0.1:59770/read/smoke_data/0",
+  "late_fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 74,
+      "settled": 81,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 155,
+      "settled": null,
+      "status": null,
+      "error": null
+    }
+  ],
+  "late_perf": [
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 78,
+      "reqStart": 81,
+      "respStart": 82,
+      "respEnd": 82,
+      "dur": 4
+    }
+  ],
+  "late_diag": []
+}

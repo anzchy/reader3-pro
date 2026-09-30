@@ -1,0 +1,134 @@
+{
+  "test": "tests/e2e/baseline_1b/test_w8a_selection_survives_rerender.py::test_标注重绘之后手上的选区仍然能写成标注[chromium]",
+  "fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 66,
+      "settled": 68,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 106,
+      "settled": 109,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "POST",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 129,
+      "settled": 134,
+      "status": 201,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 134,
+      "settled": 136,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "perf": [
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 71,
+      "reqStart": 73,
+      "respStart": 74,
+      "respEnd": 74,
+      "dur": 2
+    },
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 111,
+      "reqStart": 113,
+      "respStart": 113,
+      "respEnd": 113,
+      "dur": 2
+    },
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 140,
+      "reqStart": 141,
+      "respStart": 142,
+      "respEnd": 142,
+      "dur": 2
+    }
+  ],
+  "diag": [],
+  "url": "http://127.0.0.1:57502/read/smoke_data/0",
+  "late_fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 66,
+      "settled": 68,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 106,
+      "settled": 109,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "POST",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 129,
+      "settled": 134,
+      "status": 201,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 134,
+      "settled": 136,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "late_perf": [
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 71,
+      "reqStart": 73,
+      "respStart": 74,
+      "respEnd": 74,
+      "dur": 2
+    },
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 111,
+      "reqStart": 113,
+      "respStart": 113,
+      "respEnd": 113,
+      "dur": 2
+    },
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 135,
+      "reqStart": 136,
+      "respStart": 137,
+      "respEnd": 137,
+      "dur": 3
+    },
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 140,
+      "reqStart": 141,
+      "respStart": 142,
+      "respEnd": 142,
+      "dur": 2
+    }
+  ],
+  "late_diag": []
+}

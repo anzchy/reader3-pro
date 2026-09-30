@@ -1,0 +1,102 @@
+{
+  "test": "tests/e2e/baseline_1b/test_kernel_actions_and_url.py::test_k2_type_actions_create_an_annotation_of_that_type[chromium-marker]",
+  "fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 71,
+      "settled": 74,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "POST",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 123,
+      "settled": 128,
+      "status": 201,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 128,
+      "settled": 130,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "perf": [
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 76,
+      "reqStart": 78,
+      "respStart": 79,
+      "respEnd": 79,
+      "dur": 3
+    },
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 133,
+      "reqStart": 134,
+      "respStart": 135,
+      "respEnd": 135,
+      "dur": 2
+    }
+  ],
+  "diag": [],
+  "url": "http://127.0.0.1:57502/read/smoke_data/0",
+  "late_fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 71,
+      "settled": 74,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "POST",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 123,
+      "settled": 128,
+      "status": 201,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 128,
+      "settled": 130,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "late_perf": [
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 76,
+      "reqStart": 78,
+      "respStart": 79,
+      "respEnd": 79,
+      "dur": 3
+    },
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 129,
+      "reqStart": 130,
+      "respStart": 131,
+      "respEnd": 131,
+      "dur": 3
+    },
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 133,
+      "reqStart": 134,
+      "respStart": 135,
+      "respEnd": 135,
+      "dur": 2
+    }
+  ],
+  "late_diag": []
+}

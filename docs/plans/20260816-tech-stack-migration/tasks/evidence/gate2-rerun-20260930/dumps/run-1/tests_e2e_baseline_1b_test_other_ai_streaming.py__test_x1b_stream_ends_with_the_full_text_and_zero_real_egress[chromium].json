@@ -1,0 +1,78 @@
+{
+  "test": "tests/e2e/baseline_1b/test_other_ai_streaming.py::test_x1b_stream_ends_with_the_full_text_and_zero_real_egress[chromium]",
+  "fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 105,
+      "settled": 108,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 188,
+      "settled": 191,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "perf": [
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 110,
+      "reqStart": 111,
+      "respStart": 112,
+      "respEnd": 112,
+      "dur": 2
+    },
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 193,
+      "reqStart": 194,
+      "respStart": 195,
+      "respEnd": 196,
+      "dur": 3
+    }
+  ],
+  "diag": [],
+  "url": "http://127.0.0.1:56904/read/smoke_data/0",
+  "late_fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 105,
+      "settled": 108,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 188,
+      "settled": 191,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "late_perf": [
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 110,
+      "reqStart": 111,
+      "respStart": 112,
+      "respEnd": 112,
+      "dur": 2
+    },
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 193,
+      "reqStart": 194,
+      "respStart": 195,
+      "respEnd": 196,
+      "dur": 3
+    }
+  ],
+  "late_diag": []
+}

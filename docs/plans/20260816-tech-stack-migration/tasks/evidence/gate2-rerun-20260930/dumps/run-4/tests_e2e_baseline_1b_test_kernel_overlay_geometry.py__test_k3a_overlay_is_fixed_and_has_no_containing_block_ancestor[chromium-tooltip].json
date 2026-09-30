@@ -1,0 +1,78 @@
+{
+  "test": "tests/e2e/baseline_1b/test_kernel_overlay_geometry.py::test_k3a_overlay_is_fixed_and_has_no_containing_block_ancestor[chromium-tooltip]",
+  "fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 83,
+      "settled": 88,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 166,
+      "settled": 169,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "perf": [
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 87,
+      "reqStart": 89,
+      "respStart": 90,
+      "respEnd": 90,
+      "dur": 3
+    },
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 170,
+      "reqStart": 172,
+      "respStart": 173,
+      "respEnd": 173,
+      "dur": 3
+    }
+  ],
+  "diag": [],
+  "url": "http://127.0.0.1:58646/read/smoke_data/0",
+  "late_fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 83,
+      "settled": 88,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 166,
+      "settled": 169,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "late_perf": [
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 87,
+      "reqStart": 89,
+      "respStart": 90,
+      "respEnd": 90,
+      "dur": 3
+    },
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 170,
+      "reqStart": 172,
+      "respStart": 173,
+      "respEnd": 173,
+      "dur": 3
+    }
+  ],
+  "late_diag": []
+}

@@ -1,0 +1,78 @@
+{
+  "test": "tests/e2e/baseline_1b/test_harness_helpers.py::test_select_in_frame_builds_the_requested_selection[chromium-repeated-first]",
+  "fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/repeat_data/0",
+      "sent": 90,
+      "settled": 92,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/repeat_data/0",
+      "sent": 171,
+      "settled": null,
+      "status": null,
+      "error": null
+    }
+  ],
+  "perf": [
+    {
+      "name": "/api/notes/repeat_data/0",
+      "start": 98,
+      "reqStart": 99,
+      "respStart": 100,
+      "respEnd": 100,
+      "dur": 2
+    },
+    {
+      "name": "/api/notes/repeat_data/0",
+      "start": 179,
+      "reqStart": 180,
+      "respStart": 181,
+      "respEnd": 181,
+      "dur": 2
+    }
+  ],
+  "diag": [],
+  "url": "http://127.0.0.1:56904/read/repeat_data/0",
+  "late_fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/repeat_data/0",
+      "sent": 90,
+      "settled": 92,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/repeat_data/0",
+      "sent": 171,
+      "settled": 174,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "late_perf": [
+    {
+      "name": "/api/notes/repeat_data/0",
+      "start": 98,
+      "reqStart": 99,
+      "respStart": 100,
+      "respEnd": 100,
+      "dur": 2
+    },
+    {
+      "name": "/api/notes/repeat_data/0",
+      "start": 179,
+      "reqStart": 180,
+      "respStart": 181,
+      "respEnd": 181,
+      "dur": 2
+    }
+  ],
+  "late_diag": []
+}

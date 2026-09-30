@@ -1,0 +1,102 @@
+{
+  "test": "tests/e2e/baseline_1b/test_write_cjk_boundary.py::test_w9b_cjk_note_body_survives_edit_and_reload[chromium]",
+  "fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data/1",
+      "sent": 52,
+      "settled": 58,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data",
+      "sent": 107,
+      "settled": 116,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data/1",
+      "sent": 133,
+      "settled": null,
+      "status": null,
+      "error": null
+    }
+  ],
+  "perf": [
+    {
+      "name": "/api/notes/cjk_data/1",
+      "start": 60,
+      "reqStart": 63,
+      "respStart": 64,
+      "respEnd": 64,
+      "dur": 4
+    },
+    {
+      "name": "/api/notes/cjk_data",
+      "start": 116,
+      "reqStart": 117,
+      "respStart": 118,
+      "respEnd": 118,
+      "dur": 2
+    }
+  ],
+  "diag": [],
+  "url": "http://127.0.0.1:58646/read/cjk_data/1",
+  "late_fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data/1",
+      "sent": 52,
+      "settled": 58,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data",
+      "sent": 107,
+      "settled": 116,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/cjk_data/1",
+      "sent": 133,
+      "settled": 136,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "late_perf": [
+    {
+      "name": "/api/notes/cjk_data/1",
+      "start": 60,
+      "reqStart": 63,
+      "respStart": 64,
+      "respEnd": 64,
+      "dur": 4
+    },
+    {
+      "name": "/api/notes/cjk_data",
+      "start": 116,
+      "reqStart": 117,
+      "respStart": 118,
+      "respEnd": 118,
+      "dur": 2
+    },
+    {
+      "name": "/api/notes/cjk_data/1",
+      "start": 142,
+      "reqStart": 144,
+      "respStart": 145,
+      "respEnd": 145,
+      "dur": 3
+    }
+  ],
+  "late_diag": []
+}

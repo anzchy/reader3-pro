@@ -820,6 +820,14 @@ e2e **124 passed, 16 skipped**；`lint_e2e_groups.py` rc=0，收集 140、`basel
     该标注的高亮元素存在且渲染文本非空」下断言；按 009 §0 第四条纪律留可失败性证据（定向破坏让
     重新着色产出空高亮，该用例红，且红是断言失败）。改的是冻结集，soak 与机制闸的代价按
     [迁移计划 §7](../plan-tech-stack-migration.md#7-阶段门槛表) 结算。
+  - ⬛ **已兑付**（`019-frozen-set-debts`，`789602c`，2026-09-30）：没新增用例，在既有的
+    `baseline_1b/test_write_recolor_and_delete.py::test_w5a3_*`（[wavy, underline]）末尾、原有
+    `to_have_count(1)` 之后追加两条——重载后那个 `<mark>` 的文字等于选中的 quote，其
+    `data-annotation-ids` 的并集恰为盘上新建那条的 id。可失败性证据：在 `applySegments` 上 (a) 把绿色
+    wavy/underline 的 mark 留空、文字挪到兄弟节点 ⇒ 两个参数都红在文字断言（Actual `""`），(b) 写出
+    `data-annotation-ids="[]"` ⇒ 都红在 id 断言（`set() == {uuid}`）；两次 `to_have_count(1)` 都仍绿，
+    正是本条说的空洞。破坏方式与失败输出记在该 commit 的正文里。`suite_hash` 的结算见
+    [`soak-log.md`](./soak-log.md) 2026-09-30 一节。
 - **#22** —— `disputed`。`If-Match` 上剥掉 `W/` 是有意设计，`normalize_etag` 的 docstring
   （`notes_service.py:300`）写着。RFC 9110 §13.1.1 要求强比较，但这条路径上没有任何东西会产生
   弱令牌。若将来引入会弱化令牌的代理，重开此条。

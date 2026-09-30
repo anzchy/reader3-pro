@@ -1,0 +1,110 @@
+{
+  "test": "tests/e2e/baseline_1b/test_write_note_editor.py::test_w4_new_note_reads_back_through_both_channels[chromium]",
+  "fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 54,
+      "settled": 58,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data",
+      "sent": 109,
+      "settled": 116,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 135,
+      "settled": 139,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "perf": [
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 63,
+      "reqStart": 65,
+      "respStart": 66,
+      "respEnd": 66,
+      "dur": 3
+    },
+    {
+      "name": "/api/notes/smoke_data",
+      "start": 118,
+      "reqStart": 120,
+      "respStart": 121,
+      "respEnd": 121,
+      "dur": 3
+    },
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 145,
+      "reqStart": 147,
+      "respStart": 148,
+      "respEnd": 148,
+      "dur": 3
+    }
+  ],
+  "diag": [],
+  "url": "http://127.0.0.1:58646/read/smoke_data/0",
+  "late_fetch": [
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 54,
+      "settled": 58,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data",
+      "sent": 109,
+      "settled": 116,
+      "status": 200,
+      "error": null
+    },
+    {
+      "method": "GET",
+      "url": "/api/notes/smoke_data/0",
+      "sent": 135,
+      "settled": 139,
+      "status": 200,
+      "error": null
+    }
+  ],
+  "late_perf": [
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 63,
+      "reqStart": 65,
+      "respStart": 66,
+      "respEnd": 66,
+      "dur": 3
+    },
+    {
+      "name": "/api/notes/smoke_data",
+      "start": 118,
+      "reqStart": 120,
+      "respStart": 121,
+      "respEnd": 121,
+      "dur": 3
+    },
+    {
+      "name": "/api/notes/smoke_data/0",
+      "start": 145,
+      "reqStart": 147,
+      "respStart": 148,
+      "respEnd": 148,
+      "dur": 3
+    }
+  ],
+  "late_diag": []
+}
