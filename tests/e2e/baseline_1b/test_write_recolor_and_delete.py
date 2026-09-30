@@ -122,8 +122,10 @@ from conftest import BOOK_ID  # type: ignore[import-not-found]
 from helpers import (  # type: ignore[import-not-found]
     CH0_QUOTE,
     assert_bystanders_unchanged,
+    mark_id_union,
     open_ch0,
     read_notes,
+    scan_marks,
     seed_notes,
     select_in_frame,
     wait_for_notes,
@@ -556,6 +558,12 @@ def test_w5a3_recolor_then_repress_replaces_with_a_new_id(
     而本条这次给出的是 DELETE→POST、**新 id**；`UpdateAnnotationRequest` 里也还只有
     `note_text`、没有 `color`，原地改色的通道根本不存在。W-5b 自己的 skip reason 写的
     顺序是「修 #9 → 落地原地改色（前端 WI-14）→ 删本行」，2026-09-21 只做到第一步。
+
+    **末尾的 DOM 断言补过一次（017 #10，2026-09-30）。** 原先只断
+    `to_have_count(1)`——一个 `<mark>` 是空的、或 `data-annotation-ids` 是 `[]`，
+    条数照样是 1，那条断言对「空高亮」是**空洞**的。现在追加两条：重载后那个
+    `<mark>` 的文字等于 `CH0_QUOTE`，它的 id 集合等于盘上 `survivor` 的 id。两个期望值
+    都不取自 DOM——盘是真相源，DOM 必须是它的忠实投影（证伪记录见 019 WI-3 EV-3）。
     """
     assert read_notes(e2e_books_dir, BOOK_ID) == [], "隔离 fixture 没生效：起点不是空的"
 
@@ -655,6 +663,17 @@ def test_w5a3_recolor_then_repress_replaces_with_a_new_id(
         f"新建那条的 quote 是 {survivor['quote']!r}，不是选中的 {CH0_QUOTE!r}：{survivor}"
     )
     expect(frame.get_by_test_id("rd-anno-span")).to_have_count(EXPECTED_AFTER_RECOLOR_TOGGLE)
+
+    # 渲染往返（017 #10）：上面那条只数条数，一个空 `<mark>`、或 ids 是 `[]` 的 `<mark>`
+    # 都能让它绿。这里把「那一个 `<mark>` 渲染的是什么」断出来，期望值全部取自盘与字面量。
+    # 红在这里 ⇒ `applySegments` 建 `<mark>` 时把文字丢了（或挪到了 mark 外面）。
+    expect(frame.get_by_test_id("rd-anno-span")).to_have_text(CH0_QUOTE)
+    rendered_ids = mark_id_union(scan_marks(frame))
+    assert rendered_ids == {survivor["id"]}, (
+        f"重载后 `<mark>` 携带的 id 集合是 {rendered_ids}，期望盘上新建那条的 "
+        f"{{{survivor['id']!r}}}。空集 ⇒ `applySegments` 写出了 `[]`；旧 id "
+        f"{old_id!r} ⇒ 渲染的不是盘上那一条——条数对、内容错，正是 017 #10 说的空洞"
+    )
 
 
 # ---------------------------------------------------------------------------
