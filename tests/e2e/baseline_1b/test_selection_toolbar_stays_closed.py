@@ -42,6 +42,8 @@ from helpers import (  # type: ignore[import-not-found]
     select_in_frame,
 )
 
+pytestmark = pytest.mark.baseline_1b
+
 #: 关闭之后的观察窗口。epub.js 的 `selected` 去抖是 250ms 一拍，900ms 覆盖三拍以上。
 OBSERVE_MS = 900
 

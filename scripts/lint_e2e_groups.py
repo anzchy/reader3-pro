@@ -186,6 +186,11 @@ baseline 全部 skipped、push gate 全绿。「扫顶层」是这类检查最�
   Toast 仍停留 N 毫秒）、C11.15（加载后把 token 改成 1500 / 7000 毫秒，真实停留跟着走，×2）。
   矩阵早就把这三行派给 e2e lane，此前一直没写。Toast 属于书库页切片，进 `shell_4a`。
   `EXPECTED_UNGROUPED_ITEMS`（55）与 `EXPECTED_BASELINE_ITEMS`（68）不变。
+- `EXPECTED_BASELINE_ITEMS` 68 → **76**（2026-09-30，009 #62，WI-4 of 019: moved 8 items）：
+  `test_selection_toolbar_stays_closed.py` 从白名单迁入 `baseline_1b`，**+8 是执行过的
+  `--collect-only` 实测值**（四条关闭路径 × 两个时机）。这是它白名单注释里写的到期条件：019
+  本来就要动 `baseline_1b/`、`suite_hash` 无论如何都要变，一并迁入只清零一次。白名单条目同批撤掉，
+  `EXPECTED_UNGROUPED_ITEMS` 同批 −8（72 → 64），派生总数 265 不变。
 """
 
 from __future__ import annotations
@@ -216,7 +221,7 @@ BASELINE_MARKER = "baseline_1b"
 ACCEPTANCE_MARKERS = GROUP_MARKERS[1:]
 
 # `tests/e2e/baseline_1b/` 下的期望 item 数。**实测值**（变更史见文件头）。
-EXPECTED_BASELINE_ITEMS = 68
+EXPECTED_BASELINE_ITEMS = 76
 
 # 四个 acceptance 目录各自的期望 item 数。合计由此派生，不另写字面量。
 #   acceptance_4b1：R-6b ×3（Wave 4）＋ K-1b ＋ K-6b ＋ W-5b ×3（{marker, wavy, underline}，
@@ -306,11 +311,6 @@ UNGROUPED_E2E_MODULES = {
     # 就要动 `baseline_1b/` 的改动里一并迁入，同批撤条目并给 `EXPECTED_BASELINE_ITEMS`
     # 加上去」。
     "tests/e2e/test_conflict_settled_text_keeps_its_base_etag.py",
-    # 选区工具条关掉之后不得被 epub.js 的下一拍 `selected` 重新打开（K2 copy 的 soak 抖动）。
-    # 内容上它是 K-2 家族，落白名单的理由与上面几条一字不差：迁进 `baseline_1b/` 会改
-    # `suite_hash` 并把 soak 计数清零；到期条件同样是「下一次本来就要动 `baseline_1b/` 的
-    # 改动里一并迁入，同批撤条目并给 `EXPECTED_BASELINE_ITEMS` 加上去」。
-    "tests/e2e/test_selection_toolbar_stays_closed.py",
     # 009 #49（019 WI-2，WI2-E2）：盘上轮询期间，在途的写必须出得了门——钉的是
     # `wait_for_notes` 泵浏览器这件机制本身（旧 `time.sleep` 循环体上它确定地红）。
     # 不并进 `baseline_1b/`：它是 helpers 的机制护栏，不是 009 的业务用例；且根下新文件
@@ -384,7 +384,12 @@ UNGROUPED_E2E_MODULES = {
 # 71 → **72**（2026-09-30，009 #49，WI-2 of 019: +1）：新增
 # `tests/e2e/test_disk_poll_pumps_inflight_write.py`（WI2-E2，1 条，不参数化）。**+1 是执行过的
 # `--collect-only` 实测值**（baseline 68 / 白名单 72 / 全量 265）。
-EXPECTED_UNGROUPED_ITEMS = 72
+#
+# 72 → **64**（2026-09-30，009 #62，WI-4 of 019: moved 8 items）：
+# `tests/e2e/test_selection_toolbar_stays_closed.py` 迁入 `baseline_1b/`，白名单条目已撤，
+# `EXPECTED_BASELINE_ITEMS` 同批 68 → 76。**−8 是执行过的 `--collect-only` 实测值**
+# （baseline 76 / 白名单 64 / 全量 265，总数不变）。
+EXPECTED_UNGROUPED_ITEMS = 64
 
 # 派生值，不是字面量。见文件头「为什么必须派生」。
 EXPECTED_E2E_ITEMS = (
