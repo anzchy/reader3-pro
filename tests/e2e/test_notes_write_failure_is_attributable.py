@@ -1027,7 +1027,7 @@ def test_w3_c6_a_failed_edit_response_never_advances_the_client_etag(
     after = f"after-{token}"
     page.get_by_test_id("rd-note-editor-input").fill(after)
     page.get_by_test_id("rd-note-editor-primary").click()
-    wait_for_note_text(e2e_books_dir, BOOK_ID, seed["note_id"], after)
+    wait_for_note_text(e2e_books_dir, BOOK_ID, seed["note_id"], after, page=page)
 
     writes = wire.writes_after(i_fail)
     assert writes, f"失败之后没有观察到任何写请求：{wire.entries[i_fail:]}"
@@ -1096,7 +1096,7 @@ def test_w3_c5_the_success_path_is_unchanged(
     edited = f"edited-{token}"
     page.get_by_test_id("rd-note-editor-input").fill(edited)
     page.get_by_test_id("rd-note-editor-primary").click()
-    record = wait_for_note_text(e2e_books_dir, BOOK_ID, seed["note_id"], edited)
+    record = wait_for_note_text(e2e_books_dir, BOOK_ID, seed["note_id"], edited, page=page)
     assert record["id"] == seed["note_id"]
 
     expect(page.get_by_test_id("rd-note-editor")).not_to_be_visible()
@@ -1309,7 +1309,7 @@ def test_w4_c3_multi_id_partial_failure_keeps_progress_and_reports_per_id(
         ) from None
     _wait_until(page, _DELETE_ENTRY_JS, f"[{fail_position}] 一条 op == 'delete' 的失败条目")
 
-    wait_for_notes(e2e_books_dir, BOOK_ID, 1)
+    wait_for_notes(e2e_books_dir, BOOK_ID, 1, page=page)
     settle_marks(page, frame, 1)
     on_disk = {r["id"] for r in read_notes(e2e_books_dir, BOOK_ID)}
     assert on_disk == {fail_id}, (
@@ -1349,7 +1349,7 @@ def test_w4_c5_a_failed_delete_response_never_advances_the_client_etag(
     clear_selection_and_drain(page, frame)
     select_in_frame(frame, CH0_QUOTE)
     page.get_by_test_id("rd-anno-type-wavy").click()
-    wait_for_notes(e2e_books_dir, BOOK_ID, 2)
+    wait_for_notes(e2e_books_dir, BOOK_ID, 2, page=page)
 
     writes = wire.writes_after(i_fail)
     assert writes, f"失败之后没有观察到任何写请求：{wire.entries[i_fail:]}"
@@ -1455,7 +1455,7 @@ def test_w4_c7_the_failure_is_not_sticky_a_later_recolor_still_creates(
         raise AssertionError(
             f"第二次（未拦截的）改色没有发出建新的那次 POST——失败被粘住了（{type(exc).__name__}）"
         ) from None
-    wait_for_notes(e2e_books_dir, BOOK_ID, 1)
+    wait_for_notes(e2e_books_dir, BOOK_ID, 1, page=page)
     settle_marks(page, run.frame, 1)
     after = read_notes(e2e_books_dir, BOOK_ID)
 
@@ -1496,7 +1496,7 @@ def test_w4_c4_the_success_path_is_unchanged(
     base_updated = _updated(page)
     page.get_by_test_id("rd-anno-delete").click()
 
-    assert wait_for_notes(e2e_books_dir, BOOK_ID, 0) == []
+    assert wait_for_notes(e2e_books_dir, BOOK_ID, 0, page=page) == []
     settle_marks(page, frame, 0)
     _wait_until(
         page,
@@ -1662,7 +1662,7 @@ def test_w5_c3_a_failed_keep_mine_never_advances_the_client_etag_and_the_retry_l
 
     # 重试：对话框开着时唯一够得着的控件就是它自己里面的按钮。
     page.get_by_test_id("rd-conflict-keep-mine").click()
-    wait_for_note_text(e2e_books_dir, BOOK_ID, run.note_id, run.mine)
+    wait_for_note_text(e2e_books_dir, BOOK_ID, run.note_id, run.mine, page=page)
 
     writes = run.wire.writes_after(i_fail)
     assert writes, f"失败之后没有观察到任何写请求：{run.wire.entries[i_fail:]}"
@@ -1698,7 +1698,7 @@ def test_w5_c4_both_resolution_branches_on_the_success_path(
 
     if branch == "keep-mine":
         page.get_by_test_id("rd-conflict-keep-mine").click()
-        wait_for_note_text(e2e_books_dir, BOOK_ID, run.note_id, run.mine)
+        wait_for_note_text(e2e_books_dir, BOOK_ID, run.note_id, run.mine, page=page)
         expect(page.get_by_test_id("rd-conflict-dialog")).not_to_be_visible()
         post = read_notes(e2e_books_dir, BOOK_ID)
         assert_bystanders_unchanged(pre, post, changed_ids={run.note_id})
@@ -2010,7 +2010,7 @@ def test_w6_c2_a_valid_create_issues_traffic_and_records_nothing(
     except PlaywrightError as exc:
         raise AssertionError(f"有效选区上的建没有发出 POST（{type(exc).__name__}）") from None
     wait_for_write_activity_settled(page)
-    wait_for_notes(e2e_books_dir, BOOK_ID, 1)
+    wait_for_notes(e2e_books_dir, BOOK_ID, 1, page=page)
     notes = read_notes(e2e_books_dir, BOOK_ID)
 
     assert _writes(state.counts) - _writes(before) >= 1, (
@@ -2046,7 +2046,7 @@ def test_w6_c3_the_recolor_composite_on_the_green_path(
         f"() => window.__r3latch.updatedEvents >= {base_updated + 1}",
         "成功的改色派发 reader3:annotations:updated",
     )
-    after = wait_for_notes(e2e_books_dir, BOOK_ID, 1)
+    after = wait_for_notes(e2e_books_dir, BOOK_ID, 1, page=page)
     wait_for_write_activity_settled(page)
     settle_marks(page, frame, 1)
     after = read_notes(e2e_books_dir, BOOK_ID)
@@ -2435,7 +2435,7 @@ def test_w6_c8_every_create_exit_in_sequence_yields_exactly_one_report_each_in_o
     except PlaywrightError as exc:
         raise AssertionError(f"有效的建没有发出 POST（{type(exc).__name__}）") from None
     wait_for_write_activity_settled(page)
-    notes = wait_for_notes(e2e_books_dir, BOOK_ID, 1)
+    notes = wait_for_notes(e2e_books_dir, BOOK_ID, 1, page=page)
 
     entries = _diag_entries(page) or []
     assert [e["op"] for e in entries] == [
@@ -2591,7 +2591,7 @@ def test_w7_c1_create_edit_delete_round_trip_is_exact_and_silent(
     page.get_by_test_id("rd-note-editor-input").fill(body1)
     _w7_click_expecting(page, "rd-note-editor-primary", "POST", "新建笔记")
     wait_for_write_activity_settled(page)
-    after_create = wait_for_notes(e2e_books_dir, BOOK_ID, 2)
+    after_create = wait_for_notes(e2e_books_dir, BOOK_ID, 2, page=page)
     settle_marks(page, frame, 1)
     expect(page.get_by_test_id("rd-note-editor")).not_to_be_visible()
 
@@ -2633,7 +2633,7 @@ def test_w7_c1_create_edit_delete_round_trip_is_exact_and_silent(
     page.get_by_test_id("rd-note-editor-input").fill(body2)
     _w7_click_expecting(page, "rd-note-editor-primary", "PUT", "编辑笔记")
     wait_for_write_activity_settled(page)
-    edited = wait_for_note_text(e2e_books_dir, BOOK_ID, note_id, body2)
+    edited = wait_for_note_text(e2e_books_dir, BOOK_ID, note_id, body2, page=page)
     expect(page.get_by_test_id("rd-note-editor")).not_to_be_visible()
     after_edit = read_notes(e2e_books_dir, BOOK_ID)
 
@@ -2653,7 +2653,7 @@ def test_w7_c1_create_edit_delete_round_trip_is_exact_and_silent(
     select_in_frame(frame, CH0_QUOTE)
     _w7_click_expecting(page, "rd-anno-delete", "DELETE", "删除标注")
     wait_for_write_activity_settled(page)
-    wait_for_notes(e2e_books_dir, BOOK_ID, 1)
+    wait_for_notes(e2e_books_dir, BOOK_ID, 1, page=page)
     settle_marks(page, frame, 0)
     latch = _w7_observe(page, errors, live_server, "删之后")
     updated_total += latch["updatedEvents"]

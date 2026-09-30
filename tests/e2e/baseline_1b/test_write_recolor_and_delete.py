@@ -279,13 +279,13 @@ def test_w5a0_same_color_repress_removes_only_the_selected_one(
     frame = open_ch0(page, live_server, expected_marks=0)
     select_in_frame(frame, CH0_QUOTE)
     page.get_by_test_id(action_testid).click()
-    wait_for_notes(e2e_books_dir, BOOK_ID, 1)
+    wait_for_notes(e2e_books_dir, BOOK_ID, 1, page=page)
 
     # --- 2. 刷新 → 在 "One" 上用**同一个 action、同一个默认色**再建一条旁观条 -----
     frame = open_ch0(page, live_server, expected_marks=1)
     select_in_frame(frame, BYSTANDER_QUOTE)
     page.get_by_test_id(action_testid).click()
-    wait_for_notes(e2e_books_dir, BOOK_ID, 2)
+    wait_for_notes(e2e_books_dir, BOOK_ID, 2, page=page)
 
     # --- 3. 刷新 → 读出两条，断前置条件 ---------------------------------------
     frame = open_ch0(page, live_server, expected_marks=2)
@@ -309,7 +309,7 @@ def test_w5a0_same_color_repress_removes_only_the_selected_one(
     # --- 5. 回到 "Alpha prose" 上重按同一个 action（仍不碰色板）----------------
     select_in_frame(frame, CH0_QUOTE)
     page.get_by_test_id(action_testid).click()
-    wait_for_notes(e2e_books_dir, BOOK_ID, 1)
+    wait_for_notes(e2e_books_dir, BOOK_ID, 1, page=page)
 
     # --- 断言 ------------------------------------------------------------------
     frame = open_ch0(page, live_server, expected_marks=1)
@@ -381,7 +381,7 @@ def test_w5a1_color_swatch_click_changes_no_existing_annotation(
     frame = open_ch0(page, live_server, expected_marks=0)
     select_in_frame(frame, CH0_QUOTE)
     page.get_by_test_id("rd-anno-type-marker").click()
-    before = wait_for_notes(e2e_books_dir, BOOK_ID, 1)
+    before = wait_for_notes(e2e_books_dir, BOOK_ID, 1, page=page)
     record_before = dict(before[0])
 
     # 刷新之后再点色板：`selectedColor` 此刻是复位后的默认色，点绿色是一次**真的换色**。
@@ -448,14 +448,14 @@ def test_w5a2_recolor_then_repress_marker_adds_a_second_one(
     frame = open_ch0(page, live_server, expected_marks=0)
     select_in_frame(frame, CH0_QUOTE)
     page.get_by_test_id("rd-anno-type-marker").click()
-    before = wait_for_notes(e2e_books_dir, BOOK_ID, 1)
+    before = wait_for_notes(e2e_books_dir, BOOK_ID, 1, page=page)
     first_id = str(before[0]["id"])
 
     frame = open_ch0(page, live_server, expected_marks=1)
     select_in_frame(frame, CH0_QUOTE)
     page.get_by_test_id(SWATCH_TESTID).click()
     page.get_by_test_id("rd-anno-type-marker").click()
-    wait_for_notes(e2e_books_dir, BOOK_ID, 2)
+    wait_for_notes(e2e_books_dir, BOOK_ID, 2, page=page)
 
     frame = open_ch0(page, live_server, expected_marks=1)  # 两条重合 ⇒ 合并成一个 `<mark>`
     after = read_notes(e2e_books_dir, BOOK_ID)
@@ -562,7 +562,7 @@ def test_w5a3_recolor_then_repress_replaces_with_a_new_id(
     frame = open_ch0(page, live_server, expected_marks=0)
     select_in_frame(frame, CH0_QUOTE)
     page.get_by_test_id(action_testid).click()
-    before = wait_for_notes(e2e_books_dir, BOOK_ID, 1)
+    before = wait_for_notes(e2e_books_dir, BOOK_ID, 1, page=page)
     old_id = str(before[0]["id"])
     expected_type = action_testid.rsplit("-", 1)[-1]
     assert before[0]["type"] == expected_type, (
@@ -630,7 +630,7 @@ def test_w5a3_recolor_then_repress_replaces_with_a_new_id(
         "直接后果（欠账 #9）；别的值说明回落用的偏移与当前文档对不上"
     )
 
-    wait_for_notes(e2e_books_dir, BOOK_ID, EXPECTED_AFTER_RECOLOR_TOGGLE)
+    wait_for_notes(e2e_books_dir, BOOK_ID, EXPECTED_AFTER_RECOLOR_TOGGLE, page=page)
     frame = open_ch0(page, live_server, expected_marks=EXPECTED_AFTER_RECOLOR_TOGGLE)
     after = read_notes(e2e_books_dir, BOOK_ID)
 
@@ -737,7 +737,7 @@ def test_w6_delete_removes_only_the_clicked_annotation(
     expect(page.get_by_test_id("rd-anno-toolbar")).to_be_visible()
     page.get_by_test_id("rd-anno-delete").click()
 
-    wait_for_notes(e2e_books_dir, BOOK_ID, EXPECTED_AFTER_DELETE)
+    wait_for_notes(e2e_books_dir, BOOK_ID, EXPECTED_AFTER_DELETE, page=page)
     frame = open_ch0(page, live_server, expected_marks=EXPECTED_AFTER_DELETE)
     after = read_notes(e2e_books_dir, BOOK_ID)
 

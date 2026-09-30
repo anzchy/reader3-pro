@@ -421,7 +421,7 @@ def test_w8a_two_overlapping_annotations_both_persist_and_render(
     frame = open_reader(page, live_server, BOOK_ID, 0, CH0_ANCHOR)
     select_in_frame(frame, OVERLAP_B_QUOTE)
     page.get_by_test_id("rd-anno-type-wavy").click()
-    landed = wait_for_notes(e2e_books_dir, BOOK_ID, 2)
+    landed = wait_for_notes(e2e_books_dir, BOOK_ID, 2, page=page)
 
     by_quote = {r["quote"]: r for r in landed}
     assert set(by_quote) == {OVERLAP_A_QUOTE, OVERLAP_B_QUOTE}, (
@@ -599,7 +599,7 @@ def test_w10a_write_path_anchors_the_last_of_25_identical_phrases(
 
     select_in_frame(frame, REPEAT_QUOTE, occurrence=-1)
     page.get_by_test_id("rd-anno-type-marker").click()
-    record = wait_for_notes(e2e_books_dir, BOOK_ID_REPEAT, 1)[0]
+    record = wait_for_notes(e2e_books_dir, BOOK_ID_REPEAT, 1, page=page)[0]
 
     assert record["quote"] == REPEAT_QUOTE, f"落库的 quote 是 {record['quote']!r}"
     assert record["position"] == REPEAT_LAST_OFFSET, (

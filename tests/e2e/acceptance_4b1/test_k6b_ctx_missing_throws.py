@@ -115,7 +115,7 @@ def test_k6b_missing_reader_ctx_throws_and_writes_nothing(
     frame = open_ch0(page, live_server, expected_marks=0)
     select_in_frame(frame, CH0_QUOTE)
     page.get_by_test_id("rd-anno-type-marker").click()
-    wait_for_notes(e2e_books_dir, BOOK_ID, BASELINE_COUNT)
+    wait_for_notes(e2e_books_dir, BOOK_ID, BASELINE_COUNT, page=page)
 
     frame = open_ch0(page, live_server, expected_marks=BASELINE_COUNT)
     baseline = read_notes(e2e_books_dir, BOOK_ID)

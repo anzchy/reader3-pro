@@ -11,8 +11,8 @@
     pathname_is(page, expected)                   等 URL 的 pathname 变成 expected
     scan_marks(frame)                             iframe 内 `<mark>` 的两种视图 ＋ body HTML
     mark_id_union(scan)                           所有 `<mark>` 的 annotation id 并集
-    wait_for_notes(books_dir, book_id, count)     等落库稳定到 count 条
-    wait_for_note_text(books_dir, book_id, id, s) 等某条的 note_text 变成 s（PUT 路径用）
+    wait_for_notes(books_dir, book_id, count, page=)     等落库稳定到 count 条（轮询期间泵浏览器）
+    wait_for_note_text(books_dir, book_id, id, s, page=) 等某条的 note_text 变成 s（PUT 路径用）
     wait_for_write_activity_settled(page)          等 `/api/notes/` 的请求真的停下来
     assert_roundtrip(page, books_dir, book_id, …) §0 的「刷新 → 高亮回到同一段文字」收尾
     assert_bystanders_unchanged(before, after, ids) 没碰过的条目逐字段原样（§0 第六条纪律）
@@ -802,7 +802,9 @@ def read_notes(books_dir: PathLike, book_id: str) -> List[Dict[str, Any]]:
     return list(payload["annotations"])
 
 
-def wait_for_notes(books_dir: PathLike, book_id: str, count: int) -> List[Dict[str, Any]]:
+def wait_for_notes(
+    books_dir: PathLike, book_id: str, count: int, *, page: "Page"
+) -> List[Dict[str, Any]]:
     """等 `notes.json` 稳定到 `count` 条，超时即红并把实际内容打出来。
 
     这不是「重试掩盖 flaky」：落库是异步的（fetch → 服务端原子写），不等就是在断言一个
@@ -812,6 +814,13 @@ def wait_for_notes(books_dir: PathLike, book_id: str, count: int) -> List[Dict[s
     ⚠️ 它一观察到 `len == count` 就返回，所以读到的可能是**中间态**：若一次动作写了两次，
     50ms 的轮询有一定概率正好落在两次写之间的窗口里。要断「恰好 N 条」必须在一个确定的
     终态上再断一次（`assert_roundtrip` 就是在刷新之后补的那一次）。
+
+    **轮询节拍是 `page.wait_for_timeout(50)`，不是 `time.sleep`（009 #49，019 WI-2）。**
+    同步 Playwright 的 route 回调只在主线程调进 Playwright 时才被派发，而 conftest 给每个
+    context 挂了 `**/*` 出网闸：纯 Python 的 sleep 轮询期间，那次写卡在闸的回调上出不了门，
+    8s 等满判超时——v6 归因臂「上线前排队 8007–8151ms」的慢请求簇就是它。`page` 因此是
+    **必填、仅限关键字**：漏传是 TypeError，不会静默退回 sleep。8s 的预算不变（row 49：
+    不许只把 8s 调大）。机制用例：`tests/e2e/test_disk_poll_pumps_inflight_write.py`。
     """
     deadline = time.monotonic() + NOTES_WAIT_S
     seen: List[Dict[str, Any]] = []
@@ -819,14 +828,14 @@ def wait_for_notes(books_dir: PathLike, book_id: str, count: int) -> List[Dict[s
         seen = read_notes(books_dir, book_id)
         if len(seen) == count:
             return seen
-        time.sleep(0.05)
+        page.wait_for_timeout(50)
     raise AssertionError(
         f"{NOTES_WAIT_S}s 内 notes.json 没有稳定到 {count} 条，实际 {len(seen)} 条：{seen}"
     )
 
 
 def wait_for_note_text(
-    books_dir: PathLike, book_id: str, note_id: str, expected_text: str
+    books_dir: PathLike, book_id: str, note_id: str, expected_text: str, *, page: "Page"
 ) -> Dict[str, Any]:
     """等 ``note_id`` 那一条的 ``note_text`` 变成 ``expected_text``，返回该条。
 
@@ -846,6 +855,8 @@ def wait_for_note_text(
 
     W-9（CJK 上重复一遍 W-7）与今后任何走 PUT 的用例都压这条路径，所以它在 helpers 里，
     不在某个用例模块里。
+
+    轮询节拍与 `wait_for_notes` 同为 `page.wait_for_timeout(50)`（理由见那里的 docstring）。
     """
     deadline = time.monotonic() + NOTES_WAIT_S
     while time.monotonic() < deadline:
@@ -854,7 +865,7 @@ def wait_for_note_text(
                 if record.get("note_text") == expected_text:
                     return record
                 break
-        time.sleep(0.05)
+        page.wait_for_timeout(50)
 
     final = read_notes(books_dir, book_id)
     current = next((r for r in final if r.get("id") == note_id), None)
@@ -983,7 +994,7 @@ def assert_roundtrip(
     """
     from playwright.sync_api import expect
 
-    records = wait_for_notes(books_dir, book_id, expected_count)
+    records = wait_for_notes(books_dir, book_id, expected_count, page=page)
     record = _pick_target(records, quote, expected_type)
     assert record["type"] == expected_type, (
         f"落库的 type 是 {record['type']!r}，不是按下的那个按钮对应的 {expected_type!r}："

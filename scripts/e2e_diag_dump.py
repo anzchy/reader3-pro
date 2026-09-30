@@ -105,8 +105,14 @@ def _r3_diag_capture(request):
 def pytest_runtest_makereport(item, call):
     report = yield
     rep = report.get_result()
-    # 只在 call 阶段的失败上动手：此时 page fixture 还没拆，页面仍活着。
-    if rep.when != "call" or not rep.failed:
+    # 只在 call 阶段动手：此时 page fixture 还没拆，页面仍活着。缺省只 dump 失败；
+    # `E2E_DIAG_ALWAYS=1` 时每条都 dump（019 WI-2 / 009 #49 的压力臂：全绿的一轮若不 dump，
+    # 「慢请求簇没了」就只剩「没有失败」撑着）。开关在**钩子执行时**读，不像 `_OUT` 那样
+    # 在 import 时定死；只认字面 "1"，"0" / 空串都是关。判据钉在
+    # `tests/unit/test_e2e_diag_dump_always.py`。
+    if rep.when != "call":
+        return
+    if not rep.failed and os.environ.get("E2E_DIAG_ALWAYS") != "1":
         return
     page = item.funcargs.get("page") if hasattr(item, "funcargs") else None
     if page is None:

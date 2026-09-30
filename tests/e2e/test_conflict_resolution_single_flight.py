@@ -95,7 +95,7 @@ def test_保留我的还在飞时两个出口都不可点(
 
     release_put(page)
     expect(page.get_by_test_id(DIALOG_TESTID)).to_be_hidden()
-    wait_for_note_text(e2e_books_dir, BOOK_ID, note_id, NOTE_LOCAL)
+    wait_for_note_text(e2e_books_dir, BOOK_ID, note_id, NOTE_LOCAL, page=page)
     assert editor_text(page) == NOTE_LOCAL
 
 
@@ -128,7 +128,7 @@ def test_就算按钮被重新启用在飞期间的第二次点击也一次都�
 
     release_put(page)
     expect(page.get_by_test_id(DIALOG_TESTID)).to_be_hidden()
-    wait_for_note_text(e2e_books_dir, BOOK_ID, note_id, NOTE_LOCAL)
+    wait_for_note_text(e2e_books_dir, BOOK_ID, note_id, NOTE_LOCAL, page=page)
     assert editor_text(page) == NOTE_LOCAL, (
         "在飞期间那次「采用远端」把冲突收掉了，界面落在远端那版——"
         "用户点下「保留我的」之后的写反而不算数了"
@@ -164,7 +164,7 @@ def test_回来的写属于已经过期的冲突时不许再收尾(
     assert editor_text(page) == SENTINEL, (
         "一次属于已过期冲突的回调仍然收了尾，把编辑器里的字盖掉了"
     )
-    wait_for_note_text(e2e_books_dir, BOOK_ID, note_id, NOTE_LOCAL)
+    wait_for_note_text(e2e_books_dir, BOOK_ID, note_id, NOTE_LOCAL, page=page)
 
 
 def test_没有并发干扰时保留我的照旧写盘收尾并放开按钮(
@@ -181,7 +181,7 @@ def test_没有并发干扰时保留我的照旧写盘收尾并放开按钮(
     page.get_by_test_id(KEEP_MINE_TESTID).click()
 
     expect(page.get_by_test_id(DIALOG_TESTID)).to_be_hidden()
-    wait_for_note_text(e2e_books_dir, BOOK_ID, note_id, NOTE_LOCAL)
+    wait_for_note_text(e2e_books_dir, BOOK_ID, note_id, NOTE_LOCAL, page=page)
     assert editor_text(page) == NOTE_LOCAL
 
     expect(page.get_by_test_id(KEEP_MINE_TESTID)).to_be_enabled()

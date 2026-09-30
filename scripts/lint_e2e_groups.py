@@ -311,6 +311,12 @@ UNGROUPED_E2E_MODULES = {
     # `suite_hash` 并把 soak 计数清零；到期条件同样是「下一次本来就要动 `baseline_1b/` 的
     # 改动里一并迁入，同批撤条目并给 `EXPECTED_BASELINE_ITEMS` 加上去」。
     "tests/e2e/test_selection_toolbar_stays_closed.py",
+    # 009 #49（019 WI-2，WI2-E2）：盘上轮询期间，在途的写必须出得了门——钉的是
+    # `wait_for_notes` 泵浏览器这件机制本身（旧 `time.sleep` 循环体上它确定地红）。
+    # 不并进 `baseline_1b/`：它是 helpers 的机制护栏，不是 009 的业务用例；且根下新文件
+    # 不在 `HASH_COVERED_PATHS` 里，放这里不额外移动 `suite_hash`。到期条件：无——
+    # 它与任何组都正交，是长期住户（与 `test_testid_dom_uniqueness.py` 同类）。
+    "tests/e2e/test_disk_poll_pumps_inflight_write.py",
 }
 
 # 上面几个白名单模块在一次 `tests/e2e --collect-only` 里贡献的 item 数。
@@ -374,7 +380,11 @@ UNGROUPED_E2E_MODULES = {
 # `tests/e2e/test_notes_write_failure_is_attributable.py` 新增 8 条 item（W1-C11 / W1-C12 /
 # W1-C13 各 1、W6-C6 ×2、W6-C7 ×2、W6-C8 1；W1-C8 是原地改判，不增条数）。**+8 是执行过的
 # `--collect-only` 实测值**（baseline 68 / 白名单 71 / 全量 264）。
-EXPECTED_UNGROUPED_ITEMS = 71
+#
+# 71 → **72**（2026-09-30，009 #49，WI-2 of 019: +1）：新增
+# `tests/e2e/test_disk_poll_pumps_inflight_write.py`（WI2-E2，1 条，不参数化）。**+1 是执行过的
+# `--collect-only` 实测值**（baseline 68 / 白名单 72 / 全量 265）。
+EXPECTED_UNGROUPED_ITEMS = 72
 
 # 派生值，不是字面量。见文件头「为什么必须派生」。
 EXPECTED_E2E_ITEMS = (

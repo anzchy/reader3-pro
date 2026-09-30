@@ -537,7 +537,7 @@ def test_r6b_stored_cfi_still_resolves_to_the_quote_after_presentation_change(
     expect(page.get_by_test_id("rd-anno-toolbar")).to_be_visible()
     page.get_by_test_id("rd-anno-type-marker").click()
 
-    records = wait_for_notes(e2e_books_dir, BOOK_ID, 1)
+    records = wait_for_notes(e2e_books_dir, BOOK_ID, 1, page=page)
     record = records[0]
     stored_cfi = record.get("cfi")
 
