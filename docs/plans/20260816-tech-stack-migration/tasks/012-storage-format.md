@@ -60,7 +60,7 @@
 > - **留在 012**：**#57**（上传）与 **#52**（批量重建索引），作为末波 Wave D。两条都有 012 独有的硬依赖：#57 的验收写死「按新格式落盘」→ 依赖 WI-3；#52 依赖 WI-7 的 generation swap。
 > - 012 另外保留：Phase 3 核心 + #35 + #54 / #55（§2.1）。
 >
-> **兑付方改写**：是 [018 WI-1](./018-library-routes.md)（一个 commit）。在它合入之前 009 表对这四行仍写 012，以 [§9 的 018 段](../plan-tech-stack-migration.md) 为准。
+> **兑付方改写**：是 [018 WI-1](./018-library-routes.md)（一个 commit）。~~在它合入之前 009 表对这四行仍写 012，以 [§9 的 018 段](../plan-tech-stack-migration.md) 为准。~~ ⬛ 2026-09-30：已由 [018 WI-1](./018-library-routes.md) 改完——009 表这四行的兑付方列写 `018-library-routes`，Track-D 台账校验同批泛化为「`012|018 debt #N`，前缀恰等于兑付方分支号」。
 >
 > **前端半边跟着路由走**：`frontend/src/settings/index.ts` 里批量重建（`wireDataActions` 的 `reindex`）与导出书库（`wireExport` 的 `set-export-json`）今天都只显示「暂不支持」、发 0 个请求。#52 的前端半边随 012（WI-12）换回真实请求；#51 / #53 / #56 / #58 的前端半边归属定义在 [018 §2.3](./018-library-routes.md)。
 
@@ -159,7 +159,7 @@
   - 全仓 grep 不到「为取元数据而 `load_book_cached`」
   - 018 的列表路由返回的书名在本 WI 前后逐项相等（[#56 验收列](./009-e2e-annotations.md#跨波欠账)「书名与 `load_book_metadata()` 一致」换了实现仍成立）
   - 测试矩阵：待 /tdd-guardian:design-tests
-- #35 的优先级：待裁，§6 Q10。#56 兑付方列的「与 #35 同批」一句不在本文改，由 [018 WI-1](./018-library-routes.md) 改。
+- #35 的优先级：待裁，§6 Q10。~~#56 兑付方列的「与 #35 同批」一句不在本文改，由 [018 WI-1](./018-library-routes.md) 改。~~ ⬛ 2026-09-30：该句已由 [018 WI-1](./018-library-routes.md) 删去，#56 兑付方改为 018。
 
 ### WI-6: `reader3 --migrate <book_id>`
 

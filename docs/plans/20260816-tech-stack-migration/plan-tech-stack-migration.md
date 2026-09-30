@@ -732,7 +732,7 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 | M5 | Phase 5 launch + PWA | `015-launch-experience` | A（`reader3 launch`）＋ **B**（PWA，WI-20） |
 | M1b-债 | 欠账 #22 字号/间距慢一拍（合入 009 后、冻结 G2 前的一条独立小分支） | `016-settings-apply-order` | A（兑付记在 [`tasks/009` 欠账表 #22](./tasks/009-e2e-annotations.md)，不另开 task 文件） |
 | M2-债 | 011 合入后的全量审计欠账：44 条 findings 中判为 must / should 的 22 条 | `017-audit-followup` | A（任务展开写在 [`tasks/017-audit-followup.md`](./tasks/017-audit-followup.md)） |
-| M4a-债 | 013 延后的后端半边中**不依赖 012 存储格式**的四条（#51 / #56 / #58 / #53）＋ 每书写协调契约 ＋ 009 欠账 #31 收尾对账（job 已于 2026-09-20 建成并结清；018 只核验合并头与改掉过期措辞） | `018-library-routes` | A（[任务文件](./tasks/018-library-routes.md)，2026-09-26 评审通过、待开工；分拆裁定见 [`tasks/012` §6 D1](./tasks/012-storage-format.md)） |
+| M4a-债 | 013 延后的后端半边中**不依赖 012 存储格式**的四条（#51 / #56 / #58 / #53）＋ 每书写协调契约 ＋ 009 欠账 #31 收尾对账（job 已于 2026-09-20 建成并结清；018 只核验合并头与改掉过期措辞） | `018-library-routes` | A（[任务文件](./tasks/018-library-routes.md)，2026-09-26 评审通过；🚧 2026-09-30 分支已开、进行中；分拆裁定见 [`tasks/012` §6 D1](./tasks/012-storage-format.md)） |
 | M1b / M2-债 | 冻结集欠账窗口：009 #49 / #50 / #62 ＋ 017 finding #10（2026-09-30 分配；兑付记在 009 / 017 各自的表上，不另开 task 文件） | `019-frozen-set-debts` | A |
 | ⟂ | `Reader3Epub.getDebugState()` 只读状态观测面（2026-09-30 分配） | `020-debug-state` | 独立计划 [`20260928-debug-state-getter.md`](../20260928-debug-state-getter.md) |
 | ⟂ | E2E 互斥锁改为 fcntl 包装：e2e lane 的 `command` 经 `scripts/e2e_lock.py` 运行，进程退出即由内核释放，不再手删 mkdir 锁（2026-10-01 分配；不碰冻结集，不另开 task 文件） | `021-e2e-lock` | A |
@@ -760,7 +760,7 @@ must / should 两桶共 22 条落在本分支。**它从 `master` 开、不回 0
 **要 generation swap** 的 #52 留在 012 的末波。裁定理由与逐条依赖核对只写在
 [`tasks/012` §6 D1](./tasks/012-storage-format.md)。~~`018` 的合入同样不得动冻结集 8 条路径——
 它跑在 `master` 上，改一个字节就清零 soak。~~（⬛ 2026-09-28：随 012 门槛 F 放宽，018 碰冻结集不再禁止，
-代价是 012 开工前要在新 `suite_hash` 上重跑一批；判据见本文 §7 与 [012 §4 门槛 F](./tasks/012-storage-format.md)。）兑付方改写是 [018 WI-1](./tasks/018-library-routes.md)（一个 commit）；在它合入之前 009 表仍写 012，以本段为准。
+代价是 012 开工前要在新 `suite_hash` 上重跑一批；判据见本文 §7 与 [012 §4 门槛 F](./tasks/012-storage-format.md)。）兑付方改写是 [018 WI-1](./tasks/018-library-routes.md)（一个 commit）；~~在它合入之前 009 表仍写 012，以本段为准。~~（⬛ 2026-09-30：已由 [018 WI-1](./tasks/018-library-routes.md) 改完，009 表四行兑付方列写 `018-library-routes`。）
 
 **后端分支**的任务清单放在本文件夹的 `tasks/{分支名}.md`，不写进本文。今天存在七个：
 [`007-hygiene-and-contracts.md`](./tasks/007-hygiene-and-contracts.md)、
@@ -769,7 +769,7 @@ must / should 两桶共 22 条落在本分支。**它从 `master` 开、不回 0
 [`011-backend-refactor.md`](./tasks/011-backend-refactor.md)、
 [`012-storage-format.md`](./tasks/012-storage-format.md)（~~骨架，2026-09-26~~ ⬛ 2026-09-30：评审进行中，Q7+ 待裁；分支未开）、
 [`017-audit-followup.md`](./tasks/017-audit-followup.md)、
-[`018-library-routes.md`](./tasks/018-library-routes.md)（~~骨架，2026-09-26~~ ⬛ 2026-09-30：评审通过、待开工）。
+[`018-library-routes.md`](./tasks/018-library-routes.md)（~~骨架，2026-09-26~~ ~~⬛ 2026-09-30：评审通过、待开工~~ 🚧 2026-09-30：分支已开、进行中）。
 
 > ⬛ 2026-09-30：**冻结集欠账窗口**（009 #49 / #50、017 finding #10、009 欠账表中 PR #28 遗留那一行；排在 `018` 之前，
 > 理由与位置见[进度盘](../20260824-frontend-backend-plan-progress.md)）走一条 016 式的小分支，~~**编号在它开分支时才在上表分配**，
@@ -784,7 +784,7 @@ must / should 两桶共 22 条落在本分支。**它从 `master` 开、不回 0
 事实（哪些代码还在、哪些已经被上一个分支改掉了），而 011 的事实要等 008 落地才成立。
 提前写只会得到一份开工时已经过期的清单。开某个分支前补它自己那份。
 
-**补任务文件时有一条固定动作**：去 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) 的跨波欠账表里，把**兑付方指向该分支**的行抄成开工项。009 做 E2E 特征化时实测撞出的生产缺陷都记在那张表上，而那份文件会随 009 合并进入归档——不在开分支时主动去取，这些账就丢了。今天指向 **011** 的有一行：**#18**（`collections_service._NAME_RE` 把连字符判成字符范围端点，导致 `sci-fi` 这类集合名建不出来、而带反斜杠的名字反被放行）。指向前端计划的五行已由 [前端计划 §6.1](../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) 接走。指向 **012** 的今天有九行：**#35**，以及 2026-09-25 按用户裁定 R1–R3 立账的 **#51–#58**（013 延后的后端半边：provider 保存版本校验、批量重建索引、书库导出、DEG-S3 / DEG-S4 数据面、客户端书目列表、上传、删书）——内容只在那张表里，开 012 时照表抄。**其中 #51 / #53 / #56 / #58 已于 2026-09-26 裁定改由 `018` 兑付**（见上文 `018` 段），表上的兑付方列待 018 开工时同批改写。
+**补任务文件时有一条固定动作**：去 [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) 的跨波欠账表里，把**兑付方指向该分支**的行抄成开工项。009 做 E2E 特征化时实测撞出的生产缺陷都记在那张表上，而那份文件会随 009 合并进入归档——不在开分支时主动去取，这些账就丢了。今天指向 **011** 的有一行：**#18**（`collections_service._NAME_RE` 把连字符判成字符范围端点，导致 `sci-fi` 这类集合名建不出来、而带反斜杠的名字反被放行）。指向前端计划的五行已由 [前端计划 §6.1](../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) 接走。指向 **012** 的~~今天有九行~~（⬛ 2026-09-30：018 WI-1 改写后剩五行——#35 / #52 / #54 / #55 / #57；下列原文保留作来历）原有九行：**#35**，以及 2026-09-25 按用户裁定 R1–R3 立账的 **#51–#58**（013 延后的后端半边：provider 保存版本校验、批量重建索引、书库导出、DEG-S3 / DEG-S4 数据面、客户端书目列表、上传、删书）——内容只在那张表里，开 012 时照表抄。**其中 #51 / #53 / #56 / #58 已于 2026-09-26 裁定改由 `018` 兑付**（见上文 `018` 段），~~表上的兑付方列待 018 开工时同批改写~~（⬛ 2026-09-30：表上的兑付方列已由 [018 WI-1](./tasks/018-library-routes.md) 同批改写）。
 
 > **「领先一个分支」按依赖顺序数，不按编号顺序数。** Track D（010）先于 011 成文，是因为
 > §9.1 把 Track D 与 1b 标为「Phase 0 一结束就动」——它们是 Phase 3 的前置，
