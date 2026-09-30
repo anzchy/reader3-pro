@@ -144,6 +144,8 @@ function flush(): Promise<void> {
 
 async function untilComplete(win: TestWindow): Promise<void> {
   for (let i = 0; i < 50 && win.document.readyState !== "complete"; i++) await flush();
+  // 50 次还没到 complete 就直接失败，别让后面的测试在半加载的窗口上跑（AUDIT-6）。
+  expect(win.document.readyState, "window did not reach readyState complete within 50 flushes").toBe("complete");
 }
 
 function makeRendition(): RenditionStub {
@@ -478,7 +480,7 @@ describe("getDebugState: location, section and spine", () => {
 
   it("U9: a throwing rendition.location getter is isolated to the location fields", async () => {
     const h = await setup({ chapterIndex: 1, totalChapters: 5, stubDiag: stubDiag(diagFixture(3)) });
-    h.rendered({ index: 2 }, h.doc(`<p><mark data-annotation-ids='["a"]'>x</mark></p>`));
+    h.rendered({ index: 2 }, h.doc(`<p><mark class="annotation" data-annotation-ids='["a"]'>x</mark></p>`));
     Object.defineProperty(h.rendition, "location", {
       get() {
         throw new Error("boom");
@@ -629,8 +631,8 @@ describe("getDebugState: annotations", () => {
     h.rendered(
       { index: 0 },
       h.doc(
-        `<p>x <mark data-annotation-ids='["a"]'>1</mark> <mark data-annotation-ids='["a","b"]'>2</mark> ` +
-          `<mark data-annotation-ids='["c"]'>3</mark> <mark>plain</mark></p>`,
+        `<p>x <mark class="annotation" data-annotation-ids='["a"]'>1</mark> <mark class="annotation" data-annotation-ids='["a","b"]'>2</mark> ` +
+          `<mark class="annotation" data-annotation-ids='["c"]'>3</mark> <mark>plain</mark></p>`,
       ),
     );
     expect(h.state().annotations).toEqual({ renderedIds: 3, marks: 3 });
@@ -638,9 +640,9 @@ describe("getDebugState: annotations", () => {
 
   it("U11: annotations are recounted from the current contents after a chapter change", async () => {
     const h = await setup();
-    h.rendered({ index: 0 }, h.doc(`<mark data-annotation-ids='["a"]'>1</mark><mark data-annotation-ids='["b"]'>2</mark>`));
+    h.rendered({ index: 0 }, h.doc(`<mark class="annotation" data-annotation-ids='["a"]'>1</mark><mark class="annotation" data-annotation-ids='["b"]'>2</mark>`));
     const s1 = h.state();
-    h.rendered({ index: 1 }, h.doc(`<mark data-annotation-ids='["z"]'>1</mark>`));
+    h.rendered({ index: 1 }, h.doc(`<mark class="annotation" data-annotation-ids='["z"]'>1</mark>`));
     const s2 = h.state();
     expect(s1.annotations).toEqual({ renderedIds: 2, marks: 2 });
     expect(s1.section.index).toBe(0);
@@ -660,12 +662,12 @@ describe("getDebugState: annotations", () => {
   });
 
   it("U6: invalid mark JSON nulls annotations with one error and leaves every other field intact", async () => {
-    const good = `<mark data-annotation-ids='["a"]'>1</mark><mark data-annotation-ids='["b"]'>2</mark>`;
+    const good = `<mark class="annotation" data-annotation-ids='["a"]'>1</mark><mark class="annotation" data-annotation-ids='["b"]'>2</mark>`;
     const control = await setup({ chapterIndex: 2 });
     control.rendered({ index: 2 }, control.doc(good));
     control.relocated(loc(3, 10));
     const bad = await setup({ chapterIndex: 2 });
-    bad.rendered({ index: 2 }, bad.doc(good + `<mark data-annotation-ids='[not json'>3</mark>`));
+    bad.rendered({ index: 2 }, bad.doc(good + `<mark class="annotation" data-annotation-ids='[not json'>3</mark>`));
     bad.relocated(loc(3, 10));
 
     let sb: DebugState | undefined;
@@ -687,13 +689,57 @@ describe("getDebugState: annotations", () => {
     ["an object", `'{"x":1}'`],
   ])("U6b: mark JSON that parses to %s is treated as corrupt (R7)", async (_label, attr) => {
     const h = await setup();
-    h.rendered({ index: 2 }, h.doc(`<mark data-annotation-ids='["a"]'>1</mark><mark data-annotation-ids=${attr}>2</mark>`));
+    h.rendered({ index: 2 }, h.doc(`<mark class="annotation" data-annotation-ids='["a"]'>1</mark><mark class="annotation" data-annotation-ids=${attr}>2</mark>`));
     h.relocated(loc(3, 10));
     const s = h.state();
     expect(s.annotations).toBeNull();
     expect(s.errors.filter((e) => e.startsWith("annotations: ")).length).toBe(1);
     expect(s.ready).toBe(true);
     expect(s.progress.sectionPercent).toBe(30);
+  });
+
+  // AUDIT-1: V8 的 SyntaxError 消息会引用属性原文（`"Chapter on"... is not valid JSON`），
+  // 原样进 errors 就把书籍正文带出去了（不变量「不含书籍正文」）。
+  it("U32: malformed mark JSON reports annotations error without any attribute text", async () => {
+    const attr = "Chapter one: It was a dark and stormy night";
+    const h = await setup();
+    h.rendered({ index: 0 }, h.doc(`<p><mark class="annotation" data-annotation-ids="${attr}">x</mark></p>`));
+    const s = h.state();
+    expect(s.annotations).toBeNull();
+    expect(s.errors.some((e) => e.startsWith("annotations: "))).toBe(true);
+    const windows: string[] = [];
+    for (let i = 0; i + 4 <= attr.length; i++) windows.push(attr.slice(i, i + 4));
+    for (const e of s.errors) {
+      const leaked = windows.filter((w) => e.includes(w));
+      expect(leaked, `errors entry leaks attribute text: ${e}`).toEqual([]);
+    }
+  });
+
+  // AUDIT-2: 只数 annotations.js 自己画的 mark.annotation（与 annotations.js 的查询同口径），
+  // 书里自带 data-annotation-ids 属性的其他元素既不计数，也不能把 annotations 弄成 null。
+  it("U34: book-authored non-mark elements with data-annotation-ids are not counted", async () => {
+    const h = await setup();
+    h.rendered(
+      { index: 0 },
+      h.doc(
+        `<p><mark class="annotation" data-annotation-ids='["a"]'>1</mark> ` +
+          `<span data-annotation-ids='["x","y"]'>book</span></p>`,
+      ),
+    );
+    const s = h.state();
+    expect(s.annotations).toEqual({ renderedIds: 1, marks: 1 });
+    expect(s.errors).toEqual([]);
+  });
+
+  it("U34b: a malformed data-annotation-ids on a non-mark element produces no annotations error", async () => {
+    const h = await setup();
+    h.rendered(
+      { index: 0 },
+      h.doc(`<p><mark class="annotation" data-annotation-ids='["a"]'>1</mark> <div data-annotation-ids="oops">b</div></p>`),
+    );
+    const s = h.state();
+    expect(s.annotations).toEqual({ renderedIds: 1, marks: 1 });
+    expect(s.errors.filter((e) => e.startsWith("annotations"))).toEqual([]);
   });
 });
 
@@ -908,6 +954,21 @@ describe("getDebugState: diag", () => {
     expect(s!.progress.sectionPercent).toBe(30);
     expect(s!.ready).toBe(true);
   });
+
+  // AUDIT-1 兜底：异常消息来源不可控，errorMessage 截到 120 字符。
+  it("U33: an error message longer than 120 chars is truncated to 120", async () => {
+    const long = "L".repeat(119) + "0123456789";
+    const h = await setup({
+      stubDiag: {
+        entries: () => {
+          throw new Error(long);
+        },
+      },
+    });
+    const s = h.state();
+    expect(s.errors).toEqual([`diag: ${long.slice(0, 120)}`]);
+    expect(s.errors[0]).not.toContain("0123456789");
+  });
 });
 
 // ---- Read-only, idempotent, serializable --------------------------------------------
@@ -936,7 +997,7 @@ describe("getDebugState: read-only invariants", () => {
     const { win, rendition } = h;
     let iframeDoc: Document | null = null;
     if (state !== "a") {
-      iframeDoc = h.doc(`<p>${SENTINEL} <mark data-annotation-ids='["a"]'>${SENTINEL}</mark></p>`);
+      iframeDoc = h.doc(`<p>${SENTINEL} <mark class="annotation" data-annotation-ids='["a"]'>${SENTINEL}</mark></p>`);
       h.rendered({ index: 1 }, iframeDoc);
       h.relocated(loc(3, 10));
     }
@@ -982,6 +1043,7 @@ describe("getDebugState: read-only invariants", () => {
       "reader3:content:click",
       "reader3:escape",
       "reader3:annotations:updated",
+      "reader3:ai:ask",
     ]) {
       win.addEventListener(name, () => counters.events++);
     }
@@ -1054,7 +1116,7 @@ describe("getDebugState: paths derived from the implementation", () => {
 
   it("U28: a location whose start accessor throws isolates cfi, section.href and progress.section", async () => {
     const h = await setup({ chapterIndex: 2, totalChapters: 5, stubDiag: stubDiag(diagFixture(3)) });
-    h.rendered({ index: 2 }, h.doc(`<mark data-annotation-ids='["a"]'>x</mark>`));
+    h.rendered({ index: 2 }, h.doc(`<mark class="annotation" data-annotation-ids='["a"]'>x</mark>`));
     // assigned directly: relocated would throw inside the renderer's own pill update
     h.rendition.location = {
       get start() {

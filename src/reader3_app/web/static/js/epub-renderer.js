@@ -393,6 +393,9 @@
   // 置 null，函数本身从不抛错。结果只含 JSON 原生值，不含书籍正文。
   const DIAG_LIMIT_DEFAULT = 20;
   const DIAG_LIMIT_MAX = 100;
+  // errors[] 每条消息的上限：异常消息来源不可控（V8 的 JSON SyntaxError 会引用输入原文），
+  // 截断是兜底，真正的防线是抛错处不带原文（AUDIT-1）。
+  const ERROR_MESSAGE_MAX = 120;
 
   function diagLimitOf(opts) {
     const n = opts?.diagLimit;
@@ -430,7 +433,8 @@
 
   function errorMessage(err) {
     try {
-      return err && typeof err.message === "string" ? err.message : String(err);
+      const message = err && typeof err.message === "string" ? err.message : String(err);
+      return message.slice(0, ERROR_MESSAGE_MAX);
     } catch {
       return "unknown error";
     }
@@ -503,10 +507,17 @@
     try {
       const doc = currentContents?.document;
       if (doc) {
-        const marks = doc.querySelectorAll("[data-annotation-ids]");
+        // 与 annotations.js 同口径只认 mark.annotation：书里自带该属性的其他元素不算批注（AUDIT-2）。
+        const marks = doc.querySelectorAll("mark.annotation[data-annotation-ids]");
         const ids = new Set();
         marks.forEach((mark) => {
-          const parsed = JSON.parse(mark.getAttribute("data-annotation-ids"));
+          // 属性值可能是书里的原文：解析失败时换成固定消息，别让 SyntaxError 把原文带进 errors。
+          let parsed;
+          try {
+            parsed = JSON.parse(mark.getAttribute("data-annotation-ids"));
+          } catch {
+            throw new Error("data-annotation-ids is not valid JSON");
+          }
           // 解析成字符串会被 Set 拆成单个字符来数，非数组一律按坏数据处理（R7）。
           if (!Array.isArray(parsed)) throw new Error("data-annotation-ids is not an array");
           parsed.forEach((id) => ids.add(id));

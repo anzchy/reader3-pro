@@ -33,7 +33,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from playwright.sync_api import Page
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
@@ -120,11 +120,6 @@ _LAST_STATE_JS = """() => {
   }
 }"""
 
-#: 本模块每一次 `_probe` 的结果。E4 在自己的小流程之外，再把前面几条用例留下的探针
-#: 统一复核一遍——每条用例在 `_probe` 当场也各自断言过，这里是汇总，不是唯一关口。
-_PROBES: List[Dict[str, Any]] = []
-
-
 def _assert_read_only(probe: Dict[str, Any], where: str) -> None:
     """E4 的判据，逐条探针执行。"""
     assert probe["lenBefore"] > 0, (
@@ -149,14 +144,13 @@ def _assert_read_only(probe: Dict[str, Any], where: str) -> None:
 
 
 def _probe(page: Page, where: str, opts: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """同步探针一次，当场执行 E4 的只读判据，通过了才记进 `_PROBES`。返回 getter 的结果。
+    """同步探针一次，当场执行 E4 的只读判据，返回 getter 的结果。
 
-    先判后记：没通过的探针已在本用例当场红过，再记进去只会让 E4 在别人的探针上重复红一次。
+    判据只在这里执行：每条用例的每一次探针都当场断言，没有模块级汇总再复核一遍——
+    通过了的探针再判一次不可能红，那一遍复核什么都测不到。
     """
     probe = page.evaluate(_PROBE_JS, [list(READER3_EVENTS), opts])
-    probe["where"] = where
     _assert_read_only(probe, where)
-    _PROBES.append(probe)
     return probe["s"]
 
 
@@ -291,11 +285,10 @@ def test_e3_real_save_increments_rendered_ids_and_conserves_diag(page: Page, liv
 
 
 def test_e4_get_debug_state_is_read_only_in_every_probed_state(page: Page, live_server: str) -> None:
-    """E4（S5 / L2）：连调两次结果相同；本模块每一次探针都满足只读判据。
+    """E4（S5 / L2）：连调两次结果相同，两次探针都满足只读判据。
 
-    自己的小流程：`smoke_data` 第 0 章，等 `ready`，背靠背探两次。之后把 E1–E3 留在
-    `_PROBES` 里的探针（翻页前后、保存前后）再统一复核一遍。单独跑 E4 时那部分为空，
-    判据由本条自己的两次探针承担；每条用例在 `_probe` 当场也各自执行过同一判据。
+    自己的小流程：`smoke_data` 第 0 章，等 `ready`，背靠背探两次。E1–E3 的探针（翻页前后、
+    保存前后）不在这里复核：只读判据在 `_probe` 里当场执行，每一次探针都已各自断言过。
 
     什么改动会让它红：getter 调了 `rendition.display/next/prev`、`currentLocation()`、
     往正文里写东西、派发事件，或者返回了带 NaN / undefined / 函数的值。
@@ -306,5 +299,3 @@ def test_e4_get_debug_state_is_read_only_in_every_probed_state(page: Page, live_
     second = _probe(page, "E4 第二次")
 
     assert second == first, f"背靠背两次调用结果不同：{first} vs {second}"
-    for probe in _PROBES:
-        _assert_read_only(probe, probe["where"])
