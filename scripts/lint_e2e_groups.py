@@ -369,7 +369,12 @@ UNGROUPED_E2E_MODULES = {
 # `tests/e2e/test_selection_toolbar_stays_closed.py`，**+8 是执行过的 `--collect-only`
 # 实测值**（四条关闭路径 copy / ask_ai / escape / outer_mousedown × 两个时机
 # after_first_tick / before_first_tick；全量 256）。
-EXPECTED_UNGROUPED_ITEMS = 63
+#
+# 63 → **71**（2026-09-30，009 #50，WI-1 of 019: +8）：白名单里已登记的
+# `tests/e2e/test_notes_write_failure_is_attributable.py` 新增 8 条 item（W1-C11 / W1-C12 /
+# W1-C13 各 1、W6-C6 ×2、W6-C7 ×2、W6-C8 1；W1-C8 是原地改判，不增条数）。**+8 是执行过的
+# `--collect-only` 实测值**（baseline 68 / 白名单 71 / 全量 264）。
+EXPECTED_UNGROUPED_ITEMS = 71
 
 # 派生值，不是字面量。见文件头「为什么必须派生」。
 EXPECTED_E2E_ITEMS = (

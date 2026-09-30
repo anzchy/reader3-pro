@@ -1624,14 +1624,12 @@
       const offsets = this.resolveOffsets(idx, ctx.chapterIndex);
       if (!offsets) {
         // 这里原本是一句 console.log 就 return：不发 POST、不提示、不报错。
-        // 现在它至少会说话（欠账 #44）。
-        console.error('[Annotations] createAnnotation: 选区已失效且快照不可用，放弃本次写入', {
-          hasSnapshot: !!this.currentOffsets,
-          snapshotChapter: this.currentOffsets ? this.currentOffsets.chapterIndex : null,
-          chapterIndex: ctx.chapterIndex,
-          textLength: idx.text.length,
+        // 欠账 #44 让它开口；009 #50 把它接进诊断环——请求前放弃，所以 requested:false。
+        reportNotesWriteFailure({
+          op: "create-no-offsets",
+          requested: false,
+          message: "这段选区已失效，请重新选中再试",
         });
-        showToast("这段选区已失效，请重新选中再试");
         return;
       }
       const s = Math.min(offsets.start, offsets.end);
@@ -1643,9 +1641,13 @@
 
       // 空 quote 不是一条标注，是一次算错。#44 现场里它被照发不误，服务端回
       // 400，而下面那个 resp 从来没人看，于是一次写丢失长得和一次成功一模一样。
+      // 009 #50：同样走诊断环，requested:false。
       if (!quote) {
-        console.error('[Annotations] createAnnotation: 算出空 quote，拒发', { s, e, offsets });
-        showToast("没取到选中的文字，请重新选中再试");
+        reportNotesWriteFailure({
+          op: "create-empty-quote",
+          requested: false,
+          message: "没取到选中的文字，请重新选中再试",
+        });
         return;
       }
 
@@ -1707,11 +1709,13 @@
       if (!resp || !resp.ok) {
         // 不看 resp 是 #44 之所以「静默」的最后一环：服务端已经明说 400 了，
         // 界面照样收工具条、照样重绘，看上去和成功一模一样。
-        console.error('[Annotations] createAnnotation: 写入被拒', {
-          status: resp ? resp.status : null,
-          payload,
+        // 009 #50：网络层失败（resp 为 null）与非 2xx 都经唯一上报口记一条 op:"create"，
+        // status 由 helper 从 resp 读出；文案不变。
+        reportNotesWriteFailure({
+          op: "create",
+          resp,
+          message: `标注没能保存${resp ? `（${resp.status}）` : ""}，请重试`,
         });
-        showToast(`标注没能保存${resp ? `（${resp.status}）` : ""}，请重试`);
         return;
       }
 
