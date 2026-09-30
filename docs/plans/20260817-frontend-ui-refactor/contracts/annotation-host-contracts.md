@@ -121,7 +121,7 @@ function containingBlockAncestor(el) {
 2. **deprecate** —— 显式标注，并指定移除阶段；
 3. **收窄契约名义** —— 若确实不该管，就改契约的名字（例如从「`Reader3Epub` 公开面」收窄为「标注依赖子集」），而不是默默不提。
 
-默默不提是最差的一种：读者无法区分「没用到」和「不许用」。本契约取名义 = **`Reader3Epub` 公开面**，因此 9 个成员一个不漏。
+默默不提是最差的一种：读者无法区分「没用到」和「不许用」。本契约取名义 = **`Reader3Epub` 公开面**，因此 10 个成员一个不漏。
 
 ### 全量枚举（`epub-renderer.js` 的 `window.Reader3Epub =` 处，2026-08-16 逐项核实）
 
@@ -134,16 +134,17 @@ function containingBlockAncestor(el) {
 | `onContentsReady(cb)` | 内容就绪回调 | `annotations.js`、**`search.js`** | **纳入** |
 | `applyThemeSettings()` | 重新套用主题到 iframe | `reader.html` | **纳入** —— 4B.3 依赖 |
 | `displaySectionIndex(i)` | 跳转到 spine 第 i 项 | `reader.html` | **纳入** —— 章节导航依赖 |
+| `getDebugState(opts)` | 只读状态快照：只读、不抛错、可序列化（2026-09-30 由 `020-debug-state` 加入，契约定义见 [getDebugState 计划 §3](../../20260928-debug-state-getter.md#3-接口契约v1)） | 页内无；E2E 与外部 agent | **纳入** |
 | `getContentDocument()` | iframe document | **无** | **deprecate**，4B.2 结束时移除；等价写法 `getContentRoot().ownerDocument` |
 | `book` | epub.js Book 实例 | **无** | **deprecate**，4B.2 结束时移除；暴露整个 Book 实例等于没有边界 |
 
-**冻结面 = 7 个成员**，签名与行为不变。
+**冻结面 = 8 个成员**，签名与行为不变。
 
 > **两处易被漏掉的事实**（2026-08-16 全仓 grep 核实）：
 > 1. **`search.js` 也是 K5 的消费方**，不只是 annotations。改动 `getContentRoot` / `onContentsReady` 会同时打断阅读页内搜索——4B.1 只拆 `annotations.js`，但 K5 的爆炸半径比 4B.1 大。
 > 2. 上游计划原本只冻结 5 个成员，漏掉 `applyThemeSettings` 与 `displaySectionIndex`；按原措辞 **4B.3 没有任何合法路径可走**。
 
-**4B.1 验收**：把 7 个纳入项写成 `renderer.ts` 顶部的显式 interface，签名不变；两个 deprecate 项加 `@deprecated` 注释并写明移除阶段。
+**4B.1 验收**：把 8 个纳入项写成 `renderer.ts` 顶部的显式 interface，签名不变；两个 deprecate 项加 `@deprecated` 注释并写明移除阶段。
 
 ---
 

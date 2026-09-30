@@ -1227,7 +1227,7 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 - **K2**：`data-action` / `data-color` 的联合类型。
 - **K3**：`offsetRect()` 随 `overlays.ts` 一起移动，并加注释说明它返回的是**视口坐标**。
 - **K4**：六个事件名改成常量。
-- **K5**：`window.Reader3Epub` 写成显式接口，9 个成员里 **7 个纳入**（`rendition`、`getContents()`、`getContentRoot()`、`getFrameElement()`、`onContentsReady(cb)`、`applyThemeSettings()`、`displaySectionIndex(i)`），2 个标 `@deprecated`（`getContentDocument()`、`book`），在 WI-16 结束时删除。⚠️ **`search.js` 也是 K5 的消费方**，消费 `getContentRoot` 与 `onContentsReady`，不是只有 `annotations.js`。
+- **K5**：`window.Reader3Epub` 写成显式接口，10 个成员里 **8 个纳入**（`rendition`、`getContents()`、`getContentRoot()`、`getFrameElement()`、`onContentsReady(cb)`、`applyThemeSettings()`、`displaySectionIndex(i)`、`getDebugState(opts)`——见 [getDebugState 计划 §3](../20260928-debug-state-getter.md#3-接口契约v1)），2 个标 `@deprecated`（`getContentDocument()`、`book`），在 WI-16 结束时删除。⚠️ **`search.js` 也是 K5 的消费方**，消费 `getContentRoot` 与 `onContentsReady`，不是只有 `annotations.js`。
 - **K6**：删掉 `location.pathname` 兜底并改为抛错。这是 WI-14 两条有意的行为变更之一（另一条是改色保 id，定义在 WI-14）。
 
 六个契约里四个现在是**静默失败**的。
@@ -1242,7 +1242,7 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 2. `data-action` / `data-color` 传入枚举外的值时构建期报类型错误（构造一个反例断言 `tsc` 非零退出）。
 3. `offsetRect` 的定义处带视口坐标说明注释：**该函数定义上方连续注释块中同时出现「视口」与 `getBoundingClientRect`**（对源码做字符串断言，不靠人工阅读）。K3 的全部坑都在这个坐标系上，注释缺失一次就够下一个人踩回去。
 4. 源码内六个事件名的字符串字面量出现次数各为 1（只在常量定义处）。
-5. `Reader3Epub` 接口声明的成员数为 9，其中 2 个带 `@deprecated` 标记。
+5. `Reader3Epub` 接口声明的成员数为 10，其中 2 个带 `@deprecated` 标记。
 6. `search.js` 对 `getContentRoot` / `onContentsReady` 的调用在类型检查下通过（它被纳入 TS 的类型覆盖范围）。
 7. 构造一个无法解析 book id 的场景，`getReaderContext` **抛错**而不是返回兜底值；断言抛出的错误类型或消息。
 8. 源码内 `location.pathname` 在 `context.ts` 中出现次数为 0。
@@ -1471,6 +1471,8 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 >
 > （`library.js` 的 `setIndexProgress` 是**索引**进度条，不是阅读进度；`server.py` 里的 `position` 字段是批注排序用的。）
 > 所以 WI-19 是「建功能」而不是「修 bug」，排期按此计。
+
+> **`getDebugState` 接口**（2026-09-30）：WI-19 重新定义进度后，`getDebugState().progress.bookPercent`（v1 恒为 `null`）要接上新口径，契约版本升到 `v: 2`。见 [getDebugState 计划 §3](../20260928-debug-state-getter.md#3-接口契约v1)。
 
 **进度持久化契约**（本 WI 新增，是验收 2 / 5 / 6 的前提）：
 
@@ -1836,7 +1838,7 @@ E2E 侧：**不要写 Node Playwright Test 的 `webServer` 语法**，用 pytest
 | FR-K2 | WI-15 | K2 `data-action` / `data-color` | `tsc` 退出码 | 构造一个枚举外取值的调用，类型检查**非零退出**。运行时另断言未知 action 不静默吞掉 |
 | FR-K3 | WI-15 | K3 覆盖层挂载 | `containingBlockAncestor` | 见 FP-10 / FP-11：三覆盖层每个用例 `afterEach` 返回 `null`；21 种制造属性各自返回非 `null` |
 | FR-K4 | WI-15 | K4 事件名 | 事件监听计数 | 六个事件各触发一次，对应处理器各被调用恰好 1 次；把常量改成别的字符串后用例变红 |
-| FR-K5 | WI-15 | K5 `window.Reader3Epub` | 接口成员 | 7 个纳入成员逐个实际调用并断言返回值形状；2 个 `@deprecated` 成员在 WI-16 后引用数为 0。**`search.js` 对 `getContentRoot` / `onContentsReady` 的调用同样纳入类型检查** |
+| FR-K5 | WI-15 | K5 `window.Reader3Epub` | 接口成员 | 8 个纳入成员逐个实际调用并断言返回值形状；2 个 `@deprecated` 成员在 WI-16 后引用数为 0。**`search.js` 对 `getContentRoot` / `onContentsReady` 的调用同样纳入类型检查** |
 | FR-K6 | WI-15 | K6 `getReaderContext` | 抛错 | 构造无法解析 book id 的场景：**抛错**并断言错误类型或消息；`context.ts` 内 `location.pathname` 出现次数为 0 |
 
 #### 5.6.3 iframe 边界三重断言
