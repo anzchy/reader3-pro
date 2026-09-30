@@ -480,9 +480,14 @@
     const progress = { sectionPage: null, sectionPercent: null, spinePercent: null, bookPercent: null };
     try {
       const sectionProgress = sectionProgressOf(location);
-      if (sectionProgress) {
-        progress.sectionPage = { page: sectionProgress.page, total: sectionProgress.total };
-        progress.sectionPercent = sectionProgress.percent;
+      // sectionProgressOf 原样透传 displayed，pill 要的就是这份逐字节不变；getter 这边再收窄：
+      // 三个数里有一个不是有限数就整组给 null，-0 归 0，保证 JSON 往返不变（不变量 3，CP3 M1）。
+      const page = narrowNumber(sectionProgress?.page);
+      const total = narrowNumber(sectionProgress?.total);
+      const percent = narrowNumber(sectionProgress?.percent);
+      if (page !== null && total !== null && percent !== null) {
+        progress.sectionPage = { page, total };
+        progress.sectionPercent = percent;
       }
     } catch (err) {
       fail("progress.section", err);

@@ -149,11 +149,14 @@ def _assert_read_only(probe: Dict[str, Any], where: str) -> None:
 
 
 def _probe(page: Page, where: str, opts: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """同步探针一次，当场执行 E4 的只读判据，并记进 `_PROBES`。返回 getter 的结果。"""
+    """同步探针一次，当场执行 E4 的只读判据，通过了才记进 `_PROBES`。返回 getter 的结果。
+
+    先判后记：没通过的探针已在本用例当场红过，再记进去只会让 E4 在别人的探针上重复红一次。
+    """
     probe = page.evaluate(_PROBE_JS, [list(READER3_EVENTS), opts])
     probe["where"] = where
-    _PROBES.append(probe)
     _assert_read_only(probe, where)
+    _PROBES.append(probe)
     return probe["s"]
 
 

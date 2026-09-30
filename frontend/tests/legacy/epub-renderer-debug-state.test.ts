@@ -562,8 +562,23 @@ describe("sectionProgressOf and the reading-progress pill", () => {
 
   it("U19: pill agreement property against the frozen legacyPill oracle", async () => {
     const h = await setup();
-    const pageArb = fc.oneof(fc.integer({ min: -5, max: 500 }), fc.constant(NaN), fc.constant(undefined));
-    const totalArb = fc.oneof(fc.integer({ min: -3, max: 200 }), fc.constant(0), fc.constant(NaN), fc.constant(undefined));
+    // Infinity / "3" are CP3 review M1: inputs real epub.js never emits, but the contract promises a
+    // JSON-safe number-typed result regardless (invariant 3).
+    const pageArb = fc.oneof(
+      fc.integer({ min: -5, max: 500 }),
+      fc.constant(NaN),
+      fc.constant(undefined),
+      fc.constant(Infinity),
+      fc.constant(-Infinity),
+      fc.constant("3"),
+    );
+    const totalArb = fc.oneof(
+      fc.integer({ min: -3, max: 200 }),
+      fc.constant(0),
+      fc.constant(NaN),
+      fc.constant(undefined),
+      fc.constant(Infinity),
+    );
     const pctArb = fc.oneof(fc.constant(0), fc.double({ min: 0, max: 1, noNaN: true }), fc.constant(undefined));
     const displayedArb = fc.record({ page: pageArb, total: totalArb }, { requiredKeys: [] });
     const startArb = fc.record(
@@ -584,7 +599,8 @@ describe("sectionProgressOf and the reading-progress pill", () => {
         // (b) getter and pill agree whenever the getter reports a percent
         if (sectionPercent !== null) {
           expect(h.pill()).toBe(`当前阅读至 ${sectionPercent}%`);
-          expect(sectionPercent).toBe(Math.round((sectionPage!.page / sectionPage!.total) * 100));
+          // `+ 0` folds -0 into 0: the getter normalises -0 (M1), the pill text never showed the sign.
+          expect(sectionPercent).toBe(Math.round((sectionPage!.page / sectionPage!.total) * 100) + 0);
         }
         // (c) sectionPercent and sectionPage are null together
         expect(sectionPercent === null).toBe(sectionPage === null);
@@ -593,6 +609,12 @@ describe("sectionProgressOf and the reading-progress pill", () => {
         // (e) a valid location never produces an error entry (G1)
         if (location && "start" in location && location.start && location.end) {
           expect(s.errors).toEqual([]);
+        }
+        // (f) the whole result survives a JSON round trip unchanged — no -0, no ±Infinity (M1)
+        expect(JSON.parse(JSON.stringify(s))).toEqual(s);
+        // (g) a reported sectionPage carries finite numbers only
+        if (sectionPage !== null) {
+          expect(Number.isFinite(sectionPage.page) && Number.isFinite(sectionPage.total)).toBe(true);
         }
       }),
       { numRuns: 300 },
