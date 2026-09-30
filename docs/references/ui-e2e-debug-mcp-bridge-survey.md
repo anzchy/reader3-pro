@@ -509,7 +509,7 @@ agent ─Bash─▶ browse CLI ──HTTP POST /command (Bearer)──▶ Bun.se
 | 服务端 debug 端点 | 没有 debug flag 或 test-only 路由（`src/reader3_app/web/server.py:91`）；唯一探针 `/api/health`（`src/reader3_app/web/routers/health.py:22-30`） | —（这是刻意的） | **保持不加**。ADR-0012 已写明本机任何进程都能调 `/api/*`（`docs/adr/0012-security-boundaries.md:67`），新端点只会扩大这个缺口 | — | 若将来要加，按 paper-one Part C 四条 + `tests/contract/routes.snapshot` 断言生产 404 |
 | 前端 debug 开关 | `localStorage["reader3.debug"]` 每次调用现读（`frontend/src/shared/debug.ts:1-28`），legacy `static/js` 不受它管 | getter 在 legacy JS 里，不能直接 import 这个 TS 模块 | 见 §9.3 的门控取舍 | S | 两处各写一份 key 检查会漂移 |
 | MCP 配置 | `.mcp.json:1-7` 只有 `claude-design`，未跟踪、未 gitignore | 无浏览器 MCP | 默认不加；采用备选 A/B 时写成 project scope 并先审 `.mcp.json` | S | 提交后 `-p`/SDK 会不经审批加载（O1） |
-| 回归 | `uv run pytest tests/e2e --browser chromium`，push 门控（`.claude/tdd-guardian/config.json:26-35`）；CI e2e job（`.github/workflows/tests.yml:169-231`） | agent 的探索发现没有落成测试的约定 | 探索 → 生成 pytest 用例（C5 做法），`tests/e2e/helpers.py` 新增 helper 复用 getter | M | 生成的用例要过选择器 lint（`scripts/lint_e2e_selectors.py:1-30`），只允许 testid 与 ARIA |
+| 回归 | `uv run pytest tests/e2e --browser chromium`，push 门控（`.claude/tdd-guardian/config.json:26-35`）；CI e2e job（`.github/workflows/tests.yml:169-231`） | agent 的探索发现没有落成测试的约定 | 探索 → 生成 pytest 用例（C5 做法），复用 getter 的 helper 写在用例自己的独立模块里，不进 `tests/e2e/helpers.py`（soak 冻结集，见[计划](../plans/20260928-debug-state-getter.md) F7；2026-10-01 订正） | M | 生成的用例要过选择器 lint（`scripts/lint_e2e_selectors.py:1-30`），只允许 testid 与 ARIA |
 | 出站隔离 | E2E abort 所有非本机请求（`tests/e2e/conftest.py:291-330`） | agent 会话没有同样约束 | 约定 agent 会话只访问 127.0.0.1；备选 A 可用 `--blockedUrlPattern`（C3 / R2） | S | 【推断】页面与测试看到的不一致，依据是 `tests/e2e/conftest.py:295-311` 记录的字体 CDN 阻塞 |
 
 ### 9.2 推荐方案："不自建 bridge，补一个只读观测面"
@@ -524,7 +524,7 @@ agent ─Bash─▶ browse CLI ──HTTP POST /command (Bearer)──▶ Bun.se
 - 位置：`src/reader3_app/web/static/js/epub-renderer.js:375-401` 的对象字面量里加一个方法。它是前端纯函数，不加路由、不加依赖。
 - 返回字段：`rendition.currentLocation()` 的 start/end CFI、spine index 与 href、进度百分比、iframe 内 `mark[data-testid="rd-anno-span"]` 的数量、`Reader3NotesDiag.entries()` 最近 N 条。缺值时返回 `null`，不抛错。
 - **它怎么回答 epub.js iframe 的可观测性问题**：状态读取不再需要跨进 iframe。任何 driver 都在顶层页面做一次 `evaluate` 即可：pytest-playwright 的 `page.evaluate`、gstack 的 `js`、playwright-mcp 的 `browser_evaluate`、chrome-devtools-mcp 的 `evaluate_script`。只有**交互**（点正文、选区、点 mark）才需要进 frame：测试用 `frame_locator`（`tests/e2e/helpers.py:177`），agent 用 gstack `frame`。
-- 测试：在 `tests/e2e/helpers.py` 加一个 `debug_state(page)` helper，新用例用它，而不是再各写一段 `window.__*` 探针（现有探针清单见仓库底稿 §1，例如 `tests/e2e/baseline_1b/test_read_paths.py:82-83`）。实现按 TDD Guardian 流程走（CLAUDE.md 的全局约定）。
+- 测试：写一个 `debug_state(page)` 式的 helper，放在独立模块里，新用例用它，而不是再各写一段 `window.__*` 探针（现有探针清单见仓库底稿 §1，例如 `tests/e2e/baseline_1b/test_read_paths.py:82-83`）。实现按 TDD Guardian 流程走（CLAUDE.md 的全局约定）。（2026-10-01 订正：原稿写的是加进 `tests/e2e/helpers.py`，但它属于 soak 冻结集，改一个字节就作废已声明的批次；已落地的做法是 `tests/e2e/test_debug_state.py` 自带 `_probe` / `_wait_state`，见[计划](../plans/20260928-debug-state-getter.md) F7、WI-2。）
 
 **3. agent 的交互式驱动用 gstack `/browse`。**
 - 它已经是用户的标准浏览工具（全局 CLAUDE.md 要求 web 浏览一律用 `/browse`）。

@@ -1,6 +1,6 @@
 # `Reader3Epub.getDebugState()`：只读的阅读器状态观测面
 
-> 状态：**草案（2026-09-28）**，未开分支；~~分支号未分配（见 WI-0）~~ ⬛ 2026-09-30 分支号已分配：`020-debug-state`（迁移计划 §9 ＋ 进度盘 ⟂ 已登记，WI-0 第 1 步因此已完成）。
+> 状态：~~**草案（2026-09-28）**，未开分支~~；~~分支号未分配（见 WI-0）~~ ⬛ 2026-09-30 分支号已分配：`020-debug-state`（迁移计划 §9 ＋ 进度盘 ⟂ 已登记，WI-0 第 1 步因此已完成）。⬛ 2026-10-01：**代码已验收（`73f4c0f`），待合并**；PR 号与合并提交合并后补。WI-0–WI-2 已落地，WI-3 文档回写与代码同一个 PR（第 3 项 `CLAUDE.md` 另行处理）。
 > 出处：[`docs/references/ui-e2e-debug-mcp-bridge-survey.md`](../references/ui-e2e-debug-mcp-bridge-survey.md) §9 的推荐方案；借鉴对象是 paper-one 的 `tauri-plugin-mcp-bridge`（[`docs/references/paper-one-cli-and-mcp-bridge.md`](../references/paper-one-cli-and-mcp-bridge.md) Part B）。
 > 本文是独立计划，不属于 `20260816-tech-stack-migration/` 或 `20260817-frontend-ui-refactor/` 的「权威范围」。它会改动后者的 K5 接口计数，具体见 WI-0。
 
@@ -31,18 +31,18 @@ $B js "JSON.stringify(window.Reader3Epub.getDebugState())"
 
 | # | 事实 | 证据 | 对设计的约束 |
 |---|---|---|---|
-| F1 | `window.Reader3Epub` 目前有 9 个成员，只在 renderer 成功初始化后赋值 | `src/reader3_app/web/static/js/epub-renderer.js:375-401` | getter 挂在这个对象上。renderer 提前 `return` 时（无 `#epub-viewer`、`epubAvailable` 为假、`window.ePub` 缺失、`ePub()` 抛错，见 `:13`、`:21-38`），`Reader3Epub` 本身是 `undefined`，调用方以此判断「renderer 未初始化」 |
+| F1 | `window.Reader3Epub` 目前有 9 个成员，只在 renderer 成功初始化后赋值 | `src/reader3_app/web/static/js/epub-renderer.js:562-589` | getter 挂在这个对象上。renderer 提前 `return` 时（无 `#epub-viewer`、`epubAvailable` 为假、`window.ePub` 缺失、`ePub()` 抛错，见 `:13`、`:21-38`），`Reader3Epub` 本身是 `undefined`，调用方以此判断「renderer 未初始化」 |
 | F2 | 全仓库没有任何地方调用 `book.locations.generate()` | `grep -rn locations.generate src frontend/src tests` 结果为空 | epub.js 的 `start.percentage` **永远是数字 0**，不是 `undefined`。getter 不能照抄这个值。书内总进度只能如实报 `null` |
-| F3 | 底部进度 pill 显示的是**章内**页码比例 `displayed.page / displayed.total`；笔记面板用的是章节序号比例 | `epub-renderer.js:235-248`；`notes-panel.js:75-78` | 这就是缺陷 D7（`plan-frontend-ui-refactor.md:90`）。getter 分字段报告两种口径，不做合并 |
-| F4 | `relocated` 事件只更新 DOM 文本，不保存位置；但 epub.js 自己在派发 RELOCATED 前把位置缓存在 `rendition.location`（初值 `void 0`，只有 `start && end` 都有时才写入）。相反，`rendition.currentLocation()` **不是纯读**：它走 `manager.currentLocation()` → `paginatedLocation()`（`getBoundingClientRect`，强制 reflow）并改写 `manager.location`，manager 返回 Promise 时它返回 `undefined` | `epub-renderer.js:303`；`static/vendor/epub.min.js`（`Rendition.currentLocation` / `reportLocation`） | CFI 在调用时读缓存 `rendition.location`（评审 D3），**不调用** `currentLocation()`。首次渲染前拿到的是 `null` |
-| F5 | 没有可直接计数的内存标注列表：`AnnotationRenderer.lastAnnotations` 只初始化为 `[]`，之后从未赋值 | `annotations.js:500` | 标注数量从 iframe 内的高亮 mark 上的 `data-annotation-ids`（JSON 数组，`annotations.js:484`）去重计数。字段名必须写明「本章已渲染」，因为未匹配上的孤儿标注不会产生 mark |
-| F6 | `Reader3NotesDiag.entries()` 按时间正序返回最多 100 条副本，每条字段为 `{op, requested, status, ok, id, t}`。**只有写入失败才记录**（唯一调用方是 `reportNotesWriteFailure`，`annotations.js:189`）；`record` 本身是公开成员（`:202-204`），用 `?? null` 存值，**不校验类型** | `annotations.js:161-205` | 可以截取最近 N 条，但转发前要按字段收窄为原始类型（评审 D13），否则不变量 3/4 靠调用方自律。「没有新 diag 条目」= 没有新的写入失败，不能用来证明写入成功。`annotations.js` 在 renderer **之后**加载，所以必须在调用时才读 `window.Reader3NotesDiag` |
-| F6b | `ctx.chapterIndex` 不是服务端初值：`rendered` 处理器每次渲染都覆写它 | `epub-renderer.js:284-286` | 要对照「请求的章节」，只能在 IIFE 开头把初值存进 `const requestedIndex`（评审 D4） |
-| F6c | 章节总数的现有口径是 `ctx.totalChapters`（notes-panel `:75`、导航指示 `:201`），`book.spine.length` 只在 `:306` 的 `book.ready` 之后可用 | `epub-renderer.js:201,306`；`notes-panel.js:75` | `spineCount` 取 `ctx.totalChapters`，与 notes-panel 同源（评审 D5） |
-| F6d | 视口宽度 `< 600` 时 flow 为 `scrolled-doc`，没有分页 | `epub-renderer.js:50,367` | E2E 断言翻页前必须固定视口 ≥ 600，并选一个 `displayed.total ≥ 2` 的章节（评审 D12） |
+| F3 | 底部进度 pill 显示的是**章内**页码比例 `displayed.page / displayed.total`；笔记面板用的是章节序号比例 | `epub-renderer.js:248-261`（`updateProgress`，共用的 `sectionProgressOf` 在 `:240-246`）；`notes-panel.js:75-78` | 这就是缺陷 D7（`plan-frontend-ui-refactor.md:90`）。getter 分字段报告两种口径，不做合并 |
+| F4 | `relocated` 事件只更新 DOM 文本，不保存位置；但 epub.js 自己在派发 RELOCATED 前把位置缓存在 `rendition.location`（初值 `void 0`，只有 `start && end` 都有时才写入）。相反，`rendition.currentLocation()` **不是纯读**：它走 `manager.currentLocation()` → `paginatedLocation()`（`getBoundingClientRect`，强制 reflow）并改写 `manager.location`，manager 返回 Promise 时它返回 `undefined` | `epub-renderer.js:316`；`static/vendor/epub.min.js`（`Rendition.currentLocation` / `reportLocation`） | CFI 在调用时读缓存 `rendition.location`（评审 D3），**不调用** `currentLocation()`。首次渲染前拿到的是 `null` |
+| F5 | 没有可直接计数的内存标注列表：`AnnotationRenderer.lastAnnotations` 只初始化为 `[]`，之后从未赋值 | `annotations.js:516` | 标注数量从 iframe 内的高亮 mark 上的 `data-annotation-ids`（JSON 数组，`annotations.js:500`）去重计数。字段名必须写明「本章已渲染」，因为未匹配上的孤儿标注不会产生 mark |
+| F6 | `Reader3NotesDiag.entries()` 按时间正序返回最多 100 条副本，每条字段为 `{op, requested, status, ok, id, t}`。**只有写入失败才记录**（唯一调用方是 `reportNotesWriteFailure`，`annotations.js:189`）；`record` 本身是公开成员（`:207`），用 `?? null` 存值，**不校验类型** | `annotations.js:161-211` | 可以截取最近 N 条，但转发前要按字段收窄为原始类型（评审 D13），否则不变量 3/4 靠调用方自律。「没有新 diag 条目」= 没有新的写入失败，不能用来证明写入成功。`annotations.js` 在 renderer **之后**加载，所以必须在调用时才读 `window.Reader3NotesDiag` |
+| F6b | `ctx.chapterIndex` 不是服务端初值：`rendered` 处理器每次渲染都覆写它 | `epub-renderer.js:296-298` | 要对照「请求的章节」，只能在 IIFE 开头把初值存进 `const requestedIndex`（评审 D4） |
+| F6c | 章节总数的现有口径是 `ctx.totalChapters`（notes-panel `:75`、导航指示 `:204`），`book.spine.length` 只在 `:318` 的 `book.ready` 之后可用 | `epub-renderer.js:204,318`；`notes-panel.js:75` | `spineCount` 取 `ctx.totalChapters`，与 notes-panel 同源（评审 D5） |
+| F6d | 视口宽度 `< 600` 时 flow 为 `scrolled-doc`，没有分页 | `epub-renderer.js:50,380` | E2E 断言翻页前必须固定视口 ≥ 600，并选一个 `displayed.total ≥ 2` 的章节（评审 D12） |
 | F7 | `tests/e2e/helpers.py`、`conftest.py`、`baseline_1b/**`、`test_harness_smoke.py` 和四个 fixture 属于 soak 冻结集，~~改动任何一个字节都会清零 soak 计数~~（⬛ 2026-09-28 批次规则：改动任何一个字节，`suite_hash` 就变，已声明的批次作废、须重跑一批 10 次；一批约 10–15 分钟） | `.claude/skills/plan-and-branch-map/SKILL.md`；`tasks/soak-log.md` | **E2E 辅助函数不能写进 `helpers.py`**，这修正了调研报告 §9 的一处建议。~~改生产代码（`epub-renderer.js`）不会清零（`plan-tech-stack-migration.md:487`）~~（⬛ 2026-09-28 反转：改生产代码同样使 `commit` 变、不再是同一批；判据见迁移计划 §7「台账字段（canonical）＋ 什么会让计数作废」）。（⬛ 2026-09-30：012 开工前无论 `suite_hash` 变没变，都要在最终候选 `commit` 上新跑一批，见迁移计划 §7「012 开工核验」；所以本计划改 `epub-renderer.js` 不额外增加 soak 成本，这也是它能按 ⟂ 随时插入的依据） |
 | F8 | 新增 E2E 文件要同时修改分组守卫的计数常量，否则 commit 门禁的 unit lane 会变红 | `scripts/lint_e2e_groups.py:372`（`EXPECTED_UNGROUPED_ITEMS = 63`）；`tests/unit/test_e2e_group_guard.py:194,203`（`CANONICAL_UNGROUPED_ITEMS = 63` / `CANONICAL_E2E_ITEMS = 256`）。2026-09-28 评审时核对；草案原写的 55/248 已过时（评审 D10） | WI-2 以**实现当时**的值为基准，按 `--collect-only` 实测的新增条数上调，不写死数字 |
-| F9 | 014 计划把 `Reader3Epub` 固定为 9 个成员，其中 7 个纳入、2 个 `@deprecated`。**K5 的定义处**是 `contracts/annotation-host-contracts.md:112-126`（「9 个成员一个不漏」＋全量枚举），plan 里的三处是引用（评审 D11） | `docs/plans/20260817-frontend-ui-refactor/contracts/annotation-host-contracts.md:112`；`plan-frontend-ui-refactor.md:1230`（K5）、`:1245`（WI-15 验收 5）、`:1839`（FR-K5）；WI-16 验收 12（`:1287`）要求 `getContentDocument` 和 `Reader3Epub.book` 的引用数为 0 | 必须先改这三处（WI-0）。getter 的实现不能引用这两个过时成员 |
+| F9 | 014 计划把 `Reader3Epub` 固定为 9 个成员，其中 7 个纳入、2 个 `@deprecated`。**K5 的定义处**是 `contracts/annotation-host-contracts.md:112-126`（「9 个成员一个不漏」＋全量枚举），plan 里的三处是引用（评审 D11） | `docs/plans/20260817-frontend-ui-refactor/contracts/annotation-host-contracts.md:112`；`plan-frontend-ui-refactor.md:1230`（K5）、`:1245`（WI-15 验收 5）、`:1841`（FR-K5）；WI-16 验收 12（`:1287`）要求 `getContentDocument` 和 `Reader3Epub.book` 的引用数为 0 | 必须先改这三处（WI-0）。getter 的实现不能引用这两个过时成员 |
 | F10 | 还没有任何 Vitest 用例覆盖 `static/js` 下的 legacy 文件；可参考的先例是用 `?raw` 读入文本、在 jsdom 里执行。fe-unit lane（`npm test`）**没有 coverage** | `frontend/tests/ledger/feature-ledger-page.test.ts`；`frontend/vitest.config.ts`；`.claude/tdd-guardian/config.json` | WI-1 的单元测试沿用这个做法，按 WI-1 写明的 harness stub `window.ePub`；覆盖率靠人工映射（评审 D9） |
 
 ## 3. 接口契约（v1）
@@ -96,7 +96,7 @@ interface Reader3DebugStateV1 {
 **做什么**：
 1. 按分支号规则，在 `docs/plans/20260816-tech-stack-migration/plan-tech-stack-migration.md` §9 分配编号。~~目前已分配的最大号是 `018`，建议用 `019-debug-state`。~~（⬛ 2026-09-30：看板新排的「冻结集欠账窗口」也要在开分支时从 §9 取号，两者谁先开谁拿下一个空号；本文不预写数字，开分支当天取 §9 的下一个空号，分支名形如 `0NN-debug-state`。）同时在 `docs/plans/20260824-frontend-backend-plan-progress.md` 里把它登记为可随时插入（⟂）。另一种做法是并进 `014` 作为插入 WI，见 §6 的第 2 个问题。
 2. **先改定义处**（评审 D11）：`docs/plans/20260817-frontend-ui-refactor/contracts/annotation-host-contracts.md` K5（`:112-126`）把「9 个成员一个不漏」改成 10，并在全量枚举里加上 `getDebugState(opts)`：签名，一句行为说明（只读、不抛错、可序列化），链接到本计划 §3。
-3. 再改引用处：`plan-frontend-ui-refactor.md` 的 K5（`:1230`）改为 10 个成员、8 个纳入，把 `getDebugState(opts)` 列进纳入清单；WI-15 验收 5（`:1245`）的数字改成 10；FR-K5（`:1839`）改成「8 个纳入成员」。这三处只改数字和链接，不复述契约（「搬，不抄」）。
+3. 再改引用处：`plan-frontend-ui-refactor.md` 的 K5（`:1230`）改为 10 个成员、8 个纳入，把 `getDebugState(opts)` 列进纳入清单；WI-15 验收 5（`:1245`）的数字改成 10；FR-K5（`:1841`）改成「8 个纳入成员」。这三处只改数字和链接，不复述契约（「搬，不抄」）。
 4. 在 WI-19（`:1454` 起）补一句：WI-19 重新定义进度后，`getDebugState().progress.bookPercent` 要接上新口径，契约版本升到 `v: 2`。
 
 **验收标准**：
@@ -112,13 +112,14 @@ interface Reader3DebugStateV1 {
 **前置 WI**：WI-0。
 **做什么**：
 1. 在 IIFE 开头、`currentSectionIndex` 初始化（`:59`）之后加 `const requestedIndex = currentSectionIndex;`（F6b）。
-2. 抽出纯函数 `sectionProgressOf(location) → { page, total, percent } | null`（评审 D6）：只看 `start.displayed`，`total` 为真值且结果不是 `NaN` 时返回，否则返回 `null`。**`start.percentage` 回退不进共享函数**：它在本项目里恒为假 0（F2），getter 不能报它（U3）。`updateProgress`（`:235-248`）改为先调 `sectionProgressOf`，为 null 时再走原有的 `percentage` 回退和兜底 0%，所以 pill 的行为逐字不变（U12 锁住）。getter 只用 `sectionProgressOf`，null 就报 null。
+2. 抽出纯函数 `sectionProgressOf(location) → { page, total, percent } | null`（评审 D6）：只看 `start.displayed`，`total` 为真值且结果不是 `NaN` 时返回，否则返回 `null`。**`start.percentage` 回退不进共享函数**：它在本项目里恒为假 0（F2），getter 不能报它（U3）。`updateProgress`（改动前 `:235-248`，现 `:248-261`）改为先调 `sectionProgressOf`，为 null 时再走原有的 `percentage` 回退和兜底 0%，所以 pill 的行为逐字不变（U12 锁住）。getter 只用 `sectionProgressOf`，null 就报 null。
 3. 在 renderer 的 IIFE 里新增函数 `getDebugState(opts)`，按 §3 的契约逐字段取值：位置读 `rendition.location`（F4），章节数读 `ctx.totalChapters`（F6c），diag 逐字段收窄（§3 不变量 3）。每个字段各自 `try/catch`，然后挂到 `window.Reader3Epub` 上。
 4. **测试 harness**（评审 D7）：沿用 F10 的先例，用 `?raw` 读入 `epub-renderer.js`，在 jsdom 里准备 `#epub-viewer`，设置 `window.Reader3Ctx`（含 `chapterIndex`、`totalChapters`），然后执行脚本。`window.ePub` 的 stub 至少要提供：
    - `book.renderTo()`：返回 rendition stub
-   - `book.ready`、`book.opened`、`book.loaded.navigation`：已 resolve 的 Promise
+   - `book.ready`：已 resolve 的 Promise（renderer 在它的 `.then` 里调 `display`）；`book.opened`、`book.loaded.metadata`：已 resolve 的 Promise（renderer 里是可选的）。~~`book.loaded.navigation`~~ renderer 不读它（⬛ 2026-10-01 订正）
    - `book.spine.get(i)`：返回 `{ href, index }`
-   - rendition stub：`on(name, fn)` 把处理器**记进一张表**；`display`/`next`/`prev` 是计数 spy；`location` 是测试可直接赋值的普通属性
+   - rendition stub：`on(name, fn)` 把处理器**记进一张表**；`display` 是计数 spy 且**返回 Promise**（renderer 对它的返回值 `.then`）；`next`/`prev`/`resize`/`flow` 是计数 spy（`resize` 由 window 的 resize 处理器调用）；`location` 是测试可直接赋值的普通属性
+   - 实际落地的完整 stub 清单以 [`frontend/tests/legacy/epub-renderer-debug-state.test.ts`](../../frontend/tests/legacy/epub-renderer-debug-state.test.ts) 文件头注释为准（⬛ 2026-10-01）
    - 测试通过记录下来的处理器触发 `rendered(section, contents)` 和 `relocated(location)`，其中 `contents.document` 是**另一个** jsdom `Document`，用来模拟 iframe
    - 若 renderer 顶层还用到其他 epub.js API，实现时照上面的方式补 stub，并在测试文件头注释里列出
 
@@ -150,7 +151,7 @@ interface Reader3DebugStateV1 {
 2. `grep -n "Reader3Epub.book\|getContentDocument" epub-renderer.js` 的结果中，新增代码里没有命中。
 3. `npm run typecheck` 通过。
 4. `Reader3Epub` 的成员数为 10，和 WI-0 改过的 K5 一致。
-5. **人工覆盖映射**（评审 D9，fe-unit 没有 coverage）：在 PR 描述里列出 getter 与 `sectionProgressOf` 的每条分支，共 21 条路径，逐条写上覆盖它的用例编号（U1–U18）。有任何一条对应不上就不算通过。
+5. **人工覆盖映射**（评审 D9，fe-unit 没有 coverage）：在 PR 描述里列出 getter 与 `sectionProgressOf` 的每条分支，共 21 条路径，逐条写上覆盖它的用例编号（~~U1–U18~~ ⬛ 2026-10-01：实际为 U1–U34b，见 §4 末尾「2026-10-01 规格漂移订正」）。有任何一条对应不上就不算通过。
 
 ---
 
@@ -163,7 +164,7 @@ interface Reader3DebugStateV1 {
 2. 用例：
    - **等待方式**（评审 D8）：每个断言前都用 `page.wait_for_function` 轮询 getter，直到满足条件（例如 `ready === true`、`renderedIds >= n`），超时 5s。失败信息里要带上最后一次 getter 的输出。不用固定 `sleep`。
    - E1：打开第 N 章，等 `ready`，然后断言 `section.index == N`、`section.requestedIndex == N`，并且 `cfi.start` 以 `epubcfi(` 开头。
-   - E2（评审 D12）：先把视口设为 ≥ 600 宽（F6d，保证是 paginated flow），打开一个多页章节。先断言 `sectionPage.total >= 2` 且 `page < total`，不满足就让用例 fail 并提示换章节，不要跳过。然后翻一页，断言 `sectionPage.page` 加 1、`cfi.start` 改变。
+   - E2（评审 D12）：先把视口设为 ≥ 600 宽（F6d，保证是 paginated flow），打开一个多页章节。先断言 `sectionPage.total >= 2` 且 `page < total`，不满足就让用例 fail 并提示换章节，不要跳过。然后翻一页，断言 `sectionPage.page` 加 1、`cfi.start` 改变。（⬛ 2026-10-01：实现时 E2 一度还断言翻页前后 `sectionPage.total` 不变，这条已拿掉：首个 `relocated` 的 total 是重排前算的，实测 `{page:1,total:3}` → `{page:2,total:4}`，立账 [009 #63](20260816-tech-stack-migration/tasks/009-e2e-annotations.md)，归 014 WI-19。）
    - E3（评审 D12）：先记下 `diag` 的条数，再划选并保存一条标注。断言三件事：`renderedIds` 加 1；`GET /api/notes/{book_id}/{chapter_index}`（`routers/notes.py:191`）返回的列表里有新标注的 id；`diag` 条数不变（没有新增写入失败）。**不要**断言「最后一条 `ok==true`」，因为 diag 只记录失败（F6）。
    - E4：整个过程中，`getDebugState` 调用前后 iframe 的 `body.innerHTML` 字节数不变。
 3. 把新模块登记进 `UNGROUPED_E2E_MODULES` 并写明理由。以实现时的 `EXPECTED_UNGROUPED_ITEMS`、`CANONICAL_UNGROUPED_ITEMS`、`CANONICAL_E2E_ITEMS` 为基准（2026-09-28 的值是 63 / 63 / 256），按 `uv run pytest tests/e2e --collect-only -q` 实测的新增条数上调（F8、评审 D10）。
@@ -189,6 +190,18 @@ interface Reader3DebugStateV1 {
 **验收标准**：
 1. `python3 scripts/build_feature_ledger.py --check` 通过。
 2. 调研报告里 `helpers.py` 的每一处出现，都不再是「在这里新增」的意思。
+
+⬛ 2026-10-01 执行情况（合并前随代码同一个 PR 回写，前置条件里的「已经合并」因此改为「代码已验收」）：第 1 项已改（§9.1「回归」行与 §9.2 第 2 条）；第 2 项已改，Known limits 另补一条「首屏 `sectionPage.total` 陈旧」（[009 #63](20260816-tech-stack-migration/tasks/009-e2e-annotations.md)），Evidence 暂记分支号和 `73f4c0f`，PR 号合并后补；第 3 项另行处理，不在本次回写；第 4 项先写成「代码已验收、待合并」，PR 号与合并提交合并后补。
+
+#### 2026-10-01 规格漂移订正
+
+实现（`b1fb887`–`73f4c0f`）落地后逐条对照现行文件，订正如下。原文里的行号是 2026-09-28 核对时的值，已原地改成现值，不再保留旧值：
+
+- **行号**：`epub-renderer.js` 的 `Reader3Epub` 对象 `:375-401` → `:562-589`（F1、「已有可复用的」）；`updateProgress` `:235-248` → `:248-261`，抽出的 `sectionProgressOf` 在 `:240-246`（F3、WI-1 第 2 步）；`relocated` `:303` → `:316`（F4）；`rendered` 改写 `ctx.chapterIndex` `:284-286` → `:296-298`（F6b）；导航指示与 `book.ready` `:201,306` → `:204,318`（F6c）；resize 切 flow `:367` → `:380`（F6d）。`annotations.js` 的 `lastAnnotations` `:500` → `:516`、写 `data-annotation-ids` `:484` → `:500`（F5）；`Reader3NotesDiag` `:161-205` → `:161-211`，公开的 `record` `:202-204` → `:207`（F6）。`:13`、`:21-38`、`:50`、`:59`、`notes-panel.js:75-78`、台账 F-009（`:95`、详情 `:226-233`）核对无误，未改。
+- **前端计划行号**：FR-K5 `:1839` → `:1841`（上方内容多了两行；K5 `:1245`、WI-16 验收 12 `:1287` 未漂）。
+- **Vitest stub 清单**（WI-1 第 4 步）：renderer 读的是 `book.loaded.metadata` 而不是 `book.loaded.navigation`；`book.ready` 的 `.then` 里调 `rendition.display()`，所以 `display` 必须返回 Promise；window resize 处理器调 `rendition.resize()`（和 `flow`），stub 要补上。完整清单以测试文件头注释为准。
+- **用例编号**：WI-1 的矩阵只写到 U18，实际用例是 U1–U34，外加字母变体 U2b、U2c、U4b、U6b、U10b、U12b、U12c、U13b、U14b、U16b、U18b、U34b（U25 空号，没有这条用例）。U19–U31 来自实现与评审（tdd-guardian 测试矩阵的补充用例，以及测试文件里「由实现推出的路径」一组），U32–U34b 来自 CP3 审计修复（`73f4c0f`：`errors` 不带书中原文、消息截到 120 字符；只认 `mark.annotation[data-annotation-ids]`）。分支表也从 21 条扩到 30 条（B1–B30，在 tdd-guardian 矩阵里）。WI-1 验收 5 与「结论」表里的 `U1–U18` 已改成 `U1–U34b`；U18 那一行本身不变。
+- **E2**：不再断言翻页前后 `sectionPage.total` 不变（2026-09-30 协调者裁定选项 A），原因与归属见 [009 #63](20260816-tech-stack-migration/tasks/009-e2e-annotations.md)。
 
 ## 5. 风险
 
@@ -239,7 +252,7 @@ interface Reader3DebugStateV1 {
 - `bookPercent`、`Reader3EpubStatus`、fe-unit coverage：已记入 `TODOS.md`
 
 ### 已有可复用的
-- `Reader3Epub` 对象（`epub-renderer.js:375-401`）
+- `Reader3Epub` 对象（`epub-renderer.js:562-589`）
 - epub.js 自带的 `rendition.location` 缓存
 - `Reader3NotesDiag.entries()`
 - jsdom 加 `?raw` 的测试先例（`frontend/tests/ledger/feature-ledger-page.test.ts`）
@@ -267,6 +280,6 @@ interface Reader3DebugStateV1 {
 |---|---|
 | 发现问题数 | 12（D3–D14） |
 | 关键缺口 | 0 |
-| 覆盖 | 21 条路径，全部映射到 U1–U18 或 E1–E4 |
+| 覆盖 | 21 条路径，全部映射到 ~~U1–U18~~ U1–U34b（⬛ 2026-10-01，见 §4 末尾订正）或 E1–E4 |
 
 NO UNRESOLVED DECISIONS
