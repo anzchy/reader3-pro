@@ -165,10 +165,11 @@ def _click_awaiting_write(page: Page, locator, what: str) -> None:  # type: igno
     """点下去，并且**先把这次写的响应等到手**，再让调用方去轮询磁盘。
 
     `wait_for_notes()` / `wait_for_note_text()` 在 009 #49（019 WI-2）之前是纯 Python 的 sleep
-    轮询：整个窗口里一次都没调进 Playwright（现在改为泵浏览器，这里先等响应仍是更硬的一道）。而同步 Playwright 的 route 回调是 Python 函数，只在主协程调进
-    Playwright 时才被派发——`conftest` 给每个 context 都挂了一道 `**/*` 的出网闸，于是
-    **每一个**请求都要过这样一个回调。点完按钮直接去轮盘，这次写就卡在回调上跑不动，
-    轮询等满超时：**产品行为完全正确也会红**。这正是 #43 那族 flake 的机制（审计 #8）。
+    轮询，整个窗口里一次都没调进 Playwright。而同步 Playwright 的 route 回调是 Python 函数，
+    只在主协程调进 Playwright 时才被派发——`conftest` 给每个 context 都挂了一道 `**/*` 的
+    出网闸，于是**每一个**请求都要过这样一个回调。当时点完按钮直接去轮盘，这次写就卡在回调上
+    跑不动，轮询等满超时：**产品行为完全正确也会红**。这正是 #43 那族 flake 的机制（审计 #8）。
+    现在两个轮询都改为泵浏览器，这里先把响应等到手仍是更硬的一道。
 
     这里刻意不限定方法名：从这个按钮出去的、发往 notes API 的那次写就是「相关的写」，
     把它写死成 POST/PUT 只会在实现换方法时把一条真断言变成挂死。
@@ -292,7 +293,7 @@ def _run_conflict_round(
     try:
         dialog.get_by_test_id(branch.exit_testid).click()
         expect(dialog).to_be_hidden()
-        final = wait_for_note_text(books_dir, BOOK_ID, note_id, branch.settled_text, page=page)
+        final = wait_for_note_text(books_dir, BOOK_ID, note_id, branch.settled_text, page=page_b)
     finally:
         page_b.remove_listener("request", _record)
 

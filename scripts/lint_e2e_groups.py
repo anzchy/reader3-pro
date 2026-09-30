@@ -288,12 +288,16 @@ UNGROUPED_E2E_MODULES = {
     # 放白名单而不是 `baseline_1b`，理由与当年 w8a 一样是 `suite_hash` 覆盖面——迁进冻结
     # 目录就要清零 soak 计数。到期条件：下一次**本来就要**动 `baseline_1b/`、`suite_hash`
     # 无论如何都要变的改动里，把本文件一并迁入并撤掉这一条（`EXPECTED_BASELINE_ITEMS` 同批加）。
+    # ⬛ 2026-09-30：上面的到期条件已在 019 上触发但未执行，按 009 欠账 #65 明确推迟——
+    # 新到期条件：在 master 上宣布第一个批次（012 开工前那一批）之前迁入，让同一批一并覆盖。
     "tests/e2e/test_notes_write_failure_is_attributable.py",
     # 017 WI-5（审计 #3、#9）：快照回落写下的 `cfi` 不得是一条失效 Range 算出来的。
     # 内容上它是 W-8a 家族（写路径、同一个「重绘作废选区」现场），但判据问的是**屏幕**
     # 而不是盘。落白名单的理由与上面那条一字不差：迁进 `baseline_1b/` 会改 `suite_hash`
     # 并把 soak 计数清零。到期条件也一样——下一次本来就要动 `baseline_1b/` 的改动里
     # 一并迁入，同批撤掉这一条并给 `EXPECTED_BASELINE_ITEMS` 加上去。
+    # ⬛ 2026-09-30：上面的到期条件已在 019 上触发但未执行，按 009 欠账 #65 明确推迟——
+    # 新到期条件：在 master 上宣布第一个批次（012 开工前那一批）之前迁入，让同一批一并覆盖。
     "tests/e2e/test_stored_cfi_must_agree_with_quote.py",
     # 017 WI-6（审计 #5）：冲突对话框同一时刻只许有一次收尾在飞。它驱动的是 DEG-S5
     # 对话框，与 `acceptance_2a/test_deg_s5_write_conflict.py` 同一块 UI，但那一条是
@@ -303,6 +307,8 @@ UNGROUPED_E2E_MODULES = {
     # `baseline_1b/` 会改 `suite_hash` 并把 soak 计数清零；到期条件同样是「下一次本来
     # 就要动 `baseline_1b/` 的改动里一并迁入，同批撤条目并给 `EXPECTED_BASELINE_ITEMS`
     # 加上去」。
+    # ⬛ 2026-09-30：上面的到期条件已在 019 上触发但未执行，按 009 欠账 #65 明确推迟——
+    # 新到期条件：在 master 上宣布第一个批次（012 开工前那一批）之前迁入，让同一批一并覆盖。
     "tests/e2e/test_conflict_resolution_single_flight.py",
     # 017 WI-7（审计 #4）：收尾放进编辑器的那一版，必须连着它自己的基准令牌。与上一条
     # 同住 DEG-S5 对话框，但问的是**收尾之后**那次保存带的是哪一版令牌，不是两次点击之间
@@ -310,6 +316,8 @@ UNGROUPED_E2E_MODULES = {
     # 迁进 `baseline_1b/` 会改 `suite_hash` 并把 soak 计数清零；到期条件同样是「下一次本来
     # 就要动 `baseline_1b/` 的改动里一并迁入，同批撤条目并给 `EXPECTED_BASELINE_ITEMS`
     # 加上去」。
+    # ⬛ 2026-09-30：上面的到期条件已在 019 上触发但未执行，按 009 欠账 #65 明确推迟——
+    # 新到期条件：在 master 上宣布第一个批次（012 开工前那一批）之前迁入，让同一批一并覆盖。
     "tests/e2e/test_conflict_settled_text_keeps_its_base_etag.py",
     # 009 #49（019 WI-2，WI2-E2）：盘上轮询期间，在途的写必须出得了门——钉的是
     # `wait_for_notes` 泵浏览器这件机制本身（旧 `time.sleep` 循环体上它确定地红）。

@@ -401,7 +401,7 @@ def test_real_tree_collection_is_a_partition_and_counts_match() -> None:
         # （2026-09-30 009 #62，WI-4 of 019：`test_selection_toolbar_stays_closed.py`
         # 到期迁入 `baseline_1b/`，此处条目撤掉。）
         # 009 #49（019 WI-2，WI2-E2）：盘上轮询期间在途的写必须出得了门（helpers 机制护栏）。
-        # 同上，理由在 `scripts/lint_e2e_groups.py` 的白名单注释里。
+        # 与前面几条一样，理由在 `scripts/lint_e2e_groups.py` 的白名单注释里。
         f"{E2E_REL}/test_disk_poll_pumps_inflight_write.py",
     }, f"白名单的内容变了：{sorted(whitelist)}（加项要写理由，且它必须真的贡献 item）"
 

@@ -655,6 +655,12 @@ def test_w1_c9_console_payload_is_a_superset_of_the_ring_entry(
     assert parsed[6]["ok"] is True, parsed[6]
     assert parsed[7]["requested"] is False, parsed[7]
     assert len(set(messages)) == len(FAILURE_SHAPE_TABLE), "八条 console 行不两两相异——一个常量串冒充了多行"
+    # 019 WI-8（WI8-E4）：没传 detail 的调用，负载里就没有 detail 这个键，键序恰好七个。
+    for i, p in enumerate(parsed):
+        assert list(p) == ["op", "requested", "status", "ok", "id", "t", "message"], (
+            f"第 {i} 条 console 负载的键序不对：{list(p)}"
+        )
+        assert "detail" not in p, f"第 {i} 条没传 detail 却带了：{p}"
 
 
 def test_w1_c5_one_invocation_exactly_one_of_each_effect(
@@ -2096,6 +2102,50 @@ _DETACHED_RANGE_CREATE_JS = """async ({ snapshot }) => {
   await ui.createAnnotation({ type: "marker", color: "yellow" });
 }"""
 
+#: 019 WI-8：同上，但在调用**之前**量出正文文本索引的长度 `L` 与 `Reader3Ctx.chapterIndex`，
+#: 给 `create-no-offsets` 的 `detail` 当期望值。`L` 是测试自有的计算：同一个拒收过滤器
+#: （`buildTextIndex` 的那一个——偏移轴就是它定义的），产品过滤器一改这里就得跟着改。
+_DETACHED_RANGE_CREATE_MEASURED_JS = """async ({ snapshot }) => {
+  const ui = window.Reader3AnnotationUI;
+  const d = ui.contentEl.ownerDocument;
+  const w = d.createTreeWalker(ui.contentEl, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (!node.nodeValue) return NodeFilter.FILTER_REJECT;
+      const parent = node.parentElement;
+      if (!parent) return NodeFilter.FILTER_REJECT;
+      if (parent.closest("script, style, #annotation-toolbar, #note-editor, #note-tooltip")) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+  let L = 0;
+  while (w.nextNode()) L += w.currentNode.nodeValue.length;
+  const ctxChapter = window.Reader3Ctx ? window.Reader3Ctx.chapterIndex : null;
+  const t = d.createTextNode("x");
+  const r = d.createRange();
+  r.setStart(t, 0);
+  r.setEnd(t, 1);
+  ui.currentRange = r;
+  ui.currentOffsets = snapshot;
+  await ui.createAnnotation({ type: "marker", color: "yellow" });
+  return { L, ctxChapter };
+}"""
+
+#: 019 WI-8：ring 条目的**确切**键序（`recordNotesDiag` 的字面顺序）。`ENTRY_KEYS` 只是「至少带」，
+#: 多一个键它看不见——而 `detail` 恰恰必须只进 console、不进 ring。
+RING_KEY_ORDER = ["op", "requested", "status", "ok", "id", "t"]
+#: console 负载的确切键序；只有 `create-no-offsets` 在末尾多一个 `detail`。
+PAYLOAD_KEY_ORDER = RING_KEY_ORDER + ["message"]
+
+
+def _diag_payloads_since(errors: List[ConsoleMessage], base: Dict[str, int]) -> List[Dict[str, Any]]:
+    """基线之后每条 `notes write failed` 行解析出的 JSON 负载（dict 保留 JSON 里的键序）。"""
+    window = _app_errors(errors[base["errors"]:])
+    return [
+        json.loads(m.group(1))
+        for m in (DIAG_CONSOLE_RE.match(x.text) for x in window)
+        if m
+    ]
+
 #: 把活选区塌成一个点（修订 A4：先断 `hasRange` 前置条件，再 `cloneRange()`）。
 _COLLAPSED_RANGE_CREATE_JS = """async () => {
   const ui = window.Reader3AnnotationUI;
@@ -2297,11 +2347,39 @@ def test_w6_c6_create_no_offsets_guard_reports_requested_false_and_sends_nothing
     base = _create_baseline(page, errors, route_in)
 
     snapshot = None if route_in == "detached_range" else {"chapterIndex": 99, "start": 0, "end": 5}
-    page.evaluate(_DETACHED_RANGE_CREATE_JS, {"snapshot": snapshot})
+    got = page.evaluate(_DETACHED_RANGE_CREATE_MEASURED_JS, {"snapshot": snapshot})
     _assert_guard_create_report(
         page, errors, state, before, base, e2e_books_dir,
         op="create-no-offsets", where=route_in, toast_text=CREATE_NO_OFFSETS_TOAST,
     )
+
+    # 019 WI-8（WI8-E1）：「没有快照」与「快照来自别的章」必须在上报里分得开。
+    # `hasSnapshot` 读的是**原始** `currentOffsets`——读 `offsetsUsable` 之后的值，章号不符
+    # 那一路也会报 false，两种状态又糊成一种。
+    assert got["ctxChapter"] == 0, f"[{route_in}] 前提：Reader3Ctx.chapterIndex 应当是 0：{got}"
+    L = got["L"]
+    assert isinstance(L, int) and L > len(CH0_QUOTE), f"[{route_in}] 前提：正文文本索引长度不对：{got}"
+    entries = _diag_entries(page) or []
+    assert len(entries) == 1, entries
+    assert list(entries[0]) == RING_KEY_ORDER, (
+        f"[{route_in}] ring 条目的键序必须恰好是 {RING_KEY_ORDER}：{list(entries[0])}"
+    )
+    assert "detail" not in entries[0], f"[{route_in}] detail 进了 ring：{entries[0]}"
+    payloads = _diag_payloads_since(errors, base)
+    assert len(payloads) == 1, payloads
+    payload = payloads[0]
+    assert "detail" in payload, (
+        f"[{route_in}] create-no-offsets 的 console 负载没带 detail——分不清没快照还是快照章号不符：{payload}"
+    )
+    assert list(payload) == PAYLOAD_KEY_ORDER + ["detail"], f"[{route_in}] 负载键序不对：{list(payload)}"
+    detail = payload["detail"]
+    # 显式断键在：JSON 会把 undefined 直接丢掉，不能让「缺键」冒充 null。
+    assert "snapshotChapter" in detail, f"[{route_in}] detail 缺 snapshotChapter：{detail}"
+    if route_in == "detached_range":
+        want = {"hasSnapshot": False, "snapshotChapter": None, "chapterIndex": 0, "textLength": L}
+    else:
+        want = {"hasSnapshot": True, "snapshotChapter": 99, "chapterIndex": 0, "textLength": L}
+    assert detail == want, f"[{route_in}] detail 不对：\n  实际 {detail}\n  期望 {want}"
 
 
 @pytest.mark.parametrize("route_in", ["collapsed_range", "collapsed_snapshot"])
@@ -2469,6 +2547,20 @@ def test_w6_c8_every_create_exit_in_sequence_yields_exactly_one_report_each_in_o
         f"线上 POST 应当恰好 1(500)+1(abort)+2(409 重试)+1(成功) = 5 次，实际 {_post_count() - base_posts} 次"
     )
     assert len(notes) == 1 and notes[0]["quote"] == CH0_QUOTE, f"有效的建应当恰好落盘一条选中的文字：{notes}"
+
+    # 019 WI-8（WI8-E3）：七个出口里只有 create-no-offsets 带 detail，且放在 message 之后；
+    # 每条 ring 条目恰好六个键、顺序固定——这是「其余 op 的负载字节不变」的护栏
+    # （值由上面的投影相等钉住，这里钉键集与键序）。
+    for p, e in zip(payloads, entries):
+        assert list(e) == RING_KEY_ORDER, f"ring 条目键序不对：{list(e)}（{e}）"
+        extra = ["detail"] if p["op"] == "create-no-offsets" else []
+        assert list(p) == PAYLOAD_KEY_ORDER + extra, f"{p['op']} 的 console 负载键序不对：{list(p)}"
+    no_offsets = [p for p in payloads if p["op"] == "create-no-offsets"]
+    assert len(no_offsets) == 1, no_offsets
+    d = no_offsets[0]["detail"]
+    assert d["hasSnapshot"] is False and d["snapshotChapter"] is None and d["chapterIndex"] == 0, (
+        f"W6-C8 的 no-offsets 一步不留快照，detail 应当如实说出来：{d}"
+    )
 
 
 # ===========================================================================

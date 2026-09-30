@@ -184,7 +184,9 @@
     return notesDiagEntries.map((e) => Object.assign({}, e));
   }
 
-  function reportNotesWriteFailure({ op, resp, id, message, requested } = {}) {
+  // `detail`（019 WI-8）只进 console 负载、放在 message 之后，且只在传了的时候才出现；
+  // ring 条目仍是 recordNotesDiag 那六个标量——环的形状对每个 op 都不变。
+  function reportNotesWriteFailure({ op, resp, id, message, requested, detail } = {}) {
     const hasResp = resp !== null && resp !== undefined;
     const entry = recordNotesDiag({
       op,
@@ -194,6 +196,7 @@
       ok: hasResp ? !!resp.ok : false,
     });
     const payload = Object.assign({}, entry, { message: message == null ? null : String(message) });
+    if (detail !== undefined) payload.detail = detail;
     console.error(`[Annotations] notes write failed ${JSON.stringify(payload)}`);
     showToast(message || "标注没能保存，请重试");
     return entry;
@@ -1625,10 +1628,19 @@
       if (!offsets) {
         // 这里原本是一句 console.log 就 return：不发 POST、不提示、不报错。
         // 欠账 #44 让它开口；009 #50 把它接进诊断环——请求前放弃，所以 requested:false。
+        // 019 WI-8：detail 把「根本没有快照」和「快照来自别的章」分开。hasSnapshot 读的是
+        // **原始** currentOffsets，不是 offsetsUsable 之后的值——否则章号不符那一路也报 false。
+        // （上报必须是本块第一句，见 test_notes_failure_guards_instrumented.py，所以不先取局部变量。）
         reportNotesWriteFailure({
           op: "create-no-offsets",
           requested: false,
           message: "这段选区已失效，请重新选中再试",
+          detail: {
+            hasSnapshot: !!this.currentOffsets,
+            snapshotChapter: this.currentOffsets ? this.currentOffsets.chapterIndex : null,
+            chapterIndex: ctx.chapterIndex,
+            textLength: idx.text.length,
+          },
         });
         return;
       }
