@@ -1735,6 +1735,11 @@ def _build_c22(root: Path, dirs: Sequence[Set[str]], occupied: Set[str]) -> Tupl
     return out, leftovers
 
 
+def _without_locks(tree: Dict[str, Any]) -> Dict[str, Any]:
+    """018 WI-2 amendment: drop the book-lock dir `.locks/` (ADR-0015 contract item 1)."""
+    return {k: v for k, v in tree.items() if k != ".locks/" and not k.startswith(".locks/")}
+
+
 def _refuse_twice(out: Path, epub_v2: Path) -> str:
     msgs = []
     for _ in range(2):
@@ -1753,12 +1758,19 @@ def _refuse_twice(out: Path, epub_v2: Path) -> str:
 def test_w1_c22_message_law(dirs, occupied, tmp_path, epub_v2):
     root = Path(tempfile.mkdtemp(dir=tmp_path))
     out, leftovers = _build_c22(root, dirs, occupied)
-    books_before = snapshot_tree(root / "books")
+    books_before = _without_locks(snapshot_tree(root / "books"))
 
     msg = _refuse_twice(out, epub_v2)
 
     # 0. a refusal is side-effect-free
-    assert snapshot_tree(root / "books") == books_before
+    assert _without_locks(snapshot_tree(root / "books")) == books_before
+    # 0b. 018 WI-2 amendment: the one thing outside that comparison, `.locks/`, holds
+    # nothing but lock files (ADR-0015 contract item 1).
+    locks = root / "books" / ".locks"
+    assert locks.is_dir()
+    assert all(p.is_file() and p.name.endswith(".lock") for p in locks.iterdir()), sorted(
+        p.name for p in locks.iterdir()
+    )
     moves = parse_moves(msg)
     dsts = [Path(dst) for _, dst in moves]
     count = {a: sum(a in s for s in dirs) for a in KNOWN_ASIDES}

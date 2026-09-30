@@ -554,7 +554,8 @@ def test_first_run_creates_complete_directory_when_output_dir_absent(
     # `order` is the raw EPUB spine index; only require it to be monotonic.
     orders = [c.order for c in loaded.spine]
     assert all(b > a for a, b in zip(orders, orders[1:])), orders
-    assert sorted(os.listdir(books_dir)) == ["sample_data"]
+    # 018 WI-2 amendment: `.locks/` is the book-lock dir (ADR-0015 contract item 1), not a book.
+    assert sorted(n for n in os.listdir(books_dir) if n != ".locks") == ["sample_data"]
 
 
 def test_zero_chapter_book_fails_validation_and_leaves_prior_book_intact(

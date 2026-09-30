@@ -20,6 +20,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
+from ... import book_lock
 from ...search_service import (
     SearchMode,
     SearchQuery,
@@ -198,10 +199,18 @@ class IndexRequest(BaseModel):
 @router.post("/api/index/{book_id}")
 async def api_index_book(book_id: str, body: IndexRequest):
     safe_book_id = _server._validate_book_id(book_id)
+    # 018 WI-2: identity snapshot for the in-lock ABA recheck. Passed as an attribute,
+    # not a kwarg, so index_book's call shape (and every stand-in of it) is unchanged.
+    expected_book_uuid = book_lock.read_book_uuid(_server.BOOKS_DIR, safe_book_id)
     try:
         idx = _server.BookVectorIndex(safe_book_id, books_dir=_server.BOOKS_DIR)
+        idx.expected_book_uuid = expected_book_uuid
         status = await run_in_threadpool(idx.index_book, force_reindex=body.force_reindex)
         return status
+    except (book_lock.BookLockError, book_lock.BookGone):
+        # Before the two clauses below: Busy is not a RuntimeError, but BookGone is an
+        # OSError and would otherwise become a 500. The app handlers map all three.
+        raise
     except RuntimeError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:  # noqa: BLE001 - 第 2 档：HTTP 边界，转译成 500 且 detail 带上原因

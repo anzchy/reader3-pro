@@ -332,6 +332,13 @@ async def _notes_file_error_handler(request: Request, exc: NotesFileError) -> JS
     return JSONResponse(status_code=500, content={"detail": str(exc)})
 
 
+# 018 WI-2：书锁的三种结果（Busy / Changed / Gone）在这里一处映射到 HTTP，
+# 理由同上——逐个路由 try 只会漏掉下一个调用点。映射本身在 book_lock_http。
+from . import book_lock_http  # noqa: E402
+
+book_lock_http.install(app)
+
+
 @app.on_event("startup")
 async def _startup_scan_books() -> None:
     # Ensure stable UUID mapping exists for all processed books.

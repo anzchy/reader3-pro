@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional
 from uuid import UUID, uuid4
 
+from .. import book_lock
 from ..safe_paths import safe_book_folder
 
 
@@ -106,7 +107,9 @@ def _write_meta_to_scratch(meta_path: str, meta: Dict[str, Any]) -> str:
     looking at the file we think we are, and quietly truncating it is how the
     previous version lost data.
     """
-    os.makedirs(os.path.dirname(meta_path) or ".", exist_ok=True)
+    # No makedirs (018 WI-2, ADR-0015 contract item 5): every caller holds the book
+    # lock and has just seen the book dir; if it is gone, O_EXCL below fails rather
+    # than a deleted book coming back as a directory holding only ai_meta.json.
     tmp_path = f"{meta_path}.{os.getpid()}.{os.urandom(6).hex()}.tmp"
     fd = os.open(tmp_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666)
     try:
@@ -197,7 +200,16 @@ def _add_uuid_to_existing_meta(meta_path: str, meta: Dict[str, Any]) -> str:
     return new_uuid
 
 
-def ensure_book_uuid(books_dir: str, book_folder: str) -> str:
+def ensure_book_uuid(books_dir: str, book_folder: str, *, deadline: Optional[float] = None) -> str:
+    """The book's uuid; minted (or added to an existing meta) if it has none yet.
+
+    The read of an existing uuid takes no lock. Minting is a write into the book
+    dir, so it runs under the book lock (SH, category ``ai_meta``) with the
+    existence recheck inside it (018 WI-2): a book deleted meanwhile raises
+    ``BookGone`` instead of being recreated as a folder holding only ai_meta.json.
+    The meta is re-read inside the lock, so a uuid another writer minted while this
+    one waited is returned rather than overwritten.
+    """
     book_folder = _safe_folder_name(book_folder)
     meta_path = _ai_meta_path(books_dir, book_folder)
     meta = _read_ai_meta(meta_path)
@@ -206,9 +218,14 @@ def ensure_book_uuid(books_dir: str, book_folder: str) -> str:
     if existing:
         return existing
 
-    if meta is None:
-        return _mint_first_uuid(meta_path)
-    return _add_uuid_to_existing_meta(meta_path, meta)
+    with book_lock.writer_scope(books_dir, book_folder, holder="ai_meta", deadline=deadline):
+        meta = _read_ai_meta(meta_path)
+        existing = _uuid_from_meta(meta_path, meta or {})
+        if existing:
+            return existing
+        if meta is None:
+            return _mint_first_uuid(meta_path)
+        return _add_uuid_to_existing_meta(meta_path, meta)
 
 
 class BookUuidResolver:
@@ -229,6 +246,10 @@ class BookUuidResolver:
                 continue
             try:
                 self._load_folder(item)
+            except book_lock.BookLockBusy as e:
+                # A book being imported or deleted (EX) is skipped after one budget,
+                # not fatal to startup; its uuid is resolved on first use.
+                logger.info("skipping %s for now: %s", item, e)
             except (OSError, ValueError) as e:
                 # 第 2 档：这个扫描跑在服务启动时。一本书的 ai_meta.json 坏了不该
                 # 让整个书库起不来——跳过并留痕。该书的 AI 端点随后 404（明确的

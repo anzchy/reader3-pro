@@ -48,7 +48,7 @@ from reader3_app.models.annotations import Annotation
 
 # Escape hatch for a rendezvous a correct implementation makes impossible; see
 # the module docstring. Only the green path ever waits this long.
-RENDEZVOUS_TIMEOUT_S = 2.0
+RENDEZVOUS_TIMEOUT_S = 1.25
 
 # Anything that would mean a thread is wedged rather than merely slow.
 JOIN_TIMEOUT_S = 30.0

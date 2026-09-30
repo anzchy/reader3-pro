@@ -126,6 +126,8 @@
   - 持锁进程被 `SIGKILL` 后锁立即可取
   - 删书进行中，notes / ai_meta / conversations / vector 写手（含 vector 的**读**路径）都**不会**把书目录重新建出来（每个写手一条测试）
   - 同一本书的 notes 并发写仍不丢（沿用 notes 现有并发测试，不改一字仍绿）
+    - ⬛ 2026-09-30 订正：「不改一字」做不到，改了两个文件——`tests/unit/test_notes_concurrent_write.py` 的 `RENDEZVOUS_TIMEOUT_S` 由 2.0 改为 1.25，`tests/fixtures/notes_concurrency.py` 的 `ObservableBookLock` 追加 `acquire` / `release` / `locked` 垫片（纯追加，`__enter__` 一字未动）。原因：契约第 4 条的 2 秒总预算也覆盖资源锁这一层——旧测试让第一个写手在锁内恰好停 2.0 秒，第二个写手的预算与之同时耗尽，只会 409；有界等待又必须对注册表里的锁对象调 `.acquire`。被测的主张不变：同一本书两个并发写手的标注都留在盘上。变异回执：把书锁与资源锁都改成空操作，线程版与进程版两条并发写测试在 1.25 下均转红（018 WI-2 报告）
+    - ⬛ 2026-09-30 订正（既有单测随契约修订，主控裁定）：WI-2 使既有单测 18 条转红，18 条全部修订。（1）书库根目录列举排除 `.locks`：3 条（`test_process_epub_commit` / `test_process_epub_staging` 各 1 条，`test_process_epub_sigkill_recovery::test_w1_c22_message_law`）；（2）第 i 类（断言与建目录无关，书目录只是附带的准备）：15 条。其中 11 条只需在 setup 里建出书目录（`test_notes_no_annotation_loss` 3、`test_fixture_annotation_corpus` 2、`test_vector_index_freshness` 5、`test_vector_index_status_consistency` 1）；另 4 条对话测试（`test_conversation_never_silently_dropped` 的 `per_book_mode_ignores_the_missing_root`×3 与 `unrecognised_mode_falls_back_to_per_book_and_says_so`）因 per-book 对话在锁内复核 `thread.book_uuid`（契约第 6 条），setup 还要写出带该 uuid 的 `ai_meta.json`；期望的文件清单仍是精确相等，显式列出 `ai_meta.json` 与对话文件两项，并新增一条断言：调用前后 `ai_meta.json` 逐字节不变；（3）按契约第 5 条反转为「拒绝、不复活」（第 ii 类）：0 条——没有一条既有测试的主张是「往不存在的书目录写能成功或会建出它」。没有一条断言被放宽；`.locks/` 里只有 `*.lock` 文件，在 `w1_c22` 里用一条正向断言钉住（契约第 1 条）
   - 重建持共享锁期间，notes 保存照常成功；独占写手在场时 notes 在 2 秒预算内 409（不是挂起）
   - ABA：notes 等锁 → 删书 → 同名重导入 → notes 醒来 → 409，新书的 `notes.json` 不变
   - 交叉获取（资源锁 → 书锁）与同栈重入都抛错，不死锁

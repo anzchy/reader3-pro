@@ -84,6 +84,8 @@ def notes_path(books_dir: Path) -> Path:
 def three_saved_annotations(books_dir: Path) -> List[Annotation]:
     """Three annotations written through the real writer, as a user would have."""
     anns = [_annotation(0), _annotation(1), _annotation(2)]
+    # 018 WI-2 amendment: writers no longer create the book dir (contract item 5); the book exists in setup.
+    (books_dir / BOOK_ID).mkdir(parents=True, exist_ok=True)
     save_annotations(str(books_dir), BOOK_ID, anns)
     return anns
 

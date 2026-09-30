@@ -171,6 +171,8 @@ def _no_real_semantic_deps(monkeypatch: pytest.MonkeyPatch):
 def make_index(books_dir: Path, collection: Optional[FakeCollection], book: Optional[FakeBook],
                monkeypatch: pytest.MonkeyPatch) -> BookVectorIndex:
     idx = BookVectorIndex(BOOK_ID, books_dir=str(books_dir))
+    # 018 WI-2 amendment: writers no longer create the book dir (contract item 5); the book exists in setup.
+    os.makedirs(idx.book_dir, exist_ok=True)
     if collection is not None:
         client = FakeClient(idx.chroma_path)
         monkeypatch.setattr(idx, "_client_and_collection", lambda *a, **kw: (client, collection))
@@ -317,6 +319,8 @@ def test_v4_接线_建集合时声明cosine空间(books_dir: Path, monkeypatch: 
                                         _no_real_semantic_deps) -> None:
     """V4 的接线补充（不单独成 case 级别）：``create_collection`` 收到 hnsw:space=cosine。"""
     idx = BookVectorIndex(BOOK_ID, books_dir=str(books_dir))
+    # 018 WI-2 amendment: writers no longer create the book dir (contract item 5); the book exists in setup.
+    os.makedirs(idx.book_dir, exist_ok=True)
     idx._client_and_collection()
 
     client = _no_real_semantic_deps.last_client

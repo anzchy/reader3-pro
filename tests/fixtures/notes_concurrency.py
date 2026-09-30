@@ -111,6 +111,22 @@ class ObservableBookLock:
     def __exit__(self, exc_type, exc, tb) -> None:
         self._lock.release()
 
+    # 018 WI-2（ADR-0015 契约 4）：资源层的线程锁改成有界等待——产品代码对注册表里的锁对象
+    # 调 `.acquire(False)` 轮询，不再走 `with`。下面三个方法是纯增量的镜像：失败的那一次
+    # 非阻塞尝试同样立起 `someone_is_waiting`，然后按调用方原样的参数委托。`__enter__` /
+    # `__exit__` 一字未动。
+    def acquire(self, blocking: bool = True, timeout: float = -1) -> bool:
+        if self._lock.acquire(False):
+            return True
+        self.someone_is_waiting.set()
+        return self._lock.acquire(blocking, timeout)
+
+    def release(self) -> None:
+        self._lock.release()
+
+    def locked(self) -> bool:
+        return self._lock.locked()
+
 
 def _install_observable_lock(notes_service, books_dir: str, book_id: str) -> ObservableBookLock:
     """把上面那把锁塞进 `_BOOK_THREAD_LOCKS`，抢在产品代码 `setdefault` 之前。

@@ -119,6 +119,8 @@ def test_stacked_annotations_round_trip_through_notes_service(books_dir: Path):
     """L3 - persistence keeps all four, distinguishable, and deletes one at a time."""
     case = ac.STACKED
     saved = [Annotation.from_dict(dict(p)) for p in case.annotations]
+    # 018 WI-2 amendment: writers no longer create the book dir (contract item 5); the book exists in setup.
+    (books_dir / ac.BOOK_ID).mkdir(parents=True, exist_ok=True)
     save_annotations(str(books_dir), ac.BOOK_ID, saved)
 
     loaded = load_annotations(str(books_dir), ac.BOOK_ID)
@@ -143,6 +145,8 @@ def test_long_context_is_truncated_towards_the_quote(books_dir: Path):
     assert len(str(payload["prefix"])) == 80
     assert len(str(payload["suffix"])) == 80
 
+    # 018 WI-2 amendment: writers no longer create the book dir (contract item 5); the book exists in setup.
+    (books_dir / ac.BOOK_ID).mkdir(parents=True, exist_ok=True)
     stored = add_annotation(str(books_dir), Annotation.from_dict(payload))
 
     assert stored.prefix == ac.LONG_PREFIX[-50:]

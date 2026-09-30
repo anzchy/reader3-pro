@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -8,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
+from .. import book_lock
 from ..safe_paths import safe_book_folder
 
 
@@ -240,18 +242,30 @@ def save_conversation(
     *,
     thread: ConversationThread,
 ) -> None:
+    """Write one per-book conversation under the book lock (018 WI-2, ADR-0015).
+
+    SH ``conversations``, then in-lock: the book dir must exist (``BookGone``, never
+    recreated) and must still hold the identity the thread is filed under
+    (``BookChanged`` -- a same-name reimport is a different book). Only the
+    ``ai_conversations`` dir inside the existing book dir is ever created.
+    """
     book_folder = _safe_folder_name(thread.book_folder)
-    os.makedirs(_conversations_dir(books_dir, book_folder), exist_ok=True)
-    path = _conversation_path(books_dir, book_folder, thread.conversation_id)
-    tmp = f"{path}.tmp"
-    payload = thread.to_dict()
-    payload["schema_version"] = SCHEMA_VERSION
-    payload["last_updated"] = _utc_now_iso()
-    if not payload.get("created_at"):
-        payload["created_at"] = payload["last_updated"]
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, path)
+    with book_lock.writer_scope(
+        books_dir, book_folder, holder="conversations", expected_book_uuid=thread.book_uuid
+    ):
+        conv_dir = _conversations_dir(books_dir, book_folder)
+        with contextlib.suppress(FileExistsError):
+            os.mkdir(conv_dir)
+        path = _conversation_path(books_dir, book_folder, thread.conversation_id)
+        tmp = f"{path}.tmp"
+        payload = thread.to_dict()
+        payload["schema_version"] = SCHEMA_VERSION
+        payload["last_updated"] = _utc_now_iso()
+        if not payload.get("created_at"):
+            payload["created_at"] = payload["last_updated"]
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, path)
 
 
 def save_project_conversation(

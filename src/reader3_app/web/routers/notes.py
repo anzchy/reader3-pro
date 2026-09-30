@@ -20,9 +20,11 @@ import html
 from typing import Optional
 
 from fastapi import APIRouter, Header, HTTPException, Response
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from ... import book_lock
 from ...models.annotations import Annotation
 from ...notes_service import (
     NOTES_SCHEMA_VERSION,
@@ -97,7 +99,14 @@ def _mark_orphans(book: Book, annotations: list[Annotation]) -> bool:
     return changed
 
 
-def _refresh_orphaned_annotations(book_id: str, book: Book) -> tuple[list[Annotation], list[Annotation], str]:
+def _book_uuid_snapshot(book_id: str) -> Optional[str]:
+    """018 WI-2：请求开始时书的身份快照，交给服务层在书锁里复核（ADR-0015 契约 6，防 ABA）。"""
+    return book_lock.read_book_uuid(_server.BOOKS_DIR, book_id)
+
+
+def _refresh_orphaned_annotations(
+    book_id: str, book: Book, expected_book_uuid: Optional[str]
+) -> tuple[list[Annotation], list[Annotation], str]:
     """读路由的 load → 刷新 → 存盘，**整段在书级锁里**（017 WI-4，审计 #1）。
 
     load 也搬进了锁里，这是关键：只把 save 包起来，GET 依旧会拿着一份锁外读到的陈旧
@@ -105,7 +114,10 @@ def _refresh_orphaned_annotations(book_id: str, book: Book) -> tuple[list[Annota
     的全部标注，读结果里只出现活着的那些。
     """
     annotations, version = refresh_annotations_and_version(
-        _server.BOOKS_DIR, book_id, lambda anns: _mark_orphans(book, anns)
+        _server.BOOKS_DIR,
+        book_id,
+        lambda anns: _mark_orphans(book, anns),
+        expected_book_uuid=expected_book_uuid,
     )
     return annotations, [a for a in annotations if not a.orphaned], version
 
@@ -128,11 +140,14 @@ class UpdateAnnotationRequest(BaseModel):
 @router.get("/api/notes/{book_id}")
 async def api_get_book_notes(book_id: str, response: Response):
     safe_book_id = _server._validate_book_id(book_id)
+    expected_book_uuid = _book_uuid_snapshot(safe_book_id)
     book = _server.load_book_cached(safe_book_id)
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
 
-    annotations, active, version = _refresh_orphaned_annotations(safe_book_id, book)
+    annotations, active, version = await run_in_threadpool(
+        _refresh_orphaned_annotations, safe_book_id, book, expected_book_uuid
+    )
 
     by_chapter: dict[int, list[Annotation]] = {}
     for ann in active:
@@ -191,13 +206,16 @@ async def api_get_book_notes(book_id: str, response: Response):
 @router.get("/api/notes/{book_id}/{chapter_index}")
 async def api_get_chapter_notes(book_id: str, chapter_index: int, response: Response):
     safe_book_id = _server._validate_book_id(book_id)
+    expected_book_uuid = _book_uuid_snapshot(safe_book_id)
     book = _server.load_book_cached(safe_book_id)
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
     if chapter_index < 0 or chapter_index >= len(book.spine):
         raise HTTPException(status_code=400, detail="Invalid chapter_index")
 
-    annotations, active, version = _refresh_orphaned_annotations(safe_book_id, book)
+    annotations, active, version = await run_in_threadpool(
+        _refresh_orphaned_annotations, safe_book_id, book, expected_book_uuid
+    )
     items = [a for a in active if a.chapter_index == chapter_index]
     items.sort(key=lambda a: (a.position is None, a.position or 0, a.created_at, a.id))
 
@@ -230,6 +248,7 @@ async def api_create_annotation(
     if_match: Optional[str] = Header(default=None, alias="If-Match"),
 ):
     safe_book_id = _server._validate_book_id(book_id)
+    expected_book_uuid = _book_uuid_snapshot(safe_book_id)
     book = _server.load_book_cached(safe_book_id)
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
@@ -293,7 +312,13 @@ async def api_create_annotation(
     )
 
     try:
-        saved, version = add_note_annotation(_server.BOOKS_DIR, annotation, if_match=if_match)
+        saved, version = await run_in_threadpool(
+            add_note_annotation,
+            _server.BOOKS_DIR,
+            annotation,
+            if_match=if_match,
+            expected_book_uuid=expected_book_uuid,
+        )
     except NotesVersionConflict as e:
         return _conflict(e)
 
@@ -309,6 +334,7 @@ async def api_delete_annotation(
     if_match: Optional[str] = Header(default=None, alias="If-Match"),
 ):
     safe_book_id = _server._validate_book_id(book_id)
+    expected_book_uuid = _book_uuid_snapshot(safe_book_id)
     book = _server.load_book_cached(safe_book_id)
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
@@ -316,7 +342,14 @@ async def api_delete_annotation(
         raise HTTPException(status_code=400, detail="Invalid chapter_index")
 
     try:
-        ok, version = delete_note_annotation(_server.BOOKS_DIR, safe_book_id, note_id, if_match=if_match)
+        ok, version = await run_in_threadpool(
+            delete_note_annotation,
+            _server.BOOKS_DIR,
+            safe_book_id,
+            note_id,
+            if_match=if_match,
+            expected_book_uuid=expected_book_uuid,
+        )
     except NotesVersionConflict as e:
         return _conflict(e)
 
@@ -336,6 +369,7 @@ async def api_update_annotation(
     if_match: Optional[str] = Header(default=None, alias="If-Match"),
 ):
     safe_book_id = _server._validate_book_id(book_id)
+    expected_book_uuid = _book_uuid_snapshot(safe_book_id)
     book = _server.load_book_cached(safe_book_id)
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
@@ -348,8 +382,14 @@ async def api_update_annotation(
 
     note_text = html.escape(note_text)
     try:
-        updated, version = update_note_annotation(
-            _server.BOOKS_DIR, safe_book_id, note_id, note_text, if_match=if_match
+        updated, version = await run_in_threadpool(
+            update_note_annotation,
+            _server.BOOKS_DIR,
+            safe_book_id,
+            note_id,
+            note_text,
+            if_match=if_match,
+            expected_book_uuid=expected_book_uuid,
         )
     except NotesVersionConflict as e:
         return _conflict(e)
