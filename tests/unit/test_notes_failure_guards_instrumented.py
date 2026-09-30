@@ -56,7 +56,8 @@ SLICED_FUNCTIONS = (
 _NO_RANGE = r"if\s*\(\s*!this\.currentRange\s*\|\|\s*!this\.contentEl\s*\)"
 _NO_CONTEXT = r"if\s*\(\s*!ctx\.bookId\s*\|\|\s*ctx\.chapterIndex\s*==\s*null\s*\)"
 
-#: （函数，守卫身份，守卫条件的模式，期望 op）。八行，与 e2e 那边的 `W6_GUARD_OP_REGISTRY` 同一组 op。
+#: （函数，守卫身份，守卫条件的模式，期望 op）。十行，与 e2e 那边的 `W6_GUARD_OP_REGISTRY` 同一组 op
+#: （末两行是 009 #50 接进诊断环的两道请求前守卫，2026-09-30）。
 INSTRUMENTED: Tuple[Tuple[str, str, str, str], ...] = (
     ("createAnnotation", "missing range/content", _NO_RANGE, "create-no-selection"),
     ("createAnnotation", "missing book/chapter context", _NO_CONTEXT, "create-no-context"),
@@ -66,6 +67,8 @@ INSTRUMENTED: Tuple[Tuple[str, str, str, str], ...] = (
     ("saveNote", "empty trimmed text", r"if\s*\(\s*!text\s*\)", "save-empty-text"),
     ("resolveConflict", "no pending conflict", r"if\s*\(\s*!c\s*\)", "conflict-no-pending"),
     ("deleteAnnotations", "missing context", _NO_CONTEXT, "delete-no-context"),
+    ("createAnnotation", "offset snapshot unavailable", r"if\s*\(\s*!offsets\s*\)", "create-no-offsets"),
+    ("createAnnotation", "empty quote", r"if\s*\(\s*!quote\s*\)", "create-empty-quote"),
 )
 
 #: 409 体里服务端告知的版本，直接赋值（P1–P4）。
@@ -284,7 +287,7 @@ def test_known_notes_failure_guards_retain_reporting() -> None:
     spans = {name: _slice_function(no_comments, skeleton, name) for name in SLICED_FUNCTIONS}
 
     problems: List[str] = []
-    assert len({row[3] for row in INSTRUMENTED}) == len(INSTRUMENTED) == 8, "登记表不是八个互不相同的 op"
+    assert len({row[3] for row in INSTRUMENTED}) == len(INSTRUMENTED) == 10, "登记表不是十个互不相同的 op"
     for function, guard, pattern, op in INSTRUMENTED:
         msg = _check_guard(no_comments, skeleton, spans[function], function, guard, pattern, op)
         if msg:

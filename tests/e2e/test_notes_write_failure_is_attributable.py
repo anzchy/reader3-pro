@@ -2482,8 +2482,9 @@ def test_w6_c8_every_create_exit_in_sequence_yields_exactly_one_report_each_in_o
 #
 # **不装任何 `page.route`。** 冻结 conftest 的 context 级出网闸是一个 Python 处理函数，
 # 同步 Playwright 只在 Python 调进 Playwright 时才服务它，所以每一次触发写的点击都包在
-# `page.expect_response(...)` 里，再 `wait_for_write_activity_settled`，最后才进纯 Python 的
-# `wait_for_notes` 轮询。不自带任何 sleep（W7-C1 的约束）。
+# `page.expect_response(...)` 里，再 `wait_for_write_activity_settled`，最后才进
+# `wait_for_notes(..., page=page)` 轮询（009 #49 起它用 `page.wait_for_timeout` 泵事件，
+# 不再是纯 Python 的 `time.sleep`）。本用例不自带任何 sleep（W7-C1 的约束）。
 #
 # **旁观条放在第 1 章**（矩阵原文 `pre` 期望 `[]`，这里偏离一处并写明理由）：
 # `assert_bystanders_unchanged` 在零条旁观时**按设计直接抛**（空转就是它要防的事），所以
