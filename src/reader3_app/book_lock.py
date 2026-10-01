@@ -15,7 +15,10 @@ Three layers, one deadline:
      from here.
 
 Every wait polls with ``LOCK_NB`` and ``_sleep(min(POLL_S, remaining))`` against
-one absolute ``_monotonic`` deadline; an exclusive request never waits.
+one absolute ``_monotonic`` deadline; an exclusive request never waits. A layer is
+accepted only if ``_monotonic() < deadline`` when it succeeds: a success at or after
+the deadline releases that layer and every layer already taken, then refuses, and a
+deadline already reached refuses before anything is attempted (fix-plan WI-3, #42).
 
 The lock file lives *outside* the book dir and is never unlinked: an ``rmtree``
 of the book would otherwise unlink it and the next writer would lock a new inode
@@ -54,10 +57,13 @@ UNKNOWN = "unknown"
 _RECORD_BYTES = 64
 #: How long a refused caller keeps re-reading an empty category record: the winner
 #: writes it right after its ``flock`` succeeds, so a loser can read it too early.
+#: Charged to the caller's deadline: the window is ``min(this, deadline - now)``.
 _CATEGORY_SETTLE_S = 0.1
+_CATEGORY_POLL_S = 0.005
 _AI_META_FILENAME = "ai_meta.json"
 
-# Time seams. Tests substitute both; nothing else in this module reads a clock.
+# Time seams. Tests substitute both. Every wait in this module -- the layer polls and
+# the holder-category settle in ``_read_category`` -- reads time only through them.
 _monotonic = time.monotonic
 _sleep = time.sleep
 
@@ -246,17 +252,22 @@ def _parse_category(raw: bytes) -> str:
     return parts[0] if _pid_alive(pid) else UNKNOWN
 
 
-def _read_category(fd: int) -> str:
-    """Best-effort holder category. Re-reads briefly while the record is still empty."""
-    give_up = time.monotonic() + _CATEGORY_SETTLE_S
+def _read_category(fd: int, deadline: float) -> str:
+    """Best-effort holder category. Re-reads briefly while the record is still empty.
+
+    The settle window is ``min(_CATEGORY_SETTLE_S, deadline - now)`` on the injected
+    clock (#20): a refusal never lands later than the deadline it is refusing at.
+    """
+    give_up = min(_monotonic() + _CATEGORY_SETTLE_S, deadline)
     while True:
         try:
             got = _parse_category(os.pread(fd, _RECORD_BYTES, 0))
         except OSError:
             got = UNKNOWN
-        if got != UNKNOWN or time.monotonic() >= give_up:
+        now = _monotonic()
+        if got != UNKNOWN or now >= give_up:
             return got
-        time.sleep(0.005)
+        _sleep(min(_CATEGORY_POLL_S, give_up - now))
 
 
 def _write_category(fd: int, text: str) -> None:
@@ -268,13 +279,6 @@ def _write_category(fd: int, text: str) -> None:
 # --------------------------------------------------------------------------- acquire
 
 
-def _wait_step(deadline: float, category: str) -> None:
-    now = _monotonic()
-    if now >= deadline:
-        raise BookLockBusy(category)
-    _sleep(min(POLL_S, deadline - now))
-
-
 @contextlib.contextmanager
 def acquire(
     books_dir: str,
@@ -283,16 +287,23 @@ def acquire(
     mode: str = SHARED,
     holder: str,
     deadline: Optional[float] = None,
+    budget: Optional[float] = None,
 ) -> Iterator[None]:
     """Hold the book lock in ``mode`` for the body; release on every exit path.
 
-    ``deadline`` is absolute on ``_monotonic``; ``None`` means now + ``BUDGET_S``.
+    ``deadline`` is absolute on ``_monotonic``. ``budget`` is a duration instead,
+    turned into a deadline *here*, at the start of the acquisition -- callers with a
+    short budget pass that, so work done before the lock is requested does not eat
+    into it. Neither means now + ``BUDGET_S``; both is a ``ValueError``.
+    A layer that succeeds at or after the deadline is released and refused.
     Exclusive never waits. Raises ``BookLockBusy`` on refusal, ``ValueError`` on an
     unsafe folder name (before anything is created), and a ``BookLockMisuse``
     subclass on same-thread re-entry, SH→EX upgrade, or book-inside-resource order.
     """
     if mode not in (SHARED, EXCLUSIVE):
         raise ValueError(f"unknown book lock mode: {mode!r}")
+    if deadline is not None and budget is not None:
+        raise ValueError("pass a deadline or a budget, not both")
     if holder not in CATEGORIES:
         raise ValueError(f"unknown book lock holder category: {holder!r}")
     folder = _safe_folder(book_folder)
@@ -307,20 +318,32 @@ def acquire(
         raise BookLockReentry(f"this thread already holds the book lock on {folder!r}")
 
     if deadline is None:
-        deadline = _monotonic() + BUDGET_S
+        deadline = _monotonic() + (BUDGET_S if budget is None else budget)
 
-    # Layer 1: the in-process reader/writer table.
-    while True:
-        blocking = _register(key, mode, holder)
-        if blocking is None:
-            break
-        if mode == EXCLUSIVE:
-            raise BookLockBusy(blocking)
-        _wait_step(deadline, blocking)
-
+    # 审计 #41：``_unregister`` 在最外层 finally 里，由 ``registered`` 守着 -- 拆锁时
+    # ``os.close`` 抛错也不会留下一个进程内的僵尸持有者。第一层的轮询也在这个 try
+    # 里面（#19）。
+    registered = False
     fd = -1
     locked = False
     try:
+        # Layer 1: the in-process reader/writer table.
+        last = UNKNOWN
+        while True:
+            now = _monotonic()
+            if now >= deadline:
+                raise BookLockBusy(last)
+            blocking = _register(key, mode, holder)
+            if blocking is None:
+                registered = True
+                if _monotonic() >= deadline:
+                    raise BookLockBusy(last)
+                break
+            if mode == EXCLUSIVE:
+                raise BookLockBusy(blocking)
+            last = blocking
+            _sleep(min(POLL_S, deadline - now))
+
         # Layer 2: flock across processes.
         path = lock_path(books_dir, folder)
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -330,14 +353,14 @@ def acquire(
             try:
                 fcntl.flock(fd, flag | fcntl.LOCK_NB)
                 locked = True
-                break
             except BlockingIOError:
                 pass
-            if mode == EXCLUSIVE:
-                raise BookLockBusy(_read_category(fd))
             now = _monotonic()
-            if now >= deadline:
-                raise BookLockBusy(_read_category(fd))
+            if locked and now < deadline:
+                break
+            if locked or mode == EXCLUSIVE or now >= deadline:
+                # A late success is refused like a failure; the finally unlocks it.
+                raise BookLockBusy(_read_category(fd, deadline))
             _sleep(min(POLL_S, deadline - now))
 
         _write_category(fd, f"{holder} {os.getpid()}")
@@ -349,12 +372,17 @@ def acquire(
             if mode == EXCLUSIVE:
                 _write_category(fd, "")
     finally:
-        if fd >= 0:
-            if locked:
-                with contextlib.suppress(OSError):
-                    fcntl.flock(fd, fcntl.LOCK_UN)
-            os.close(fd)
-        _unregister(key, mode, holder)
+        try:
+            if fd >= 0:
+                if locked:
+                    # Suppressed: the close below releases the flock anyway.
+                    with contextlib.suppress(OSError):
+                        fcntl.flock(fd, fcntl.LOCK_UN)
+                # Propagates; the finally still empties the table.
+                os.close(fd)
+        finally:
+            if registered:
+                _unregister(key, mode, holder)
 
 
 # --------------------------------------------------------------------------- resource locks
@@ -402,25 +430,47 @@ def resource_lock(
             thread_lock = _RESOURCE_THREAD_LOCKS.setdefault(os.path.realpath(path), threading.Lock())
 
     with resource_section():
-        while not thread_lock.acquire(False):
-            _wait_step(deadline, category)
+        # Same rule as ``acquire``: each layer is accepted only before the deadline; a
+        # late success is released by the finally below and refused.
+        got_thread_lock = False
+        fd = -1
+        locked = False
         try:
+            while True:
+                now = _monotonic()
+                if now >= deadline:
+                    raise BookLockBusy(category)
+                if thread_lock.acquire(False):
+                    got_thread_lock = True
+                    if _monotonic() >= deadline:
+                        raise BookLockBusy(category)
+                    break
+                _sleep(min(POLL_S, deadline - now))
             fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
-            try:
-                while True:
-                    try:
-                        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                        break
-                    except BlockingIOError:
-                        _wait_step(deadline, category)
+            while True:
                 try:
-                    yield
-                finally:
-                    fcntl.flock(fd, fcntl.LOCK_UN)
-            finally:
-                os.close(fd)
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    locked = True
+                except BlockingIOError:
+                    pass
+                now = _monotonic()
+                if now >= deadline:
+                    raise BookLockBusy(category)
+                if locked:
+                    break
+                _sleep(min(POLL_S, deadline - now))
+            yield
         finally:
-            thread_lock.release()
+            try:
+                if fd >= 0:
+                    try:
+                        if locked:
+                            fcntl.flock(fd, fcntl.LOCK_UN)
+                    finally:
+                        os.close(fd)
+            finally:
+                if got_thread_lock:
+                    thread_lock.release()
 
 
 # --------------------------------------------------------------------------- identity
@@ -466,6 +516,7 @@ def writer_scope(
     holder: str,
     expected_book_uuid: object = NO_UUID_CHECK,
     deadline: Optional[float] = None,
+    budget: Optional[float] = None,
 ) -> Iterator[None]:
     """A shared writer's whole operation: SH, then in-lock existence and identity rechecks.
 
@@ -477,7 +528,7 @@ def writer_scope(
     folder = _safe_folder(book_folder)
     # Module-global lookup at call time, not a bound reference: a substituted
     # ``acquire`` must see every writer's acquisition.
-    with acquire(books_dir, folder, mode=SHARED, holder=holder, deadline=deadline):
+    with acquire(books_dir, folder, mode=SHARED, holder=holder, deadline=deadline, budget=budget):
         if not os.path.isdir(os.path.join(books_dir, folder)):
             raise BookGone(f"book {folder!r} was removed; refusing to recreate it")
         if expected_book_uuid is not NO_UUID_CHECK:

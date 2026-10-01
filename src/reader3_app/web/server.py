@@ -462,10 +462,11 @@ def _book_uuid_or_none(book_folder: str) -> Optional[str]:
     018 WI-2 (#5/#6)：书锁被占（导入/删除中）同样降级成 None，且只等一个短预算
     （``book_lock.SHORT_BUDGET_S``），不让一页渲染等满 2 s。会取锁，所以调用方必须
     在线程池里调它（``run_in_threadpool``），不能直接在 async 路由里调。
+    传的是预算不是截止时刻（fix-plan WI-3）：``book_lock.acquire`` 在真正取锁时才起算，
+    取锁之前花掉的时间（线程池排队等）不吃这一个 poll 的预算。
     """
-    deadline = book_lock._monotonic() + book_lock.SHORT_BUDGET_S
     try:
-        return book_uuid_resolver.book_uuid_for_folder(book_folder, deadline=deadline)
+        return book_uuid_resolver.book_uuid_for_folder(book_folder, budget=book_lock.SHORT_BUDGET_S)
     except (OSError, ValueError, book_lock.BookLockError) as e:
         logger.warning("cannot resolve book_uuid for %s: %s", book_folder, e)
         return None

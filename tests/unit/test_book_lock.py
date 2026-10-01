@@ -768,3 +768,532 @@ def test_fx_2_14_short_budget_is_one_poll_and_acquires_a_free_book(
     assert not box["alive"]
     assert isinstance(box.get("error"), book_lock.BookLockBusy), repr(box.get("error"))
     assert box["at"] <= deadline2
+
+
+# --------------------------------------------------------------------------- FX-3 (fix-plan WI-3)
+#
+# FX-3-01..10 and FX-3-05b of ``.claude/tdd-guardian/tests-20261001-003726.md``
+# (audit findings #41, #42, #20). Law:
+#   * a layer is accepted only if ``_monotonic() < deadline`` at the moment it
+#     succeeds -- a success at or after the deadline releases every layer taken and
+#     refuses; a deadline already reached refuses without acquiring anything;
+#   * every exit path, including a failing teardown syscall, empties the table;
+#   * the holder-category read is charged to the same deadline.
+
+import errno  # noqa: E402 - section-local imports keep the W2 block untouched
+import fcntl  # noqa: E402
+import math  # noqa: E402
+
+from hypothesis import assume  # noqa: E402
+
+from reader3_app.ai import books as ai_books  # noqa: E402
+
+#: The WI-5 ``short_budget`` value; defined locally until WI-5 lands its fixture.
+FX_SHORT_BUDGET_S = 0.3
+#: FX-3 fake-clock bounds are exact up to float error, not ``FAKE_SLACK_S``.
+FX_TICK_EPS_S = 1e-9
+
+
+@pytest.fixture
+def short_budget(monkeypatch: pytest.MonkeyPatch) -> float:
+    monkeypatch.setattr(book_lock, "BUDGET_S", FX_SHORT_BUDGET_S)
+    return FX_SHORT_BUDGET_S
+
+
+def _restore_real_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(book_lock, "_monotonic", time.monotonic)
+    monkeypatch.setattr(book_lock, "_sleep", time.sleep)
+
+
+def _ex_ok_in_fresh_thread(books: Path, folder: str = BOOK) -> Dict[str, Any]:
+    def body() -> str:
+        with book_lock.acquire(str(books), folder, mode=EX, holder="delete"):
+            return "ok"
+
+    t0 = time.monotonic()
+    box = _run_in_thread(body)
+    box["elapsed"] = time.monotonic() - t0
+    return box
+
+
+def _raw_flock_holder(path: Path) -> int:
+    """An in-process fd holding ``flock(LOCK_EX)`` on ``path``; writes no record."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(str(path), os.O_RDWR | os.O_CREAT, 0o644)
+    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    return fd
+
+
+def _nb_flock_free(path: Path) -> bool:
+    """Level-4 kernel check without a spawn: a fresh open file description gets EX."""
+    fd = os.open(str(path), os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return False
+    finally:
+        os.close(fd)
+    return True
+
+
+def _resource_lock_file(books: Path, resource: str, folder: str = BOOK) -> Path:
+    if resource == "notes":
+        return books / folder / notes_service.NOTES_LOCK_FILENAME
+    return books / ".locks" / resource / f"{folder}.lock"
+
+
+def _resource_cm(books: Path, resource: str, folder: str = BOOK):
+    if resource == "notes":
+        return notes_service._book_write_lock(str(books), folder)
+    return book_lock.resource_lock(str(books), folder, category=resource)
+
+
+def fresh_resource_ok(books: Path, resource: str, folder: str = BOOK) -> tuple:
+    """SH book lock + the resource lock in a fresh thread; ``(value, real_elapsed)``."""
+
+    def body() -> str:
+        with book_lock.acquire(str(books), folder, mode=SH, holder=resource):
+            with _resource_cm(books, resource, folder):
+                return "ok"
+
+    t0 = time.monotonic()
+    box = _run_in_thread(body)
+    elapsed = time.monotonic() - t0
+    assert not box["alive"], f"a fresh {resource} holder never finished"
+    return box.get("value", repr(box.get("error"))), elapsed
+
+
+class ResourceHeld:
+    """A thread holding SH on the book plus one resource lock until ``release()``."""
+
+    def __init__(self, books: Path, resource: str, folder: str = BOOK) -> None:
+        self.ready = threading.Event()
+        self._go = threading.Event()
+        self.error: Optional[BaseException] = None
+        self.thread = threading.Thread(target=self._run, args=(books, resource, folder), daemon=True)
+
+    def _run(self, books: Path, resource: str, folder: str) -> None:
+        try:
+            with book_lock.acquire(str(books), folder, mode=SH, holder=resource):
+                with _resource_cm(books, resource, folder):
+                    self.ready.set()
+                    self._go.wait(PARK_GUARD_S)
+        except BaseException as exc:  # noqa: BLE001 - reported to the test
+            self.error = exc
+            self.ready.set()
+
+    def start(self) -> "ResourceHeld":
+        self.thread.start()
+        assert self.ready.wait(JOIN_TIMEOUT_S), "resource holder never became ready"
+        assert self.error is None, f"resource holder failed to acquire: {self.error!r}"
+        return self
+
+    def release(self) -> None:
+        self._go.set()
+        self.thread.join(JOIN_TIMEOUT_S)
+        assert not self.thread.is_alive(), "resource holder deadlocked on release"
+
+
+def _seed_resource(books: Path, resource: str) -> Path:
+    """The book dir plus the resource's data file; returns that file."""
+    (books / BOOK).mkdir(exist_ok=True)
+    if resource == "notes":
+        notes_service.add_annotation_and_version(str(books), _ann("seed"))
+        return books / BOOK / notes_service.NOTES_FILENAME
+    meta = books / BOOK / ai_books.AI_META_FILENAME
+    meta.write_text(json.dumps({"indexed_at": 1}), encoding="utf-8")
+    return meta
+
+
+def _resource_call(books: Path, resource: str) -> Callable[[float], Any]:
+    if resource == "notes":
+        return lambda d: notes_service.add_annotation_and_version(str(books), _ann("LATE"), deadline=d)
+    return lambda d: ai_books.ensure_book_uuid(str(books), BOOK, deadline=d)
+
+
+# ---- FX-3-01 / FX-3-02: teardown syscalls failing
+
+
+class _OsCloseShim:
+    """``book_lock.os`` with ``close`` doing the real close and then raising, once."""
+
+    def __init__(self) -> None:
+        self.close_calls = 0
+        self._armed = True
+
+    def close(self, fd: int) -> None:
+        self.close_calls += 1
+        os.close(fd)
+        if self._armed:
+            self._armed = False
+            raise OSError(errno.EIO, "close failed")
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(os, name)
+
+
+class _FcntlUnlockShim:
+    """``book_lock.fcntl`` with ``flock(fd, LOCK_UN)`` raising, once."""
+
+    def __init__(self) -> None:
+        self.unlock_calls = 0
+        self._armed = True
+
+    def flock(self, fd: int, op: int) -> None:
+        if op == fcntl.LOCK_UN:
+            self.unlock_calls += 1
+            if self._armed:
+                self._armed = False
+                raise OSError(errno.EIO, "unlock failed")
+        fcntl.flock(fd, op)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(fcntl, name)
+
+
+@pytest.mark.parametrize("mode", [SH, EX])
+def test_fx_3_01_os_close_raising_in_teardown_propagates_and_leaves_no_stale_holder(
+    books_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, short_budget: float, mode: str
+) -> None:
+    shim = _OsCloseShim()
+    monkeypatch.setattr(book_lock, "os", shim)
+    with pytest.raises(OSError, match="close failed"):
+        with book_lock.acquire(str(books_dir), BOOK, mode=mode, holder="import"):
+            pass
+    assert shim.close_calls == 1, "acquire no longer closes its fd through book_lock.os.close"
+
+    box = _ex_ok_in_fresh_thread(books_dir)
+    assert not box["alive"]
+    assert box.get("value") == "ok", f"stale in-process holder left behind: {box.get('error')!r}"
+    assert box["elapsed"] < 0.5
+    assert probe(str(_lock_file(books_dir)), "EX", str(tmp_path)) == "ok"
+
+
+@pytest.mark.parametrize("mode", [SH, EX])
+def test_fx_3_02_flock_unlock_raising_in_teardown_is_suppressed_and_still_unregisters(
+    books_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, short_budget: float, mode: str
+) -> None:
+    shim = _FcntlUnlockShim()
+    monkeypatch.setattr(book_lock, "fcntl", shim)
+    with book_lock.acquire(str(books_dir), BOOK, mode=mode, holder="import"):
+        pass
+    assert shim.unlock_calls == 1
+
+    box = _ex_ok_in_fresh_thread(books_dir)
+    assert not box["alive"]
+    assert box.get("value") == "ok", repr(box.get("error"))
+    assert box["elapsed"] < 0.5
+    assert probe(str(_lock_file(books_dir)), "EX", str(tmp_path)) == "ok"
+
+
+# ---- FX-3-03..05b: a success at the deadline is refused, at every layer
+
+
+def test_fx_3_03_late_wake_up_at_layer_1_is_refused(
+    books_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    held = Held(books_dir, EX, "import").start()
+    clock = FakeClock(start=100.0, hook_at=100.3, hook=held.release)
+    _install_clock(monkeypatch, clock)
+    try:
+        def waiter() -> str:
+            with book_lock.acquire(str(books_dir), BOOK, mode=SH, holder="notes", deadline=100.3):
+                return "acquired"
+
+        box = _run_waiter(clock, waiter)
+    finally:
+        if held.thread.is_alive():
+            held.release()
+    _restore_real_clock(monkeypatch)
+    assert not box["alive"]
+    assert clock.fired, "the release hook never ran"
+    assert isinstance(box.get("error"), book_lock.BookLockBusy), repr(box.get("value", box.get("error")))
+    assert box["at"] <= 100.3 + FX_TICK_EPS_S
+    fresh = _ex_ok_in_fresh_thread(books_dir)
+    assert fresh.get("value") == "ok", repr(fresh.get("error"))
+    assert probe(str(_lock_file(books_dir)), "EX", str(tmp_path)) == "ok"
+
+
+def test_fx_3_04_late_wake_up_at_layer_2_is_refused_and_holds_nothing(
+    books_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fd = _raw_flock_holder(_lock_file(books_dir))
+    closed: List[int] = []
+
+    def release() -> None:
+        os.close(fd)
+        closed.append(fd)
+
+    clock = FakeClock(start=100.0, hook_at=100.3, hook=release)
+    _install_clock(monkeypatch, clock)
+    try:
+        def waiter() -> str:
+            with book_lock.acquire(str(books_dir), BOOK, mode=SH, holder="notes", deadline=100.3):
+                return "acquired"
+
+        box = _run_waiter(clock, waiter)
+    finally:
+        if not closed:
+            os.close(fd)
+    _restore_real_clock(monkeypatch)
+    assert not box["alive"]
+    assert clock.fired
+    err = box.get("error")
+    assert isinstance(err, book_lock.BookLockBusy), repr(box.get("value", err))
+    assert box["at"] <= 100.3 + FX_TICK_EPS_S
+    assert err.holder_category in (book_lock.CATEGORIES | {book_lock.UNKNOWN})
+    assert err.holder_category != "notes", "the waiter read its own category record"
+    assert probe(str(_lock_file(books_dir)), "EX", str(tmp_path)) == "ok"
+    fresh = _ex_ok_in_fresh_thread(books_dir)
+    assert fresh.get("value") == "ok", repr(fresh.get("error"))
+
+
+@pytest.mark.parametrize("resource", ["notes", "ai_meta"])
+def test_fx_3_05_late_wake_up_at_the_resource_thread_lock_layer_is_refused(
+    books_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, short_budget: float, resource: str
+) -> None:
+    data = _seed_resource(books_dir, resource)
+    before = data.read_bytes()
+    holder = ResourceHeld(books_dir, resource).start()
+    clock = FakeClock(start=100.0, hook_at=100.3, hook=holder.release)
+    _install_clock(monkeypatch, clock)
+    call = _resource_call(books_dir, resource)
+    try:
+        box = _run_waiter(clock, lambda: call(100.3))
+    finally:
+        if holder.thread.is_alive():
+            holder.release()
+    _restore_real_clock(monkeypatch)
+    assert not box["alive"]
+    assert clock.fired
+    err = box.get("error")
+    assert isinstance(err, book_lock.BookLockBusy), repr(box.get("value", err))
+    assert err.holder_category == resource
+    assert box["at"] <= 100.3 + FX_TICK_EPS_S
+    assert data.read_bytes() == before
+
+    value, elapsed = fresh_resource_ok(books_dir, resource)
+    assert value == "ok"
+    assert elapsed < 0.1, f"fresh {resource} holder waited {elapsed:.3f}s: a late refusal leaked a lock"
+    fresh = _ex_ok_in_fresh_thread(books_dir)
+    assert fresh.get("value") == "ok", repr(fresh.get("error"))
+    assert probe(str(_resource_lock_file(books_dir, resource)), "EX", str(tmp_path)) == "ok"
+
+
+@pytest.mark.parametrize("resource", ["ai_meta", "notes"])
+def test_fx_3_05b_late_wake_up_at_the_resource_flock_layer_is_refused(
+    books_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, short_budget: float, resource: str
+) -> None:
+    data = _seed_resource(books_dir, resource)
+    before = data.read_bytes()
+    lock_file = _resource_lock_file(books_dir, resource)
+    fd = _raw_flock_holder(lock_file)
+    closed: List[int] = []
+
+    def release() -> None:
+        os.close(fd)
+        closed.append(fd)
+
+    clock = FakeClock(start=100.0, hook_at=100.3, hook=release)
+    _install_clock(monkeypatch, clock)
+    call = _resource_call(books_dir, resource)
+    try:
+        box = _run_waiter(clock, lambda: call(100.3))
+    finally:
+        if not closed:
+            os.close(fd)
+    _restore_real_clock(monkeypatch)
+    assert not box["alive"]
+    assert clock.fired
+    err = box.get("error")
+    assert isinstance(err, book_lock.BookLockBusy), repr(box.get("value", err))
+    assert err.holder_category == resource
+    assert box["at"] <= 100.3 + FX_TICK_EPS_S
+    assert data.read_bytes() == before
+
+    assert probe(str(lock_file), "EX", str(tmp_path)) == "ok"
+    assert probe(str(_lock_file(books_dir)), "EX", str(tmp_path)) == "ok"
+    value, elapsed = fresh_resource_ok(books_dir, resource)
+    assert value == "ok"
+    assert elapsed < 0.1, f"fresh {resource} holder waited {elapsed:.3f}s: a late refusal leaked a lock"
+
+
+# ---- FX-3-06: a deadline at or before now
+
+
+@pytest.mark.parametrize("mode", [SH, EX])
+@pytest.mark.parametrize("offset, acquires", [(-0.001, False), (0.0, False), (1e-6, True)])
+def test_fx_3_06_deadline_at_or_before_now_refuses_a_free_book(
+    books_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str, offset: float, acquires: bool
+) -> None:
+    clock = FakeClock(start=100.0)
+    _install_clock(monkeypatch, clock)
+    deadline = clock.now + offset
+
+    def enter() -> str:
+        with book_lock.acquire(str(books_dir), BOOK, mode=mode, holder="notes", deadline=deadline):
+            return "entered"
+
+    box = _run_waiter(clock, enter)
+    _restore_real_clock(monkeypatch)
+    assert not box["alive"]
+    if acquires:
+        assert box.get("value") == "entered", repr(box.get("error"))
+        return
+    err = box.get("error")
+    assert isinstance(err, book_lock.BookLockBusy), repr(box.get("value", err))
+    assert err.holder_category == book_lock.UNKNOWN
+    assert box["at"] <= 100.0 + FX_TICK_EPS_S, "a refusal on a reached deadline must not sleep"
+    # ADR-0015 item 1: the lock file "may exist". A refusal of an already-reached
+    # deadline happens before any disk access, so "missing" is as free as "ok".
+    assert probe(str(_lock_file(books_dir)), "EX", str(tmp_path)) in {"ok", "missing"}
+    fresh = _ex_ok_in_fresh_thread(books_dir)
+    assert fresh.get("value") == "ok", repr(fresh.get("error"))
+
+
+# ---- FX-3-07: the deadline law over a generated domain
+
+
+def _near_tick(x: float) -> bool:
+    ticks = x / book_lock.POLL_S
+    return abs(ticks - round(ticks)) * book_lock.POLL_S < 1e-6
+
+
+@settings(
+    max_examples=80,
+    deadline=None,
+    suppress_health_check=[HealthCheck.function_scoped_fixture, HealthCheck.too_slow],
+)
+@given(
+    remaining=st.floats(0, 0.5),
+    release_at=st.floats(0.001, 0.6),
+    layer=st.sampled_from(["table", "raw-flock", "resource-flock"]),
+)
+def test_fx_3_07_acquires_iff_the_first_tick_after_release_is_before_the_deadline(
+    remaining: float, release_at: float, layer: str
+) -> None:
+    assume(not _near_tick(remaining) and not _near_tick(release_at))
+    start = 100.0
+    deadline = start + remaining
+    expected = book_lock.POLL_S * math.ceil(release_at / book_lock.POLL_S) < remaining
+
+    with tempfile.TemporaryDirectory() as tmp:
+        books = Path(tmp) / "books"
+        books.mkdir()
+        meta = books / BOOK / ai_books.AI_META_FILENAME
+        released: List[int] = []
+        held: Optional[Held] = None
+        fd = -1
+        if layer == "table":
+            held = Held(books, EX, "import").start()
+
+            def release() -> None:
+                assert held is not None
+                held.release()
+                released.append(1)
+        else:
+            if layer == "resource-flock":
+                (books / BOOK).mkdir()
+                meta.write_text(json.dumps({"indexed_at": 1}), encoding="utf-8")
+                fd = _raw_flock_holder(books / ".locks" / "ai_meta" / f"{BOOK}.lock")
+            else:
+                fd = _raw_flock_holder(_lock_file(books))
+
+            def release() -> None:
+                os.close(fd)
+                released.append(1)
+
+        before = meta.read_bytes() if meta.exists() else None
+        clock = FakeClock(start=start, hook_at=start + release_at, hook=release)
+        real_monotonic, real_sleep = book_lock._monotonic, book_lock._sleep
+        book_lock._monotonic, book_lock._sleep = clock.monotonic, clock.sleep
+        try:
+            if layer == "resource-flock":
+                box = _run_waiter(clock, lambda: ai_books.ensure_book_uuid(str(books), BOOK, deadline=deadline))
+            else:
+                def waiter() -> str:
+                    with book_lock.acquire(str(books), BOOK, mode=SH, holder="notes", deadline=deadline):
+                        return "acquired"
+
+                box = _run_waiter(clock, waiter)
+        finally:
+            book_lock._monotonic, book_lock._sleep = real_monotonic, real_sleep
+            if not released:
+                release()
+
+        assert not box["alive"]
+        err = box.get("error")
+        if layer == "resource-flock":
+            on_disk = json.loads(meta.read_text(encoding="utf-8")).get("book_uuid")
+            acquired = err is None and on_disk is not None and box.get("value") == on_disk
+        else:
+            acquired = err is None and box.get("value") == "acquired"
+        assert acquired == expected, (remaining, release_at, layer, box.get("value"), err)
+        if not acquired:
+            assert isinstance(err, book_lock.BookLockBusy), repr(err)
+            assert box["at"] <= deadline + FX_TICK_EPS_S
+            want = {"table": "import", "raw-flock": book_lock.UNKNOWN, "resource-flock": "ai_meta"}[layer]
+            assert err.holder_category == want
+            if layer == "resource-flock":
+                assert meta.read_bytes() == before
+
+        fresh = _ex_ok_in_fresh_thread(books)
+        assert fresh.get("value") == "ok", repr(fresh.get("error"))
+        if layer == "resource-flock":
+            assert _nb_flock_free(books / ".locks" / "ai_meta" / f"{BOOK}.lock")
+            value, _elapsed = fresh_resource_ok(books, "ai_meta")
+            assert value == "ok"
+
+
+# ---- FX-3-08 / FX-3-09: the category settle is charged to the deadline
+
+
+@pytest.mark.parametrize("mode", [SH, EX])
+def test_fx_3_08_settle_with_little_time_left_lands_at_or_before_the_deadline(
+    books_dir: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    fd = _raw_flock_holder(_lock_file(books_dir))
+    try:
+        clock = FakeClock(start=100.0)
+        _install_clock(monkeypatch, clock)
+        deadline = clock.now + 0.03
+
+        def waiter() -> None:
+            with book_lock.acquire(str(books_dir), BOOK, mode=mode, holder="notes", deadline=deadline):
+                pass
+
+        box = _run_waiter(clock, waiter)
+    finally:
+        os.close(fd)
+    assert not box["alive"]
+    err = box.get("error")
+    assert isinstance(err, book_lock.BookLockBusy), repr(err)
+    assert err.holder_category == book_lock.UNKNOWN
+    assert box["at"] <= deadline + FX_TICK_EPS_S
+    assert box["real_elapsed"] < 0.06, f"the settle cost {box['real_elapsed']:.3f}s of real time"
+
+
+def test_fx_3_09_settle_with_plenty_of_time_still_spends_the_full_window(
+    books_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fd = _raw_flock_holder(_lock_file(books_dir))
+    try:
+        clock = FakeClock(start=100.0)
+        _install_clock(monkeypatch, clock)
+        deadline = clock.now + 2.0
+
+        def waiter() -> None:
+            with book_lock.acquire(str(books_dir), BOOK, mode=EX, holder="notes", deadline=deadline):
+                pass
+
+        box = _run_waiter(clock, waiter)
+    finally:
+        os.close(fd)
+    assert not box["alive"]
+    err = box.get("error")
+    assert isinstance(err, book_lock.BookLockBusy), repr(err)
+    assert err.holder_category == book_lock.UNKNOWN
+    spent = box["at"] - 100.0
+    settle = book_lock._CATEGORY_SETTLE_S
+    assert settle - FX_TICK_EPS_S <= spent <= settle + 0.01, spent
+
