@@ -88,6 +88,25 @@ DEFAULT_AUDIT = {
 }
 
 
+#: Refs an `absent` row's Summary cell may track: a debt `#N`, else a plan / branch `NNN`.
+_TRACKED_DEBT_RE = re.compile(r"#\d+")
+_TRACKED_BRANCH_RE = re.compile(r"(?<!\d)\d{3}(?!\d)")
+
+
+def summary_evidence(f):
+    """The Summary Evidence cell `md_doc` prints for an `md_doc` feature.
+
+    Non-absent rows reuse the section's Evidence bullet (the cell is its short
+    form). An `absent` row has no Evidence bullet; its cell is `tracked <refs>`
+    built from its Tracked bullet, or `""` when that carries no ref.
+    """
+    if f["status"].split()[:1] != ["absent"]:
+        return f["bullets"].get("Evidence", "")
+    tracked = f["bullets"].get("Tracked", "")
+    refs = _TRACKED_DEBT_RE.findall(tracked) or _TRACKED_BRANCH_RE.findall(tracked)
+    return "tracked " + " · ".join(dict.fromkeys(refs)) if refs else ""
+
+
 def md_doc(
     features=None,
     audit=None,
@@ -108,7 +127,7 @@ def md_doc(
     out += ["## Summary", "", SUMMARY_HEADER, "|---|---|---|---|---|"]
     if summary is None:
         for f in features:
-            ev = f["bullets"].get("Evidence", "")
+            ev = summary_evidence(f)
             out.append(f"| {f['id']} | {f['name']} | {f['area']} | {f['status']} | {ev} |")
     else:
         out += list(summary)
@@ -391,7 +410,7 @@ def md_feature(f):
 
 def summary_rows(md_features):
     return [
-        f"| {f['id']} | {f['name']} | {f['area']} | {f['status']} | {f['bullets'].get('Evidence', '')} |"
+        f"| {f['id']} | {f['name']} | {f['area']} | {f['status']} | {summary_evidence(f)} |"
         for f in md_features
     ]
 
@@ -422,6 +441,26 @@ st_routes = st.one_of(
     ),
 )
 st_adr = st.from_regex(r"ADR-\d{4}", fullmatch=True)
+#: One evidence token, rendered: `PR #N`, a backticked SHA (≥ 1 letter a–f),
+#: a `vX.Y` / `vX.Y.Z` tag, or `baseline` (Rule 7).
+st_ev_token = st.one_of(
+    st.integers(1, 99).map(lambda n: f"PR #{n}"),
+    st.from_regex(r"[0-9a-f]{6,38}[a-f][0-9a-f]?", fullmatch=True).map(lambda s: f"`{s}`"),
+    st.from_regex(r"v[0-9]{1,2}\.[0-9]{1,2}(\.[0-9]{1,2})?", fullmatch=True),
+    st.just("baseline"),
+)
+#: A valid Evidence value: optional context, then ≥ 1 token, joined by ` · `.
+st_evidence = st.builds(
+    lambda ctx, tokens: " · ".join(([ctx] if ctx else []) + tokens),
+    st.none() | st.sampled_from(["004", "011/017", "013 WI-9", "ADR-0006", "debt #21"]),
+    st.lists(st_ev_token, min_size=1, max_size=3),
+)
+#: A valid Tracked value: always carries a debt `#N` the Summary cell can track.
+st_tracked = st.builds(
+    lambda n, rest: f"debt #{n}" + (f" {rest}" if rest else ""),
+    st.integers(1, 999),
+    st.none() | st_line,
+)
 
 
 @st.composite
@@ -452,8 +491,8 @@ def st_features(draw, min_size=1, max_size=6):
             "tests": draw(st.lists(st_paths, min_size=1, max_size=3)) if present("Tests") else [],
             "adr": [],
             "confirm": draw(st_line) if present("Confirm") else "",
-            "tracked": draw(st_line) if present("Tracked") else "",
-            "evidence": draw(st_line) if present("Evidence") else "",
+            "tracked": draw(st_tracked) if present("Tracked") else "",
+            "evidence": draw(st_evidence) if present("Evidence") else "",
             "limits": draw(st_line) if present("Limits") else "",
         }
         if f["code"]:
@@ -510,7 +549,7 @@ def test_u2_s1_three_feature_fixture_exact(script):
             What="Theme swatches.",
             Code="`c.js`",
             Confirm="Click a swatch: nothing happens.",
-            Evidence="013",
+            Evidence="013 · baseline",
         ),
         _feat("F-003", "Book delete", "absent", area="Reader", What="No delete.", Tracked="debt #58, 012"),
     ]
@@ -544,7 +583,7 @@ def test_u2_s1_three_feature_fixture_exact(script):
             "adr": [],
             "confirm": "Click a swatch: nothing happens.",
             "tracked": "",
-            "evidence": "013",
+            "evidence": "013 · baseline",
             "limits": "",
         },
         {
@@ -1080,7 +1119,7 @@ def feat(fid, routes=(), code=("`src/a.py`",), tests=("`tests/unit/`",), status=
     bullets = {"What": f"Does {fid}.", "Code": ", ".join(code), "Tests": ", ".join(tests)}
     if routes:
         bullets["Routes"] = ", ".join(f"`{r}`" for r in routes)
-    bullets.update({"Confirm": "Run it.", "Evidence": "v1"})
+    bullets.update({"Confirm": "Run it.", "Evidence": "v1.0.0"})
     return {"id": fid, "name": f"Feature {fid}", "area": "Area", "status": status, "bullets": bullets}
 
 
@@ -2694,3 +2733,186 @@ def test_u10_f1_gitattributes_pins_ledger_files_to_lf():
         rules = [ln.split() for ln in lines if ln.strip() and not ln.lstrip().startswith("#")]
         hits = [r for r in rules if r[0] == rel and "text" in r[1:] and "eol=lf" in r[1:]]
         assert hits, (rel, lines)
+
+
+# ---------------------------------------------------------------------------
+# 022: Summary Evidence cell names evidence tokens the section bullet carries
+# (Rule 7). Tokens: `PR #N` (groups `PR #12/#13`, ranges `PR #3–#8`), a
+# backticked SHA with >= 1 letter a–f, `vX.Y` / `vX.Y.Z`, `baseline`.
+# ---------------------------------------------------------------------------
+
+
+def _ev_md(cell, section="PR #22", status="accepted", tracked=None):
+    """Anchor F-001 plus F-002 under test: Summary Evidence cell `cell`;
+    section Evidence bullet `section` (status permitting); Tracked override."""
+    base = status.split()[0]
+    labels = _required(base)
+    f2 = _row("F-002", "Under test", status, labels)
+    if "Evidence" in labels and section is not None:
+        f2["bullets"]["Evidence"] = section
+    if tracked is not None:
+        f2["bullets"]["Tracked"] = tracked
+    feats = [_anchor(), f2]
+    rows = summary_rows(feats)
+    rows[1] = f"| F-002 | Under test | EPUB processing | {status} | {cell} |"
+    return md_doc(features=feats, summary=rows), rows[1]
+
+
+def _f2_heading_line(md):
+    return next(i + 1 for i, ln in enumerate(md.split("\n")) if ln.startswith("#### F-002 "))
+
+
+def test_e1_empty_summary_evidence_cell(script):
+    md, row = _ev_md("", section="PR #22")
+    errors = row_errors(script, md)
+    line = _line_of(md, row)
+    assert any(
+        "F-002" in e and "Summary Evidence cell" in e and f"line {line}" in e and "empty" in e
+        for e in errors
+    ), errors
+
+
+@pytest.mark.parametrize(
+    "cell, status",
+    [
+        ("011", "accepted"),
+        ("debt #21", "stub"),
+        ("tracked #58", "accepted"),
+        ("20260817", "accepted"),
+        ("`2026081`", "accepted"),
+        ("v1", "accepted"),
+    ],
+    ids=["branch-only", "debt-on-stub", "tracked-on-accepted", "bare-date", "all-digit-sha", "v1"],
+)
+def test_e2_cell_without_token_is_rejected(script, cell, status):
+    md, row = _ev_md(cell, section=f"{cell} · PR #22", status=status)
+    errors = row_errors(script, md)
+    line = _line_of(md, row)
+    assert any(
+        "F-002" in e and f"line {line}" in e and "no evidence token" in e and repr(cell) in e
+        for e in errors
+    ), errors
+
+
+@pytest.mark.parametrize(
+    "cell, section",
+    [
+        ("PR #22", "PR #22"),
+        ("`b8e0353`", "fix (`b8e0353`)"),
+        ("v1.5.0", "v1.5.0"),
+        ("baseline", "baseline"),
+        ("PR #12/#13", "004 (PR #12/#13)"),
+        ("PR #3–#8", "002 · PR #3–#8"),
+        ("PR #3-#8", "002 · PR #3-#8"),
+        ("011 · PR #22", "011 (PR #22)"),
+    ],
+    ids=["pr", "sha", "tag", "baseline", "pr-group", "pr-range-en-dash", "pr-range-hyphen", "context-plus-pr"],
+)
+def test_e3_cell_with_token_present_in_section_is_clean(script, cell, section):
+    md, _ = _ev_md(cell, section=section)
+    assert row_errors(script, md) == []
+
+
+@pytest.mark.parametrize("status", ["superseded → F-001", "removed"])
+def test_e4_retired_rows_need_a_token_too(script, status):
+    md, row = _ev_md("011", section="011", status=status)
+    errors = row_errors(script, md)
+    line = _line_of(md, row)
+    assert any(
+        "F-002" in e and f"line {line}" in e and "no evidence token" in e and "'011'" in e
+        for e in errors
+    ), errors
+    md, _ = _ev_md("PR #5", section="removal PR #5", status=status)
+    assert row_errors(script, md) == []
+
+
+@pytest.mark.parametrize(
+    "cell, tracked",
+    [
+        ("tracked #58", "debt #58 → 018-library-routes"),
+        ("tracked 018", "plan 018-library-routes"),
+    ],
+    ids=["debt-ref", "branch-ref"],
+)
+def test_e5_absent_tracked_cell_is_clean(script, cell, tracked):
+    md, _ = _ev_md(cell, status="absent", tracked=tracked)
+    assert row_errors(script, md) == []
+
+
+@pytest.mark.parametrize(
+    "cell, tracked, quoted",
+    [
+        ("tracked #59", "debt #58", ["#59"]),
+        ("tracked #58", "debt #580", ["#58"]),
+        ("tracked 018", "plan 0180", ["018"]),
+        ("tracked #58 · PR #5", "debt #58", ["PR #5"]),
+        ("", "debt #58", ["empty"]),
+    ],
+    ids=["wrong-ref", "ref-prefix-of-longer-number", "branch-inside-longer-number", "absent-with-token", "empty"],
+)
+def test_e5_absent_tracked_cell_defects(script, cell, tracked, quoted):
+    md, row = _ev_md(cell, status="absent", tracked=tracked)
+    errors = row_errors(script, md)
+    line = _line_of(md, row)
+    assert any(
+        "F-002" in e and "Summary Evidence cell" in e and f"line {line}" in e and all(q in e for q in quoted)
+        for e in errors
+    ), errors
+
+
+@pytest.mark.parametrize(
+    "cell, section, token",
+    [
+        ("PR #23", "PR #22", "PR #23"),
+        ("PR #22 · `abc1234`", "PR #22", "`abc1234`"),
+        ("PR #22 · baseline", "PR #22", "baseline"),
+    ],
+    ids=["pr", "sha", "baseline"],
+)
+def test_e6_cell_token_missing_from_section(script, cell, section, token):
+    md, row = _ev_md(cell, section=section)
+    errors = row_errors(script, md)
+    line, heading = _line_of(md, row), _f2_heading_line(md)
+    assert len(errors) == 1, errors
+    e = errors[0]
+    assert "F-002" in e and f"cites {token}," in e, e
+    assert f"line {line}" in e and f"heading line {heading}" in e, e
+
+
+@pytest.mark.parametrize(
+    "cell, section",
+    [
+        ("PR #5", "002 · PR #3–#8"),
+        ("PR #3–#8", "PR #3/#4/#5/#6/#7/#8"),
+        ("PR #22", "011 (PR #22) · fix PR #26 (`4d3c5ac`) · v1.5.0 · baseline"),
+    ],
+    ids=["pr-inside-range", "range-vs-group", "section-has-more"],
+)
+def test_e6_cell_tokens_covered_by_section(script, cell, section):
+    md, _ = _ev_md(cell, section=section)
+    assert row_errors(script, md) == []
+
+
+@settings(max_examples=150, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@given(data_=st.data())
+def test_e7_subset_law(script, data_):
+    s_tokens = sorted(data_.draw(st.sets(st_ev_token, min_size=1, max_size=6), label="S"))
+    t_tokens = data_.draw(
+        st.lists(st.sampled_from(s_tokens), min_size=1, unique=True), label="T"
+    )
+    section = " · ".join(s_tokens)
+    md, _ = _ev_md(" · ".join(t_tokens), section=section)
+    assert row_errors(script, md) == []
+
+    x = data_.draw(st_ev_token.filter(lambda tok: tok not in s_tokens), label="x")
+    md, _ = _ev_md(" · ".join(t_tokens + [x]), section=section)
+    errors = row_errors(script, md)
+    assert len(errors) == 1, (x, errors)
+    assert "F-002" in errors[0] and f"cites {x}," in errors[0], errors
+
+
+def test_e8_real_ledger_validates_clean(script):
+    md = (REPO_ROOT / "docs" / "feature-ledger.md").read_text(encoding="utf-8")
+    _, errors = script.validate(md, REPO_ROOT)
+    assert errors == []
+    assert script.run(REPO_ROOT, check=True) == 0
