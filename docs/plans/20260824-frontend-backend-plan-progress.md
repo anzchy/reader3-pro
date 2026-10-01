@@ -93,7 +93,8 @@
 - 012 的剩余评审项（[012 §6](20260816-tech-stack-migration/tasks/012-storage-format.md) Q7 起）、`/tdd-guardian:design-tests` 测试矩阵、Q2 提交机制原型。
 - 015 CLI 侧的计划写作与隔离的 CLI 原型（写完顺位 7 由 ⬛ 变 ⬜；验收仍归 015）。
 - 功能台账审计的 Medium 项：Summary 表的 Evidence 列解析了但从不校验（`scripts/build_feature_ledger.py`）。
-- `020-debug-state`（⬛ 2026-09-30 分配）：`Reader3Epub.getDebugState()` 只读观测面，计划见 [`20260928-debug-state-getter.md`](20260928-debug-state-getter.md)。只改 `epub-renderer.js` 与新测试文件，不碰冻结集；宜在 `014` 开工前合入。与 `019` 都改 `lint_e2e_groups.py` 的计数常量，后合入的一方 rebase 时按实测值重数。
+- `020-debug-state`（⬛ 2026-09-30 分配；**✅ 2026-10-01 已合入**，PR #30，合并 commit `40e807d`，分支尖 `7fc0dbf`）：`Reader3Epub.getDebugState()` 只读观测面，计划见 [`20260928-debug-state-getter.md`](20260928-debug-state-getter.md)。只改 `epub-renderer.js` 与新测试文件，不碰冻结集；宜在 `014` 开工前合入。与 `019` 都改 `lint_e2e_groups.py` 的计数常量，后合入的一方 rebase 时按实测值重数。
+- `021-e2e-lock`（⬛ 2026-10-01 分配）：e2e lane 的 `command` 改经 `scripts/e2e_lock.py`（fcntl 包装，进程退出即释放），取代手工 mkdir 锁。只改该脚本、其单测、`config.json` 里 e2e lane 的 `command` 一个字段与 `CLAUDE.md` 的 e2e 一行；不碰冻结集，可与 `018` 并行。
 
 **soak 在这段时间怎么用**：不再「每天追一行」。只在第 3 步跑那一批（窗口或 018 分支上的运行只做核验、不进台账）；
 做法（干净 detached worktree ＋ `--ledger` 写回）与命令只在 soak-log 表头，`--append` 的放行条件见第 0 步。

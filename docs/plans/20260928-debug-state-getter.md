@@ -1,6 +1,6 @@
 # `Reader3Epub.getDebugState()`：只读的阅读器状态观测面
 
-> 状态：~~**草案（2026-09-28）**，未开分支~~；~~分支号未分配（见 WI-0）~~ ⬛ 2026-09-30 分支号已分配：`020-debug-state`（迁移计划 §9 ＋ 进度盘 ⟂ 已登记，WI-0 第 1 步因此已完成）。⬛ 2026-10-01：**代码已验收（`73f4c0f`），待合并**；PR 号与合并提交合并后补。WI-0–WI-2 已落地，WI-3 文档回写与代码同一个 PR（第 3 项 `CLAUDE.md` 另行处理）。
+> 状态：~~**草案（2026-09-28）**，未开分支~~；~~分支号未分配（见 WI-0）~~ ⬛ 2026-09-30 分支号已分配：`020-debug-state`（迁移计划 §9 ＋ 进度盘 ⟂ 已登记，WI-0 第 1 步因此已完成）。⬛ 2026-10-01：~~**代码已验收（`73f4c0f`），待合并**；PR 号与合并提交合并后补。~~ **✅ 已合入 `master`**（PR #30，合并 commit `40e807d`，分支尖 `7fc0dbf`）。WI-0–WI-2 已落地，WI-3 文档回写与代码同一个 PR（第 3 项 `CLAUDE.md` 另行处理）。
 > 出处：[`docs/references/ui-e2e-debug-mcp-bridge-survey.md`](../references/ui-e2e-debug-mcp-bridge-survey.md) §9 的推荐方案；借鉴对象是 paper-one 的 `tauri-plugin-mcp-bridge`（[`docs/references/paper-one-cli-and-mcp-bridge.md`](../references/paper-one-cli-and-mcp-bridge.md) Part B）。
 > 本文是独立计划，不属于 `20260816-tech-stack-migration/` 或 `20260817-frontend-ui-refactor/` 的「权威范围」。它会改动后者的 K5 接口计数，具体见 WI-0。
 

@@ -1,6 +1,6 @@
 # Feature Ledger
 
-**Synced:** 2026-10-01 at commit `73f4c0f`
+**Synced:** 2026-10-01 at commit `40e807d`
 
 The as-built record of what Reader3 Pro **can do today**: one row per user-visible (or
 operator-visible) capability, where it lives, what tests prove it, and the evidence it was
@@ -229,7 +229,7 @@ Paths are written out in full from the repo root (e.g. `src/reader3_app/reader3.
 - **Code:** `src/reader3_app/web/routers/reader.py`, `src/reader3_app/web/static/js/epub-renderer.js` · ADR-0002
 - **Tests:** `tests/e2e/baseline_1b/test_read_paths.py`, `tests/e2e/baseline_1b/test_read_presentation_anchoring.py`, `tests/e2e/test_debug_state.py`, `frontend/tests/legacy/epub-renderer-debug-state.test.ts`
 - **Confirm:** Click a book card in the library → `/read/{book_id}/0` opens paginated; `→` / `PageDown` and `←` / `PageUp` turn pages, `↓` / `↑` change section, and the progress pill reads 「当前阅读至 N%」. The rail's Table of Contents button opens the chapter list with a "Search chapters..." filter; the back arrow returns to the library. In the browser console, `JSON.stringify(window.Reader3Epub.getDebugState())` returns `v: 1` with `ready: true` and the current `section.index`.
-- **Evidence:** 006 · PR #16/#17 · read-only `getDebugState()`, 020 (`73f4c0f`)
+- **Evidence:** 006 · PR #16/#17 · read-only `getDebugState()`, 020 · PR #30 (`40e807d`)
 - **Limits:** still classic JS; TS rewrite is 014. Page turning is keyboard-only (see F-033). `getDebugState()`: `bookPercent` is always null until 014 WI-19; `renderedIds` counts only annotations rendered in the current chapter (`mark.annotation` only); the first-render `sectionPage.total` is stale until the next navigation (#63).
 
 #### F-010 Reader preferences — partial
