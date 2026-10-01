@@ -24,7 +24,8 @@ Stages (each returns / appends to a list of error strings):
    sections -> feature dicts in Summary order.              (WI-2)
    Each section's area is its enclosing `###` heading.      (WI-10)
 3. Row grammar / cross-row validation, incl. Summary Area
-   == enclosing `###` heading.                              (WI-3, WI-10)
+   == enclosing `###` heading, and Summary Evidence cell names
+   evidence tokens the section bullet carries (Rule 7).     (WI-3, WI-10, 022)
 4. Repo-reference validation.                              (WI-4)
 5. Audit log parse + Synced cross-check.                   (WI-5)
 6. Render / splice / drift diff.                           (WI-6)
@@ -128,6 +129,21 @@ ROW_GRAMMAR = {
 }
 ID_RE = re.compile(r"^F-\d{3}$")
 SUPERSEDED_RE = re.compile(r"^superseded → (F-\d{3})$")
+
+#: Evidence tokens (Rule 7). Only `PR #` makes a PR token: `debt #N`, bare
+#: `#N`, branch numbers and `ADR-NNNN` are context. A PR token may be a group
+#: `PR #12/#13` or a range `PR #3–#8` / `PR #3-#8` (inclusive).
+PR_TOKEN_RE = re.compile(r"\bPR #(\d+)((?:[/–-]#\d+)*)")
+PR_TAIL_RE = re.compile(r"([/–-])#(\d+)")
+#: A backticked 7-40 hex SHA; it must also hold a letter a–f (an all-digit
+#: span is a date or a number, not a commit). Bare hex is never a SHA token.
+SHA_TOKEN_RE = re.compile(r"`([0-9a-f]{7,40})`")
+SHA_LETTER_RE = re.compile(r"[a-f]")
+TAG_TOKEN_RE = re.compile(r"(?<![\w.])v\d+\.\d+(?:\.\d+)?(?![\w]|\.\d)")
+BASELINE_RE = re.compile(r"\bbaseline\b")
+#: An `absent` row's Summary cell: `tracked <ref>( · <ref>)*`, ref `#N` or `NNN`.
+ABSENT_CELL_RE = re.compile(r"^tracked (?:#\d+|\d{3})(?: · (?:#\d+|\d{3}))*$")
+EVIDENCE_TOKEN_FORMS = "PR #N, backticked SHA, vX.Y tag, or baseline"
 
 #: Labels whose value is a tokenized list; every other label is a verbatim string.
 LIST_LABELS = ("Routes", "Code", "Tests")
@@ -747,6 +763,91 @@ def _check_labels(sec: FeatureSection, base: str | None, errors: list[str]) -> N
             )
 
 
+def evidence_tokens(text: str) -> set[str]:
+    """The evidence tokens in an Evidence value, rendered canonically.
+
+    `PR #N` (groups and ranges expanded to one token per number), `` `sha` ``,
+    `vX.Y[.Z]`, `baseline`. Everything else in the value is context.
+    """
+    tokens: set[str] = set()
+    for m in PR_TOKEN_RE.finditer(text):
+        prev = int(m.group(1))
+        tokens.add(f"PR #{prev}")
+        for sep, num in PR_TAIL_RE.findall(m.group(2)):
+            cur = int(num)
+            if sep == "/":
+                tokens.add(f"PR #{cur}")
+            else:
+                lo, hi = min(prev, cur), max(prev, cur)
+                tokens.update(f"PR #{n}" for n in range(lo, hi + 1))
+            prev = cur
+    for m in SHA_TOKEN_RE.finditer(text):
+        if SHA_LETTER_RE.search(m.group(1)):
+            tokens.add(f"`{m.group(1)}`")
+    tokens.update(TAG_TOKEN_RE.findall(text))
+    if BASELINE_RE.search(text):
+        tokens.add("baseline")
+    return tokens
+
+
+def _tracked_ref_named(ref: str, tracked: str) -> bool:
+    """`#58` / `018` appears in `tracked` with digit boundaries (`#58` is not `#580`)."""
+    return re.search(rf"(?<!\d){re.escape(ref)}(?!\d)", tracked) is not None
+
+
+def _check_absent_evidence(
+    row: SummaryRow, sec: FeatureSection | None, cell: str, where: str, errors: list[str]
+) -> None:
+    """An `absent` row has no evidence: its cell is `tracked <refs>`, each ref in Tracked."""
+    tokens = evidence_tokens(cell)
+    if tokens:
+        errors.append(
+            f"{where} names evidence token(s) {', '.join(sorted(tokens))}, but an `absent` "
+            "row has no evidence."
+        )
+    if ABSENT_CELL_RE.match(cell) is None:
+        errors.append(
+            f"{where} must read `tracked #N` or `tracked NNN` (refs joined by ` · `) for an "
+            f"`absent` row, got {cell!r}."
+        )
+        return
+    tracked = sec.values.get("Tracked") if sec is not None else None
+    if tracked is None:
+        return  # a missing section / Tracked bullet is reported elsewhere
+    for ref in cell[len("tracked ") :].split(" · "):
+        if not _tracked_ref_named(ref, tracked):
+            errors.append(
+                f"{where} tracks {ref}, which the section Tracked bullet "
+                f"(heading line {sec.line_no}) does not name."
+            )
+
+
+def _check_evidence(row: SummaryRow, sec: FeatureSection | None, errors: list[str]) -> None:
+    """Rule 7: the Summary Evidence cell names evidence tokens, each in the section bullet."""
+    cell = row.evidence.strip()
+    where = f"{row.id}: Summary Evidence cell (line {row.line_no})"
+    if not cell:
+        errors.append(f"{where} is empty.")
+        return
+    base = row.status.split()[0] if row.status.split() else ""
+    if base == "absent":
+        _check_absent_evidence(row, sec, cell, where, errors)
+        return
+    tokens = evidence_tokens(cell)
+    if not tokens:
+        errors.append(f"{where} names no evidence token ({EVIDENCE_TOKEN_FORMS}): {cell!r}.")
+        return
+    bullet = sec.values.get("Evidence") if sec is not None else None
+    if bullet is None:
+        return  # a missing section / Evidence bullet is reported elsewhere
+    have = evidence_tokens(bullet)
+    for token in sorted(tokens - have):
+        errors.append(
+            f"{where} cites {token}, which the section Evidence bullet "
+            f"(heading line {sec.line_no}) does not."
+        )
+
+
 def validate_rows(doc: Document) -> list[str]:
     """Row grammar + cross-row checks (WI-3). Structural only, no filesystem.
 
@@ -769,6 +870,7 @@ def validate_rows(doc: Document) -> list[str]:
         if not row.area:
             errors.append(f"{row.id}: Summary Area cell (line {row.line_no}) is empty.")
         sec = sections.get(row.id)
+        _check_evidence(row, sec, errors)
         if sec is None:
             errors.append(f"{row.id}: Summary row (line {row.line_no}) has no `####` section.")
             continue

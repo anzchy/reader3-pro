@@ -1,6 +1,6 @@
 # Feature Ledger
 
-**Synced:** 2026-10-01 at commit `40e807d`
+**Synced:** 2026-10-01 at commit `1844f66`
 
 The as-built record of what Reader3 Pro **can do today**: one row per user-visible (or
 operator-visible) capability, where it lives, what tests prove it, and the evidence it was
@@ -48,8 +48,18 @@ without testing** (`unknown`) — so that nobody describes the product from its 
    `python3 scripts/build_feature_ledger.py`, which rewrites the block, in the same change. CI
    enforces it with `python3 scripts/build_feature_ledger.py --check` (validation + drift).
    On disagreement this file wins.
-7. **Evidence, not assertion.** `Evidence` is a PR number, merge/squash SHA, or tag. The
-   rows marked `baseline` were seeded retroactively on 2026-09-27 from code + tests at
+7. **Evidence, not assertion.** An `Evidence` value names at least one evidence token: `PR #N`
+   (a group `PR #12/#13` or a range `PR #3–#8` covers each number in it), a backticked commit
+   SHA (`` `412822170a` ``: 7–40 hex characters with at least one letter a–f — an all-digit SHA is
+   rejected, so lengthen it until a letter appears), a tag `vX.Y` / `vX.Y.Z`, or `baseline`.
+   Everything else in the value is context, not evidence: branch numbers (`011/017`), WI ids,
+   `ADR-NNNN`, `debt #N`, `009 #50`. The Summary `Evidence` cell is the short form of the
+   section bullet: every token in the cell must also appear in the section's `Evidence` bullet
+   (the bullet may carry more). An `absent` row has no evidence: its Summary cell reads
+   `tracked #N` (or `tracked NNN` for a plan / branch number), and every ref in it appears in
+   its `Tracked` bullet. `--check` enforces the token form; it does not check that the PR /
+   SHA / tag exists — verify with `gh pr view` / `git log` / `git tag -l` before writing one.
+   The rows marked `baseline` were seeded retroactively on 2026-09-27 from code + tests at
    `8e1cf48`; they were not re-run as an acceptance pass. Replace `baseline` with real evidence
    the next time the feature is touched.
 
@@ -74,7 +84,7 @@ Each feature section is headed `#### F-NNN Name — status` and carries bullets 
 | `Tests` | `accepted`, `partial`; optional for `stub` / `unknown` / `deprecated` / `superseded`; omitted for `absent` and `removed` | backticked paths, optional trailing parenthetical note |
 | `Confirm` | `accepted`, `partial`, `stub`, `unknown`; optional for `deprecated` / `superseded` / `removed`; omitted for `absent` | how a person verifies it by hand in the running app (`uv run reader3-server`, then what to open / click / type and what they should see) or the CLI / a curl call. For `stub`, it shows the surface and that nothing happens |
 | `Tracked` | `absent` | debt `#N` and/or plan / branch number |
-| `Evidence` | all except `absent` | PR #, SHA, tag, or `baseline`; a `removed` row cites the removal PR / SHA |
+| `Evidence` | all except `absent` | evidence token(s) per [Rule 7](#rules); a `removed` row cites the removal PR / SHA |
 | `Limits` | optional | open debts `#N`, known gaps, `see F-NNN` |
 
 `Confirm` steps use `{book_id}` for a processed book folder (e.g. `dracula_data`) and
@@ -84,10 +94,10 @@ Each feature section is headed `#### F-NNN Name — status` and carries bullets 
 
 | ID | Feature | Area | Status | Evidence |
 |---|---|---|---|---|
-| F-001 | EPUB ingest CLI | EPUB processing | accepted | v1.0 · baseline |
+| F-001 | EPUB ingest CLI | EPUB processing | accepted | v1.0.0 · baseline |
 | F-002 | Semantic index CLI | EPUB processing | accepted | 001/002 · baseline |
 | F-003 | Crash-safe book publish | EPUB processing | partial | 007 · PR #26 |
-| F-004 | Stat-keyed book cache | EPUB processing | accepted | 011 |
+| F-004 | Stat-keyed book cache | EPUB processing | accepted | 011 · PR #22 |
 | F-005 | 3-pane library | Library | accepted | PR #12/#13/#14/#25 |
 | F-006 | Collections | Library | accepted | 004 · PR #26 |
 | F-007 | Library stats dashboard | Library | accepted | 004 · baseline |
@@ -95,14 +105,14 @@ Each feature section is headed `#### F-NNN Name — status` and carries bullets 
 | F-009 | Paginated epub.js reader | Reader | accepted | 006 · PR #16/#17 · 020 |
 | F-010 | Reader preferences | Reader | partial | 006 · PR #21 |
 | F-011 | Keyword search | Search | accepted | 001 · PR #1/#2 |
-| F-012 | Semantic / hybrid search | Search | accepted | 001/002 · 011/017 |
+| F-012 | Semantic / hybrid search | Search | accepted | 001/002 · 011/017 · PR #1/#22/#23 |
 | F-013 | AI Q&A + summary | AI | accepted | 002 · PR #3–#8 |
 | F-014 | Multi-provider support | AI | accepted | 002 · baseline |
-| F-015 | Per-book AI request queue | AI | accepted | 011/017 |
+| F-015 | Per-book AI request queue | AI | accepted | 011/017 · PR #22/#23 |
 | F-016 | Conversation threads + export | AI | accepted | 002 · baseline |
 | F-017 | Library-panel chat | AI | accepted | 004/013 · PR #25 |
 | F-018 | Annotations + notes | Notes | partial | 006 · PR #28 |
-| F-019 | Note write-conflict handling | Notes | partial | 011/017 |
+| F-019 | Note write-conflict handling | Notes | partial | 011/017 · PR #22/#23 |
 | F-020 | Settings page + API | Settings & UI | accepted | 002 · 013 WI-12 · PR #25 |
 | F-021 | Light/dark theme (no FOUC) | Settings & UI | accepted | 013 WI-10 · PR #25 |
 | F-022 | Degradation UI components | Settings & UI | partial | 013 Track D · PR #25 |
@@ -112,7 +122,7 @@ Each feature section is headed `#### F-NNN Name — status` and carries bullets 
 | F-026 | Book UUID resolution | Security | accepted | PR #26 |
 | F-027 | Server runtime options + health | Infra | accepted | v1.5.0 |
 | F-028 | Test net + CI | Infra | accepted | 008/009 · PR #19/#20 |
-| F-029 | Repo lints | Infra | accepted | 007/013 |
+| F-029 | Repo lints | Infra | accepted | 007/009/011/013 · PR #18/#20/#22/#25 |
 | F-030 | Vite + TS frontend toolchain | Infra | accepted | 013 WI-9 · PR #25 |
 | F-031 | Reader paper themes | Reader | stub | debt #21 · baseline |
 | F-032 | Reader font-family picker | Reader | stub | spec D1 · baseline |
@@ -138,7 +148,7 @@ Paths are written out in full from the repo root (e.g. `src/reader3_app/reader3.
 - **Code:** `src/reader3_app/reader3.py`
 - **Tests:** `tests/unit/test_process_epub_commit.py`
 - **Confirm:** Run `uv run reader3 ./books/dracula.epub`: it prints a `--- Summary ---` block (Title, Authors, Physical Files (Spine), TOC Root Items, Images extracted), and `books/dracula_data/` then holds `book.pkl`, `book.epub` and `images/`.
-- **Evidence:** v1.0 · baseline
+- **Evidence:** v1.0.0 · baseline
 
 #### F-002 Semantic index CLI — accepted
 - **What:** `uv run reader3 --index <book_folder> [--force]` builds the per-book ChromaDB index.
@@ -162,7 +172,7 @@ Paths are written out in full from the repo root (e.g. `src/reader3_app/reader3.
 - **Code:** `src/reader3_app/book_store.py`
 - **Tests:** `tests/contract/test_book_store_route_freshness.py`
 - **Confirm:** With `uv run reader3-server` running, open `/read/{book_id}/0`, re-process the same EPUB with `uv run reader3`, then reload the page: the re-processed content is served without restarting the server.
-- **Evidence:** 011
+- **Evidence:** 011 (PR #22)
 
 ### Library
 
@@ -280,7 +290,7 @@ Paths are written out in full from the repo root (e.g. `src/reader3_app/reader3.
 - **Code:** `src/reader3_app/vector_search.py`, `src/reader3_app/web/routers/search.py` · ADR-0004
 - **Tests:** `tests/unit/test_semantic_extra_optional.py`
 - **Confirm:** After F-002 indexing, `curl http://127.0.0.1:8123/api/index/{book_id}/status` returns `status` and a non-zero `chunk_count`; in the reader Search drawer switch Mode to semantic or hybrid and a query returns results. Without the extra, `curl -X POST http://127.0.0.1:8123/api/index/{book_id} -H 'Content-Type: application/json' -d '{}'` returns 400 with the `uv sync --extra semantic` hint.
-- **Evidence:** 001/002 · optional-extra 011/017
+- **Evidence:** 001/002 (PR #1) · optional-extra 011/017 (PR #22/#23)
 - **Limits:** ADR-0004 is Partial.
 
 ### AI
@@ -309,7 +319,7 @@ Paths are written out in full from the repo root (e.g. `src/reader3_app/reader3.
 - **Code:** `src/reader3_app/ai/queue.py`
 - **Tests:** `tests/unit/test_ai_queue_lease.py`, `tests/unit/test_ai_queue_budget.py`
 - **Confirm:** With a provider enabled, fire a dozen concurrent `curl -X POST http://127.0.0.1:8123/api/ai/question/{book_uuid} -H 'Content-Type: application/json' -d '{"question":"hi","provider":"ollama"}' &` for one book: requests run one at a time, and those beyond 10 pending get HTTP 429 "Too many pending AI requests. Please try again." (a request that waits past its timeout gets 504).
-- **Evidence:** 011/017
+- **Evidence:** 011/017 (PR #22/#23)
 
 #### F-016 Conversation threads + export — accepted
 - **What:** multiple conversation threads per book; export as json / text / md.
@@ -352,7 +362,7 @@ Paths are written out in full from the repo root (e.g. `src/reader3_app/reader3.
 - **Code:** `src/reader3_app/web/routers/notes.py`
 - **Tests:** `tests/e2e/acceptance_2a/test_deg_s5_write_conflict.py`, `tests/e2e/test_conflict_resolution_single_flight.py`
 - **Confirm:** `curl -i http://127.0.0.1:8123/api/notes/{book_id}/0` shows an `ETag` header; `curl -i -X PUT http://127.0.0.1:8123/api/notes/{book_id}/0/{note_id} -H 'If-Match: "stale"' -H 'Content-Type: application/json' -d '{"note_text":"x"}'` returns 409 with the current `etag`. In the UI, editing the same note from two tabs makes the second save show the conflict dialog with 保留我的 / 采用远端.
-- **Evidence:** 011/017
+- **Evidence:** 011/017 (PR #22/#23)
 - **Limits:** scope of what is covered vs. deferred has not been re-audited since 017.
 
 #### F-040 Notes "点评此书" (review this book) — stub
@@ -458,7 +468,7 @@ Paths are written out in full from the repo root (e.g. `src/reader3_app/reader3.
 - **Code:** `scripts/check_router_size.py`, `.github/workflows/lint.yml` · ADR-0013, ADR-0014
 - **Tests:** `tests/e2e/test_testid_dom_uniqueness.py`
 - **Confirm:** `python3 scripts/check_router_size.py`, `python3 scripts/lint_testid_naming.py` and `uv run ruff check src/ tests/ scripts/` exit 0 on `master`.
-- **Evidence:** 007/013
+- **Evidence:** 007/009/011/013 (PR #18/#20/#22/#25)
 
 #### F-030 Vite + TS frontend toolchain — accepted
 - **What:** Vite + TypeScript + Vitest; built `static/dist` shipped inside the wheel.
