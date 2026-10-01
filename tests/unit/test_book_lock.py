@@ -186,23 +186,43 @@ def test_w2_02_and_w2_12_in_process_ex_refused_while_sh_held(books_dir: Path, tm
 
 
 def test_w2_03_sh_waits_on_in_process_ex_and_succeeds_on_release(books_dir: Path) -> None:
+    """W2-03, amended as W6-01 of ``tests-20261001-170000.md`` (#33).
+
+    Law: SH is granted only after the in-process EX *starts* releasing, and within
+    one budget of the request. The bound is an ordering, not a duration measured
+    from the waiter's own start: a late-scheduled waiter thread used to read under
+    0.4 s and flake. ``time.monotonic`` is process-wide, so the three threads'
+    stamps compare directly.
+    """
     a = Held(books_dir, EX, "delete").start()
-    timer = threading.Timer(0.5, a.release)
+    marks: Dict[str, float] = {}
+
+    def release() -> None:
+        marks["t_release_begin"] = time.monotonic()
+        a.release()
+
+    timer = threading.Timer(0.5, release)
     try:
         box: Dict[str, Any] = {}
 
         def waiter() -> float:
-            t0 = time.monotonic()
             with book_lock.acquire(str(books_dir), BOOK, mode=SH, holder="notes"):
-                return time.monotonic() - t0
+                return time.monotonic()
 
+        t_start = time.monotonic()
         timer.start()
         box = _run_in_thread(waiter)
     finally:
         timer.join(JOIN_TIMEOUT_S)
     assert not box["alive"]
     assert "error" not in box, f"SH should have been granted: {box.get('error')!r}"
-    assert 0.4 <= box["value"] < book_lock.BUDGET_S
+    t_acquired = box["value"]
+    assert t_acquired >= marks["t_release_begin"], (
+        "SH was granted while the in-process EX still held: "
+        f"acquired {marks['t_release_begin'] - t_acquired:.4f}s before the release began"
+    )
+    assert t_acquired - t_start >= 0.5 - 0.01
+    assert t_acquired - t_start < book_lock.BUDGET_S
 
 
 @pytest.mark.parametrize(
