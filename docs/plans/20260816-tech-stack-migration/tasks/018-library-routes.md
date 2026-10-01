@@ -291,6 +291,41 @@
 | # | 欠什么 | 欠账方 | 兑付方 | 验收怎么查 | 状态 |
 |---|---|---|---|---|---|
 
+### 7.1 审计修复轮（WI-1 / WI-2，审计 `audit-20260930-231519`）
+
+⬛ 2026-10-01。审计对 WI-1 / WI-2 报出 51 条。**修复轮 1** 修了 23 条，逐项提交：`d9c37c7`（#3 #4 #43 #5 #6 #23 #14）、`0f5ff15`（#41 #42 #20 #46）、`eb7c13b`（#44 #45 #48）、`a8e9842`（#1 #2 #47 #49 #9 #10 #11 #15）、`0c35b75`（#7）。契约变更已就地订进 WI-2 第 2 / 4 / 5 条。余下 28 条按 `audit-findings-triage` 分拣（先复核、再按「常规使用可达 / 是否证伪本分支主张 / 修法是否碰冻结集」三轴归类），结果如下：**Must 1、Should 6、Could 17、Won't 4**。Must 与 Should 在本分支 CP3 之前修完；Could 与 Won't 不修，理由各一句；没有一条转给 012（如要转，需主控裁定）。
+
+| # | 判定 | 核实 | 一句理由 |
+|---|---|---|---|
+| 21 | Must | verified | SH 持有者释放时不清类别记录，导致跨进程拒绝报出 `busy:notes`，实际持有者是 reindex（主控复现）；违背 ADR-0015 第 4 条「409 说明持有者类别」。严重度 Low → Medium |
+| 8 | Should | verified | N1 每次都等满 1.25 s 会合超时，2 s 预算只剩约 0.7 s，属于容易抖的测试 |
+| 12 | Should | plausible | W2-15 要求 3 个败者都精确报 `busy:import`；赢家若在 flock 与写类别之间被抢占，这条就会抖 |
+| 13 | Should | verified | 「把活 pid 当租约」的变异仍能过 W2-20；去掉 `_pid_alive` 的变异能活过全部锁测试 |
+| 18 | Should | verified | CLI 导入被拒时打出整屏 traceback；`main` 只有 `--index` 分支转成 SystemExit |
+| 33 | Should | plausible | W2-03 先起计时器再起等待线程，等待线程调度晚了，0.4 s 下界就会抖 |
+| 51 | Should | verified | `books/.locks/` 与锁相关的 409 / 404 都没写进 `storage-and-data-locations.md` / `technical-detail.md`，违反文档更新规则 |
+| 16 | Could | verified | 列目录时排除 `.locks`，却没有正向断言其内容；背后没有已知缺陷 |
+| 17 | Could | verified | 同 #16，位于 staging 测试 |
+| 22 | Could | plausible | `.locks` 里放一个符号链接就能把 `pwrite` 导向别处，但前提是攻击者已经能写 books/，属于加固 |
+| 25 | Could | verified | `deadline=` 已在两个写手上有测试，另外三个 notes 写手没测，但背后没有缺陷 |
+| 26 | Could | verified | `_AI_META_FILENAME` 常量重复；宽容读取是有意为之 |
+| 28 | Could | verified | `DEBT_RE` 只在人为构造的输入下漏匹配，属于扫描精度问题 |
+| 29 | Could | verified | `STRIKE_RE` 不跳过代码片段，同样只在人为构造的输入下出现 |
+| 30 | Could | verified | `assert locks.is_dir()` 把实现顺序钉死了，无缺陷 |
+| 31 | Could | plausible | 共享工厂里的 makedirs 遮住了「书不存在」这个前提，没有实际损失 |
+| 32 | Could | verified | 计数断言可以去重；合成集合 007…020 是有意保留的 |
+| 34 | Could | verified | `Holder.start()` 失败时不回收子进程；子进程是 daemon，书目录每个测试独立 |
+| 35 | Could | verified | 多处测试辅助函数重复 |
+| 36 | Could | verified | 文档串少说了被 patch 的对象 |
+| 37 | Could | verified | 测试文件引用的矩阵文件没有入库 |
+| 39 | Could | verified | `process_epub_run` 只是一个别名 |
+| 40 | Could | verified | `_exc_name` 与 `_raised` 功能重叠 |
+| 50 | Could | verified | finally 只发 go 信号，失败时不回收子进程；daemon 加 go 信号，不会挂住 |
+| 19 | Won't | false | HEAD 已由 `0f5ff15` 解决（第一层轮询移进 `acquire` 外层 try，由 `registered` 守卫） |
+| 24 | Won't | false | HEAD 已由 `d9c37c7` 解决（notes 改走 `resource_lock`，`_wait_or_refuse` 已删） |
+| 27 | Won't | disputed | 有意为之：`index_book` 文档串说明用属性传参，以免拓宽调用形状 |
+| 38 | Won't | false | HEAD 已由 `d9c37c7` 解决（`scan` 改用 `SHORT_BUDGET_S`，`test_fx_2_12` 钉住耗时） |
+
 ---
 
 ## 8. 合入记录
