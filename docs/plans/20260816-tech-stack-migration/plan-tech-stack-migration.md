@@ -736,6 +736,7 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 | M1b / M2-债 | 冻结集欠账窗口：009 #49 / #50 / #62 ＋ 017 finding #10（2026-09-30 分配；兑付记在 009 / 017 各自的表上，不另开 task 文件） | `019-frozen-set-debts` | A |
 | ⟂ | `Reader3Epub.getDebugState()` 只读状态观测面（2026-09-30 分配） | `020-debug-state` | 独立计划 [`20260928-debug-state-getter.md`](../20260928-debug-state-getter.md) |
 | ⟂ | E2E 互斥锁改为 fcntl 包装：e2e lane 的 `command` 经 `scripts/e2e_lock.py` 运行，进程退出即由内核释放，不再手删 mkdir 锁（2026-10-01 分配；不碰冻结集，不另开 task 文件） | `021-e2e-lock` | A |
+| ⟂ | 功能台账 Summary 表 Evidence 列校验：`scripts/build_feature_ledger.py` 解析了该列却从不校验，补上校验并按规则 7 订正不合格行（2026-10-01 分配；只碰该脚本、其单测与台账数据，不碰冻结集，不另开 task 文件） | `022-ledger-evidence` | A |
 
 M1b 与 MD 可与 M1/M2 交错推进；M4a 可与 M2/M3 交错推进；**M3 与 M4b 严格串行**。
 
