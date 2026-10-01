@@ -1,6 +1,6 @@
 # Feature Ledger
 
-**Synced:** 2026-09-27 at commit `8e1cf48`
+**Synced:** 2026-10-01 at commit `73f4c0f`
 
 The as-built record of what Reader3 Pro **can do today**: one row per user-visible (or
 operator-visible) capability, where it lives, what tests prove it, and the evidence it was
@@ -92,7 +92,7 @@ Each feature section is headed `#### F-NNN Name — status` and carries bullets 
 | F-006 | Collections | Library | accepted | 004 · PR #26 |
 | F-007 | Library stats dashboard | Library | accepted | 004 · baseline |
 | F-008 | Bulk index from selection | Library | accepted | 004 · baseline |
-| F-009 | Paginated epub.js reader | Reader | accepted | 006 · PR #16/#17 |
+| F-009 | Paginated epub.js reader | Reader | accepted | 006 · PR #16/#17 · 020 |
 | F-010 | Reader preferences | Reader | partial | 006 · PR #21 |
 | F-011 | Keyword search | Search | accepted | 001 · PR #1/#2 |
 | F-012 | Semantic / hybrid search | Search | accepted | 001/002 · 011/017 |
@@ -224,13 +224,13 @@ Paths are written out in full from the repo root (e.g. `src/reader3_app/reader3.
 ### Reader
 
 #### F-009 Paginated epub.js reader — accepted
-- **What:** full-screen paginated reader in an iframe; TOC panel, keyboard navigation, back-to-library.
+- **What:** full-screen paginated reader in an iframe; TOC panel, keyboard navigation, back-to-library. `window.Reader3Epub.getDebugState()` gives agents and tests a read-only snapshot of reader state (contract: [plan §3](plans/20260928-debug-state-getter.md)).
 - **Routes:** `GET /read/{book_id}`, `GET /read/{book_id}/{chapter_index}`, `GET /read/{book_id}/book.epub`, `GET /read/{book_id}/images/{image_name}`
 - **Code:** `src/reader3_app/web/routers/reader.py`, `src/reader3_app/web/static/js/epub-renderer.js` · ADR-0002
-- **Tests:** `tests/e2e/baseline_1b/test_read_paths.py`, `tests/e2e/baseline_1b/test_read_presentation_anchoring.py`
-- **Confirm:** Click a book card in the library → `/read/{book_id}/0` opens paginated; `→` / `PageDown` and `←` / `PageUp` turn pages, `↓` / `↑` change section, and the progress pill reads 「当前阅读至 N%」. The rail's Table of Contents button opens the chapter list with a "Search chapters..." filter; the back arrow returns to the library.
-- **Evidence:** 006 · PR #16/#17
-- **Limits:** still classic JS; TS rewrite is 014. Page turning is keyboard-only (see F-033).
+- **Tests:** `tests/e2e/baseline_1b/test_read_paths.py`, `tests/e2e/baseline_1b/test_read_presentation_anchoring.py`, `tests/e2e/test_debug_state.py`, `frontend/tests/legacy/epub-renderer-debug-state.test.ts`
+- **Confirm:** Click a book card in the library → `/read/{book_id}/0` opens paginated; `→` / `PageDown` and `←` / `PageUp` turn pages, `↓` / `↑` change section, and the progress pill reads 「当前阅读至 N%」. The rail's Table of Contents button opens the chapter list with a "Search chapters..." filter; the back arrow returns to the library. In the browser console, `JSON.stringify(window.Reader3Epub.getDebugState())` returns `v: 1` with `ready: true` and the current `section.index`.
+- **Evidence:** 006 · PR #16/#17 · read-only `getDebugState()`, 020 (`73f4c0f`)
+- **Limits:** still classic JS; TS rewrite is 014. Page turning is keyboard-only (see F-033). `getDebugState()`: `bookPercent` is always null until 014 WI-19; `renderedIds` counts only annotations rendered in the current chapter (`mark.annotation` only); the first-render `sectionPage.total` is stale until the next navigation (#63).
 
 #### F-010 Reader preferences — partial
 - **What:** font size and paragraph spacing, applied in the correct order.

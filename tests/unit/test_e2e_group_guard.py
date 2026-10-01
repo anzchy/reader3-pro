@@ -202,7 +202,10 @@ CANONICAL_ACCEPTANCE_ITEMS = 125
 # 72 → 64：2026-09-30 009 #62，WI-4 of 019: moved 8 items——
 # `tests/e2e/test_selection_toolbar_stays_closed.py` 迁入 `baseline_1b/`（见上面 68 → 76），
 # 白名单条目撤掉；**实测**白名单 64、baseline 76。一段换一段，`CANONICAL_E2E_ITEMS` 不动。
-CANONICAL_UNGROUPED_ITEMS = 64
+# 64 → 68：2026-10-01 020-debug-state WI-2（rebase 到 019 之后重数）新增
+# `tests/e2e/test_debug_state.py`，**实测 4 条 item**（E1–E4 各一条，不参数化），白名单 68。
+# 它是工具用的观测面，没有到期条件——理由写在 `scripts/lint_e2e_groups.py` 的白名单注释里。
+CANONICAL_UNGROUPED_ITEMS = 68
 # 140 → 149：同上，`shell_4a` 的 9 条。
 # 149 → 183：2026-09-24 013 WI-10 往 `shell_4a` 加的 34 条（见上面 26 → 60 那条注释）。
 # 183 → 184：同上，深色 OS 回归 1 条。
@@ -213,7 +216,8 @@ CANONICAL_UNGROUPED_ITEMS = 64
 # 248 → 256：2026-09-28 fix/selection-toolbar-reopen 的 8 条白名单 item（见上面 55 → 63；全量实测 256）。
 # 256 → 264：2026-09-30 009 #50，WI-1 of 019: +8（见上面 63 → 71；全量实测 264）。
 # 264 → 265：2026-09-30 009 #49，WI-2 of 019: +1（见上面 71 → 72；全量实测 265）。
-CANONICAL_E2E_ITEMS = 265
+# 265 → 269：2026-10-01 020-debug-state WI-2 的 4 条白名单 item（见上面 64 → 68；全量实测 269）。
+CANONICAL_E2E_ITEMS = 269
 
 #: **已激活**的 acceptance 组，与 `scripts/lint_e2e_groups.py` 的
 #: `ACTIVATED_ACCEPTANCE_DIRS` 各写一份——本文件是守卫的独立 oracle，不从被测脚本 import
@@ -403,6 +407,9 @@ def test_real_tree_collection_is_a_partition_and_counts_match() -> None:
         # 009 #49（019 WI-2，WI2-E2）：盘上轮询期间在途的写必须出得了门（helpers 机制护栏）。
         # 与前面几条一样，理由在 `scripts/lint_e2e_groups.py` 的白名单注释里。
         f"{E2E_REL}/test_disk_poll_pumps_inflight_write.py",
+        # 020 WI-2：`Reader3Epub.getDebugState()` 只读观测面的真浏览器验收（E1–E4）。
+        # 工具用的观测面，与 009 各组正交，没有到期条件——理由在 `scripts/lint_e2e_groups.py`。
+        f"{E2E_REL}/test_debug_state.py",
     }, f"白名单的内容变了：{sorted(whitelist)}（加项要写理由，且它必须真的贡献 item）"
 
     # (1) 划分：恰好一个组 marker，或模块在白名单里。双 marker 也红。

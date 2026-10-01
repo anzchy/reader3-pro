@@ -67,3 +67,6 @@ error.log
 
 # Node workspace (013 WI-9): package-lock.json is committed, the install is not
 node_modules/
+
+# Vitest run output (JSON reporter); matches frontend/.vitest/ and a root-level .vitest/
+.vitest/
