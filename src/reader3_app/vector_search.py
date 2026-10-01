@@ -148,21 +148,61 @@ class BookVectorIndex:
         empty store written into the book dir.
         """
         chromadb, embed_fn = getattr(self, "_deps", None) or self._prepare_deps()
-        if create:
-            self._ensure_chroma_dir()
-        elif not os.path.isdir(self.chroma_path):
-            raise self._not_indexed()
+        if not create:
+            return self._open_for_read(chromadb, embed_fn)
+        self._ensure_chroma_dir()
         client = chromadb.PersistentClient(path=self.chroma_path)
         try:
             collection = client.get_collection(COLLECTION_NAME, embedding_function=embed_fn)
-        except Exception as e:  # noqa: BLE001 - 第 3 档：chromadb 在集合不存在时抛的类型跨版本不稳定，这里只能宽捕获后建集合；建失败会照常抛
-            if not create:
-                raise self._not_indexed() from e
+        except Exception:  # noqa: BLE001 - 第 3 档：建索引路径上集合不存在就建；建失败会照常抛
             collection = client.create_collection(
                 COLLECTION_NAME,
                 embedding_function=embed_fn,
                 metadata={"hnsw:space": SPACE},
             )
+        return client, collection
+
+    def _open_for_read(self, chromadb: Any, embed_fn: Any):
+        """The read-path open: SH ``search`` on the book lock across recheck + open only.
+
+        Fix-plan WI-4 (audit #44, #48; ADR-0015 item 2): ``PersistentClient(path)``
+        creates ``path`` -- and the book dir above it -- if they are gone, so an
+        unlocked "is ``chroma_db`` there?" check followed by the open resurrected a
+        book deleted in between. The order is:
+
+        1. unlocked pre-check: no ``chroma_db`` -> not indexed, no lock taken (keeps an
+           import in progress answering fast);
+        2. SH as ``search`` with ``SHORT_BUDGET_S``: an EX import / delete in progress
+           is a ``BookLockBusy``, translated to the same "not indexed" every caller
+           (search route, RAG, chat) already handles, chained;
+        3. in-lock recheck of ``chroma_db``; 4. open + ``get_collection``; 5. release.
+        The query itself runs unlocked.
+
+        Only chromadb's collection-not-found (``chromadb.errors.NotFoundError`` in
+        1.3.x, not a ``ValueError`` subclass) means "not indexed" (#45). Any other
+        failure -- permissions, an embedding-function conflict, an internal error --
+        propagates as itself rather than telling the user to re-index.
+        """
+        if not os.path.isdir(self.chroma_path):
+            raise self._not_indexed()
+        not_found = chromadb.errors.NotFoundError
+        try:
+            with book_lock.acquire(
+                self.books_dir,
+                self.book_id,
+                mode=book_lock.SHARED,
+                holder="search",
+                budget=book_lock.SHORT_BUDGET_S,
+            ):
+                if not os.path.isdir(self.chroma_path):
+                    raise self._not_indexed()
+                client = chromadb.PersistentClient(path=self.chroma_path)
+                try:
+                    collection = client.get_collection(COLLECTION_NAME, embedding_function=embed_fn)
+                except not_found as e:
+                    raise self._not_indexed() from e
+        except book_lock.BookLockBusy as e:
+            raise self._not_indexed() from e
         return client, collection
 
     def _drop_index_for_rebuild(self) -> None:
@@ -397,7 +437,7 @@ class BookVectorIndex:
         if not self.is_indexed():
             raise self._not_indexed()
 
-        # Read path: takes no lock and creates nothing (018 WI-2).
+        # Read path: creates nothing; holds SH "search" only across the open (fix-plan WI-4).
         _, collection = self._client_and_collection(create=False)
         res = collection.query(query_texts=[query], n_results=n_results, include=["documents", "metadatas", "distances"])
         docs = (res.get("documents") or [[]])[0]

@@ -51,7 +51,9 @@ SHORT_BUDGET_S = POLL_S
 LOCKS_DIRNAME = ".locks"
 SHARED = "shared"
 EXCLUSIVE = "exclusive"
-CATEGORIES = frozenset({"import", "delete", "reindex", "notes", "ai_meta", "conversations"})
+#: ``search`` is the vector read path, holding SH only while it opens the collection
+#: (fix-plan WI-4); it takes no resource lock.
+CATEGORIES = frozenset({"import", "delete", "reindex", "notes", "ai_meta", "conversations", "search"})
 UNKNOWN = "unknown"
 #: Fixed width of the category record at offset 0 of the lock file.
 _RECORD_BYTES = 64

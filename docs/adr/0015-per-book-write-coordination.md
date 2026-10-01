@@ -33,7 +33,7 @@
 ## Decision Outcome
 
 1. **位置**：`books/.locks/{book_folder}.lock`，建了就**永不 unlink**；`.locks/` 的累积是设计，回收只许停机时做。书库枚举**只收 `_data` 后缀的目录**——这是「内部目录（`.locks/`、墓碑 `.{id}.deleted-{pid}/`）不进书库」的唯一依据，不靠点目录隐藏
-2. **两种模式**：改目录结构的写手（import、delete、migrate、上传、墓碑清扫）持**独占**；只写自家文件的写手（notes、reindex、`ai_meta`、对话）持**共享**，再取自己的**资源锁**。顺序固定为**书锁 → 资源锁**。资源锁的位置是 `books/.locks/{resource}/{book_folder}.lock`（reindex、`ai_meta`、对话；与书锁同样建了就永不 unlink，且不在书目录里创建任何东西），由 `book_lock.resource_lock` 统一实现，与书锁共用同一个截止时间；**notes 例外，保留书目录内的 `notes.json.lock`**——有共享持有者时没人能 `rmtree` 它，挪位置只会改一条已有语义而无收益（018 WI-1）
+2. **两种模式**：改目录结构的写手（import、delete、migrate、上传、墓碑清扫）持**独占**；只写自家文件的写手（notes、reindex、`ai_meta`、对话）持**共享**，再取自己的**资源锁**。顺序固定为**书锁 → 资源锁**。资源锁的位置是 `books/.locks/{resource}/{book_folder}.lock`（reindex、`ai_meta`、对话；与书锁同样建了就永不 unlink，且不在书目录里创建任何东西），由 `book_lock.resource_lock` 统一实现，与书锁共用同一个截止时间；**notes 例外，保留书目录内的 `notes.json.lock`**——有共享持有者时没人能 `rmtree` 它，挪位置只会改一条已有语义而无收益（018 WI-1）。书锁持有者类别是封闭列表（`book_lock.CATEGORIES`）：`import`、`delete`、`reindex`、`notes`、`ai_meta`、`conversations`、`search`；`search` 是向量读路径，只在打开 collection 的一瞬以短预算（`SHORT_BUDGET_S`）持共享、不取资源锁，拿不到即按「未索引」处理（审计 #44、#48，fix-plan WI-4）
 3. **范围**：锁包住服务层的整次操作，HTTP 路由与 CLI（`reader3 --index`）走同一把。对话只在 **per-book** 存储模式下取书锁：project-root 模式的对话住在书目录**之外**，删书的 `rmtree` 碰不到它，也就没有「复活」可防；它不取书锁是刻意的，不是遗漏
 4. **拒绝**：独占写手非阻塞获取，拿不到 → HTTP 409 / CLI 非零退出码，说明持有者类别。共享写手以 `LOCK_NB` 轮询，**一个 2 秒的 `time.monotonic` 总预算覆盖所有层**，超时 → 409 ＋ `Retry-After`；等待不阻塞事件循环。**截止规则**：一层只在成功那一刻 `now < deadline` 时才算拿到——在截止时刻或之后才拿到的那一层被释放并拒绝（已拿到的各层一并释放），截止时刻已到的请求一层都不尝试；持有者类别的读取记在同一个截止时间上（等空记录的窗口是 `min(0.1 s, 剩余时间)`），拒绝不会晚于截止时刻（审计 #42、#20）。只想「不等」的调用方传预算 `SHORT_BUDGET_S`，由 `acquire` 在真正取锁时起算
 5. **不复活**：拿到锁后、写之前，在锁内复核书目录存在；除 import 外任何写手不得 `makedirs` 书目录本身——包括读路径
@@ -45,7 +45,7 @@
 
 - 多 worker 部署：进程内缓存（`_stats_cache`、`BookUuidResolver`、`_BOOK_THREAD_LOCKS`）只在本进程失效
 - NFS / SMB 等网络文件系统：`flock` 语义不可靠
-- ChromaDB 自身的多进程访问（上游不支持）；向量**查询**不持书锁
+- ChromaDB 自身的多进程访问（上游不支持）；向量查询只在打开 collection 的一瞬持共享书锁（短预算），查询本身不持锁（fix-plan WI-4）
 - `FileResponse` 流式返回期间书被删：读到半截即失败，不做快照
 - 对话「both」存储模式的两次发布之间的一致性——需要 revision，另案处理
 - `_BOOK_THREAD_LOCKS` 注册表只增不减
