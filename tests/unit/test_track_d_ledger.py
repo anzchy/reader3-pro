@@ -688,10 +688,10 @@ def test_parse_owner_branch_strips_strikethrough_anywhere(cell: str) -> None:
 
 
 def test_allocated_branches_on_the_real_plan() -> None:
-    """W1-04: §9 allocates exactly 007…020 today. Allocating 021 moves this constant in the same commit."""
+    """W1-04: §9 allocates exactly 007…021 today (021-e2e-lock, master 7288fd5). Allocating 022 moves this constant in the same commit."""
     got = allocated_branches(MIGRATION_PLAN.read_text(encoding="utf-8"))
-    assert got == {f"{n:03d}" for n in range(7, 21)}
-    assert len(got) == 14
+    assert got == {f"{n:03d}" for n in range(7, 22)}
+    assert len(got) == 15
 
 
 def test_allocated_branches_reads_only_the_section_9_branch_column() -> None:
