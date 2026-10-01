@@ -23,6 +23,7 @@ import json
 import logging
 import os
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 import pytest
@@ -217,9 +218,10 @@ def test_scan_skips_a_broken_book_and_says_which(
     # only a cache the scan itself filled can answer without reaching it.
     miss_path_calls: list[str] = []
 
-    def _no_miss_path(books_dir_arg: str, folder: str) -> str:
+    def _no_miss_path(books_dir_arg: str, folder: str, **kwargs: Any) -> str:
+        # **kwargs: the resolver passes ``deadline=`` through (018 WI-2 #23).
         miss_path_calls.append(folder)
-        return ensure_book_uuid(books_dir_arg, folder)
+        return ensure_book_uuid(books_dir_arg, folder, **kwargs)
 
     monkeypatch.setattr(books_module, "ensure_book_uuid", _no_miss_path)
 

@@ -33,7 +33,7 @@
 ## Decision Outcome
 
 1. **位置**：`books/.locks/{book_folder}.lock`，建了就**永不 unlink**；`.locks/` 的累积是设计，回收只许停机时做。书库枚举**只收 `_data` 后缀的目录**——这是「内部目录（`.locks/`、墓碑 `.{id}.deleted-{pid}/`）不进书库」的唯一依据，不靠点目录隐藏
-2. **两种模式**：改目录结构的写手（import、delete、migrate、上传、墓碑清扫）持**独占**；只写自家文件的写手（notes、reindex、`ai_meta`、对话）持**共享**，再取自己的**资源锁**。顺序固定为**书锁 → 资源锁**。资源锁可以留在书目录里——有共享持有者时没人能 `rmtree` 它
+2. **两种模式**：改目录结构的写手（import、delete、migrate、上传、墓碑清扫）持**独占**；只写自家文件的写手（notes、reindex、`ai_meta`、对话）持**共享**，再取自己的**资源锁**。顺序固定为**书锁 → 资源锁**。资源锁的位置是 `books/.locks/{resource}/{book_folder}.lock`（reindex、`ai_meta`、对话；与书锁同样建了就永不 unlink，且不在书目录里创建任何东西），由 `book_lock.resource_lock` 统一实现，与书锁共用同一个截止时间；**notes 例外，保留书目录内的 `notes.json.lock`**——有共享持有者时没人能 `rmtree` 它，挪位置只会改一条已有语义而无收益（018 WI-1）
 3. **范围**：锁包住服务层的整次操作，HTTP 路由与 CLI（`reader3 --index`）走同一把。对话只在 **per-book** 存储模式下取书锁：project-root 模式的对话住在书目录**之外**，删书的 `rmtree` 碰不到它，也就没有「复活」可防；它不取书锁是刻意的，不是遗漏
 4. **拒绝**：独占写手非阻塞获取，拿不到 → HTTP 409 / CLI 非零退出码，说明持有者类别。共享写手以 `LOCK_NB` 轮询，**一个 2 秒的 `time.monotonic` 总预算覆盖所有层**，超时 → 409 ＋ `Retry-After`；等待不阻塞事件循环
 5. **不复活**：拿到锁后、写之前，在锁内复核书目录存在；除 import 外任何写手不得 `makedirs` 书目录本身——包括读路径

@@ -441,6 +441,74 @@ def test_w2_28_resolver_scan_survives_a_busy_book(books_dir: Path, tmp_path: Pat
     assert elapsed < BUDGET_S + EPS_S
 
 
+def _meta_uuid_of(book_dir: Path) -> Optional[str]:
+    path = book_dir / ai_books.AI_META_FILENAME
+    return json.loads(path.read_text(encoding="utf-8")).get("book_uuid") if path.exists() else None
+
+
+def test_fx_2_12_scan_with_one_busy_book_is_bounded_and_maps_the_others(books_dir: Path, tmp_path: Path) -> None:
+    """FX-2-12 (tests-20261001-003726.md): the per-book deadline bounds the scan.
+
+    W2-28 above accepts a full budget per busy book; this pins the short one.
+    """
+    assert book_lock.BUDGET_S >= 1.0
+    (books_dir / "a_data").mkdir()
+    (books_dir / "b_data").mkdir()
+    r = ai_books.BookUuidResolver(str(books_dir))
+    with Holder(str(books_dir), "a_data", "exclusive", "import", str(tmp_path)):
+        t0 = time.monotonic()
+        r.scan()
+        elapsed = time.monotonic() - t0
+    assert elapsed < 0.5
+    ub = _meta_uuid_of(books_dir / "b_data")
+    assert ub is not None
+    assert r.book_uuid_for_folder("b_data") == ub
+    assert r.folder_for_book_uuid(ub) == "b_data"
+    assert not (books_dir / "a_data" / ai_books.AI_META_FILENAME).exists()
+
+
+class _ListdirShim:
+    """``ai_books.os`` with ``listdir(books_dir)`` pinned to an order; all else forwards."""
+
+    def __init__(self, books_dir: Path, order: List[str]) -> None:
+        self._books = os.path.abspath(str(books_dir))
+        self._order = order
+        self.listdir_calls = 0
+
+    def listdir(self, path: Any = ".") -> List[str]:
+        real = os.listdir(path)
+        if os.path.abspath(str(path)) != self._books:
+            return real
+        self.listdir_calls += 1
+        return list(self._order) + [n for n in real if n not in self._order]
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(os, name)
+
+
+@pytest.mark.parametrize("order", [["a_data", "b_data"], ["b_data", "a_data"]])
+def test_fx_2_12b_scan_deadline_is_per_book_not_scan_wide(
+    books_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, order: List[str]
+) -> None:
+    assert book_lock.BUDGET_S >= 1.0
+    (books_dir / "a_data").mkdir()
+    (books_dir / "b_data").mkdir()
+    shim = _ListdirShim(books_dir, order)
+    r = ai_books.BookUuidResolver(str(books_dir))
+    with Holder(str(books_dir), "a_data", "exclusive", "import", str(tmp_path)):
+        monkeypatch.setattr(ai_books, "os", shim)
+        t0 = time.monotonic()
+        r.scan()
+        elapsed = time.monotonic() - t0
+        monkeypatch.setattr(ai_books, "os", os)
+    assert shim.listdir_calls >= 1, "the scan never enumerated through ai_books.os.listdir"
+    assert elapsed < 0.5
+    ub = _meta_uuid_of(books_dir / "b_data")
+    assert ub is not None
+    assert r.book_uuid_for_folder("b_data") == ub
+    assert not (books_dir / "a_data" / ai_books.AI_META_FILENAME).exists()
+
+
 # --------------------------------------------------------------------------- per-book conversations
 
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-import fcntl
 import hashlib
 import json
 import os
@@ -94,48 +93,18 @@ def _book_write_lock(books_dir: str, book_id: str) -> Iterator[None]:
     each other.
     """
     path = _lock_path(books_dir, book_id)
-    # 018 WI-2 (ADR-0015 contract items 2, 4, 5): this is now the *resource* layer
-    # under the book lock. It no longer creates the book dir (the book lock's
-    # in-lock recheck has just seen it), and it no longer blocks: both of its
-    # layers poll against the one deadline the book lock was taken with, so the
-    # 2 s budget covers in-process RW + book flock + this lock, not 2 s each.
-    deadline = book_lock.held_deadline(books_dir, book_id)
-    if deadline is None:
-        raise book_lock.BookLockOrderError(
-            f"notes resource lock for {book_id!r} requested without the book lock (order is book → resource)"
-        )
-
+    # 018 WI-2 (ADR-0015 contract items 2, 4, 5): this is the *resource* layer under
+    # the book lock -- no book-dir creation, no blocking, one deadline for all layers.
+    # 018 WI-1: the body is now the shared ``book_lock.resource_lock``. Notes keeps
+    # its in-dir ``notes.json.lock`` and its own thread-lock registry (ADR-0015 item 2);
+    # the order check there still refuses before any fd is opened.
     key = os.path.abspath(path)
     with _LOCK_REGISTRY_GUARD:
         thread_lock = _BOOK_THREAD_LOCKS.setdefault(key, threading.Lock())
-
-    with book_lock.resource_section():
-        while not thread_lock.acquire(False):
-            _wait_or_refuse(deadline)
-        try:
-            fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
-            try:
-                while True:
-                    try:
-                        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                        break
-                    except BlockingIOError:
-                        _wait_or_refuse(deadline)
-                try:
-                    yield
-                finally:
-                    fcntl.flock(fd, fcntl.LOCK_UN)
-            finally:
-                os.close(fd)
-        finally:
-            thread_lock.release()
-
-
-def _wait_or_refuse(deadline: float) -> None:
-    now = book_lock._monotonic()
-    if now >= deadline:
-        raise book_lock.BookLockBusy(RESOURCE_CATEGORY)
-    book_lock._sleep(min(book_lock.POLL_S, deadline - now))
+    with book_lock.resource_lock(
+        books_dir, book_id, category=RESOURCE_CATEGORY, path=path, thread_lock=thread_lock
+    ):
+        yield
 
 
 @contextlib.contextmanager

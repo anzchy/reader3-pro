@@ -3,7 +3,6 @@ from __future__ import annotations
 import contextlib
 import json
 import os
-import shutil
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -100,9 +99,9 @@ class BookVectorIndex:
     expected_book_uuid: object = book_lock.NO_UUID_CHECK
 
     def __init__(self, book_id: str, *, books_dir: str = ".") -> None:
-        # 在构造处拒绝，而不是在 rmtree 前一行：index_book(force_reindex=True)
-        # 对 self.chroma_path 走 shutil.rmtree，而 BookVectorIndex("..") 的
-        # chroma_path 是 books/../chroma_db。少一个可绕过的窗口。
+        # 在构造处拒绝，而不是在销毁前一行：index_book(force_reindex=True)
+        # 会删 self.chroma_path 下的 meta 和集合（018 WI-1 之前是整棵 rmtree），
+        # 而 BookVectorIndex("..") 的 chroma_path 是 books/../chroma_db。少一个可绕过的窗口。
         book_id = safe_book_folder(book_id)
         self.book_id = book_id
         self.books_dir = books_dir
@@ -117,9 +116,9 @@ class BookVectorIndex:
     def _prepare_deps(self):
         """依赖 + 嵌入模型，**不碰磁盘**。
 
-        单独拆出来是为了让 ``index_book(force_reindex=True)`` 能在删掉可用索引之前
+        单独拆出来是为了让 ``index_book(force_reindex=True)`` 能在丢弃可用索引之前
         先把「依赖装了没、模型加载得起来没」验完：``_client_and_collection`` 会
-        建 ``chroma_db`` 并建集合，在 rmtree 之前跑它会让集合句柄指向一个随后被删掉的目录。
+        建 ``chroma_db`` 并建集合，而 force_reindex 要先删集合、再建新的——验证必须排在删之前。
         """
         chromadb, SentenceTransformerEmbeddingFunction = _require_semantic_deps()
         embed_fn = _build_embedding_function(SentenceTransformerEmbeddingFunction)
@@ -165,6 +164,29 @@ class BookVectorIndex:
                 metadata={"hnsw:space": SPACE},
             )
         return client, collection
+
+    def _drop_index_for_rebuild(self) -> None:
+        """force_reindex 的「销毁」一步：先删 meta，再经 chromadb 公开 API 删集合。
+
+        018 WI-1（FX-1-18）：这里以前是 ``shutil.rmtree(chroma_path)``。chromadb 按路径
+        缓存进程内的 system，同一进程里先索引过、再 rmtree 并在同一路径上开新 client，
+        拿到的是指向已删 sqlite 的旧句柄——"attempt to write a readonly database"。
+        ``delete_collection`` 走同一个缓存的 system，没有这个问题。
+
+        meta 先删：它以前随 rmtree 一起消失，重建半途失败时书就是「未索引」。现在
+        目录留着，不先删 meta，失败的重建就会留下一份描述旧集合的 "indexed"。
+        ``chroma_db`` 不存在时什么都不建（交给随后的 ``_client_and_collection``）。
+        """
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(self.meta_path)
+        if not os.path.isdir(self.chroma_path):
+            return
+        chromadb, _ = getattr(self, "_deps", None) or self._prepare_deps()
+        client = chromadb.PersistentClient(path=self.chroma_path)
+        # 1.x 的 list_collections 返回 Collection，0.6 之前返回名字；两种都认。
+        names = {getattr(c, "name", c) for c in client.list_collections()}
+        if COLLECTION_NAME in names:
+            client.delete_collection(COLLECTION_NAME)
 
     def _existing_chunk_ids(self, collection) -> Optional[set]:
         """collection 当前持有的 id 集合；读不出来时返回 None（调用方据此保守处理）。"""
@@ -259,7 +281,9 @@ class BookVectorIndex:
             expected_book_uuid = self.expected_book_uuid
         with book_lock.writer_scope(
             self.books_dir, self.book_id, holder="reindex", expected_book_uuid=expected_book_uuid
-        ):
+        ), book_lock.resource_lock(self.books_dir, self.book_id, category="reindex"):
+            # 018 WI-1 (#3): SH admits two reindexes of one book; the resource lock
+            # refuses the second (409 reindex) instead of letting both drop the collection.
             return self._index_book_locked(force_reindex=force_reindex)
 
     def _index_book_locked(self, *, force_reindex: bool) -> Dict[str, Any]:
@@ -268,8 +292,8 @@ class BookVectorIndex:
         self._prepare_deps()
         book = self._load_book()
 
-        if force_reindex and os.path.exists(self.chroma_path):
-            shutil.rmtree(self.chroma_path, ignore_errors=True)
+        if force_reindex:
+            self._drop_index_for_rebuild()
 
         _, collection = self._client_and_collection()
 

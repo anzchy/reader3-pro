@@ -11,8 +11,10 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Response
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
+from .... import book_lock
 from ...schemas import AIMessage
 from ....ai.conversations import (
     ConversationMessage as DiskConversationMessage,
@@ -114,12 +116,18 @@ async def api_ai_put_conversation(book_uuid: str, conversation_id: str, body: Sa
     )
     try:
         settings = _server.load_ai_settings()
-        save_disk_conversation_multi(
+        # 018 WI-2 (#5)：保存会等书锁，放进线程池，不占事件循环。
+        await run_in_threadpool(
+            save_disk_conversation_multi,
             _server.BOOKS_DIR,
             thread=thread,
             project_conversations_root=_server._project_conversations_root(settings),
             storage_mode=_server._conversation_disk_storage_mode(settings),
         )
+    except (book_lock.BookLockError, book_lock.BookGone):
+        # 必须在下面的宽 except 之前：Busy/Changed 会被吞成 400，BookGone 是 OSError 同理。
+        # 交给 book_lock_http 的全局处理器：Busy→409+Retry-After，Changed→409，Gone→404。
+        raise
     except Exception as e:  # noqa: BLE001 - 第 2 档：HTTP 边界，转译成 400 且 detail 带上原因
         raise HTTPException(status_code=400, detail=str(e))
     return {"ok": True}

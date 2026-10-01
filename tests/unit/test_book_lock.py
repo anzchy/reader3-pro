@@ -728,3 +728,43 @@ def test_w2_53_release_on_the_exception_path(books_dir: Path, tmp_path: Path, mo
 
     box = _run_in_thread(other_thread_ex)
     assert box.get("value") == "ok", repr(box.get("error"))
+
+
+# --------------------------------------------------------------------------- FX-2-14
+
+
+def test_fx_2_14_short_budget_is_one_poll_and_acquires_a_free_book(
+    books_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """FX-2-14 (tests-20261001-003726.md): the smallest deadline that still acquires."""
+    short = getattr(book_lock, "SHORT_BUDGET_S", None)
+    assert short is not None, "book_lock.SHORT_BUDGET_S is not defined"
+    assert short == book_lock.POLL_S > 0
+
+    clock = FakeClock()
+    _install_clock(monkeypatch, clock)
+    deadline = clock.now + short
+
+    def enter() -> str:
+        with book_lock.acquire(str(books_dir), BOOK, mode=SH, holder="notes", deadline=deadline):
+            return "entered"
+
+    free = _run_waiter(clock, enter)
+    assert not free["alive"]
+    assert free.get("value") == "entered", repr(free.get("error"))
+
+    clock2 = FakeClock()
+    _install_clock(monkeypatch, clock2)
+    deadline2 = clock2.now + short
+    a = Held(books_dir, EX, "import").start()
+    try:
+        def refused() -> None:
+            with book_lock.acquire(str(books_dir), BOOK, mode=SH, holder="notes", deadline=deadline2):
+                pass
+
+        box = _run_waiter(clock2, refused)
+    finally:
+        a.release()
+    assert not box["alive"]
+    assert isinstance(box.get("error"), book_lock.BookLockBusy), repr(box.get("error"))
+    assert box["at"] <= deadline2

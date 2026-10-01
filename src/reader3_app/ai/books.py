@@ -218,7 +218,11 @@ def ensure_book_uuid(books_dir: str, book_folder: str, *, deadline: Optional[flo
     if existing:
         return existing
 
-    with book_lock.writer_scope(books_dir, book_folder, holder="ai_meta", deadline=deadline):
+    # 018 WI-1 (#43): SH admits two minters at once, each re-reading "no uuid" and
+    # minting its own; the ai_meta resource lock makes re-read + mint one step.
+    with book_lock.writer_scope(
+        books_dir, book_folder, holder="ai_meta", deadline=deadline
+    ), book_lock.resource_lock(books_dir, book_folder, category="ai_meta"):
         meta = _read_ai_meta(meta_path)
         existing = _uuid_from_meta(meta_path, meta or {})
         if existing:
@@ -244,11 +248,16 @@ class BookUuidResolver:
             full = os.path.join(self.books_dir, item)
             if not os.path.isdir(full):
                 continue
+            # 018 WI-2 (#23): a short deadline *per book*, computed here and not once
+            # before the loop -- a busy book must not use up the others' time. This
+            # bounds every caller (startup, folder_for_book_uuid on request paths) to
+            # about N x SHORT_BUDGET_S instead of N x BUDGET_S.
+            deadline = book_lock._monotonic() + book_lock.SHORT_BUDGET_S
             try:
-                self._load_folder(item)
+                self._load_folder(item, deadline=deadline)
             except book_lock.BookLockBusy as e:
-                # A book being imported or deleted (EX) is skipped after one budget,
-                # not fatal to startup; its uuid is resolved on first use.
+                # A book being imported or deleted (EX) is skipped after one short
+                # poll, not fatal to startup; its uuid is resolved on first use.
                 logger.info("skipping %s for now: %s", item, e)
             except (OSError, ValueError) as e:
                 # 第 2 档：这个扫描跑在服务启动时。一本书的 ai_meta.json 坏了不该
@@ -256,9 +265,9 @@ class BookUuidResolver:
                 # 缺失），而不是被悄悄换上一个新 uuid（无声的数据丢失）。
                 logger.warning("skipping %s: cannot resolve its book_uuid: %s", item, e)
 
-    def _load_folder(self, book_folder: str) -> str:
+    def _load_folder(self, book_folder: str, *, deadline: Optional[float] = None) -> str:
         book_folder = _safe_folder_name(book_folder)
-        book_uuid = ensure_book_uuid(self.books_dir, book_folder)
+        book_uuid = ensure_book_uuid(self.books_dir, book_folder, deadline=deadline)
         with self._lock:
             self._register(book_folder, book_uuid)
         return book_uuid
@@ -300,7 +309,8 @@ class BookUuidResolver:
             raise FileNotFoundError(f"book folder {book_folder!r} is gone")
         return _uuid_from_meta(meta_path, meta or {})
 
-    def book_uuid_for_folder(self, book_folder: str) -> str:
+    def book_uuid_for_folder(self, book_folder: str, *, deadline: Optional[float] = None) -> str:
+        """``deadline`` bounds only the mint on a miss; a cached or on-disk hit takes no lock."""
         book_folder = _safe_folder_name(book_folder)
         with self._lock:
             cached = self._folder_to_uuid.get(book_folder)
@@ -326,7 +336,7 @@ class BookUuidResolver:
                 with self._lock:
                     self._register(book_folder, on_disk)
                 return on_disk
-        return self._load_folder(book_folder)
+        return self._load_folder(book_folder, deadline=deadline)
 
     def folder_for_book_uuid(self, book_uuid: str) -> str:
         normalized = str(UUID(str(book_uuid)))

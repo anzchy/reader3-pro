@@ -237,6 +237,25 @@ def load_project_conversation(
         raw = json.load(f)
     return _parse_thread(raw, book_folder=book_folder, default_book_uuid=str(book_uuid), conversation_id=conversation_id)
 
+def _publish_json(path: str, payload: Dict[str, Any]) -> None:
+    """Write ``payload`` to a writer-unique tmp beside ``path``, then ``os.replace``.
+
+    018 WI-1 (#4): the tmp name used to be a fixed ``{path}.tmp``, so two writers of
+    one conversation shared it -- one could replace the other's half-written file, or
+    find its own tmp already renamed away (``FileNotFoundError``). The pid + random
+    suffix makes it private; any failure before the replace unlinks it.
+    """
+    tmp = f"{path}.{os.getpid()}.{os.urandom(8).hex()}.tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
+
+
 def save_conversation(
     books_dir: str,
     *,
@@ -252,20 +271,19 @@ def save_conversation(
     book_folder = _safe_folder_name(thread.book_folder)
     with book_lock.writer_scope(
         books_dir, book_folder, holder="conversations", expected_book_uuid=thread.book_uuid
-    ):
+    ), book_lock.resource_lock(books_dir, book_folder, category="conversations"):
+        # 018 WI-1 (#3): SH alone lets two saves of this book run at once; the
+        # resource lock serialises them, under the same deadline as the book lock.
         conv_dir = _conversations_dir(books_dir, book_folder)
         with contextlib.suppress(FileExistsError):
             os.mkdir(conv_dir)
         path = _conversation_path(books_dir, book_folder, thread.conversation_id)
-        tmp = f"{path}.tmp"
         payload = thread.to_dict()
         payload["schema_version"] = SCHEMA_VERSION
         payload["last_updated"] = _utc_now_iso()
         if not payload.get("created_at"):
             payload["created_at"] = payload["last_updated"]
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, path)
+        _publish_json(path, payload)
 
 
 def save_project_conversation(
@@ -277,7 +295,6 @@ def save_project_conversation(
     book_folder = _safe_folder_name(thread.book_folder)
     os.makedirs(_project_conversations_dir(project_conversations_root, book_uuid), exist_ok=True)
     path = _project_conversation_path(project_conversations_root, book_uuid, thread.conversation_id)
-    tmp = f"{path}.tmp"
     payload = thread.to_dict()
     payload["schema_version"] = SCHEMA_VERSION
     payload["book_uuid"] = book_uuid
@@ -285,9 +302,7 @@ def save_project_conversation(
     payload["last_updated"] = _utc_now_iso()
     if not payload.get("created_at"):
         payload["created_at"] = payload["last_updated"]
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, path)
+    _publish_json(path, payload)
 
 def delete_conversation(
     books_dir: str,

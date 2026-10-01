@@ -10,8 +10,9 @@ Three layers, one deadline:
      kernel -- but only a table can say *who* holds it without touching disk, and
      it keeps SH-with-SH genuinely concurrent inside one process);
   2. ``flock`` on ``books/.locks/{folder}.lock`` for other processes;
-  3. the writer's own resource lock (``notes_service._book_write_lock``), which
-     reads the deadline back from here.
+  3. the writer's own resource lock (``resource_lock`` below; notes reaches it
+     through ``notes_service._book_write_lock``), which reads the deadline back
+     from here.
 
 Every wait polls with ``LOCK_NB`` and ``_sleep(min(POLL_S, remaining))`` against
 one absolute ``_monotonic`` deadline; an exclusive request never waits.
@@ -41,6 +42,9 @@ from typing import Dict, Iterator, Optional, Tuple
 
 POLL_S = 0.05
 BUDGET_S = 2.0
+#: Best-effort callers (page uuid lookup, the resolver scan): one poll, no meaningful
+#: wait. Must stay > 0 -- a deadline already reached refuses even a free book.
+SHORT_BUDGET_S = POLL_S
 LOCKS_DIRNAME = ".locks"
 SHARED = "shared"
 EXCLUSIVE = "exclusive"
@@ -122,6 +126,16 @@ def _key(books_dir: str, book_folder: str) -> str:
     return os.path.realpath(lock_path(books_dir, book_folder))
 
 
+def _resource_lock_path(books_dir: str, book_folder: str, category: str) -> str:
+    """``books/.locks/{category}/{folder}.lock`` (ADR-0015 item 2).
+
+    Outside the book dir, like the book lock itself, and for the same reason: an
+    ``rmtree`` of the book must not take the lock inode with it. It cannot collide
+    with a ``{folder}.lock``, because a category subdir carries no ``.lock`` suffix.
+    """
+    return os.path.join(books_dir, LOCKS_DIRNAME, category, f"{_safe_folder(book_folder)}.lock")
+
+
 # --------------------------------------------------------------------------- in-process state
 
 
@@ -142,6 +156,10 @@ class _KeyState:
 _STATE_GUARD = threading.Lock()
 _STATES: Dict[str, _KeyState] = {}
 _TLS = threading.local()
+# One ``threading.Lock`` per resource-lock file, keyed by its realpath. Bounded by
+# the number of (resource, book) pairs ever written in this process; never evicted.
+_RESOURCE_GUARD = threading.Lock()
+_RESOURCE_THREAD_LOCKS: Dict[str, threading.Lock] = {}
 
 
 def _held() -> Dict[str, Tuple[str, float]]:
@@ -337,6 +355,72 @@ def acquire(
                     fcntl.flock(fd, fcntl.LOCK_UN)
             os.close(fd)
         _unregister(key, mode, holder)
+
+
+# --------------------------------------------------------------------------- resource locks
+
+
+@contextlib.contextmanager
+def resource_lock(
+    books_dir: str,
+    book_folder: str,
+    *,
+    category: str,
+    path: Optional[str] = None,
+    thread_lock: Optional[threading.Lock] = None,
+) -> Iterator[None]:
+    """Hold one writer's own resource lock for the body (ADR-0015 item 2).
+
+    Must be taken *inside* this thread's book lock on the same book: its deadline is
+    read back from that acquisition, so the one budget covers the in-process table,
+    the book flock and this lock -- not a budget each. Without a book lock it raises
+    ``BookLockOrderError`` before creating anything.
+
+    Two layers, polled against that deadline and refused as ``BookLockBusy(category)``:
+      * a per-path ``threading.Lock`` for two threads of this process;
+      * ``flock(LOCK_EX)`` on the lock file for other processes.
+    While held the thread is inside ``resource_section()``, so a book lock requested
+    from the body is an order error rather than a deadlock.
+
+    ``path`` defaults to ``books/.locks/{category}/{folder}.lock``, created on demand
+    and never unlinked; nothing inside the book dir is ever created. ``thread_lock``
+    lets a caller keep its own registry (notes does, and its tests reach into it).
+    """
+    if category not in CATEGORIES:
+        raise ValueError(f"unknown resource lock category: {category!r}")
+    folder = _safe_folder(book_folder)
+    deadline = held_deadline(books_dir, folder)
+    if deadline is None:
+        raise BookLockOrderError(
+            f"{category} resource lock for {folder!r} requested without the book lock (order is book → resource)"
+        )
+    if path is None:
+        path = _resource_lock_path(books_dir, folder, category)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+    if thread_lock is None:
+        with _RESOURCE_GUARD:
+            thread_lock = _RESOURCE_THREAD_LOCKS.setdefault(os.path.realpath(path), threading.Lock())
+
+    with resource_section():
+        while not thread_lock.acquire(False):
+            _wait_step(deadline, category)
+        try:
+            fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
+            try:
+                while True:
+                    try:
+                        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        break
+                    except BlockingIOError:
+                        _wait_step(deadline, category)
+                try:
+                    yield
+                finally:
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+            finally:
+                os.close(fd)
+        finally:
+            thread_lock.release()
 
 
 # --------------------------------------------------------------------------- identity
