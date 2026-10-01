@@ -27,10 +27,14 @@ this module ever creates; it never creates the book dir.
 
 The holder category written into the lock file is best-effort telemetry for the
 409 message (ADR-0015 R6). It is read only after a non-blocking attempt has
-already failed, and no decision is ever taken on it: stale, empty, torn, or
-naming a dead pid all read as ``"unknown"``. A shared holder clears its own record
+already failed, and no decision is ever taken on it: an empty or torn record, or one
+naming a dead pid, reads as ``"unknown"``. A shared holder clears its own record
 on release, while it still holds the flock, and only if the record still names it;
 two shared holders racing that clear degrade to ``"unknown"``, never to a wrong name.
+Two limits follow. A record left by a SIGKILLed holder whose pid has since been
+reused still reads as its old category. And ``"unknown"`` can be reported while a
+shared holder is live: another shared holder of the same process and category, or
+the losing side of that cross-process clear race, may have blanked its record.
 """
 
 from __future__ import annotations
@@ -281,7 +285,7 @@ def _write_category(fd: int, text: str) -> None:
 
 
 def _clear_own_category(fd: int, holder: str) -> None:
-    """Blank the record only if it is exactly this acquisition's ``"holder pid"``.
+    """Blank the record only if it is exactly this process's ``"holder pid"``.
 
     Never raises: a failed read skips the clear, and a failed write is suppressed by
     ``_write_category``. Not atomic across processes -- losing that race blanks another

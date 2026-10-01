@@ -138,13 +138,15 @@ Every writer of a book coordinates through one lock file per book: `books/.locks
 - **Exclusive holders:** import and delete.
 - **Shared holders:** notes, reindex, `ai_meta.json`, conversations, and the vector read path (`search`). Each then takes its own resource lock as well.
 - **Wait limit:** everything shares one 2-second deadline. Exclusive requests never wait.
-- **Holder category:** the first 64 bytes of the lock file record who holds the lock. This is best-effort telemetry for the error message. Nothing decides on it, and a stale, torn, empty or dead-pid record reads as `unknown`.
+- **Holder category:** the first 64 bytes of the lock file record who holds the lock. This is best-effort telemetry for the error message, and nothing decides on it. A torn, empty or dead-pid record reads as `unknown`, and a shared holder clears its own record when it releases. Two limits:
+  - A record left by a holder killed with SIGKILL, whose pid has since been reused by another process, still reads as its old category.
+  - `unknown` can be reported while a shared holder is live, because a same-category holder in the same process, or a racing release in another process, may have blanked the record.
 
 HTTP responses when a write meets the lock (one handler for every route, `src/reader3_app/web/book_lock_http.py`):
 
 | Outcome | Status | Body / headers |
 |---|---|---|
-| Busy (someone else holds it past the deadline) | 409 | `{"detail": "book busy: <category>", "holder_category": "<category>", "retry_after": N}`, header `Retry-After: N` (N >= 1) |
+| Busy (held by another writer: an exclusive request is refused immediately, a shared request at the 2-second deadline) | 409 | `{"detail": "book busy: <category>", "holder_category": "<category>", "retry_after": N}`, header `Retry-After: N` (N >= 1) |
 | Changed (the folder now holds a different book than the page opened) | 409 | `{"detail": "book changed: reload before writing"}`, no `Retry-After` |
 | Gone (book deleted while waiting) | 404 | `{"detail": "Book not found"}` |
 
