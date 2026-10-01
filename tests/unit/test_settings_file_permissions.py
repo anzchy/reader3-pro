@@ -47,6 +47,7 @@ from pathlib import Path
 import pytest
 
 from reader3_app.ai.config import (
+    ai_settings_transaction,
     default_settings_dict,
     load_ai_settings,
     save_ai_settings,
@@ -216,3 +217,26 @@ def test_load_ai_settings_of_a_missing_file_creates_nothing(settings_path: Path)
     load_ai_settings(path=str(settings_path))
 
     assert not settings_path.exists(), "load_ai_settings must not create the settings file"
+
+
+# --------------------------------------------------------------------------
+# R3-1-13 (018 WI-3) -- S2: a save inside the settings transaction stays 0600.
+# The lock is held around the write; nothing about holding it may loosen the
+# credential file, and the lock file beside it is 0600 too.
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize("pre_state", ["absent", "existing-0644"])
+def test_save_inside_transaction_keeps_0600(settings_path: Path, pre_state: str) -> None:
+    if pre_state == "existing-0644":
+        settings_path.write_text(json.dumps(default_settings_dict()), encoding="utf-8")
+        os.chmod(settings_path, 0o644)
+        assert _mode(settings_path) == 0o644, "precondition: the file starts loose"
+    else:
+        assert not settings_path.exists()
+
+    with ai_settings_transaction(str(settings_path)):
+        save_ai_settings(default_settings_dict(), path=str(settings_path))
+
+    assert _mode(settings_path) == 0o600, f"got {_mode(settings_path):#o}"
+    lock = settings_path.parent / ".ai_settings.lock"
+    assert _mode(lock) == 0o600, f"lock file mode {_mode(lock):#o}"

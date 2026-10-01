@@ -191,6 +191,12 @@ baseline 全部 skipped、push gate 全绿。「扫顶层」是这类检查最�
   `--collect-only` 实测值**（四条关闭路径 × 两个时机）。这是它白名单注释里写的到期条件：019
   本来就要动 `baseline_1b/`、`suite_hash` 无论如何都要变，一并迁入只清零一次。白名单条目同批撤掉，
   `EXPECTED_UNGROUPED_ITEMS` 同批 −8（72 → 64），派生总数 265 不变。
+- `EXPECTED_ACCEPTANCE_PER_DIR["shell_4a"]` 108 → **109**（2026-10-01，018 WI-3 / 欠账 #51，计划 WI-4）：
+  **实测 +1**（`pytest tests/e2e/shell_4a --collect-only -q` 数出 109；全量 270）——
+  `test_settings_rows.py::test_provider_save_conflict_is_visible`（页面持启动时的设置 revision，
+  另一写手经真服务器改了同一服务商，页面的保存带旧 `If-Match` 拿到 409：卡片显示冲突、输入保留、
+  文件保留另一写手的内容）。与 RV-1 的保存失败那一条同属设置页切片，进 `shell_4a`。
+  `EXPECTED_UNGROUPED_ITEMS`（68）与 `EXPECTED_BASELINE_ITEMS`（76）不变。
 """
 
 from __future__ import annotations
@@ -234,12 +240,13 @@ EXPECTED_BASELINE_ITEMS = 76
 #                  ＋ WI-10 深色 OS 下旧页不变 1 ＝ 44，＋ WI-12 设置页 27 ＝ 71，
 #                  ＋ WI-13 书库页 32 ＝ 103，＋ 终审 RV-1 服务商保存失败 1 ＝ 104，
 #                  ＋ 终审 RV-14 Toast 停留（C11.07、C11.08、C11.15 ×2）4 ＝ 108
+#                  ＋ 018 WI-3 / 欠账 #51 设置写冲突可见 1 ＝ 109（实测）
 EXPECTED_ACCEPTANCE_PER_DIR: Dict[str, int] = {
     "acceptance_4b1": 8,
     "acceptance_p3": 4,
     "acceptance_4a4": 4,
     "acceptance_2a": 1,
-    "shell_4a": 108,
+    "shell_4a": 109,
 }
 EXPECTED_ACCEPTANCE_ITEMS = sum(EXPECTED_ACCEPTANCE_PER_DIR.values())
 

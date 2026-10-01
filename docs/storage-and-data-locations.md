@@ -84,6 +84,29 @@ Valid values for `conversation_disk_storage`:
 
 - AI settings (including provider API keys): `config/ai_settings.json` (gitignored)
 - Example template: `config/ai_settings.example.json`
+- Lock file: `config/.ai_settings.lock` (gitignored, created `0600`, never deleted; it sits next to whichever settings file is in use). If it cannot be created because the directory is not writable, the two GETs still answer from an unlocked read, and every writer fails with a 500 that names the lock path.
+
+### Settings write concurrency (018 WI-3)
+
+Every settings read and write runs inside one exclusive `flock` on the lock file. The lock is global, not per book.
+
+- **Covered endpoints:**
+  - Both reads (`GET /api/settings`, `GET /api/settings/providers/{name}`) return an `ETag`.
+  - All four writers honour an optional `If-Match`: `PUT /api/settings`, `POST /api/settings/import`, `PUT /api/settings/providers/{name}` and `DELETE /api/settings/providers/{name}`.
+- **ETag value:**
+  - A strong, quoted, 64-hex HMAC-SHA256 of the file's raw bytes.
+  - The key is private to the server process, so the value says nothing about whether an API key changed.
+  - A server restart invalidates every ETag a page already holds. The next conditional write gets a 409, and reloading the page fixes it.
+- **If-Match outcomes:**
+
+  | Request | Result |
+  |---|---|
+  | No `If-Match` header | Behaves as before (unconditional) |
+  | Malformed `If-Match` | 400 |
+  | Stale `If-Match` | 409, with a fixed message and no ETag |
+
+- **Order of checks:** a missing provider is a 404 and is checked first. The `If-Match` checks (400, then 409) come before any validation of the request body.
+- **Settings page:** it keeps one revision for the whole page and sends it as `If-Match` on toggle, provider save and preference save, one write at a time. Import stays unconditional.
 
 ## Server-side library collections (004)
 

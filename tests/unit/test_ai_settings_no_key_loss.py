@@ -26,6 +26,7 @@ below, because a test that leaked onto it would do the exact damage under test.
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 from pathlib import Path
@@ -255,6 +256,12 @@ def test_ai_settings_error_becomes_a_500_that_names_the_file(
         raise AiSettingsError(message)
 
     monkeypatch.setattr(server, "load_ai_settings", boom)
+    # Seam pairing (018 WI-3): GET /api/settings must not lock or hash the real config/.
+    monkeypatch.setattr(
+        server,
+        "ai_settings_transaction",
+        functools.partial(ai_config.ai_settings_transaction, path=str(settings_path)),
+    )
 
     # raise_server_exceptions=False so that an *unhandled* AiSettingsError also
     # produces a 500 -- the assertion below then fails on the thing that matters

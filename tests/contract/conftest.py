@@ -55,6 +55,7 @@ travelled from provider to ``answer`` would not.
 
 from __future__ import annotations
 
+import functools
 import json
 import pickle
 import sys
@@ -251,6 +252,15 @@ def world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[World]:
 
     monkeypatch.setattr(server, "load_ai_settings", _load)
     monkeypatch.setattr(server, "save_ai_settings", _save)
+    # Seam pairing (018 WI-3): the settings lock and revision must describe the
+    # same file load/save use, or a request locks and hashes the real config/.
+    from reader3_app.ai import config as _ai_config
+
+    monkeypatch.setattr(
+        server,
+        "ai_settings_transaction",
+        functools.partial(_ai_config.ai_settings_transaction, path=str(settings_path)),
+    )
 
     def _stub_call_provider(provider_name: str, **kwargs: Any) -> ProviderResponse:
         return ProviderResponse(text=FAKE_ANSWER, model=FAKE_MODEL, finish_reason="stop", token_count=7)

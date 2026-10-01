@@ -7,6 +7,10 @@
 //   (components/modal.ts), outcomes are written to result lines (no toast, ruling D9)
 // * save / test / refresh are single-flight (aria-busy while in flight); the provider switch
 //   serialises its PUTs so every flip is persisted in order
+// * every write conditional on the settings revision (provider switch, provider save, preferences
+//   save) sends If-Match from the page revision and runs through one page-wide queue; a 409 says
+//   the settings changed elsewhere, keeps the typed values and is not retried (018 WI-3). Import
+//   stays unconditional and outside the queue.
 // * API keys are write-only: the key field is a password input, cleared after a save, and
 //   never filled from the server (which never returns keys)
 // * the appearance section is the chrome axis only (data-theme), never data-reading-theme
@@ -99,13 +103,20 @@ interface TestResponse {
   details?: { model?: string; latency_ms?: number };
 }
 
-class HttpError extends Error {}
+class HttpError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
 
-async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    ...init,
-    headers: init?.body ? { "Content-Type": "application/json" } : undefined,
-  });
+/** Fetch JSON; the caller's headers are kept, Content-Type is added when there is a body. */
+async function requestJsonWithMeta<T>(url: string, init?: RequestInit): Promise<{ data: T; etag: string | null }> {
+  const headers = new Headers(init?.headers);
+  if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  const res = await fetch(url, { ...init, headers });
   const text = await res.text();
   let data: unknown = null;
   try {
@@ -115,13 +126,48 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   }
   if (!res.ok) {
     const detail = data && typeof data === "object" && "detail" in data ? String((data as { detail: unknown }).detail) : "";
-    throw new HttpError(`HTTP ${res.status}${detail ? ` · ${detail}` : ""}`);
+    throw new HttpError(`HTTP ${res.status}${detail ? ` · ${detail}` : ""}`, res.status);
   }
-  return data as T;
+  return { data: data as T, etag: res.headers.get("ETag") || null };
 }
 
+async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
+  return (await requestJsonWithMeta<T>(url, init)).data;
+}
+
+const CONFLICT_TEXT = "设置已在别处更改，请刷新页面后再试";
+
 function errorText(err: unknown): string {
+  if (err instanceof HttpError && err.status === 409) return CONFLICT_TEXT;
   return err instanceof Error ? err.message : String(err);
+}
+
+// ---------------------------------------------------------------------------
+// settings revision and the page-wide write queue (018 WI-3, debt #51)
+// ---------------------------------------------------------------------------
+// One revision for the page, because the server's ETag covers the whole settings file. It is set
+// from the boot GET and replaced only by the ETag of a successful conditional write; a success
+// without an ETag keeps it, and a failure never moves it.
+let revision: string | null = null;
+
+// Every conditional write (each card's toggle and save, the preferences save) runs through this
+// one chain, so at most one is in flight and each reads `revision` when its turn comes. A job's
+// failure is swallowed here so it can never stall the jobs queued behind it.
+let writeQueue: Promise<void> = Promise.resolve();
+
+function enqueueWrite(job: () => Promise<void>): Promise<void> {
+  const run = writeQueue.then(job).catch(() => undefined);
+  writeQueue = run;
+  return run;
+}
+
+/** A write conditional on the page revision. Call only from inside an `enqueueWrite` job. */
+async function conditionalWrite<T>(url: string, init: RequestInit): Promise<T> {
+  const headers = new Headers(init.headers);
+  if (revision) headers.set("If-Match", revision);
+  const { data, etag } = await requestJsonWithMeta<T>(url, { ...init, headers });
+  if (etag) revision = etag;
+  return data;
 }
 
 // ---------------------------------------------------------------------------
@@ -331,7 +377,7 @@ function renderCard(cfg: ProviderConfig): { root: HTMLElement; card: Card } {
 
   const card: Card = { name, toggle, model, url, key, result, sub, models, loadedUrl: url.value };
   wireToggle(card, label);
-  save.addEventListener("click", singleFlight(save, () => saveProvider(card, label)));
+  save.addEventListener("click", singleFlight(save, () => enqueueWrite(() => saveProvider(card, label))));
   test.addEventListener("click", singleFlight(test, () => testProvider(card)));
   if (refresh) {
     const button = refresh;
@@ -340,12 +386,11 @@ function renderCard(cfg: ProviderConfig): { root: HTMLElement; card: Card } {
   return { root, card };
 }
 
-/** Every flip is persisted, in order: PUTs are chained, aria-busy covers the whole chain. */
+/** Every flip is persisted, in order (page-wide write queue); aria-busy covers this card's flips. */
 function wireToggle(card: Card, label: string): void {
   const { toggle } = card;
   let confirmed = toggle.getAttribute("aria-checked") === "true";
   let pending = 0;
-  let chain: Promise<void> = Promise.resolve();
 
   toggle.addEventListener("click", () => {
     const next = toggle.getAttribute("aria-checked") !== "true";
@@ -354,9 +399,9 @@ function wireToggle(card: Card, label: string): void {
     announce(`${label} ${next ? "已启用" : "已停用"}`);
     pending += 1;
     setBusy(toggle, true);
-    chain = chain.then(async () => {
+    void enqueueWrite(async () => {
       try {
-        await requestJson(`/api/settings/providers/${encodeURIComponent(card.name)}`, {
+        await conditionalWrite(`/api/settings/providers/${encodeURIComponent(card.name)}`, {
           method: "PUT",
           body: JSON.stringify({ enabled: next }),
         });
@@ -385,7 +430,7 @@ async function saveProvider(card: Card, label: string): Promise<void> {
   const typedKey = card.key ? card.key.value.trim() : "";
   if (typedKey) body.api_key = typedKey;
   try {
-    const saved = await requestJson<ProviderConfig>(`/api/settings/providers/${encodeURIComponent(card.name)}`, {
+    const saved = await conditionalWrite<ProviderConfig>(`/api/settings/providers/${encodeURIComponent(card.name)}`, {
       method: "PUT",
       body: JSON.stringify(body),
     });
@@ -499,13 +544,13 @@ function wirePreferences(settings: SettingsResponse): void {
   const result = byId<HTMLElement>("set-prefs-result");
   save.addEventListener(
     "click",
-    singleFlight(save, async () => {
+    singleFlight(save, () => enqueueWrite(async () => {
       const ragChunks = clampChunks();
       const ragContext = clampContext();
       chunks.value = String(ragChunks);
       context.value = String(ragContext);
       try {
-        await requestJson("/api/settings", {
+        await conditionalWrite("/api/settings", {
           method: "PUT",
           body: JSON.stringify({
             default_provider: provider.value,
@@ -524,7 +569,7 @@ function wirePreferences(settings: SettingsResponse): void {
         result.setAttribute("role", "alert");
         setResult(result, "error", `保存失败：${errorText(err)}。输入的内容仍在，稍后可以再试。`);
       }
-    }),
+    })),
   );
 }
 
@@ -705,7 +750,9 @@ async function boot(): Promise<void> {
   const container = byId<HTMLElement>("set-providers");
   let settings: SettingsResponse;
   try {
-    settings = await requestJson<SettingsResponse>("/api/settings");
+    const boot = await requestJsonWithMeta<SettingsResponse>("/api/settings");
+    settings = boot.data;
+    if (boot.etag) revision = boot.etag;
   } catch (err) {
     const failed = el("p", { class: "set-result", role: "alert", "data-state": "error" });
     failed.textContent = `读取设置失败：${errorText(err)}`;

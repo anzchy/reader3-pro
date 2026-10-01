@@ -24,6 +24,8 @@ wheels/
 
 # AI Assistant (repo-local secrets)
 /config/ai_settings.json
+# 018 WI-3: the settings flock file beside it (created 0600, never unlinked)
+/config/.ai_settings.lock
 /config/library_collections.json
 
 # AI Assistant (optional on-disk conversation mirror)

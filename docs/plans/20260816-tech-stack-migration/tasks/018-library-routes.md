@@ -138,15 +138,23 @@
 ### WI-3: 欠账 #51 —— provider 保存版本校验（后端 ＋ FB-S09 客户端半边）
 
 - **目标 / 验收**: 见 [#51 行](./009-e2e-annotations.md#跨波欠账)（同 revision 两个客户端 → 第二个 409 且文件保留第一个；不带 revision 的客户端行为不变；加法式）。本文只补约束
-- **今天的事实**: `ai_settings.json` 有四个写入端——`PUT /api/settings`、`POST /api/settings/import`、`PUT /api/settings/providers/{provider_name}`、`DELETE /api/settings/providers/{provider_name}`；`save_ai_settings` 已是 `mkstemp` ＋ `os.replace` 原子写。处理函数都是 `async def` 且读—改—写之间没有 `await`，所以**单进程内**事实上串行，**跨进程**没有任何协调
-- **已定**（§6 Q5）:
+- **今天的事实**（实施前）: `ai_settings.json` 有四个写入端——`PUT /api/settings`、`POST /api/settings/import`、`PUT /api/settings/providers/{provider_name}`、`DELETE /api/settings/providers/{provider_name}`；`save_ai_settings` 已是 `mkstemp` ＋ `os.replace` 原子写。处理函数都是 `async def` 且读—改—写之间没有 `await`，所以**单进程内**事实上串行，**跨进程**没有任何协调
+- **已定**（§6 Q5；实施取值见下方「实施记录」）:
   - **revision** = `ai_settings.json` 原始字节的 sha256（可选：用进程外不可见的 key 做 keyed hash，免得 revision 本身成为「猜 key 是否变过」的探针——便宜，实施时定）。不用 `st_mtime_ns`（粒度与拷贝保留 mtime 都靠不住），不往文件里加计数字段（改了配置 schema）
   - **传法**：读响应带 `ETag`，四个写入端都认 `If-Match`（`DELETE` 没有 body，只能走头，所以统一走头）。不带 `If-Match` 的请求照旧放行（加法式）
   - **锁**：一把全局 `config/.ai_settings.lock`（`flock` 独占），比对与写入都在锁内；这**不是** WI-2 的每书锁
   - 不匹配 → 409，响应体按 #51 行，不回显任何 key
 - **涉及文件**: `web/routers/settings.py`、`ai/config.py`（`load_ai_settings` / `save_ai_settings`）；`frontend/src/settings/index.ts`（provider 保存的 `requestJson` 带 revision、409 走可见错误）；`tests/contract/routes.snapshot`（若加 `If-Match` 头或响应字段，按 ADR-0011 同 commit）
 - **验收补充（种子）**: 409 的响应体不回显任何 key（ADR-0012 / 「API key 不回浏览器」）；前端 409 可见错误有 Vitest ＋ 一条 e2e；013 的 `test_provider_save_failure_is_visible` 不改仍绿
-- 测试矩阵：待 /tdd-guardian:design-tests
+- 测试矩阵：`.claude/tdd-guardian/tests-20261001-114124.md`（59 条，R3-1 … R3-4；对抗两轮共补 14 个缺口）
+- **实施记录（2026-10-01）**:
+  - **revision** = `HMAC-SHA256(进程启动时的 secrets.token_bytes(32), b"file:"+原始字节 | b"absent")`，强 ETag（带引号的 64 位小写十六进制）。key 不出进程，revision 不能被拿来离线猜 key；代价是服务重启后旧页面的 revision 全部失效（一次 409，刷新即好）
+  - **If-Match**：强比较；逗号列表、`*` 命中；`W/` 永不命中；任何空元素或不合 RFC 7232 的写法 → 400。不匹配 → 409，`detail` 是固定句子，响应头里不带 ETag 也不带 revision
+  - **锁**：`dirname(settings)/.ai_settings.lock`，0600 创建、永不删除；比对、读、写、算新 ETag 在**同一次持锁**里完成，经 `run_in_threadpool` 跑在事件循环外；两个 GET 也取这把锁，免得读到写到一半的 ETag；锁文件建不出来（`config/` 不可写）时两个 GET 退回不持锁的读，写手一律 500 并点名锁路径（终审 M1）
+  - **判定顺序**：422 → 404（provider 不存在，锁外先判）→ 400 畸形 If-Match → 409 → 400 语义错误
+  - **前端**：页面级唯一 revision（成功但没 ETag 时保留旧值，失败从不更新）；toggle / provider 保存 / 偏好三类写入共用一条页面级队列，revision 在请求**发出时**读取；队首失败不卡住后面的写入。导入无条件、不排队
+  - e2e：`tests/e2e/shell_4a/test_settings_rows.py::test_provider_save_conflict_is_visible`（真第二写手，非 mock），`shell_4a` 108 → 109
+  - 路由快照未变（只加了请求头 / 响应头，没有新路由或字段）
 
 ### WI-4: 欠账 #56 —— 客户端书目列表路由
 
@@ -273,7 +281,7 @@
 | Q3a | 书锁与 notes 锁：合并还是分层 | WI-2 | 分层：书锁 SH / EX ＋ 资源锁，固定顺序书锁 → 资源锁；锁包服务层整次操作（含 CLI `--index`）。见 WI-2 契约项 2 / 3 / 7 | ✅ 已裁定 |
 | Q3b | 短写手阻塞等待还是 409 | WI-2 | `LOCK_NB` 轮询，三层共用一个 2 秒总预算，超时 409 ＋ `Retry-After`，不阻塞事件循环。见 WI-2 契约项 4 | ✅ 已裁定 |
 | Q4 | 新 router 模块名；是否为 012 预留 | WI-4 | `library_books.py`（列表 ＋ 删书）、`library_export.py`（导出）；不为 012 预留 | ✅ 已裁定 |
-| Q5 | #51 revision 的取值、覆盖面、传法 | WI-3 | 原始字节 sha256；四个写入端都认 `ETag` / `If-Match`；无条件请求放行；全局 `config/.ai_settings.lock`。见 WI-3 | ✅ 已裁定 |
+| Q5 | #51 revision 的取值、覆盖面、传法 | WI-3 | 原始字节 sha256（实施时取了括注里的可选项：进程私有 key 的 HMAC-SHA256，见 WI-3「实施记录」）；四个写入端都认 `ETag` / `If-Match`；无条件请求放行；全局 `config/.ai_settings.lock`。见 WI-3 | ✅ 已裁定 |
 | Q6 | #56 列表字段集 | WI-4 | `book_id`、`title`、`authors`、`cover_url`、`book_uuid`；损坏条目显式错误态；章节数与存储格式留给 012。见 WI-4 | ✅ 已裁定 |
 | Q7 | #53 导出 schema | WI-6 | metadata ＋ annotations；对话只在 `?include=conversations`；不含章节正文；整库（维护者取舍）。见 WI-6 | ✅ 已裁定 |
 | Q8 | 删书对集合 / 对话的处置；墓碑清理时机 | WI-5 | 集合成员在提交点前移除；对话**删时问**——`delete_conversations` 参数默认 `false`，确认框归 014 WI-16b（维护者取舍）；墓碑在启动与每次删书前清扫，清扫持锁。见 WI-5 | ✅ 已裁定 |

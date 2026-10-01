@@ -2,6 +2,7 @@
 
 拆自 `web/server.py`（011 WI-4）。**路由正文一字未改**，改的只有三类引用：
 `@app.x` → `@router.x`，接缝与 `server` 私有 helper 改走 `_server.` 属性访问。
+018 WI-3 例外：两条 GET 与四条写手的读改写搬进 `_transact`（一次持锁、线程池、ETag/If-Match）。
 
 **`/api/ollama/*` 归这里是一个判断，不是显然的事**（011 §5 要求写明）：它服务的是
 设置页的 provider 探测——两条路由都只在 `/settings` 的 provider 卡片里被调用，
@@ -23,15 +24,41 @@ provider 出口（ADR-0006），接缝一旦被旁路，那些「保证零真实
 from __future__ import annotations
 
 import time
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Header, HTTPException, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 
 router: APIRouter = APIRouter()
+
+#: 409 的固定正文。不带当前 revision、不带任何设置——带了就能回显 key 或让客户端绕过冲突。
+CONFLICT_DETAIL = "Settings were changed elsewhere since this page loaded them. Reload and try again."
+
+
+def _transact(response: Response, if_match: Optional[str], work: Callable[[], Any], read_only: bool = False) -> Any:
+    """018 WI-3（债 #51）：一次持锁里做完 If-Match 判定、``work()``（读、改、写、响应体）和新 ETag。
+
+    在线程池里跑（flock 是阻塞调用）。If-Match 必须在锁**内**比：锁外先比的话，两个
+    带同一 revision 的请求都会先通过、再排队写，丢更新原样回来。ValueError → 400 只包
+    If-Match 解析这一句——``work()`` 里 ``get_provider_settings`` 在保存之后也会抛 ValueError，
+    那是今天的 500，不许被改写成 400。重复的 If-Match 头行不合并，这里只看得到其中一行——
+    往安全的方向失败（409）。``read_only``：锁建不出来时退回不持锁的读（只给两条 GET）。
+    """
+    with _server.ai_settings_transaction(lock_optional=read_only) as h:
+        if if_match is not None:
+            current = h.revision()
+            try:
+                satisfied = _server.if_match_satisfied(if_match, current)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Malformed If-Match header") from None
+            if not satisfied:
+                raise HTTPException(status_code=409, detail=CONFLICT_DETAIL)
+        result = work()
+        response.headers["ETag"] = '"' + h.revision() + '"'
+        return result
 
 
 @router.get("/settings", response_class=HTMLResponse)
@@ -40,9 +67,10 @@ async def settings_view(request: Request):
 
 
 @router.get("/api/settings")
-async def api_get_settings():
-    settings = _server.load_ai_settings()
-    return _server._public_settings_response(settings)
+async def api_get_settings(response: Response):
+    return await run_in_threadpool(
+        _transact, response, None, lambda: _server._public_settings_response(_server.load_ai_settings()), True
+    )
 
 
 class UpdateSettingsRequest(BaseModel):
@@ -51,27 +79,32 @@ class UpdateSettingsRequest(BaseModel):
 
 
 @router.put("/api/settings")
-async def api_put_settings(body: UpdateSettingsRequest):
-    settings = _server.load_ai_settings()
-    updated = dict(settings or {})
-    if body.default_provider is not None:
-        provider = str(body.default_provider or "").strip().lower()
-        if provider and provider not in _server.SUPPORTED_AI_PROVIDERS:
-            raise HTTPException(status_code=400, detail="Invalid default_provider")
-        updated["default_provider"] = provider or updated.get("default_provider") or "anthropic"
-    if body.preferences is not None:
-        # 现存 → 补丁，同 /api/settings/import。**不要**从 _server.default_settings_dict()
-        # 重新起头：settings 已经过 _merge_defaults，默认值就在里面，再引一次默认
-        # 只会把用户存过的其它偏好按出厂值写回磁盘——前端发一个 {"theme": "dark"}
-        # 就够把落盘模式、会话上限一起重置掉。
-        existing_prefs = settings.get("preferences") if isinstance(settings.get("preferences"), dict) else {}
-        prefs_patch = body.preferences if isinstance(body.preferences, dict) else {}
-        merged = dict(existing_prefs)
-        merged.update({k: v for k, v in prefs_patch.items() if v is not None})
-        updated["preferences"] = merged
+async def api_put_settings(
+    body: UpdateSettingsRequest, response: Response, if_match: Optional[str] = Header(None, alias="If-Match")
+):
+    def work() -> dict:
+        settings = _server.load_ai_settings()
+        updated = dict(settings or {})
+        if body.default_provider is not None:
+            provider = str(body.default_provider or "").strip().lower()
+            if provider and provider not in _server.SUPPORTED_AI_PROVIDERS:
+                raise HTTPException(status_code=400, detail="Invalid default_provider")
+            updated["default_provider"] = provider or updated.get("default_provider") or "anthropic"
+        if body.preferences is not None:
+            # 现存 → 补丁，同 /api/settings/import。**不要**从 _server.default_settings_dict()
+            # 重新起头：settings 已经过 _merge_defaults，默认值就在里面，再引一次默认
+            # 只会把用户存过的其它偏好按出厂值写回磁盘——前端发一个 {"theme": "dark"}
+            # 就够把落盘模式、会话上限一起重置掉。
+            existing_prefs = settings.get("preferences") if isinstance(settings.get("preferences"), dict) else {}
+            prefs_patch = body.preferences if isinstance(body.preferences, dict) else {}
+            merged = dict(existing_prefs)
+            merged.update({k: v for k, v in prefs_patch.items() if v is not None})
+            updated["preferences"] = merged
 
-    _server.save_ai_settings(updated)
-    return _server._public_settings_response(_server.load_ai_settings())
+        _server.save_ai_settings(updated)
+        return _server._public_settings_response(_server.load_ai_settings())
+
+    return await run_in_threadpool(_transact, response, if_match, work)
 
 
 @router.get("/api/settings/providers")
@@ -117,12 +150,13 @@ async def api_list_settings_providers():
 
 
 @router.get("/api/settings/providers/{provider_name}")
-async def api_get_provider(provider_name: str):
+async def api_get_provider(provider_name: str, response: Response):
     name = (provider_name or "").strip().lower()
     if name not in _server.SUPPORTED_AI_PROVIDERS:
         raise HTTPException(status_code=404, detail="Provider not found")
-    settings = _server.load_ai_settings()
-    return _server._public_provider_config(name, settings=settings)
+    return await run_in_threadpool(
+        _transact, response, None, lambda: _server._public_provider_config(name, settings=_server.load_ai_settings()), True
+    )
 
 
 def _settings_export_payload(settings: dict) -> dict:
@@ -148,10 +182,15 @@ async def api_settings_export():
 
 
 @router.post("/api/settings/import")
-async def api_settings_import(body: dict):
+async def api_settings_import(
+    body: dict, response: Response, if_match: Optional[str] = Header(None, alias="If-Match")
+):
     if not isinstance(body, dict):
         raise HTTPException(status_code=400, detail="Invalid payload")
+    return await run_in_threadpool(_transact, response, if_match, lambda: _import_settings(body))
 
+
+def _import_settings(body: dict) -> dict:
     existing = _server.load_ai_settings()
     updated = dict(existing or {})
 
@@ -196,7 +235,12 @@ class UpdateProviderRequest(BaseModel):
 
 
 @router.put("/api/settings/providers/{provider_name}")
-async def api_put_provider(provider_name: str, body: UpdateProviderRequest):
+async def api_put_provider(
+    provider_name: str,
+    body: UpdateProviderRequest,
+    response: Response,
+    if_match: Optional[str] = Header(None, alias="If-Match"),
+):
     name = (provider_name or "").strip().lower()
     if name not in _server.SUPPORTED_AI_PROVIDERS:
         raise HTTPException(status_code=404, detail="Provider not found")
@@ -216,22 +260,31 @@ async def api_put_provider(provider_name: str, body: UpdateProviderRequest):
     if body.max_retries is not None:
         patch["max_retries"] = int(body.max_retries)
 
-    settings = _server.load_ai_settings()
-    updated = _server._settings_update_provider(name, settings=settings, patch=patch)
-    _server.save_ai_settings(updated)
-    return _server._public_provider_config(name, settings=_server.load_ai_settings())
+    def work() -> dict:
+        settings = _server.load_ai_settings()
+        updated = _server._settings_update_provider(name, settings=settings, patch=patch)
+        _server.save_ai_settings(updated)
+        return _server._public_provider_config(name, settings=_server.load_ai_settings())
+
+    return await run_in_threadpool(_transact, response, if_match, work)
 
 
 @router.delete("/api/settings/providers/{provider_name}", status_code=204)
-async def api_delete_provider(provider_name: str):
+async def api_delete_provider(
+    provider_name: str, response: Response, if_match: Optional[str] = Header(None, alias="If-Match")
+):
     name = (provider_name or "").strip().lower()
     if name not in _server.SUPPORTED_AI_PROVIDERS:
         raise HTTPException(status_code=404, detail="Provider not found")
-    settings = _server.load_ai_settings()
-    providers = dict(settings.get("providers") or {})
-    providers.pop(name, None)
-    settings["providers"] = providers
-    _server.save_ai_settings(settings)
+
+    def work() -> None:
+        settings = _server.load_ai_settings()
+        providers = dict(settings.get("providers") or {})
+        providers.pop(name, None)
+        settings["providers"] = providers
+        _server.save_ai_settings(settings)
+
+    await run_in_threadpool(_transact, response, if_match, work)
     return None
 
 

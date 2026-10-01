@@ -35,7 +35,7 @@ from ..ai.conversations import (
     save_conversation_multi as save_disk_conversation_multi,
 )
 from ..ai.config import (
-    AiSettingsError,
+    AiSettingsError, ai_settings_transaction, if_match_satisfied,
     default_settings_dict,
     get_provider_api_key,
     get_provider_settings,
