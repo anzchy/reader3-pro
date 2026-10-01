@@ -51,7 +51,7 @@ chmod 600 config/ai_settings.json
 uv run pytest tests/unit tests/contract      # backend unit + API contract (the commit-gated lane)
 npm test                                     # frontend Vitest (also commit-gated)
 npm run typecheck                            # frontend tsc
-uv run pytest tests/e2e --browser chromium   # Playwright E2E (push-gated)
+uv run python scripts/e2e_lock.py -- uv run pytest tests/e2e --browser chromium   # Playwright E2E (push-gated; flock-wrapped, BUSY=75)
 uv run ruff check src/ tests/ scripts/       # lint -- do NOT run `ruff format`; line length is a cap, not a format target
 uv run mypy src/
 python3 scripts/check_router_size.py         # router size gate; the other scripts/lint_*.py run the same way
