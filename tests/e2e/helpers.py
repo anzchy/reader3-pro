@@ -852,6 +852,7 @@ def wait_for_note_text(
     「note_text 没有变成 X，当前是 <旧记录>」，而那条旧记录**此刻根本已经不在盘上了**。
     2026-09-03 的定向破坏（WI-5 的 D1）就是这么被误导了一轮：失败消息把人指向「PUT 没生效」，
     真相是「PUT 生效了，但换了个 id」。超时后重读一次，分两种情况报。
+    重读时若该条已经匹配（写恰好落在最后一泵），就返回它，不报一条自相矛盾的超时（023 #68）。
 
     W-9（CJK 上重复一遍 W-7）与今后任何走 PUT 的用例都压这条路径，所以它在 helpers 里，
     不在某个用例模块里。
@@ -875,6 +876,8 @@ def wait_for_note_text(
             "更新路径把「改一条」实现成了「删掉再建一条新的」。"
             f"现存的 id：{[r.get('id') for r in final]}"
         )
+    if current.get("note_text") == expected_text:
+        return current
     raise AssertionError(
         f"{NOTES_WAIT_S}s 内 {note_id} 的 note_text 没有变成 {expected_text!r}，"
         f"当前是 {current!r}"

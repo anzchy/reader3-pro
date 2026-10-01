@@ -168,10 +168,15 @@ def test_wi2_u3_budget_constant_is_unchanged() -> None:
 # 算术推出，不从 `helpers.NOTES_WAIT_S` 反算（反算就是拿被测代码给自己出答案）：
 #   第 k 次迭代（ticks = k）继续 ⟺ 1000.0 + k*0.05 < 1008.0；159*0.05 → 1007.95 继续，
 #   160*0.05 在 IEEE-754 里恰好舍入成 8.0 → 1008.0 < 1008.0 为假，停。
-# 所以：写落在第 n 泵，`len(waits) == min(n, 160)`，且调用成功 ⟺ n ≤ 159。
+# 所以：写落在第 n 泵，`len(waits) == min(n, 160)`。
+# 成功域按 helper 分（023 #68）：`wait_for_note_text` 在死线后那次重读里认出已匹配的记录，
+# 第 160 泵的写也算看见——成功 ⟺ n ≤ 160；`wait_for_notes` 的死线后重读只用来写消息，
+# 成功 ⟺ n ≤ 159。这个不对称是**故意**的（协调者裁定：不修 wait_for_notes 的盲点），
+# 在这里钉住，日后要修就得是一次看得见的规格变更。
 
 EXPECTED_TIMEOUT_PUMPS = 160
-LAST_OBSERVABLE_WRITE = 159
+#: 每个 helper 能看见的最后一泵（矩阵 tests-20261001-124913.md §WI-1 L6）。
+LAST_OBSERVABLE_WRITE: Dict[str, int] = {"wait_for_notes": 159, "wait_for_note_text": 160}
 #: 死线（159/160）与 7.6s 变体死线（151/152/153）两侧的节拍，每次运行都跑，不靠搜索碰上。
 BOUNDARY_EXAMPLES = (1, 150, 151, 152, 153, 158, 159, 160, 161, 169, 170, 400)
 NOTES_TIMEOUT_PREFIX = "8.0s 内 notes.json 没有稳定到 1 条，实际 0 条："
@@ -182,7 +187,13 @@ _DEADLINE_LINE = "deadline = time.monotonic() + NOTES_WAIT_S"
 def _assert_clock_premise() -> None:
     """前提：假钟的算术真是上面推的那样；假钟一改，期望的 160 不会悄悄漂走。"""
     assert T0 + EXPECTED_TIMEOUT_PUMPS * PUMP_S == T0 + 8.0, "160 泵不再恰好落在 8.0s 上"
-    assert T0 + LAST_OBSERVABLE_WRITE * PUMP_S < T0 + 8.0, "第 159 泵不再落在死线之前"
+    assert T0 + LAST_OBSERVABLE_WRITE["wait_for_notes"] * PUMP_S < T0 + 8.0, (
+        "第 159 泵不再落在死线之前"
+    )
+    # note_text 的前提：第 160 泵恰是循环出口，死线后那次重读就发生在这一拍。
+    assert T0 + LAST_OBSERVABLE_WRITE["wait_for_note_text"] * PUMP_S == T0 + 8.0, (
+        "第 160 泵不再恰好是循环出口——死线后重读不再落在这一拍"
+    )
 
 
 def _drive(
@@ -224,10 +235,11 @@ def _check_row(
 ) -> None:
     """一行门限律：写落在第 `write_at` 泵（None = 永远不写）。"""
     _assert_clock_premise()
+    last = LAST_OBSERVABLE_WRITE[name]
     got, err, waits = _drive(name, fn, books_dir, write_at)
-    if write_at is not None and write_at <= LAST_OBSERVABLE_WRITE:
+    if write_at is not None and write_at <= last:
         assert err is None, (
-            f"{name}：写落在第 {write_at} 泵（≤ {LAST_OBSERVABLE_WRITE}）应当被看见，"
+            f"{name}：写落在第 {write_at} 泵（≤ {last}）应当被看见，"
             f"却超时了，泵了 {len(waits)} 次：{err}"
         )
         assert waits == [50] * write_at, (
@@ -238,26 +250,34 @@ def _check_row(
             assert [r["id"] for r in got] == ["only"]
         else:
             assert got["id"] == "n1" and got["note_text"] == "new", got
+            assert got == _disk_record(books_dir, "n1"), got
         return
     assert err is not None, (
-        f"{name}：写落在第 {write_at} 泵（≥ {EXPECTED_TIMEOUT_PUMPS} 或不写）不该被看见，"
+        f"{name}：写落在第 {write_at} 泵（> {last} 或不写）不该被看见，"
         f"却在第 {len(waits)} 泵返回了 {got!r}"
     )
     assert len(waits) == EXPECTED_TIMEOUT_PUMPS, (
         f"{name}：8.0s / 50ms = {EXPECTED_TIMEOUT_PUMPS} 泵，超时时实际泵了 {len(waits)} 次"
     )
     assert waits == [50] * EXPECTED_TIMEOUT_PUMPS, sorted(set(waits))
-    prefix = NOTES_TIMEOUT_PREFIX if name == "wait_for_notes" else TEXT_TIMEOUT_PREFIX
-    # n = 160 时 wait_for_note_text 的消息尾巴自相矛盾（矩阵 Deferred #1，冻结文件里的事），
-    # 所以只断前缀；「永远不写」那行消息里必须还是旧值。
-    assert err.startswith(prefix), err
-    if name == "wait_for_note_text" and write_at is None:
-        assert "'note_text': 'old'" in err, err
+    if name == "wait_for_notes":
+        assert err.startswith(NOTES_TIMEOUT_PREFIX), err
+        return
+    # 原「矩阵 Deferred #1」（n = 160 时消息尾巴自相矛盾，只能断前缀）已由 023 #68 付清：
+    # 死线后重读认出匹配就返回，于是每一行超时的尾巴都如实描述那次重读时盘上的记录，
+    # 断言收紧为整条消息。
+    assert err == TEXT_TIMEOUT_PREFIX + repr(_disk_record(books_dir, "n1")), err
+    assert "'note_text': 'old'" in err, err
+
+
+def _disk_record(books_dir: Path, note_id: str) -> Dict[str, Any]:
+    """盘上那一条（经 `seed_notes` 补齐缺省字段后的真实记录），调用之后读。"""
+    return next(r for r in helpers.read_notes(books_dir, BOOK) if r["id"] == note_id)
 
 
 def _budget_oracle(name: str, fn: Callable[..., Any]) -> None:
-    """WI6-U2 / U4 / U5 共用的判据：死线两侧 159 / 160 与「永远不写」三行。"""
-    for write_at in (LAST_OBSERVABLE_WRITE, EXPECTED_TIMEOUT_PUMPS, None):
+    """WI6-U2 / U4 / U5 与 023 L7b 共用的判据：死线两侧 159 / 160 / 161 与「永远不写」四行。"""
+    for write_at in (159, 160, 161, None):
         with tempfile.TemporaryDirectory(prefix="wi6-oracle-") as d:
             _check_row(name, fn, Path(d), write_at)
 
@@ -319,6 +339,127 @@ def test_wi6_u5_boundary_oracle_kills_the_7_6s_mutant_in_memory(name: str) -> No
     assert pumps and all(p != EXPECTED_TIMEOUT_PUMPS for p in pumps), (
         f"变体的失败消息里应带着它实际的泵数（≠ {EXPECTED_TIMEOUT_PUMPS}）：{msg}"
     )
+
+    assert getattr(helpers, name) is orig, "变体绑回了模块属性"
+    assert hashlib.sha256(_HELPERS_PATH.read_bytes()).hexdigest() == sha_before, (
+        "helpers.py 在盘上被改了"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 023 #68（矩阵 tests-20261001-124913.md §WI-1 L1–L5、L7b）：死线后那次重读看见匹配就返回
+# ---------------------------------------------------------------------------
+#
+# HEAD（f621175）在第 160 泵落下的写上会抛「当前是 <一条已经匹配的记录>」——消息自相矛盾。
+# 下面每条都在真实盘上播种，用调用之后盘上读回的记录做期望值。
+
+_FINAL_REREAD_ANCHOR = 'current.get("note_text") == expected_text'
+
+
+def _run_note_text(
+    fn: Callable[..., Any],
+    books_dir: Path,
+    write_at: Optional[int],
+    rewrite: List[Dict[str, Any]],
+) -> Tuple[Any, Optional[str], List[Any]]:
+    """播种 n1/'old'，第 `write_at` 泵把盘改写成 `rewrite`，等 n1 变成 'new'。"""
+    with pytest.MonkeyPatch.context() as mp:
+        clock = FakeClock()
+        mp.setattr(
+            helpers, "time", SimpleNamespace(monotonic=clock.monotonic, sleep=clock.sleep)
+        )
+        helpers.seed_notes(books_dir, BOOK, [_rec("n1", type="note", note_text="old")])
+        fp = _page_seeding(clock, books_dir, write_at, rewrite)
+        try:
+            return fn(books_dir, BOOK, "n1", "new", page=fp), None, fp.waits
+        except AssertionError as exc:
+            return None, str(exc), fp.waits
+
+
+def test_023_l1_write_on_pump_160_is_returned_by_final_reread(tmp_path: Path) -> None:
+    got, err, waits = _run_note_text(
+        helpers.wait_for_note_text, tmp_path, 160, [_rec("n1", type="note", note_text="new")]
+    )
+    assert err is None, f"第 160 泵的写已在盘上，死线后重读应当认出并返回，却抛了：{err}"
+    assert got == helpers.read_notes(tmp_path, BOOK)[0], got
+    assert got["id"] == "n1" and got["note_text"] == "new", got
+    assert waits == [50] * 160, (len(waits), sorted(set(waits)))
+
+
+def test_023_l2_write_on_pump_159_is_returned_from_inside_the_loop(tmp_path: Path) -> None:
+    got, err, waits = _run_note_text(
+        helpers.wait_for_note_text, tmp_path, 159, [_rec("n1", type="note", note_text="new")]
+    )
+    assert err is None, err
+    assert got == helpers.read_notes(tmp_path, BOOK)[0], got
+    assert got["note_text"] == "new", got
+    assert waits == [50] * 159, (len(waits), sorted(set(waits)))
+
+
+@pytest.mark.parametrize("write_at", [161, None])
+def test_023_l3_never_written_raises_exact_still_old_message(
+    tmp_path: Path, write_at: Optional[int]
+) -> None:
+    got, err, waits = _run_note_text(
+        helpers.wait_for_note_text, tmp_path, write_at, [_rec("n1", type="note", note_text="new")]
+    )
+    assert err is not None, f"盘上一直是 'old'，却返回了 {got!r}"
+    rec_old = _disk_record(tmp_path, "n1")
+    assert rec_old["note_text"] == "old", rec_old
+    assert err == TEXT_TIMEOUT_PREFIX + repr(rec_old), err
+    assert "'note_text': 'old'" in err, err
+    assert waits == [50] * 160, (len(waits), sorted(set(waits)))
+
+
+def test_023_l4_other_text_on_pump_160_raises_naming_disk_text(tmp_path: Path) -> None:
+    got, err, waits = _run_note_text(
+        helpers.wait_for_note_text, tmp_path, 160, [_rec("n1", type="note", note_text="other")]
+    )
+    assert err is not None, f"盘上是 'other' 不是 'new'，却返回了 {got!r}"
+    rec_now = _disk_record(tmp_path, "n1")
+    assert err == TEXT_TIMEOUT_PREFIX + repr(rec_now), err
+    assert "'note_text': 'other'" in err, err
+    assert "'old'" not in err, err
+    assert waits == [50] * 160, (len(waits), sorted(set(waits)))
+
+
+def test_023_l5_id_gone_on_pump_160_takes_the_gone_branch(tmp_path: Path) -> None:
+    got, err, waits = _run_note_text(
+        helpers.wait_for_note_text, tmp_path, 160, [_rec("n2", type="note", note_text="new")]
+    )
+    assert err is not None, f"n1 已不在盘上，却返回了 {got!r}"
+    assert "已经不在 notes.json 里了" in err, err
+    assert "'n2'" in err, err
+    assert "当前是" not in err, err
+    assert waits == [50] * 160, (len(waits), sorted(set(waits)))
+
+
+def test_023_l7b_oracle_kills_unconditional_final_reread_mutant_in_memory() -> None:
+    """差分收据：死线后重读去掉文本比较（找到就返回）的变体必须被判据拒绝；只活在内存里。"""
+    name = "wait_for_note_text"
+    sha_before = hashlib.sha256(_HELPERS_PATH.read_bytes()).hexdigest()
+    orig = getattr(helpers, name)
+    src = inspect.getsource(orig)
+    assert src.count(_FINAL_REREAD_ANCHOR) == 1, (
+        f"{name}() 里找不到恰好一处 {_FINAL_REREAD_ANCHOR!r}——变异成了空操作，收据作废"
+    )
+    mut = src.replace(_FINAL_REREAD_ANCHOR, "True")
+    ns: Dict[str, Any] = {}
+    exec(compile(mut, "<023-l7b-mutant>", "exec"), helpers.__dict__, ns)
+    mutant = ns[name]
+    assert mutant is not orig
+
+    other = [_rec("n1", type="note", note_text="other")]
+    _budget_oracle(name, orig)
+    with tempfile.TemporaryDirectory(prefix="023-l7b-") as d:
+        got, err, _ = _run_note_text(orig, Path(d), 160, other)
+        assert got is None and err is not None, (got, err)
+
+    with pytest.raises(AssertionError):
+        _budget_oracle(name, mutant)
+    with tempfile.TemporaryDirectory(prefix="023-l7b-") as d:
+        got, err, _ = _run_note_text(mutant, Path(d), 160, other)
+        assert err is None and got is not None and got["note_text"] == "other", (got, err)
 
     assert getattr(helpers, name) is orig, "变体绑回了模块属性"
     assert hashlib.sha256(_HELPERS_PATH.read_bytes()).hexdigest() == sha_before, (

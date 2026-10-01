@@ -22,9 +22,17 @@
 等待的条件与这次写的关系——逐个判定是 #8 之外的工作。这里只锁审计点名的调用点，以及
 它们所在函数里同形且同样无遮挡的几处。新增登记项要连着判断一起写进来。
 
-**冻结集不在登记里**：`tests/e2e/baseline_1b/test_w8a_selection_survives_rerender.py:132`
-是同一个毛病，但动它一个字节就会把 soak 计数清零并使三道机制闸全部作废（见 017 任务书
-§5）。这条护栏因此**不得**把 `baseline_1b/**` 扫进来。
+**冻结集里的调用点：只能原样登记，不能为了登记去改。** 早先这里写的是「冻结集不在登记里，
+动它一个字节就会把 soak 计数清零并使三道机制闸全部作废」。那条前提自 2026-09-28 起不再成立：
+计划 §7 的批次规则下，冻结集的一次改动代价是**一个新的 10 轮批次（约 10–15 分钟）外加重跑
+闸门第 3 项**，不是丢掉几周的 soak。2026-10-01 023 #65 把
+`test_notes_write_failure_is_attributable.py` 迁进了 `baseline_1b/`，第一条登记项因此住进了冻结
+目录——它在当前 HEAD 上**原样**就过审，登记它不需要改冻结文件一个字节。规则于是收窄成：
+**`baseline_1b/` 下的登记项只有在原样通过本审计时才允许登记**（`frozen_registration_problems`）。
+被拒时理由里点名「冻结、原样」，告诉读者修法是不登记，而不是去改冻结文件。
+
+`tests/e2e/baseline_1b/test_w8a_selection_survives_rerender.py:132` 是同一个毛病，**仍然不登记**：
+它原样过不了审（第 130 行的裸 `.click()`），按上面的规则恰好被拒。
 """
 
 from __future__ import annotations
@@ -57,7 +65,8 @@ class Site(NamedTuple):
 
 REGISTERED_SITES: Tuple[Site, ...] = (
     Site(
-        "tests/e2e/test_notes_write_failure_is_attributable.py",
+        # 2026-10-01 023 #65：随模块迁入 `baseline_1b/`；原样过审，见模块 docstring 的冻结规则。
+        "tests/e2e/baseline_1b/test_notes_write_failure_is_attributable.py",
         "test_w4_c3_multi_id_partial_failure_keeps_progress_and_reports_per_id",
     ),
     Site(
@@ -220,13 +229,51 @@ def test_registered_e2e_sites_wait_for_the_response_before_polling_disk(site: Si
     assert not problems, "\n".join(problems)
 
 
-def test_the_guard_never_reaches_into_the_frozen_baseline() -> None:
-    """动 `baseline_1b/**` 会把 soak 计数清零。这条护栏必须够不着它。"""
-    reached = [s.path for s in REGISTERED_SITES if "baseline_1b" in s.path]
-    assert not reached, (
-        f"登记表里出现了冻结路径 {reached}——按这条护栏去改它，会把 soak 计数清零"
-        "并使三道机制闸全部作废（017 任务书 §5）。"
-    )
+#: 冻结目录名（路径分量匹配）。
+FROZEN_DIR = "baseline_1b"
+
+#: 冻结登记项被拒时附带的理由。F3-2 钉住「冻结」与「原样」两个词：它告诉读者修法是**不登记**，
+#: 而不是去改冻结文件让它过审。
+FROZEN_REASON = (
+    "冻结集（baseline_1b/）里的调用点只能原样登记：它在当前 HEAD 上原样过不了这条审计，"
+    "就不登记——不要为了让它过审去改冻结文件（那会换来一个新的 10 轮批次）。"
+)
+
+
+def _is_frozen(path: str) -> bool:
+    return FROZEN_DIR in Path(path).parts
+
+
+def frozen_registration_problems(site: Site, source: str) -> List[str]:
+    """冻结登记规则（023 #65，协调者裁定 F3 选项 A）。
+
+    `site` 在 `baseline_1b/` 下 ⇒ 当且仅当 `source`（文件现状）原样通过 `audit_source` 时可登记；
+    不通过时每条问题后面附上冻结专属理由。非冻结路径不归本规则管（返回 `[]`），那一侧由
+    上面的参数化审计照旧判定。
+    """
+    if not _is_frozen(site.path):
+        return []
+    return [
+        f"{p}（{FROZEN_REASON}）"
+        for p in audit_source(source, site.function, label=site.path)
+    ]
+
+
+def test_registered_frozen_sites_pass_the_audit_as_they_stand() -> None:
+    """F3-1：登记表里的冻结项恰好是迁进来的那一条，且它原样过审。
+
+    本条只能证明它**现在**过审；「登记时没为过审而改冻结文件」这一半由 `suite_hash`
+    兜着——改了冻结文件就得重跑一批 soak，本条看不见那一步。
+    """
+    frozen = [s for s in REGISTERED_SITES if _is_frozen(s.path)]
+    assert {s.path for s in frozen} == {
+        "tests/e2e/baseline_1b/test_notes_write_failure_is_attributable.py"
+    }, f"登记表里的冻结项变了：{[s.path for s in frozen]}"
+    for site in frozen:
+        path = REPO_ROOT / site.path
+        assert path.is_file(), f"登记的冻结文件不在了：{site.path}"
+        problems = frozen_registration_problems(site, path.read_text(encoding="utf-8"))
+        assert problems == [], "\n".join(problems)
 
 
 # --------------------------------------------------------------------------
@@ -370,3 +417,51 @@ def test_the_exemption_is_keyed_to_a_click_that_really_exists() -> None:
 def test_every_exemption_carries_a_reason() -> None:
     blank = [key for key, why in EXEMPT_CLICKS.items() if not why.strip()]
     assert not blank, f"这些豁免没写理由：{blank}"
+
+
+# --------------------------------------------------------------------------
+# 冻结登记规则会咬人（F3-2 / F3-3；放在 `_CHECKER_MUTANTS` 之后，参数化要用它）
+# --------------------------------------------------------------------------
+
+_SYNTHETIC_FROZEN = Site("tests/e2e/baseline_1b/test_synthetic.py", "round_trip")
+_SYNTHETIC_UNFROZEN = Site("tests/e2e/test_synthetic.py", "round_trip")
+
+
+@pytest.mark.parametrize(
+    "bad_source,expected",
+    [pytest.param(src, exp, id=name) for name, src, exp in _CHECKER_MUTANTS],
+)
+def test_the_frozen_rule_rejects_a_bad_frozen_site_with_a_frozen_reason(
+    bad_source: str, expected: str
+) -> None:
+    """F3-2：冻结路径 × 坏形状 ⇒ 拒，理由既点名毛病也点名冻结规则。"""
+    problems = frozen_registration_problems(_SYNTHETIC_FROZEN, bad_source)
+    assert problems, f"冻结规则放过了一个坏形状：\n{bad_source}"
+    assert any(expected in p and "冻结" in p and "原样" in p for p in problems), (
+        f"拒了，但理由不对——期望同时提到 {expected!r}、「冻结」与「原样」，实际：{problems}"
+    )
+
+
+def test_the_frozen_rule_admits_a_good_frozen_site_and_ignores_unfrozen_paths() -> None:
+    """F3-2 的另两格：冻结 × 好形状 ⇒ 收；非冻结 × 坏形状 ⇒ 本规则不管（参数化审计管）。"""
+    assert frozen_registration_problems(_SYNTHETIC_FROZEN, _GOOD) == []
+    bad = _CHECKER_MUTANTS[0][1]
+    assert frozen_registration_problems(_SYNTHETIC_UNFROZEN, bad) == []
+    assert audit_source(bad, "round_trip"), "非冻结的坏形状仍须被常规审计拒绝"
+
+
+def test_w8a_132_would_be_rejected_by_the_frozen_rule_and_stays_unregistered() -> None:
+    """F3-3：真实冻结现场 w8a:132 原样过不了审，所以它不在登记表里。
+
+    谁去修了 w8a:132（一次冻结集改动），这条就红——那时该做的是把它登记进来，而不是删本条。
+    """
+    site = Site(
+        "tests/e2e/baseline_1b/test_w8a_selection_survives_rerender.py",
+        "test_标注重绘之后手上的选区仍然能写成标注",
+    )
+    source = (REPO_ROOT / site.path).read_text(encoding="utf-8")
+    problems = frozen_registration_problems(site, source)
+    assert any(
+        f"{site.path}:132" in p and "第 130 行" in p and "冻结" in p for p in problems
+    ), f"期望冻结规则点名 :132 的轮询与第 130 行的裸点击，实际：{problems}"
+    assert site not in REGISTERED_SITES, "w8a:132 原样过不了审，不得登记"

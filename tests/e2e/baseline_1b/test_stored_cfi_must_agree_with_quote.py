@@ -34,6 +34,8 @@
 `suite_hash` 并把 soak 计数清零。到期条件与当年的 w8a 一样：下一次**本来就要**动
 `baseline_1b/` 的改动里把它一并迁入，同批撤掉 `UNGROUPED_E2E_MODULES` 里的条目、
 把 `EXPECTED_BASELINE_ITEMS` 加上去。
+⬛ 2026-10-01，023 #65：上面的到期条件已兑付——本模块已迁入 `tests/e2e/baseline_1b/`、
+带 `pytestmark = pytest.mark.baseline_1b`，白名单条目同批撤掉，条数计入 `EXPECTED_BASELINE_ITEMS`。
 
 **三条 epubcfi 字面量是实测值，且每一条都自带「陷阱还在不在」的检查。** 它们由
 2026-09-23 的浏览器探针从这两本 fixture 书上算出来。字面量最危险的失效方式不是报错，
@@ -47,6 +49,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict
 
+import pytest
 from playwright.sync_api import FrameLocator, Page, expect
 
 from conftest import BOOK_ID, BOOK_ID_REPEAT  # type: ignore[import-not-found]
@@ -55,6 +58,8 @@ from helpers import (  # type: ignore[import-not-found]
     open_reader,
     seed_notes,
 )
+
+pytestmark = pytest.mark.baseline_1b
 
 #: `smoke_data` 第 0 章正文是 `<h1>One</h1><p>Alpha prose.</p>`。
 QUOTE = "prose"

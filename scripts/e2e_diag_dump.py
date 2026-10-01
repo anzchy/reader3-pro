@@ -21,6 +21,12 @@
   | 发了 | 非 2xx   | **产品缺陷**（且是一条环没盖住的静默出口） |
   | 发了 | 2xx      | 盘上没在 8s 内可见 ⇒ 测试侧等待太短 |
   | 发了 | 一直没回 | CPU 饿死，整条管线比 8s 慢 ⇒ 既不是产品错也不是 8 这个数错 |
+
+**台账要活过导航（023 WI-2，009 欠账 #66）。** `window.__r3FetchLog` 随文档一起死：w5a0 的一轮
+always-dump 里只剩最后一个文档的两条 GET，前面的 POST、POST、DELETE 全丢了。现在每个顶层文档
+另把自己那段台账镜像进 sessionStorage 的 `__r3_diag_fetch_ledger`（段数组 `[{doc, url, entries}]`，
+按文档 init 顺序；init 那次写若失败，该段会在其后第一次成功写入时才追加），dump 里落成 `fetch_docs` / `late_fetch_docs`；`fetch` 仍是当前文档那一份，不变。
+判据钉在 `tests/unit/test_e2e_diag_dump_fetch_ledger.py`。
 """
 from __future__ import annotations
 
@@ -51,12 +57,41 @@ _DIGEST_LEN = 12
 # （5 跑 0 红、耗时从 66–86s 回落到无压力档的 56–58s），和 `--tracing` 同属观察者效应——
 # 每条事件都要跨进程回调一次 Python，改变了事件泵的节奏。
 # 注入脚本只在浏览器里跑，整场测试零 Python 往返，失败那一刻才 evaluate 一次。
+#
+# sessionStorage 镜像（023 WI-2）：每个顶层文档 init 时追加自己一段（哪怕从不 fetch），
+# send 与 settle 时读-改-写，**按 doc id** 只替换自己那一段（不按 URL：同 URL 重载要留两段；
+# 也不缓存 init 时的数组：前一文档晚到的 settle 不许盖掉后一文档的段）。只碰这一个键，
+# 从不 clear / key / length；存储的每一处访问都包 try/catch，存储失败绝不改变 fetch 的结果。
+# iframe（epub.js）里同样会跑本脚本，但只有顶层帧写存储。
 _FETCH_LEDGER = """
 (() => {
   if (window.__r3FetchLog) return;
   const log = [];
   window.__r3FetchLog = log;
   const t0 = Date.now();
+  const KEY = "__r3_diag_fetch_ledger";
+  // 段身份用随机 id，不用时钟：按 URL 认段会让同 URL 重载互相覆盖（N9），
+  // 再取一次 Date.now() 又会挪动 sent / settled 的读数。
+  const doc = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+  let isTop = false;
+  try { isTop = window.top === window; } catch (e) { isTop = false; }
+  let href = "";
+  try { href = String(location.href); } catch (e) { href = ""; }
+  const persist = () => {
+    if (!isTop) return;
+    try {
+      const store = window.sessionStorage;
+      const raw = store.getItem(KEY);
+      let all = null;
+      try { all = JSON.parse(raw); } catch (e) { all = null; }
+      if (!Array.isArray(all)) all = [];
+      const seg = { doc, url: href, entries: log };
+      const i = all.findIndex((s) => s && s.doc === doc);
+      if (i >= 0) all[i] = seg; else all.push(seg);
+      store.setItem(KEY, JSON.stringify(all));
+    } catch (e) { /* 存储失败绝不改变 fetch 的结果 */ }
+  };
+  persist();
   const orig = window.fetch;
   window.fetch = function (...args) {
     const url = String((args[0] && args[0].url) || args[0] || "");
@@ -64,13 +99,24 @@ _FETCH_LEDGER = """
     if (!/\/api\/notes/.test(url)) return orig.apply(this, args);
     const rec = { method, url, sent: Date.now() - t0, settled: null, status: null, error: null };
     log.push(rec);
+    persist();
     return orig.apply(this, args).then(
-      (r) => { rec.settled = Date.now() - t0; rec.status = r.status; return r; },
-      (e) => { rec.settled = Date.now() - t0; rec.error = String(e); throw e; }
+      (r) => { rec.settled = Date.now() - t0; rec.status = r.status; persist(); return r; },
+      (e) => { rec.settled = Date.now() - t0; rec.error = String(e); persist(); throw e; }
     );
   };
 })();
 """
+
+# 读回 sessionStorage 台账。键不在 → '__NO_LEDGER__'（同 '__NO_LOG__' 的先例）；
+# 值解析不了 → 原样返回字符串，证据留着不扔；存储本身不可用 → '__NO_STORAGE__: …'。从不抛。
+_LEDGER_READBACK = """() => {
+  let raw;
+  try { raw = window.sessionStorage.getItem('__r3_diag_fetch_ledger'); }
+  catch (e) { return '__NO_STORAGE__: ' + String(e); }
+  if (raw === null) return '__NO_LEDGER__';
+  try { return JSON.parse(raw); } catch (e) { return raw; }
+}"""
 
 
 @pytest.fixture(autouse=True)
@@ -105,6 +151,8 @@ def _r3_diag_capture(request):
             "() => (window.Reader3NotesDiag && window.Reader3NotesDiag.entries)"
             " ? window.Reader3NotesDiag.entries() : '__NO_RING__'"
         )
+        # 放在最后：它抛了也不连累上面三条。
+        rec["late_fetch_docs"] = page.evaluate(_LEDGER_READBACK)
     except PlaywrightError as exc:
         rec["late_error"] = f"{type(exc).__name__}: {exc}"
     _write(rec)
@@ -132,6 +180,11 @@ def pytest_runtest_makereport(item, call):
         record["fetch"] = page.evaluate("() => window.__r3FetchLog || '__NO_LOG__'")
     except PlaywrightError as exc:
         record["fetch_error"] = f"{type(exc).__name__}: {exc}"
+    try:
+        # 跨导航的全量台账；单独一个 try，与 `fetch` 互不牵连。
+        record["fetch_docs"] = page.evaluate(_LEDGER_READBACK)
+    except PlaywrightError as exc:
+        record["fetch_docs_error"] = f"{type(exc).__name__}: {exc}"
     try:
         record["perf"] = page.evaluate("""() => (performance.getEntriesByType('resource') || [])
   .filter((e) => /\\/api\\/notes/.test(e.name))

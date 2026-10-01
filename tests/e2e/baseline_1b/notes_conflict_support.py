@@ -7,7 +7,8 @@
 
 不是测试模块（文件名不以 `test_` 开头），所以不贡献 item，分组守卫的三个数不受影响。
 放在这里而不是 `helpers.py`：后者在**冻结集**里，动一个字节会改 `suite_hash` 并把 soak
-计数清零。
+计数清零。（⬛ 2026-10-01，023 #65：本模块随两个冲突测试模块一并迁入 `tests/e2e/baseline_1b/`，
+自己也进了冻结集；上面那句只解释它为什么不并进 `helpers.py`。）
 """
 
 from __future__ import annotations

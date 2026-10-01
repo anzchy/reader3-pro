@@ -122,7 +122,12 @@ SUBPROCESS_TIMEOUT_S = 300
 # 68 → 76：2026-09-30 009 #62，WI-4 of 019: moved 8 items——
 # `test_selection_toolbar_stays_closed.py` 从白名单迁入 `baseline_1b`（**实测 8 条 item**，
 # 4 条关闭路径 × 2 个时机）；白名单同批 72 → 64，总数 265 不变。
-CANONICAL_BASELINE_ITEMS = 76
+# 76 → 132：2026-10-01 023 #65，moved 56 items——白名单里四个带到期条件的模块
+# （`test_notes_write_failure_is_attributable.py` 45、`test_stored_cfi_must_agree_with_quote.py` 3、
+# `test_conflict_resolution_single_flight.py` 4、`test_conflict_settled_text_keeps_its_base_etag.py` 4，
+# 连同它们共用的非测试模块 `notes_conflict_support.py`）迁入 `baseline_1b/`；**实测**
+# （`pytest tests/e2e --collect-only -q -m baseline_1b` 数出 132）。白名单同批 68 → 12，总数 269 不变。
+CANONICAL_BASELINE_ITEMS = 132
 CANONICAL_ACCEPTANCE_PER_DIR: Dict[str, int] = {
     "acceptance_4b1": 8,
     "acceptance_p3": 4,
@@ -209,7 +214,10 @@ CANONICAL_ACCEPTANCE_ITEMS = 126
 # 64 → 68：2026-10-01 020-debug-state WI-2（rebase 到 019 之后重数）新增
 # `tests/e2e/test_debug_state.py`，**实测 4 条 item**（E1–E4 各一条，不参数化），白名单 68。
 # 它是工具用的观测面，没有到期条件——理由写在 `scripts/lint_e2e_groups.py` 的白名单注释里。
-CANONICAL_UNGROUPED_ITEMS = 68
+# 68 → 12：2026-10-01 023 #65，moved 56 items——四个带到期条件的白名单模块迁入 `baseline_1b/`
+# （见上面 76 → 132；45 + 3 + 4 + 4），白名单条目撤掉；**实测**白名单 12、baseline 132。
+# 一段换一段，`CANONICAL_E2E_ITEMS` 不动（269）。
+CANONICAL_UNGROUPED_ITEMS = 12
 # 140 → 149：同上，`shell_4a` 的 9 条。
 # 149 → 183：2026-09-24 013 WI-10 往 `shell_4a` 加的 34 条（见上面 26 → 60 那条注释）。
 # 183 → 184：同上，深色 OS 回归 1 条。
@@ -222,6 +230,8 @@ CANONICAL_UNGROUPED_ITEMS = 68
 # 264 → 265：2026-09-30 009 #49，WI-2 of 019: +1（见上面 71 → 72；全量实测 265）。
 # 265 → 269：2026-10-01 020-debug-state WI-2 的 4 条白名单 item（见上面 64 → 68；全量实测 269）。
 # 269 → 270：2026-10-01 018 WI-3 / 欠账 #51 的 1 条（见上面 125 → 126 那条注释；全量实测 270）。
+# 269 不变：2026-10-01 023 #65 的 56 条只是从白名单段换到 baseline 段（全量实测仍 269）——
+# 这正是那次迁移的守恒检查。
 CANONICAL_E2E_ITEMS = 270
 
 #: **已激活**的 acceptance 组，与 `scripts/lint_e2e_groups.py` 的
@@ -396,17 +406,10 @@ def test_real_tree_collection_is_a_partition_and_counts_match() -> None:
     assert whitelist == {
         f"{E2E_REL}/test_harness_smoke.py",
         f"{E2E_REL}/test_testid_dom_uniqueness.py",
-        f"{E2E_REL}/test_notes_write_failure_is_attributable.py",
-        # 017 WI-5（审计 #3 / #9）：盘上 cfi 与 quote 对不上时 quote 说了算。
-        # 内容上属于 `baseline_1b`，落白名单是为了不动 `suite_hash` 的覆盖面——
-        # 理由与到期动作写在 `scripts/lint_e2e_groups.py` 的白名单注释里。
-        f"{E2E_REL}/test_stored_cfi_must_agree_with_quote.py",
-        # 017 WI-6（审计 #5）：冲突对话框同一时刻只许有一次收尾在飞。
-        # 同上，理由与到期动作在 `scripts/lint_e2e_groups.py` 的白名单注释里。
-        f"{E2E_REL}/test_conflict_resolution_single_flight.py",
-        # 017 WI-7（审计 #4）：收尾放进编辑器的那一版，必须连着它自己的基准令牌。
-        # 同上，理由与到期动作在 `scripts/lint_e2e_groups.py` 的白名单注释里。
-        f"{E2E_REL}/test_conflict_settled_text_keeps_its_base_etag.py",
+        # （2026-10-01 023 #65: moved to baseline_1b/——`test_notes_write_failure_is_attributable.py`、
+        # `test_stored_cfi_must_agree_with_quote.py`（017 WI-5）、`test_conflict_resolution_single_flight.py`
+        # （017 WI-6）、`test_conflict_settled_text_keeps_its_base_etag.py`（017 WI-7）四条到期迁入，
+        # 此处条目撤掉。）
         # （2026-09-30 009 #62，WI-4 of 019：`test_selection_toolbar_stays_closed.py`
         # 到期迁入 `baseline_1b/`，此处条目撤掉。）
         # 009 #49（019 WI-2，WI2-E2）：盘上轮询期间在途的写必须出得了门（helpers 机制护栏）。
@@ -928,6 +931,32 @@ def test_baseline_reachable_chain_has_zero_skip_constructs() -> None:
     )
     # 守卫自己的静态检查与本 oracle 同解。
     assert _guard().skip_axis_violations(REPO_ROOT) == []
+
+
+#: 2026-10-01 023 #65 迁入 `baseline_1b/` 的五个文件（四个测试模块 ＋ 一个非测试的共享模块）。
+MOVED_INTO_BASELINE_BY_023 = (
+    f"{E2E_REL}/baseline_1b/test_notes_write_failure_is_attributable.py",
+    f"{E2E_REL}/baseline_1b/test_stored_cfi_must_agree_with_quote.py",
+    f"{E2E_REL}/baseline_1b/test_conflict_resolution_single_flight.py",
+    f"{E2E_REL}/baseline_1b/test_conflict_settled_text_keeps_its_base_etag.py",
+    f"{E2E_REL}/baseline_1b/notes_conflict_support.py",
+)
+
+
+def test_domain_r_takes_in_the_modules_moved_by_023_and_stays_skip_free() -> None:
+    """G4：023 #65 迁入的五个文件（含非测试模块 `notes_conflict_support.py`）落进域 R，域 R 仍零 skip。
+
+    `notes_conflict_support.py` 是域边上的新成员：它不是 `test_*.py`，但两个冲突模块
+    import 它，`baseline_1b/**.py` 的种子也直接收它。它若带一条 skip 构造，就能把迁进来的
+    条目悄悄摘掉——所以它必须在域里，而不是因为名字不像测试就落在域外。
+    """
+    domain = {p.resolve().relative_to(REPO_ROOT).as_posix() for p in _guard().baseline_domain_files(REPO_ROOT)}
+    missing = [m for m in MOVED_INTO_BASELINE_BY_023 if m not in domain]
+    assert not missing, f"这些 023 #65 迁入的文件不在域 R 里：{missing}（域 R = {sorted(domain)}）"
+    hits: List[str] = []
+    for rel in MOVED_INTO_BASELINE_BY_023:
+        hits += _skip_constructs(REPO_ROOT / rel)
+    assert not hits, "023 #65 迁入的文件里出现了 skip 构造：\n  " + "\n  ".join(hits)
 
 
 def test_every_acceptance_module_skips_only_via_module_level_pytestmark_with_phase_reason() -> None:

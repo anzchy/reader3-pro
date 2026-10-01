@@ -351,7 +351,7 @@ Paths are written out in full from the repo root (e.g. `src/reader3_app/reader3.
 - **What:** highlight / underline / wavy in colors, with attached notes; notes panel.
 - **Routes:** `GET /api/notes/{book_id}`, `GET /api/notes/{book_id}/{chapter_index}`, `POST /api/notes/{book_id}/{chapter_index}`, `PUT /api/notes/{book_id}/{chapter_index}/{note_id}`, `DELETE /api/notes/{book_id}/{chapter_index}/{note_id}`
 - **Code:** `src/reader3_app/notes_service.py`, `src/reader3_app/models/annotations.py`, `src/reader3_app/web/static/js/annotations.js` · ADR-0005
-- **Tests:** `tests/e2e/test_notes_write_failure_is_attributable.py`, `tests/e2e/test_stored_cfi_must_agree_with_quote.py`
+- **Tests:** `tests/e2e/baseline_1b/test_notes_write_failure_is_attributable.py`, `tests/e2e/baseline_1b/test_stored_cfi_must_agree_with_quote.py`
 - **Confirm:** In the reader select a sentence: the toolbar offers color dots, Marker / Wavy / Underline, Add Note, Copy, Delete, Ask AI. Pick Marker, then Add Note → "Write your thoughts..." → Save; the rail's Notes button lists it (「共N条笔记」), it survives a reload, and `books/{book_id}_data/notes.json` holds it.
 - **Evidence:** 006 · closed selection toolbar stays closed, PR #28 (`26bce1d`, merge `865e7eb`) · create failures (rejected POST and the two pre-request guards) report into the notes diagnostic ring, 019 (`d259f6f`, 009 #50)
 - **Limits:** text-only anchoring, CFI always null (#6–#8); `PUT` accepts only `note_text` (#29). Reader-side split is 014. The notes panel's 点评此书 button is dead (see F-040).
@@ -360,7 +360,7 @@ Paths are written out in full from the repo root (e.g. `src/reader3_app/reader3.
 - **What:** ETag optimistic concurrency on note writes, with a conflict dialog (DEG-S5).
 - **Routes:** `POST /api/notes/{book_id}/{chapter_index}`, `PUT /api/notes/{book_id}/{chapter_index}/{note_id}`, `DELETE /api/notes/{book_id}/{chapter_index}/{note_id}`
 - **Code:** `src/reader3_app/web/routers/notes.py`
-- **Tests:** `tests/e2e/acceptance_2a/test_deg_s5_write_conflict.py`, `tests/e2e/test_conflict_resolution_single_flight.py`
+- **Tests:** `tests/e2e/acceptance_2a/test_deg_s5_write_conflict.py`, `tests/e2e/baseline_1b/test_conflict_resolution_single_flight.py`
 - **Confirm:** `curl -i http://127.0.0.1:8123/api/notes/{book_id}/0` shows an `ETag` header; `curl -i -X PUT http://127.0.0.1:8123/api/notes/{book_id}/0/{note_id} -H 'If-Match: "stale"' -H 'Content-Type: application/json' -d '{"note_text":"x"}'` returns 409 with the current `etag`. In the UI, editing the same note from two tabs makes the second save show the conflict dialog with 保留我的 / 采用远端.
 - **Evidence:** 011/017 (PR #22/#23)
 - **Limits:** scope of what is covered vs. deferred has not been re-audited since 017.
