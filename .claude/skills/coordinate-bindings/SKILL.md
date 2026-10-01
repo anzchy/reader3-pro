@@ -38,12 +38,16 @@ Execution order: the progress dashboard named in `plan-and-branch-map`.
   every other unit gets an empty-diff check at CP2 and CP3.
 
 ## LOCKS
-- **E2E lane.** Target: `scripts/e2e_lock.py`, an fcntl wrapper that the e2e lane `command` in
+- **E2E lane.** `scripts/e2e_lock.py`, an fcntl wrapper that the e2e lane `command` in
   `.claude/tdd-guardian/config.json` points at (core `references/shared-lock.md`, preferred form).
-  **PLANNED, not built.** It lands on its own tdd-guardian branch after 019 and 020 merge.
-- Until then the lock is the mkdir lock. Its release may be denied by a peer's permissions; a
-  denial goes to the user. Until the wrapper lands, the current program's `protocol.md` defines the
-  interim procedure.
+  **Built** (021, PR #32, `e3dde84`). Lock file `~/.cache/reader3-e2e.flock` (override:
+  `READER3_E2E_LOCK`); the kernel releases it when the run ends, so no session ever needs `rm`.
+  `scripts/e2e_lock.py status` prints `FREE` (rc 0) or `HELD <owner>` (rc 1). A held lock makes the
+  lane exit 75 (`BUSY <owner>`): an environment failure, never a code verdict. Re-run when free.
+  Under `GITHUB_ACTIONS` it runs unlocked.
+- The old mkdir lock (`~/.cache/reader3-e2e.lock`, a directory) is retired. A branch based before
+  `e3dde84` still uses it until it rebases. Its release may be denied by a peer's permissions; a
+  denial goes to the user.
 
 ## ALLOCATION
 `plan-and-branch-map` "Branch naming" (numbers come only from §9 of the migration plan).

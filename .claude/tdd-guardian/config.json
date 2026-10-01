@@ -24,7 +24,7 @@
     },
     {
       "name": "e2e",
-      "description": "Playwright via pytest-playwright against a live reader3-server started by the live_server fixture in tests/e2e/conftest.py (free port, --port, READER3_BOOKS_DIR -> tmp, polls /api/health). gateOn was EMPTY until 2026-08-26: an empty tests/e2e/ makes the lane report 'never passed' forever, which denies every push and trains everyone into permanent TDD_GUARD_BYPASS=1. The 009 harness spike added the first test and restored gateOn to [\"push\"] in the same commit, as required. Do not set READER3_TOKEN for this lane: the frontend fetch does not carry the token yet, so the token gate would 401 every write.",
+      "description": "Playwright via pytest-playwright against a live reader3-server started by the live_server fixture in tests/e2e/conftest.py (free port, --port, READER3_BOOKS_DIR -> tmp, polls /api/health). gateOn was EMPTY until 2026-08-26: an empty tests/e2e/ makes the lane report 'never passed' forever, which denies every push and trains everyone into permanent TDD_GUARD_BYPASS=1. The 009 harness spike added the first test and restored gateOn to [\"push\"] in the same commit, as required. Do not set READER3_TOKEN for this lane: the frontend fetch does not carry the token yet, so the token gate would 401 every write. Since 021 (2026-10-01) the command runs through scripts/e2e_lock.py, an fcntl lock on ~/.cache/reader3-e2e.flock that the kernel releases when the run ends; a held lock exits 75 (BUSY <owner>), which is an environment failure, not a test result. Check it with `uv run python scripts/e2e_lock.py status`.",
       "command": "uv run python scripts/e2e_lock.py -- uv run pytest tests/e2e --browser chromium",
       "gateOn": [
         "push"
