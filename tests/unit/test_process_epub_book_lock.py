@@ -222,9 +222,11 @@ def test_w2_42_in_process_cli_index_refused_is_a_systemexit_naming_the_holder(
 
 # --------------------------------------------------------------------------- CLI import (018 FU2 WI-3, #18)
 #
-# Cases W3-01..W3-04 of ``.claude/tdd-guardian/tests-20261001-170000.md``. ``main()``
-# maps exactly ``BookLockError`` (and subclasses) and ``BookGone`` to
-# ``SystemExit(str(e))`` on the import branch, as it already does on ``--index``.
+# Cases W3-01..W3-04 of ``.claude/tdd-guardian/tests-20261001-170000.md``, narrowed by
+# 018 FU3 (coordinator ruling, 2026-10-01): ``main()`` maps exactly ``BookLockBusy`` to
+# ``SystemExit(str(e))`` on the import branch. ``BookLockMisuse`` is a programmer error
+# and propagates as itself; ``BookGone`` / ``BookChanged`` cannot come out of
+# ``process_epub`` (EX only), so neither is converted there.
 
 
 @pytest.fixture
@@ -303,18 +305,21 @@ def test_w3_03_a_non_lock_failure_is_not_turned_into_a_lock_message(
 _GONE_MSG = "book 'x_data' was removed; refusing to recreate it"
 
 
+# 018 FU3: the BookGone row used to be ``converted=True``. Coordinator ruling
+# 2026-10-01 narrowed the import branch to ``BookLockBusy`` only, so BookGone now
+# propagates as itself like the other two rows; the ``converted`` column went away
+# and the exact-type check covers every row (it was FileNotFoundError-only).
 @pytest.mark.parametrize(
-    "err, converted",
+    "err",
     [
-        (FileNotFoundError(2, "No such file", "img.png"), False),
-        (PermissionError(13, "Permission denied", "img.png"), False),
-        (book_lock.BookGone(_GONE_MSG), True),
+        FileNotFoundError(2, "No such file", "img.png"),
+        PermissionError(13, "Permission denied", "img.png"),
+        book_lock.BookGone(_GONE_MSG),
     ],
     ids=["FileNotFoundError", "PermissionError", "BookGone"],
 )
-def test_w3_04_only_book_lock_error_and_book_gone_are_converted(
+def test_w3_04_import_errors_other_than_busy_are_not_converted(
     err: BaseException,
-    converted: bool,
     books_dir: Path,
     x_epub: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -325,14 +330,83 @@ def test_w3_04_only_book_lock_error_and_book_gone_are_converted(
     monkeypatch.setattr(reader3, "process_epub", stub)
     monkeypatch.setenv("READER3_BOOKS_DIR", str(books_dir))
     monkeypatch.setenv("ANONYMIZED_TELEMETRY", "False")
-    if converted:
-        with pytest.raises(SystemExit) as info:
-            reader3.main([str(x_epub)])
-        assert info.value.code == _GONE_MSG
-    else:
-        with pytest.raises(BaseException) as raised:
-            reader3.main([str(x_epub)])
-        assert raised.value is err
-        if isinstance(err, FileNotFoundError):
-            assert type(raised.value) is FileNotFoundError
+    with pytest.raises(BaseException) as raised:
+        reader3.main([str(x_epub)])
+    assert raised.value is err
+    assert type(raised.value) is type(err)
     assert os.listdir(books_dir) == []
+
+
+# --------------------------------------------------------------------------- 018 FU3: BookLockMisuse propagates
+
+_MISUSE = [
+    book_lock.BookLockReentry("re-entered EX on x_data"),
+    book_lock.BookLockUpgrade("SH -> EX upgrade on x_data"),
+    book_lock.BookLockOrderError("lock order violated on x_data"),
+]
+_MISUSE_IDS = ["Reentry", "Upgrade", "OrderError"]
+
+
+@pytest.mark.parametrize("err", _MISUSE, ids=_MISUSE_IDS)
+def test_fu3_a1_import_misuse_propagates_as_itself(
+    err: BaseException, books_dir: Path, x_epub: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def stub(epub_path: str, output_dir: str):
+        raise err
+
+    monkeypatch.setattr(reader3, "process_epub", stub)
+    monkeypatch.setenv("READER3_BOOKS_DIR", str(books_dir))
+    monkeypatch.setenv("ANONYMIZED_TELEMETRY", "False")
+    with pytest.raises(BaseException) as raised:
+        reader3.main([str(x_epub)])
+    assert not isinstance(raised.value, SystemExit), repr(raised.value)
+    assert raised.value is err
+    assert os.listdir(books_dir) == []
+
+
+def _stub_index_book(monkeypatch: pytest.MonkeyPatch, err: BaseException) -> None:
+    # Fault injection at the --index boundary: main() calls idx.index_book(...).
+    from reader3_app.vector_search import BookVectorIndex
+
+    def stub(self, force_reindex: bool = False):
+        raise err
+
+    monkeypatch.setattr(BookVectorIndex, "index_book", stub)
+
+
+@pytest.mark.parametrize("err", _MISUSE, ids=_MISUSE_IDS)
+def test_fu3_a2_index_misuse_propagates_as_itself(
+    err: BaseException, published: Path, books_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Misuse is not a RuntimeError, so the ``except RuntimeError`` below the lock
+    # except in main() must not swallow it either.
+    assert not isinstance(err, RuntimeError)
+    _stub_index_book(monkeypatch, err)
+    monkeypatch.setenv("READER3_BOOKS_DIR", str(books_dir))
+    monkeypatch.setenv("ANONYMIZED_TELEMETRY", "False")
+    with pytest.raises(BaseException) as raised:
+        reader3.main(["--index", BOOK])
+    assert not isinstance(raised.value, SystemExit), repr(raised.value)
+    assert raised.value is err
+    assert not (published / "chroma_db").exists()
+
+
+@pytest.mark.parametrize(
+    "err",
+    [
+        book_lock.BookLockBusy("import"),
+        book_lock.BookChanged("book 'x_data' changed under the request"),
+        book_lock.BookGone(_GONE_MSG),
+    ],
+    ids=["Busy", "Changed", "Gone"],
+)
+def test_fu3_a3_index_busy_changed_gone_exit_with_one_line(
+    err: BaseException, published: Path, books_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_index_book(monkeypatch, err)
+    monkeypatch.setenv("READER3_BOOKS_DIR", str(books_dir))
+    monkeypatch.setenv("ANONYMIZED_TELEMETRY", "False")
+    with pytest.raises(SystemExit) as info:
+        reader3.main(["--index", BOOK])
+    assert info.value.code == str(err)
+    assert not (published / "chroma_db").exists()

@@ -932,10 +932,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         idx = BookVectorIndex(book_id, books_dir=books_dir)
         try:
             meta = idx.index_book(force_reindex=args.force)
-        except (book_lock.BookLockError, book_lock.BookGone) as e:
+        except (book_lock.BookLockBusy, book_lock.BookChanged, book_lock.BookGone) as e:
             # 018 WI-2: another writer holds the book (the message names its
             # category), or it changed / vanished under us. Same exit shape as
             # every other failure here: non-zero, one readable line, no traceback.
+            # BookLockMisuse is a programmer error and keeps its traceback (018 FU3).
             raise SystemExit(str(e))
         except RuntimeError as e:
             # 缺 [semantic] extra 时 _require_semantic_deps 抛的就是 RuntimeError，
@@ -960,10 +961,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     # commit. Calling save_to_pickle here too would flip the marker twice.
     try:
         book_obj = process_epub(epub_file, out_dir)
-    except (book_lock.BookLockError, book_lock.BookGone) as e:
+    except book_lock.BookLockBusy as e:
         # 018 FU2 WI-3 (#18): same exit shape as the --index branch -- non-zero,
-        # one readable line naming the holder, no traceback. Exactly these two:
-        # BookGone is a FileNotFoundError, but other OSErrors must propagate as-is.
+        # one readable line naming the holder, no traceback. Busy only (018 FU3,
+        # coordinator ruling 2026-10-01): BookLockMisuse is a programmer error and
+        # keeps its traceback, and process_epub takes only EX, so BookChanged /
+        # BookGone cannot come out of it.
         raise SystemExit(str(e))
     print("\n--- Summary ---")
     print(f"Title: {book_obj.metadata.title}")
