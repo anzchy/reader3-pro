@@ -176,15 +176,24 @@ def test_w2_45_a_fresh_import_creates_the_book_and_the_lock_persists(
 # --------------------------------------------------------------------------- CLI --index
 
 
+_CLI_SHORT_BUDGET = (
+    "import runpy; from reader3_app import book_lock; book_lock.BUDGET_S = {budget!r}; "
+    "runpy.run_module('reader3_app.reader3', run_name='__main__', alter_sys=True)"
+)
+
+
 def test_w2_41_cli_index_refused_exits_nonzero_naming_the_holder(
-    published: Path, books_dir: Path, tmp_path: Path
+    published: Path, books_dir: Path, tmp_path: Path, short_budget: float
 ) -> None:
     env = dict(os.environ)
     env["READER3_BOOKS_DIR"] = str(books_dir)
     env["ANONYMIZED_TELEMETRY"] = "False"
     with Holder(str(books_dir), BOOK, "exclusive", "import", str(tmp_path)):
+        # Lane time (#9/#11): the child is ``python -m reader3_app.reader3`` with the
+        # budget patched to the ``short_budget`` value -- monkeypatch cannot reach a
+        # subprocess, so the patch rides in front of ``runpy`` (same ``__main__`` path).
         proc = subprocess.run(
-            [sys.executable, "-m", "reader3_app.reader3", "--index", BOOK],
+            [sys.executable, "-c", _CLI_SHORT_BUDGET.format(budget=short_budget), "--index", BOOK],
             cwd=str(tmp_path),
             env=env,
             capture_output=True,
@@ -198,7 +207,7 @@ def test_w2_41_cli_index_refused_exits_nonzero_naming_the_holder(
 
 
 def test_w2_42_in_process_cli_index_refused_is_a_systemexit_naming_the_holder(
-    published: Path, books_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    published: Path, books_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, short_budget: float
 ) -> None:
     monkeypatch.setenv("READER3_BOOKS_DIR", str(books_dir))
     monkeypatch.setenv("ANONYMIZED_TELEMETRY", "False")

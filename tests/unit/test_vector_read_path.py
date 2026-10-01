@@ -46,6 +46,7 @@ from book_lock_workers import (
     Child,
     HashEmbedder,
     Holder,
+    _interpose_acquire_counting as _interpose_acquire,
     outcome,
     probe,
     try_exclusive,
@@ -111,27 +112,6 @@ def _tree_hash(root: Path) -> str:
         else:
             h.update(b"F" + rel.encode() + b"\0" + hashlib.sha256(p.read_bytes()).digest())
     return h.hexdigest()
-
-
-@contextlib.contextmanager
-def _interpose_acquire(monkeypatch: pytest.MonkeyPatch, before: Callable[[], None]) -> Iterator[List[int]]:
-    """Wrap ``book_lock.acquire``: run ``before`` once, then delegate. Counts calls."""
-    real = book_lock.acquire
-    calls: List[int] = []
-
-    @contextlib.contextmanager
-    def wrapper(*args: Any, **kwargs: Any) -> Iterator[None]:
-        calls.append(1)
-        if len(calls) == 1:
-            before()
-        with real(*args, **kwargs):
-            yield
-
-    monkeypatch.setattr(book_lock, "acquire", wrapper)
-    try:
-        yield calls
-    finally:
-        monkeypatch.setattr(book_lock, "acquire", real)
 
 
 class _ChromaShim:

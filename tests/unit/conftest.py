@@ -320,3 +320,25 @@ def merged_loader_cache():
     clear_through_book_store_and_check("setup")
     yield
     clear_through_book_store_and_check("teardown")
+
+
+#: The patched book-lock budget ``short_budget`` installs (fix-plan WI-5, #9-#11).
+SHORT_BUDGET_S = 0.3
+
+
+@pytest.fixture
+def short_budget(monkeypatch: pytest.MonkeyPatch) -> float:
+    """Patch ``book_lock.BUDGET_S`` to 0.3 s for this test; returns the patched value.
+
+    For tests whose subject is a *refusal*, not the 2 s default: ``acquire`` reads
+    ``BUDGET_S`` at call time, so a refusal lands in ~0.3 s instead of ~2 s. Bounds in
+    those tests read ``book_lock.BUDGET_S``, never a local copy of the default.
+
+    Deliberately NOT used where the subject is a real short deadline (the
+    ``_book_uuid_or_none`` / scan / page timing cases and FX-4-03, which assert
+    ``book_lock.BUDGET_S >= 1.0``) or the default itself (W2-14a, FX-5-08).
+    """
+    from reader3_app import book_lock
+
+    monkeypatch.setattr(book_lock, "BUDGET_S", SHORT_BUDGET_S)
+    return SHORT_BUDGET_S

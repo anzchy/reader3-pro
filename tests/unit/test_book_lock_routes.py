@@ -18,7 +18,6 @@ children; the only substitution is the embedding function on the index route
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 import logging
 import os
@@ -26,10 +25,11 @@ import pickle
 import shutil
 import threading
 import time
+import types
 import uuid as uuid_mod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterator, List, Optional
+from typing import Any, Dict, Iterator, List, Optional
 
 import httpx
 import pytest
@@ -41,6 +41,7 @@ from book_lock_workers import (
     Child,
     HashEmbedder,
     Holder,
+    _interpose_acquire,
     outcome,
     try_exclusive,
 )
@@ -52,7 +53,6 @@ from reader3_app.models.annotations import Annotation
 from reader3_app.reader3 import Book, BookMetadata, ChapterContent, TOCEntry
 from reader3_app.web import book_lock_http, server
 
-BUDGET_S = 2.0
 EPS_S = 0.75
 JOIN_TIMEOUT_S = 30.0
 #: Parked writer 1 gives up after this long (past the 2 s budget), so a request that
@@ -194,37 +194,18 @@ def _assert_busy(resp: Any, category: str) -> None:
 def _assert_changed(resp: Any) -> None:
     assert resp.status_code == 409, resp.text
     body = resp.json()
+    assert body == {"detail": book_lock_http.CHANGED_DETAIL}, body
     assert body.get("detail") != CONFLICT_DETAIL
     assert "etag" not in body
     assert "holder_category" not in body
     assert "Retry-After" not in resp.headers
 
 
-@contextlib.contextmanager
-def _interpose_acquire(monkeypatch: pytest.MonkeyPatch, before: Callable[[], None]) -> Iterator[List[int]]:
-    real = book_lock.acquire
-    fired: List[int] = []
-
-    @contextlib.contextmanager
-    def wrapper(*args: Any, **kwargs: Any) -> Iterator[None]:
-        if not fired:
-            fired.append(1)
-            before()
-        with real(*args, **kwargs):
-            yield
-
-    monkeypatch.setattr(book_lock, "acquire", wrapper)
-    try:
-        yield fired
-    finally:
-        monkeypatch.setattr(book_lock, "acquire", real)
-
-
 # --------------------------------------------------------------------------- W2-14(c)
 
 
 def test_w2_14c_http_writer_refused_while_another_writer_holds_the_resource_lock(
-    world: World, monkeypatch: pytest.MonkeyPatch
+    world: World, monkeypatch: pytest.MonkeyPatch, short_budget: float
 ) -> None:
     parked = threading.Event()
     release_evt = threading.Event()
@@ -259,20 +240,22 @@ def test_w2_14c_http_writer_refused_while_another_writer_holds_the_resource_lock
         t.join(JOIN_TIMEOUT_S)
     assert "error" not in w1, w1
     _assert_busy(resp, "notes")
-    assert BUDGET_S - 0.2 <= elapsed < BUDGET_S + EPS_S
+    assert book_lock.BUDGET_S - 0.2 <= elapsed < book_lock.BUDGET_S + EPS_S
     assert world.quotes() == ["Q1"]
 
 
 # --------------------------------------------------------------------------- index route
 
 
-def test_w2_34_index_route_with_an_ex_holder_is_409_with_retry_after(world: World, tmp_path: Path) -> None:
+def test_w2_34_index_route_with_an_ex_holder_is_409_with_retry_after(
+    world: World, tmp_path: Path, short_budget: float
+) -> None:
     with Holder(str(world.books_dir), BOOK, "exclusive", "import", str(tmp_path)):
         t0 = time.monotonic()
         resp = world.client.post(f"/api/index/{BOOK}", json={"force_reindex": False})
         elapsed = time.monotonic() - t0
     _assert_busy(resp, "import")
-    assert elapsed < BUDGET_S + EPS_S
+    assert elapsed < book_lock.BUDGET_S + EPS_S
     assert not (world.book_dir / "chroma_db").exists()
 
 
@@ -371,7 +354,9 @@ def test_fx_1_09_concurrent_reindex_over_http_is_409_with_category_reindex(
 
 
 @pytest.mark.parametrize("route", ROUTES)
-def test_w2_36_every_notes_route_with_an_ex_holder_is_409(world: World, tmp_path: Path, route: str) -> None:
+def test_w2_36_every_notes_route_with_an_ex_holder_is_409(
+    world: World, tmp_path: Path, short_budget: float, route: str
+) -> None:
     note_id = _seed_note(world)
     b0 = world.notes_bytes()
     with Holder(str(world.books_dir), BOOK, "exclusive", "delete", str(tmp_path)):
@@ -416,7 +401,9 @@ def test_w2_38_book_deleted_after_validation_is_404_and_not_resurrected(
 
 
 @pytest.mark.parametrize("route", ROUTES + ["index"])
-def test_w2_39_lock_waits_never_block_the_event_loop(world: World, tmp_path: Path, route: str) -> None:
+def test_w2_39_lock_waits_never_block_the_event_loop(
+    world: World, tmp_path: Path, short_budget: float, route: str
+) -> None:
     note_id = _seed_note(world)
 
     async def scenario() -> Dict[str, Any]:
@@ -446,7 +433,7 @@ def test_w2_39_lock_waits_never_block_the_event_loop(world: World, tmp_path: Pat
     done = got["done"]
     assert got["health"].status_code == 200
     assert done["health_latency"] < 0.5
-    assert done["route"] - done["health"] >= 1.0
+    assert done["route"] - done["health"] >= 0.5 * book_lock.BUDGET_S
     assert got["route"].status_code == 409, got["route"].text
 
 
@@ -511,16 +498,8 @@ def test_w2_46_locks_dir_never_appears_as_a_book(world: World) -> None:
 # findings #5, #6, #23): the conversation PUT maps lock errors like every other
 # writer route, and page renders / the startup scan never wait on the event loop.
 
-#: The WI-5 ``short_budget`` value; defined locally until WI-5 lands its fixture.
-FX_SHORT_BUDGET_S = 0.3
 #: ``_safe_conversation_id`` only accepts UUIDs; this stands for the matrix's ``c1``.
 C1 = "55555555-5555-4555-8555-555555555555"
-
-
-@pytest.fixture
-def short_budget(monkeypatch: pytest.MonkeyPatch) -> float:
-    monkeypatch.setattr(book_lock, "BUDGET_S", FX_SHORT_BUDGET_S)
-    return FX_SHORT_BUDGET_S
 
 
 @pytest.fixture
@@ -810,3 +789,29 @@ def test_fx_2_13_startup_scan_runs_off_the_event_loop(
         pass
     assert recorded == ["no-running-loop"]
     assert live_resolver._folder_to_uuid == {BOOK: U1}
+
+
+# --------------------------------------------------------------------------- FX-5-03 (fix-plan WI-5, #47)
+
+
+@pytest.mark.parametrize(
+    "status, body, headers, passes",
+    [
+        (409, {}, {}, False),
+        (409, {"detail": "book busy: import"}, {}, False),
+        (409, {"detail": book_lock_http.CHANGED_DETAIL, "extra": 1}, {}, False),
+        (400, {"detail": book_lock_http.CHANGED_DETAIL}, {}, False),
+        (409, {"detail": book_lock_http.CHANGED_DETAIL}, {"Retry-After": "1"}, False),
+        (409, {"detail": book_lock_http.CHANGED_DETAIL}, {}, True),
+    ],
+    ids=["empty-body", "busy-body", "extra-key", "exact-body-status-400", "exact-body-retry-after", "exact-body"],
+)
+def test_fx_5_03_assert_changed_accepts_only_the_exact_changed_body(
+    status: int, body: Dict[str, Any], headers: Dict[str, str], passes: bool
+) -> None:
+    resp = types.SimpleNamespace(status_code=status, headers=headers, text=json.dumps(body), json=lambda: body)
+    if passes:
+        _assert_changed(resp)
+    else:
+        with pytest.raises(AssertionError):
+            _assert_changed(resp)

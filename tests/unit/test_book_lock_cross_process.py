@@ -32,7 +32,6 @@ from book_lock_workers import (
 )
 from reader3_app import book_lock
 
-BUDGET_S = 2.0
 EPS_S = 0.75
 BOOK = "x_data"
 
@@ -52,6 +51,10 @@ def test_w2_15_ex_vs_ex_across_processes_exactly_one_winner(books_dir: Path, tmp
             Child(try_exclusive, (str(books_dir), BOOK, "import", path, barrier, release_evt), path).start()
         )
     try:
+        # #49: the winner reports only after release, so wait for the 3 losers first,
+        # then release, then collect the winner.
+        _wait_for_losers([c.result_path for c in children], 3)
+        release_evt.set()
         results = [c.wait_result(CHILD_WAIT_S) for c in children]
     finally:
         release_evt.set()
@@ -110,7 +113,7 @@ def test_w2_17_sh_and_sh_across_processes_hold_at_once(books_dir: Path, tmp_path
 
 
 def test_w2_18_sh_against_a_cross_process_ex_holder_refused_within_one_budget(
-    books_dir: Path, tmp_path: Path
+    books_dir: Path, tmp_path: Path, short_budget: float
 ) -> None:
     with Holder(str(books_dir), BOOK, "exclusive", "import", str(tmp_path)):
         t0 = time.monotonic()
@@ -119,7 +122,7 @@ def test_w2_18_sh_against_a_cross_process_ex_holder_refused_within_one_budget(
                 pass
         elapsed = time.monotonic() - t0
     assert info.value.holder_category == "import"
-    assert BUDGET_S - 0.2 <= elapsed < BUDGET_S + EPS_S
+    assert book_lock.BUDGET_S - 0.2 <= elapsed < book_lock.BUDGET_S + EPS_S
 
 
 def test_w2_19_ex_refused_against_a_cross_process_sh_holder_naming_it(books_dir: Path, tmp_path: Path) -> None:
@@ -143,3 +146,74 @@ def test_w2_20_a_lock_file_left_behind_is_not_a_held_lock(books_dir: Path) -> No
     assert elapsed < 0.25
     assert lock_file.exists()
     assert os.path.realpath(book_lock.lock_path(str(books_dir), BOOK)) == os.path.realpath(lock_file)
+
+
+# --------------------------------------------------------------------------- FX-5 (fix-plan WI-5, #49)
+#
+# FX-5-04 / FX-5-05 of ``.claude/tdd-guardian/tests-20261001-003726.md``. Law: a
+# ``try_exclusive`` winner reports ``"acquired"`` only after it has fully released,
+# and a teardown error is ``"error:..."`` with a nonzero exit, never ``"acquired"``.
+
+from book_lock_workers import (  # noqa: E402 - section-local imports keep the W2 block untouched
+    AT_CLOSE_SUFFIX,
+    probe,
+    read_result,
+    try_exclusive_close_fails,
+)
+
+
+def _wait_for_losers(paths: list, n: int, timeout: float = CHILD_WAIT_S) -> int:
+    """Poll (bounded) until at least ``n`` of ``paths`` hold a ``busy:`` outcome; return how many do."""
+    give_up = time.monotonic() + timeout
+    while True:
+        losers = sum((outcome(read_result(p)) or "").startswith("busy:") for p in paths)
+        if losers >= n or time.monotonic() >= give_up:
+            return losers
+        time.sleep(0.01)
+
+
+def test_fx_5_04_a_teardown_error_in_the_child_is_an_error_outcome_and_a_nonzero_exit(
+    books_dir: Path, tmp_path: Path
+) -> None:
+    path = str(tmp_path / "close-fails.json")
+    child = Child(try_exclusive_close_fails, (str(books_dir), BOOK, "delete", path), path).start()
+    code = child.reap(CHILD_TIMEOUT_S)
+    got = read_result(path)
+    at_close = read_result(path + AT_CLOSE_SUFFIX)
+
+    assert at_close is not None, "the close shim never ran: try_exclusive no longer closes via book_lock.os"
+    assert at_close == {"result_existed": False}, "the winner reported before its teardown finished"
+    out = outcome(got)
+    assert out is not None and out.startswith("error:"), got
+    assert "OSError" in out, got
+    assert code != 0, f"a teardown error exited {code}"
+    assert probe(str(_lock_file(books_dir)), "EX", str(tmp_path)) == "ok"
+
+
+def test_fx_5_05_the_winners_result_file_does_not_exist_while_it_still_holds(
+    books_dir: Path, tmp_path: Path
+) -> None:
+    ctx = spawn_ctx()
+    barrier = ctx.Barrier(4)
+    release_evt = ctx.Event()
+    paths = [str(tmp_path / f"ex-{i}.json") for i in range(4)]
+    children = [
+        Child(try_exclusive, (str(books_dir), BOOK, "import", p, barrier, release_evt), p).start() for p in paths
+    ]
+    try:
+        losers_at_check = _wait_for_losers(paths, 3)
+        acquired_at_check = [p for p in paths if outcome(read_result(p)) == "acquired"]
+        absent_at_check = [p for p in paths if not os.path.exists(p)]
+        probe_at_check = probe(str(_lock_file(books_dir)), "EX", str(tmp_path))
+        release_evt.set()
+        results = [c.wait_result(CHILD_WAIT_S) for c in children]
+    finally:
+        release_evt.set()
+        codes = [c.reap(CHILD_TIMEOUT_S) for c in children]
+
+    assert losers_at_check == 3, f"only {losers_at_check} losers reported"
+    assert acquired_at_check == [], "the winner reported 'acquired' while it still held the lock"
+    assert len(absent_at_check) == 1, f"while the winner still held, {4 - len(absent_at_check)} results existed"
+    assert probe_at_check == "blocked"
+    assert Counter(outcome(r) for r in results) == Counter({"acquired": 1, "busy:import": 3}), results
+    assert codes == [0, 0, 0, 0]

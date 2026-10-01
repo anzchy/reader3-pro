@@ -18,7 +18,6 @@ Interposers wrap a real function, perform one real side effect, and delegate.
 
 from __future__ import annotations
 
-import contextlib
 import hashlib
 import json
 import os
@@ -27,7 +26,7 @@ import threading
 import time
 import uuid as uuid_mod
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterator, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import pytest
 
@@ -37,6 +36,7 @@ from book_lock_workers import (
     Child,
     HashEmbedder,
     Holder,
+    _interpose_acquire,
     outcome,
     probe,
     try_exclusive,
@@ -51,7 +51,6 @@ from reader3_app.ai.conversations import (
 )
 from reader3_app.models.annotations import Annotation
 
-BUDGET_S = 2.0
 EPS_S = 0.75
 JOIN_TIMEOUT_S = 30.0
 BOOK = "x_data"
@@ -143,27 +142,6 @@ def _swap(books: Path, folder: str, new_uuid: Optional[str], notes: Optional[byt
         (book_dir / "book.pkl").write_bytes(pkl)
 
 
-@contextlib.contextmanager
-def _interpose_acquire(monkeypatch: pytest.MonkeyPatch, before: Callable[[], None]) -> Iterator[List[int]]:
-    """Wrap ``book_lock.acquire``: run ``before`` once, then delegate to the real one."""
-    real = book_lock.acquire
-    fired: List[int] = []
-
-    @contextlib.contextmanager
-    def wrapper(*args: Any, **kwargs: Any) -> Iterator[None]:
-        if not fired:
-            fired.append(1)
-            before()
-        with real(*args, **kwargs):
-            yield
-
-    monkeypatch.setattr(book_lock, "acquire", wrapper)
-    try:
-        yield fired
-    finally:
-        monkeypatch.setattr(book_lock, "acquire", real)
-
-
 def _tree_hash(root: Path) -> str:
     h = hashlib.sha256()
     for p in sorted(root.rglob("*")):
@@ -220,7 +198,9 @@ def test_w2_23_notes_save_succeeds_beside_a_cross_process_reindex_sh(books_dir: 
     assert set(_quotes(books_dir)) == {"Q1"}
 
 
-def test_w2_24_notes_write_against_an_ex_holder_refused_writing_nothing(books_dir: Path, tmp_path: Path) -> None:
+def test_w2_24_notes_write_against_an_ex_holder_refused_writing_nothing(
+    books_dir: Path, tmp_path: Path, short_budget: float
+) -> None:
     (books_dir / BOOK).mkdir()
     b0 = _seed_notes(books_dir, ["SEED"])
     seeded_id = notes_service.load_annotations(str(books_dir), BOOK)[0].id
@@ -241,7 +221,7 @@ def test_w2_24_notes_write_against_an_ex_holder_refused_writing_nothing(books_di
             )
     for name, (typ, cat, elapsed) in results.items():
         assert (typ, cat) == ("BookLockBusy", "import"), name
-        assert elapsed < BUDGET_S + EPS_S, name
+        assert elapsed < book_lock.BUDGET_S + EPS_S, name
     assert _notes_bytes(books_dir) == b0
     assert [p for p in _stray_files(books_dir) if p.endswith(".tmp")] == []
 
@@ -426,7 +406,7 @@ def test_w2_27_ai_meta_mint_never_resurrects(
     assert [p for p in _stray_files(books_dir) if "ai_meta" in p] == []
 
 
-def test_w2_28_resolver_scan_survives_a_busy_book(books_dir: Path, tmp_path: Path) -> None:
+def test_w2_28_resolver_scan_survives_a_busy_book(books_dir: Path, tmp_path: Path, short_budget: float) -> None:
     ub = "44444444-4444-4444-8444-444444444444"
     (books_dir / "a_data").mkdir()
     (books_dir / "b_data").mkdir()
@@ -438,7 +418,7 @@ def test_w2_28_resolver_scan_survives_a_busy_book(books_dir: Path, tmp_path: Pat
         elapsed = time.monotonic() - t0
         assert not (books_dir / "a_data" / ai_books.AI_META_FILENAME).exists()
     assert resolver.book_uuid_for_folder("b_data") == ub
-    assert elapsed < BUDGET_S + EPS_S
+    assert elapsed < book_lock.BUDGET_S + EPS_S
 
 
 def _meta_uuid_of(book_dir: Path) -> Optional[str]:
@@ -717,7 +697,7 @@ def test_w2_32_import_in_progress_without_chroma_db_is_a_clean_not_indexed(
 
 
 def test_w2_33_a_forced_reindex_refused_by_ex_keeps_the_old_index(
-    books_dir: Path, real_book: Path, hash_embedder: Dict[str, Any], tmp_path: Path
+    books_dir: Path, real_book: Path, hash_embedder: Dict[str, Any], tmp_path: Path, short_budget: float
 ) -> None:
     vector_search.BookVectorIndex(BOOK, books_dir=str(books_dir)).index_book()
     h0 = _tree_hash(real_book / "chroma_db")

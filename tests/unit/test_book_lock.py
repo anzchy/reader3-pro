@@ -43,7 +43,6 @@ from book_lock_workers import (
 from reader3_app import book_lock, notes_service
 from reader3_app.models.annotations import Annotation
 
-BUDGET_S = 2.0
 EPS_S = 0.75
 JOIN_TIMEOUT_S = 30.0
 #: How long a parked writer 1 waits before giving up and finishing on its own. It is
@@ -194,7 +193,7 @@ def test_w2_03_sh_waits_on_in_process_ex_and_succeeds_on_release(books_dir: Path
         timer.join(JOIN_TIMEOUT_S)
     assert not box["alive"]
     assert "error" not in box, f"SH should have been granted: {box.get('error')!r}"
-    assert 0.4 <= box["value"] < BUDGET_S
+    assert 0.4 <= box["value"] < book_lock.BUDGET_S
 
 
 @pytest.mark.parametrize(
@@ -617,6 +616,8 @@ def test_w2_13e_a_release_inside_the_budget_is_seen_within_one_poll(
 def test_w2_14a_resource_thread_layer_waiter_refused_at_the_shared_deadline(
     books_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # FX-5-08: the one default-budget pin. Unpatched on purpose; a leaked patch fails here.
+    assert book_lock.BUDGET_S == 2.0
     (books_dir / BOOK).mkdir()
     parked = threading.Event()
     release_evt = threading.Event()
@@ -651,12 +652,12 @@ def test_w2_14a_resource_thread_layer_waiter_refused_at_the_shared_deadline(
     assert not t.is_alive()
     assert "error" not in w1, repr(w1.get("error"))
     assert info.value.holder_category == "notes"
-    assert BUDGET_S - 0.2 <= elapsed < BUDGET_S + EPS_S
+    assert book_lock.BUDGET_S - 0.2 <= elapsed < book_lock.BUDGET_S + EPS_S
     assert _quotes(books_dir) == {"Q1"}
 
 
 def test_w2_14b_resource_flock_layer_waiter_refused_at_the_shared_deadline(
-    books_dir: Path, tmp_path: Path
+    books_dir: Path, tmp_path: Path, short_budget: float
 ) -> None:
     from book_lock_workers import add_annotation_parked, spawn_ctx
 
@@ -680,7 +681,7 @@ def test_w2_14b_resource_flock_layer_waiter_refused_at_the_shared_deadline(
     assert code == 0
     assert outcome(child.wait_result(1.0)) == "acquired"
     assert info.value.holder_category == "notes"
-    assert BUDGET_S - 0.2 <= elapsed < BUDGET_S + EPS_S
+    assert book_lock.BUDGET_S - 0.2 <= elapsed < book_lock.BUDGET_S + EPS_S
     assert _quotes(books_dir) == {"Q1"}
 
 
@@ -788,16 +789,8 @@ from hypothesis import assume  # noqa: E402
 
 from reader3_app.ai import books as ai_books  # noqa: E402
 
-#: The WI-5 ``short_budget`` value; defined locally until WI-5 lands its fixture.
-FX_SHORT_BUDGET_S = 0.3
 #: FX-3 fake-clock bounds are exact up to float error, not ``FAKE_SLACK_S``.
 FX_TICK_EPS_S = 1e-9
-
-
-@pytest.fixture
-def short_budget(monkeypatch: pytest.MonkeyPatch) -> float:
-    monkeypatch.setattr(book_lock, "BUDGET_S", FX_SHORT_BUDGET_S)
-    return FX_SHORT_BUDGET_S
 
 
 def _restore_real_clock(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1297,3 +1290,71 @@ def test_fx_3_09_settle_with_plenty_of_time_still_spends_the_full_window(
     settle = book_lock._CATEGORY_SETTLE_S
     assert settle - FX_TICK_EPS_S <= spent <= settle + 0.01, spent
 
+
+
+# --------------------------------------------------------------------------- FX-5 (fix-plan WI-5)
+#
+# FX-5-01, FX-5-02, FX-5-06 of ``.claude/tdd-guardian/tests-20261001-003726.md``
+# (audit findings #1, #2, #9-#11). FX-5-08 is the pin at the top of W2-14a.
+
+
+def test_fx_5_01_book_lock_on_another_folder_inside_the_notes_resource_is_exactly_an_order_error(
+    books_dir: Path,
+) -> None:
+    """The inner book lock is on a *different* folder, so the re-entry guard cannot fire first."""
+    (books_dir / BOOK).mkdir()
+
+    def body() -> str:
+        with book_lock.acquire(str(books_dir), BOOK, mode=SH, holder="notes"):
+            with notes_service._book_write_lock(str(books_dir), BOOK):
+                with book_lock.acquire(str(books_dir), "y_data", mode=SH, holder="notes"):
+                    return "entered"
+
+    box = _run_in_thread(body)
+    assert not box["alive"], "a book lock inside the resource lock deadlocked"
+    err = box.get("error")
+    assert type(err) is book_lock.BookLockOrderError, repr(box.get("value", err))
+    assert not _lock_file(books_dir, "y_data").exists(), "the refusal came after an fd was opened"
+
+
+def test_fx_5_02_in_process_ex_holders_category_survives_a_junked_record_with_no_settle_wait(
+    books_dir: Path,
+) -> None:
+    a = Held(books_dir, EX, "delete").start()
+    try:
+        with open(_lock_file(books_dir), "r+b") as f:
+            f.write(b"\xff\xfe junk")
+
+        def b() -> tuple:
+            t0 = time.monotonic()
+            try:
+                with book_lock.acquire(str(books_dir), BOOK, mode=EX, holder="import"):
+                    return ("entered", time.monotonic() - t0)
+            except book_lock.BookLockBusy as exc:
+                return (exc.holder_category, time.monotonic() - t0)
+
+        box = _run_in_thread(b)
+    finally:
+        a.release()
+    assert not box["alive"]
+    assert "value" in box, repr(box.get("error"))
+    category, elapsed = box["value"]
+    assert category == "delete", "the refusal read the on-disk record instead of the in-process table"
+    assert elapsed < 0.05, f"refusal took {elapsed:.3f}s: it went through the category settle"
+
+
+def test_fx_5_06_the_short_budget_fixture_actually_shortens_a_real_refusal(
+    books_dir: Path, short_budget: float
+) -> None:
+    assert book_lock.BUDGET_S == 0.3
+    a = Held(books_dir, EX, "import").start()
+    try:
+        t0 = time.monotonic()
+        with pytest.raises(book_lock.BookLockBusy) as info:
+            with book_lock.acquire(str(books_dir), BOOK, mode=SH, holder="notes"):
+                pass
+        elapsed = time.monotonic() - t0
+    finally:
+        a.release()
+    assert info.value.holder_category == "import"
+    assert 0.25 <= elapsed < 0.6, elapsed

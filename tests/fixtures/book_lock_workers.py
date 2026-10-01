@@ -18,13 +18,14 @@ deterministic 8-dim embedder can be used in-process and in a child.
 
 from __future__ import annotations
 
+import contextlib
 import fcntl
 import hashlib
 import json
 import os
 import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, Iterator, List, Optional
 
 #: Upper bound on any single wait inside a child.
 CHILD_WAIT_S = 30.0
@@ -124,20 +125,63 @@ def try_exclusive(
     barrier=None,
     release_evt=None,
 ) -> None:
-    """One non-blocking EX attempt. A winner holds until ``release_evt`` (if given)."""
+    """One non-blocking EX attempt. A winner holds until ``release_evt`` (if given).
+
+    A winner reports ``"acquired"`` only after the ``with`` has exited, i.e. once its
+    teardown has released the lock (#49): a parent that sees the result can rely on
+    the lock being free. A teardown error is recorded as ``"error:..."`` and re-raised,
+    so the child exits nonzero instead of reporting a clean win. A parent that needs
+    to observe the winner *while it holds* waits for the losers' results instead.
+    """
     from reader3_app import book_lock
 
     if barrier is not None:
         barrier.wait(CHILD_WAIT_S)
     try:
         with book_lock.acquire(books_dir, book_folder, mode="exclusive", holder=holder):
-            write_result(result_path, {"outcome": "acquired"})
             if release_evt is not None:
                 release_evt.wait(CHILD_WAIT_S)
     except book_lock.BookLockBusy as exc:
         write_result(result_path, _busy_payload(exc))
-    except BaseException as exc:  # noqa: BLE001
+        return
+    except BaseException as exc:  # noqa: BLE001 - recorded, then re-raised for a nonzero exit
         write_result(result_path, _error_payload(exc))
+        raise
+    write_result(result_path, {"outcome": "acquired"})
+
+
+#: Suffix of the file ``try_exclusive_close_fails`` writes at its failing ``close``.
+AT_CLOSE_SUFFIX = ".at-close"
+
+
+def try_exclusive_close_fails(books_dir: str, book_folder: str, holder: str, result_path: str) -> None:
+    """FX-5-04 test-only worker: ``try_exclusive`` whose book-lock teardown ``close`` raises once.
+
+    Only ``book_lock.os`` is replaced (module-local, never a global ``os.close``). The
+    shim really closes the fd, then -- before raising ``OSError`` -- records in
+    ``result_path + AT_CLOSE_SUFFIX`` whether the result file already existed. That
+    tells the parent "reported after teardown" apart from "reported while holding".
+    """
+    import errno
+
+    from reader3_app import book_lock
+
+    real_os = book_lock.os
+    armed = [True]
+
+    class _CloseFailsOnce:
+        def close(self, fd: int) -> None:
+            real_os.close(fd)
+            if armed[0]:
+                armed[0] = False
+                write_result(result_path + AT_CLOSE_SUFFIX, {"result_existed": real_os.path.exists(result_path)})
+                raise OSError(errno.EIO, "close failed")
+
+        def __getattr__(self, name: str) -> Any:
+            return getattr(real_os, name)
+
+    book_lock.os = _CloseFailsOnce()  # type: ignore[assignment]
+    try_exclusive(books_dir, book_folder, holder, result_path)
 
 
 def acquire_ex_when_free(
@@ -423,3 +467,50 @@ class Holder:
         code = self.release()
         if exc[0] is None:
             assert code == 0, f"holder child exited {code}"
+
+
+# --------------------------------------------------------------------------- in-process interposer
+
+
+@contextlib.contextmanager
+def _interpose_acquire(monkeypatch: Any, before: Callable[[], None]) -> Iterator[List[int]]:
+    """Wrap ``book_lock.acquire``: run ``before`` once (on the first call), then delegate.
+
+    Parent-side only (moved here from the WI-2 test modules, #15). Yields ``[1]`` once
+    the first call has been intercepted, so ``fired == [1]`` reads "the writer took
+    the book lock". ``_interpose_acquire_counting`` counts every call instead.
+    Restores the real ``acquire`` on exit.
+    """
+    with _interpose(monkeypatch, before, count_all=False) as fired:
+        yield fired
+
+
+@contextlib.contextmanager
+def _interpose_acquire_counting(monkeypatch: Any, before: Callable[[], None]) -> Iterator[List[int]]:
+    """``_interpose_acquire`` that appends on *every* call, so ``len(calls)`` counts acquisitions."""
+    with _interpose(monkeypatch, before, count_all=True) as calls:
+        yield calls
+
+
+@contextlib.contextmanager
+def _interpose(monkeypatch: Any, before: Callable[[], None], *, count_all: bool) -> Iterator[List[int]]:
+    from reader3_app import book_lock
+
+    real = book_lock.acquire
+    calls: List[int] = []
+
+    @contextlib.contextmanager
+    def wrapper(*args: Any, **kwargs: Any) -> Iterator[None]:
+        first = not calls
+        if first or count_all:
+            calls.append(1)
+        if first:
+            before()
+        with real(*args, **kwargs):
+            yield
+
+    monkeypatch.setattr(book_lock, "acquire", wrapper)
+    try:
+        yield calls
+    finally:
+        monkeypatch.setattr(book_lock, "acquire", real)

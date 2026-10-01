@@ -46,8 +46,6 @@ from reader3_app.models.annotations import Annotation
 BOOK = "x_data"
 OTHER = "y_data"
 SH = book_lock.SHARED
-#: The WI-5 ``short_budget`` value; defined locally until WI-5 lands its fixture.
-SHORT_BUDGET_S = 0.3
 JOIN_TIMEOUT_S = 30.0
 #: A parked holder gives up after this long, so a lock that fails to refuse turns
 #: into a red on the assertions instead of a hung test.
@@ -61,12 +59,6 @@ C2 = "c2c2c2c2-0000-4000-8000-000000000002"
 
 
 # --------------------------------------------------------------------------- fixtures
-
-
-@pytest.fixture
-def short_budget(monkeypatch: pytest.MonkeyPatch) -> float:
-    monkeypatch.setattr(book_lock, "BUDGET_S", SHORT_BUDGET_S)
-    return SHORT_BUDGET_S
 
 
 @pytest.fixture
