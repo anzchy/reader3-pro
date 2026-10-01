@@ -6,6 +6,8 @@
 `collapsed_snapshot` 覆盖掉，而且没有任何报错。另有两个潜伏问题：`[:150]` 数的是字符不是
 字节，150 个 CJK 字符约 450 字节，超过 NAME_MAX（APFS / ext4 都是 255）直接 `OSError`；
 nodeid 里的 NUL 则是 `ValueError`。
+（⬛ 2026-10-01，023 #65：该模块迁入 `tests/e2e/baseline_1b/`，两条 id 实测变为 170 / 173 字符、
+共享前 164 个字符；上面 158 / 161 / 152 是迁移前的测量。U1 现场计算共享前缀并断「> 150」，同时仍钉 170 / 173 这两个实测长度——下次迁移要随之重测。）
 
 钉住的方案（矩阵 §WI-7「Chosen scheme」）：
 
@@ -49,16 +51,19 @@ diag = importlib.util.module_from_spec(_spec)
 sys.modules[_spec.name] = diag
 _spec.loader.exec_module(diag)
 
-_W6_C7_FILE = REPO_ROOT / "tests" / "e2e" / "test_notes_write_failure_is_attributable.py"
+# 2026-10-01 023 #65：W6-C7 所在模块从 `tests/e2e/` 根迁入 `tests/e2e/baseline_1b/`，
+# 路径与下面两条 nodeid 随之改写（各长 12 个字符 `baseline_1b/`）。
+_W6_C7_FILE = REPO_ROOT / "tests" / "e2e" / "baseline_1b" / "test_notes_write_failure_is_attributable.py"
 _W6_C7_FUNC = "test_w6_c7_create_empty_quote_guard_reports_requested_false_and_sends_nothing"
-# 2026-10-01 用 `pytest --collect-only -q --browser chromium | grep collapsed` 实测确认的两条。
+# 2026-10-01（023 #65 迁移之后）用
+# `uv run pytest tests/e2e --collect-only -q --browser chromium | grep collapsed` 实测确认的两条。
 A = (
-    "tests/e2e/test_notes_write_failure_is_attributable.py::"
+    "tests/e2e/baseline_1b/test_notes_write_failure_is_attributable.py::"
     "test_w6_c7_create_empty_quote_guard_reports_requested_false_and_sends_nothing"
     "[chromium-collapsed_range]"
 )
 B = (
-    "tests/e2e/test_notes_write_failure_is_attributable.py::"
+    "tests/e2e/baseline_1b/test_notes_write_failure_is_attributable.py::"
     "test_w6_c7_create_empty_quote_guard_reports_requested_false_and_sends_nothing"
     "[chromium-collapsed_snapshot]"
 )
@@ -85,8 +90,13 @@ def _sha12(s: str) -> str:
 
 
 def test_wi7_u1_two_real_w6_c7_nodeids_land_in_two_files(tmp_path: Path) -> None:
-    assert len(A) == 158 and len(B) == 161, (len(A), len(B))
-    assert A[:152] == B[:152], "前提：两条 id 共享前 152 个字符（旧的 [:150] 因此撞车）"
+    # 023 #65 迁移后重测：158 / 161 → 170 / 173（+12 = `baseline_1b/`）。前提「共享前缀 > 150」
+    # 改为现场计算，不再写死 152——下一次迁移不能悄悄把它证伪。
+    assert len(A) == 170 and len(B) == 173, (len(A), len(B))
+    shared = len(os.path.commonprefix([A, B]))
+    assert shared > 150, f"前提：两条 id 的共享前缀必须超过 150 个字符（实为 {shared}），旧的 [:150] 才会撞车"
+    assert A[:150] == B[:150], "旧方案 [:150] 下两条 id 撞成同一个名字"
+    assert A[:120] == B[:120], "现方案的 120 字符前缀完全相同，两个文件名只靠摘要区分"
     names = _write_into(tmp_path, [
         {"test": A, "fetch": [], "k": "a"},
         {"test": B, "fetch": [], "k": "b"},
@@ -181,6 +191,10 @@ def _parametrize_values(fn: ast.FunctionDef, argname: str) -> Any:
 
 
 def test_wi7_u6_literal_w6_c7_ids_still_match_the_real_test() -> None:
+    assert _W6_C7_FILE.is_file(), f"W6-C7 所在文件不在 {_W6_C7_FILE}——U1 的字面量与真实路径已脱节"
+    # id 里的路径与读 AST 的文件必须是同一个（023 #65 迁移时两者要一起动）。
+    rel = _W6_C7_FILE.relative_to(REPO_ROOT).as_posix()
+    assert A.startswith(rel + "::") and B.startswith(rel + "::"), (rel, A, B)
     tree = ast.parse(_W6_C7_FILE.read_text(encoding="utf-8"))
     fns = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == _W6_C7_FUNC]
     assert len(fns) == 1, f"{_W6_C7_FILE.name} 里找不到 {_W6_C7_FUNC}——U1 的字面量已漂移"

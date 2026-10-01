@@ -10,7 +10,7 @@
 #      在 push 时跑。CI 这一遍环境更干净，是第三档节奏，见那个文件的 docstring。）
 #
 # **两个 job**：`unit`（静态检查 ＋ unit lane ＋ 覆盖率门禁）与 `e2e`
-# （`baseline_1b` 76/76 ＋ 余下各组）。`e2e` 是 2026-09-20 补的，兑付欠账 #31，
+# （`baseline_1b` 全量首次通过 ＋ 余下各组）。`e2e` 是 2026-09-20 补的，兑付欠账 #31，
 # 同时充当迁移计划 §7「机制挑战闸」第一项的载体 —— 理由与判据写在它自己头上，
 # 不在这里重述。两个 job 并行、互不依赖：e2e 挂了也要看得见 unit 是绿是红。
 #
@@ -38,7 +38,7 @@
 #   1. **本地门禁绕得过**——`git commit --no-verify` 一行就跳过。它挡的是手滑，不是决心。
 #   2. **中间攒下的问题仍会堆着**，只是最晚堆到开 PR 那一刻，不再堆到发版当天。
 #      分支上想提前验，`workflow_dispatch` 仍在：`gh workflow run tests.yml`。
-#   3. **新代价：`e2e` job 现在进了每个 PR 的路径。** 它跑 `baseline_1b` 76 条 Playwright，
+#   3. **新代价：`e2e` job 现在进了每个 PR 的路径。** 它跑 `baseline_1b` 全量 Playwright，
 #      而这套用例在干净 Linux 上只成功过一次（run 35584711194）。它要是 flaky，红的就是 PR
 #      而不是发版日。这正是机制挑战闸第 1 项要回答的问题——闸没过之前，别把它设成 required。
 #
@@ -143,11 +143,11 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # 欠账 #31 的兑付：§7 承诺过的「发版关门检查里跑一次 baseline-1b 全量」。
-  # ⚠️ 本文件里的 76 全是**誊抄**，没有一个参与判定 —— 真正的断言在
-  # `scripts/soak_run.py`，它从 `scripts/lint_e2e_groups.py` 的常量派生。
-  # 2026-09-21 冻结集改判，67 全部烂成 68，就是现成例子；2026-09-30 009 #62（019 WI-4）
-  # 迁入 8 条，68 又全部改成 76。下次条数再变，
-  # 改这里只是让人读着不别扭，改不改都不影响这道闸判什么。
+  # ⚠️ 本文件**不写条数**。条数的唯一定义处是 `scripts/lint_e2e_groups.py` 的
+  # `EXPECTED_BASELINE_ITEMS`，真正的断言在 `scripts/soak_run.py`，从那里派生。
+  # 这里早先誊抄过具体条数，没有一个参与判定，却每次都烂：2026-09-21 冻结集改判一次，
+  # 2026-09-30 009 #62（019 WI-4）迁入 8 条一次，2026-10-01 023 #65 迁入 56 条又一次。
+  # 所以 023 起改成不带数字的写法（「条数 = EXPECTED_BASELINE_ITEMS」），条数再变时这里不用动。
   # 该承诺 2026-08-16 立下，2026-09-18 复核时发现从未建出来（全仓 workflow 无
   # Playwright、无 e2e），2026-09-19 裁定为「建 job，不删承诺」，本 job 即是。
   #
@@ -158,19 +158,19 @@ jobs:
   # 2026-08-23 定的全仓口径，不为这个 job 破例。
   #
   # **它同时是迁移计划 §7「机制挑战闸」第一项（干净 Linux / CI 环境）的载体。**
-  # 那道闸的通过条件是 76/76 **首次**通过（重试通过不算绿，只能用来分类），
+  # 那道闸的通过条件是 baseline_1b 全量**首次**通过（条数 = EXPECTED_BASELINE_ITEMS；重试通过不算绿，只能用来分类），
   # 固定项是 lock 文件与 Chromium 版本、两者连同结果一并记录 —— 所以下面
   # `uv sync --frozen`（lock 参与解析）与「记录 Chromium 版本」这一步都是判据的一部分，
   # 不是顺手加的。结果往 `tasks/soak-log.md` 的机制挑战闸表里记，**不往 soak 台账追行**：
   # 那 10 次数的是一个固定的本地运行剖面，CI 换了剖面，混进去就是拿不同条件拼「连续」。
   #
   # 为什么用 `scripts/soak_run.py` 而不是直接 `pytest tests/e2e -m baseline_1b`：
-  # 后者绿了只说明「没红」，而这道闸要的是 **76/76**。soak_run 会断言 passed == 76、
+  # 后者绿了只说明「没红」，而这道闸要的是**全量通过**。soak_run 会断言 passed == EXPECTED_BASELINE_ITEMS、
   # skipped/failed/errors == 0、deselected == 验收 + 白名单（派生，不是字面量），
   # 并复核 `suite_hash` 与台账表头的冻结值逐字符相同 —— 「用例被悄悄删了一半然后全绿」
   # 这种形状只有它拦得住。**不传 `--append`**，CI 这一跑不进台账。
   e2e:
-    name: e2e baseline_1b（干净 Linux ＋ 冻结 lock，76/76 首次通过）
+    name: e2e baseline_1b（干净 Linux ＋ 冻结 lock，全量首次通过）
     runs-on: ubuntu-latest
     steps:
       # fetch-depth 0：「e2e 余下各组」那一步会跑 tests/e2e/shell_4a（REG-1），其中 C9.38
@@ -209,7 +209,7 @@ jobs:
       # 一行 summary，**红了也说不出是哪条用例**。2026-09-20 首次真跑就栽在这上面：
       # 闸红了，`1 failed, 66 passed`，而明细在 /tmp/soak-ozvxvjvu/ 里随 runner 一起没了。
       # 一道说不出「谁红了」的闸，等于逼人把它重跑一遍才能开始查。
-      - name: baseline_1b 全量（76/76，不落台账）
+      - name: baseline_1b 全量首次通过（条数 = EXPECTED_BASELINE_ITEMS，不落台账）
         run: uv run python scripts/soak_run.py --log-dir soak-ci-logs
 
       # baseline 之外那些条（验收组 ＋ 白名单模块）单独跑一遍，不与上面重复：

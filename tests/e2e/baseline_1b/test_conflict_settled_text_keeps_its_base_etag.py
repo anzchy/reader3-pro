@@ -30,12 +30,15 @@
 **落址：白名单，不是 `baseline_1b`**（同 WI-5 / WI-6）。迁进冻结目录会改 `suite_hash`
 并把 soak 计数清零。到期条件：下一次本来就要动 `baseline_1b/` 的改动里一并迁入，同批撤掉
 `UNGROUPED_E2E_MODULES` 里的条目并把条数加进 `EXPECTED_BASELINE_ITEMS`。
+⬛ 2026-10-01，023 #65：上面的到期条件已兑付——本模块已迁入 `tests/e2e/baseline_1b/`、
+带 `pytestmark = pytest.mark.baseline_1b`，白名单条目同批撤掉，条数计入 `EXPECTED_BASELINE_ITEMS`。
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from playwright.sync_api import Page, expect
 
 from conftest import BOOK_ID  # type: ignore[import-not-found]
@@ -60,6 +63,8 @@ from notes_conflict_support import (  # type: ignore[import-not-found]
     save_editor,
     wait_for_notes_gets,
 )
+
+pytestmark = pytest.mark.baseline_1b
 
 #: 409 之后才落地的第三版——用户在屏幕上从没见过它，正是它会被静默盖掉。
 NOTE_THIRD = "第三版：409 之后、用户点下出口之前，别处又写了一次"

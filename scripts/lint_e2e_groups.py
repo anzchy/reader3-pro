@@ -197,6 +197,16 @@ baseline 全部 skipped、push gate 全绿。「扫顶层」是这类检查最�
   另一写手经真服务器改了同一服务商，页面的保存带旧 `If-Match` 拿到 409：卡片显示冲突、输入保留、
   文件保留另一写手的内容）。与 RV-1 的保存失败那一条同属设置页切片，进 `shell_4a`。
   `EXPECTED_UNGROUPED_ITEMS`（68）与 `EXPECTED_BASELINE_ITEMS`（76）不变。
+- `EXPECTED_BASELINE_ITEMS` 76 → **132**（2026-10-01，023 #65: moved 56 items）：白名单里四个带到期条件的
+  模块迁入 `baseline_1b`——`test_notes_write_failure_is_attributable.py` 45、
+  `test_stored_cfi_must_agree_with_quote.py` 3、`test_conflict_resolution_single_flight.py` 4、
+  `test_conflict_settled_text_keeps_its_base_etag.py` 4，**+56 是执行过的 `--collect-only` 实测值**
+  （`pytest tests/e2e --collect-only -q -m baseline_1b` 数出 132）。两个冲突模块共用的非测试模块
+  `notes_conflict_support.py` 同批迁入（不贡献 item，但从此落进域 R 的零 skip 约束）。到期条件是
+  2026-09-30 推迟时写下的那一条：在 master 上宣布第一个批次（012 开工前那一批）之前迁入，让一次
+  `suite_hash` 变化、一个新的 10 轮批次一并覆盖。白名单条目同批撤掉，`EXPECTED_UNGROUPED_ITEMS`
+  同批 −56（68 → 12），派生总数 270 不变（变基到 018 合并后的 `c08317b` 重数；018 那 1 条在
+  `shell_4a`，不碰这两段）。
 """
 
 from __future__ import annotations
@@ -227,7 +237,7 @@ BASELINE_MARKER = "baseline_1b"
 ACCEPTANCE_MARKERS = GROUP_MARKERS[1:]
 
 # `tests/e2e/baseline_1b/` 下的期望 item 数。**实测值**（变更史见文件头）。
-EXPECTED_BASELINE_ITEMS = 76
+EXPECTED_BASELINE_ITEMS = 132
 
 # 四个 acceptance 目录各自的期望 item 数。合计由此派生，不另写字面量。
 #   acceptance_4b1：R-6b ×3（Wave 4）＋ K-1b ＋ K-6b ＋ W-5b ×3（{marker, wavy, underline}，
@@ -291,41 +301,10 @@ UNGROUPED_E2E_MODULES = {
     # ADR-0014 的运行期唯一性护栏：每个有界 testid 在真实 DOM 里只解析出一个节点。
     # 它守的是选择器口径而不是标注行为，与 009 的五个组正交。
     "tests/e2e/test_testid_dom_uniqueness.py",
-    # 欠账 #43 part (i)：notes 写失败的可归因性（诊断环 / 单串 console.error / 单例 toast）。
-    # 放白名单而不是 `baseline_1b`，理由与当年 w8a 一样是 `suite_hash` 覆盖面——迁进冻结
-    # 目录就要清零 soak 计数。到期条件：下一次**本来就要**动 `baseline_1b/`、`suite_hash`
-    # 无论如何都要变的改动里，把本文件一并迁入并撤掉这一条（`EXPECTED_BASELINE_ITEMS` 同批加）。
-    # ⬛ 2026-09-30：上面的到期条件已在 019 上触发但未执行，按 009 欠账 #65 明确推迟——
-    # 新到期条件：在 master 上宣布第一个批次（012 开工前那一批）之前迁入，让同一批一并覆盖。
-    "tests/e2e/test_notes_write_failure_is_attributable.py",
-    # 017 WI-5（审计 #3、#9）：快照回落写下的 `cfi` 不得是一条失效 Range 算出来的。
-    # 内容上它是 W-8a 家族（写路径、同一个「重绘作废选区」现场），但判据问的是**屏幕**
-    # 而不是盘。落白名单的理由与上面那条一字不差：迁进 `baseline_1b/` 会改 `suite_hash`
-    # 并把 soak 计数清零。到期条件也一样——下一次本来就要动 `baseline_1b/` 的改动里
-    # 一并迁入，同批撤掉这一条并给 `EXPECTED_BASELINE_ITEMS` 加上去。
-    # ⬛ 2026-09-30：上面的到期条件已在 019 上触发但未执行，按 009 欠账 #65 明确推迟——
-    # 新到期条件：在 master 上宣布第一个批次（012 开工前那一批）之前迁入，让同一批一并覆盖。
-    "tests/e2e/test_stored_cfi_must_agree_with_quote.py",
-    # 017 WI-6（审计 #5）：冲突对话框同一时刻只许有一次收尾在飞。它驱动的是 DEG-S5
-    # 对话框，与 `acceptance_2a/test_deg_s5_write_conflict.py` 同一块 UI，但那一条是
-    # **激活阶段**的验收（两个真上下文、服务端会不会 409、两支的去向），本条是单个
-    # 上下文里两次点击之间的并发，两者判据不重叠，也就不该并进那个组、改它的
-    # `EXPECTED_ACCEPTANCE_PER_DIR`。落白名单的理由与上面两条一字不差：迁进
-    # `baseline_1b/` 会改 `suite_hash` 并把 soak 计数清零；到期条件同样是「下一次本来
-    # 就要动 `baseline_1b/` 的改动里一并迁入，同批撤条目并给 `EXPECTED_BASELINE_ITEMS`
-    # 加上去」。
-    # ⬛ 2026-09-30：上面的到期条件已在 019 上触发但未执行，按 009 欠账 #65 明确推迟——
-    # 新到期条件：在 master 上宣布第一个批次（012 开工前那一批）之前迁入，让同一批一并覆盖。
-    "tests/e2e/test_conflict_resolution_single_flight.py",
-    # 017 WI-7（审计 #4）：收尾放进编辑器的那一版，必须连着它自己的基准令牌。与上一条
-    # 同住 DEG-S5 对话框，但问的是**收尾之后**那次保存带的是哪一版令牌，不是两次点击之间
-    # 的并发；和 `acceptance_2a` 那条激活验收同样不重叠。落白名单的理由与上面三条一字不差：
-    # 迁进 `baseline_1b/` 会改 `suite_hash` 并把 soak 计数清零；到期条件同样是「下一次本来
-    # 就要动 `baseline_1b/` 的改动里一并迁入，同批撤条目并给 `EXPECTED_BASELINE_ITEMS`
-    # 加上去」。
-    # ⬛ 2026-09-30：上面的到期条件已在 019 上触发但未执行，按 009 欠账 #65 明确推迟——
-    # 新到期条件：在 master 上宣布第一个批次（012 开工前那一批）之前迁入，让同一批一并覆盖。
-    "tests/e2e/test_conflict_settled_text_keeps_its_base_etag.py",
+    # （2026-10-01，023 #65：`test_notes_write_failure_is_attributable.py`、
+    # `test_stored_cfi_must_agree_with_quote.py`、`test_conflict_resolution_single_flight.py`、
+    # `test_conflict_settled_text_keeps_its_base_etag.py` 四条带到期条件的条目到期兑付——
+    # 连同共享的非测试模块 `notes_conflict_support.py` 迁入 `baseline_1b/`，此处条目撤掉。）
     # 009 #49（019 WI-2，WI2-E2）：盘上轮询期间，在途的写必须出得了门——钉的是
     # `wait_for_notes` 泵浏览器这件机制本身（旧 `time.sleep` 循环体上它确定地红）。
     # 不并进 `baseline_1b/`：它是 helpers 的机制护栏，不是 009 的业务用例；且根下新文件
@@ -413,7 +392,14 @@ UNGROUPED_E2E_MODULES = {
 # 64 → **68**（2026-10-01，020-debug-state WI-2，rebase 到 019 合入后的 master 上重数: +4）：新增
 # `tests/e2e/test_debug_state.py`（E1–E4 各一条，不参数化）。**+4 是执行过的 `--collect-only`
 # 实测值**（baseline 76 / 白名单 68 / 全量 269）。
-EXPECTED_UNGROUPED_ITEMS = 68
+#
+# 68 → **12**（2026-10-01，023 #65: moved 56 items）：四个带到期条件的白名单模块
+# `tests/e2e/test_notes_write_failure_is_attributable.py` 45、`tests/e2e/test_stored_cfi_must_agree_with_quote.py` 3、
+# `tests/e2e/test_conflict_resolution_single_flight.py` 4、`tests/e2e/test_conflict_settled_text_keeps_its_base_etag.py` 4
+# 迁入 `baseline_1b/`（共享的非测试模块 `notes_conflict_support.py` 同批迁入，不贡献 item），白名单条目已撤，
+# `EXPECTED_BASELINE_ITEMS` 同批 76 → 132。**−56 是执行过的 `--collect-only` 实测值**
+# （baseline 132 / 白名单 12 / 全量 270，总数不变；变基到 `c08317b` 后重数）。
+EXPECTED_UNGROUPED_ITEMS = 12
 
 # 派生值，不是字面量。见文件头「为什么必须派生」。
 EXPECTED_E2E_ITEMS = (

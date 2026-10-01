@@ -10,11 +10,14 @@
 `reportNotesWriteFailure`（W1-C4/C9/C5）、以及加固后的 `showToast`（W1-C6/C10/C7/C8）。
 把既有调用点改接到 helper 上是 WI-3..WI-6 的事，它们的用例随各自的工作项进本文件。
 
-**落址：`tests/e2e/` 根，不带组 marker，登记在 `UNGROUPED_E2E_MODULES`。** 理由是
-`suite_hash` 的覆盖面：`scripts/soak_run.py` 的 `HASH_COVERED_PATHS` 把
-`tests/e2e/baseline_1b` 当**目录**、把 `tests/e2e/test_harness_smoke.py` 当**文件**覆盖，
-根下的新文件不在其内——`suite_hash` 不动、soak 计数不清零、两道机制闸不作废。
-`tests/unit/test_frozen_paths_untouched.py`（W2-C4）是这条的探测器。
+**落址：`tests/e2e/baseline_1b/`，带 `pytestmark = pytest.mark.baseline_1b`（2026-10-01，
+023 #65）。** 本模块起初住在 `tests/e2e/` 根、登记在 `UNGROUPED_E2E_MODULES` 白名单里，理由是
+`suite_hash` 的覆盖面：`scripts/soak_run.py` 的 `HASH_COVERED_PATHS` 把 `tests/e2e/baseline_1b`
+当**目录**覆盖，根下的文件不在其内，放在根下就不动 `suite_hash`。那是一笔带到期条件的明账：
+下一次本来就要动 `baseline_1b/`、`suite_hash` 无论如何都要变的改动里一并迁入。023 在 master
+宣布第一个批次（012 开工前那一批）之前兑付了它（009 欠账 #65），与共享模块
+`notes_conflict_support.py` 及另外三个同类白名单模块同批迁入，让一次 `suite_hash` 变化、
+一个新的 10 轮批次一并覆盖。从此它计入 1b 门槛，也落进域 R 的零 skip 约束。
 
 **本文件的共享基础设施全部是模块私有的**（矩阵 §0.2–§0.5）：toast 事件闩、console 捕获、
 notes 路由注入、请求/响应日志。它们最便宜的住址是冻结的 `tests/e2e/helpers.py` /
@@ -54,6 +57,8 @@ from helpers import (  # type: ignore[import-not-found]
     select_in_frame,
     wait_for_note_text,
 )
+
+pytestmark = pytest.mark.baseline_1b
 
 # ---------------------------------------------------------------------------
 # 矩阵里点名的常量

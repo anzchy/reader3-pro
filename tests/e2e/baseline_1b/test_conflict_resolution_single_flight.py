@@ -43,12 +43,15 @@ item），与 WI-7 的 `test_conflict_settled_text_keeps_its_base_etag.py` 共�
 **落址：白名单，不是 `baseline_1b`**（同 WI-5）。迁进冻结目录会改 `suite_hash`
 并把 soak 计数清零。到期条件：下一次本来就要动 `baseline_1b/` 的改动里一并迁入，
 同批撤掉 `UNGROUPED_E2E_MODULES` 里的条目并把条数加进 `EXPECTED_BASELINE_ITEMS`。
+⬛ 2026-10-01，023 #65：上面的到期条件已兑付——本模块已迁入 `tests/e2e/baseline_1b/`、
+带 `pytestmark = pytest.mark.baseline_1b`，白名单条目同批撤掉，条数计入 `EXPECTED_BASELINE_ITEMS`。
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from playwright.sync_api import Page, expect
 
 from conftest import BOOK_ID  # type: ignore[import-not-found]
@@ -68,6 +71,8 @@ from notes_conflict_support import (  # type: ignore[import-not-found]
     set_editor_text,
     wait_for_held_write,
 )
+
+pytestmark = pytest.mark.baseline_1b
 
 #: 写进 textarea 的哨兵：只要收尾真的执行过，它就会被 `c.localText` 盖掉。
 SENTINEL = "哨兵：这串字只有收尾被执行时才会消失"

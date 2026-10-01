@@ -527,7 +527,7 @@ def test_w5a3_recolor_then_repress_replaces_with_a_new_id(
     `S ∩ S' == ∅` 的话，修好前后都绿——律本身不足以分辨这两种世界，所以下面的基数断言
     和 id 断言一条都不能省。沿革见模块 docstring 那一整节。
 
-    所以本条断四件事：
+    所以本条断六件事（第 5、6 件是 017 #10 补的 DOM 断言，见本 docstring 末节）：
 
       1. `S ∩ S' == ∅`（矩阵的律）：旧 id 必须不在终态里；
       2. `len(S') == 1`（**字面量基准**，§0 第五条纪律）：写 0 会稳定假红，
@@ -537,6 +537,8 @@ def test_w5a3_recolor_then_repress_replaces_with_a_new_id(
          （剩的是旧那条、还是 yellow）照样能过第 2 条；
       4. 那次替代性 POST 确实发生过、带着**真的引文**、拿到 201，**且它发生在那次
          DELETE 之后**——顺序由 `EXPECTED_WRITE_SEQUENCE` 逐项断死。
+      5. 重载后那个 `<mark>` 的文字等于 `CH0_QUOTE`（不是空高亮）；
+      6. 那个 `<mark>` 的 id 集合恰为盘上 `survivor` 的 id。
 
     第 4 条不是装饰：只断终态的话，一个「异色重按 = 原地改色（一次 PUT）」的实现也能
     让终态剩 1 条 green——而那是 **4B.1 的语义**，不是今天这条路。断死 DELETE→POST 这个
@@ -563,7 +565,8 @@ def test_w5a3_recolor_then_repress_replaces_with_a_new_id(
     `to_have_count(1)`——一个 `<mark>` 是空的、或 `data-annotation-ids` 是 `[]`，
     条数照样是 1，那条断言对「空高亮」是**空洞**的。现在追加两条：重载后那个
     `<mark>` 的文字等于 `CH0_QUOTE`，它的 id 集合等于盘上 `survivor` 的 id。两个期望值
-    都不取自 DOM——盘是真相源，DOM 必须是它的忠实投影（证伪记录见 019 WI-3 EV-3）。
+    都不取自 DOM——盘是真相源，DOM 必须是它的忠实投影（证伪记录见 017 审计 #10 的兑付记录，
+    `docs/plans/20260816-tech-stack-migration/tasks/017-audit-followup.md`，commit `789602c`）。
     """
     assert read_notes(e2e_books_dir, BOOK_ID) == [], "隔离 fixture 没生效：起点不是空的"
 
