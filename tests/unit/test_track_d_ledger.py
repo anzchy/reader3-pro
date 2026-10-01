@@ -163,10 +163,15 @@ REGISTER_HEADER = "| # | 欠什么 |"
 #: The branch-number table (`## 9.`, column 分支) is the single definition of allocated numbers.
 MIGRATION_PLAN = REPO / "docs" / "plans" / "20260816-tech-stack-migration" / "plan-tech-stack-migration.md"
 #: Owner-cell grammar (`parse_owner_branch`): struck spans are history; the owner is the first bold
-#: span; its number is 3 ASCII digits at the start, then a `-slug`, a ` WI-x` or nothing.
+#: span, and the grammar is anchored to that *whole* span (`fullmatch`, fix-plan WI-6 / #7): `NNN`,
+#: `NNN-slug` or `[NNN WI-x](link)`, each optionally followed by ` <narrative…>` (so `NNN 后端重构`,
+#: `NNN-slug (…)`). 3 ASCII digits followed by anything else (`012→…`, `018x`, `[018x WI-7]`) is None.
 STRIKE_RE = re.compile(r"~~.*?~~", re.S)
 BOLD_RE = re.compile(r"\*\*(.+?)\*\*", re.S)
-OWNER_BRANCH_RE = re.compile(r"\[?([0-9]{3})(?![0-9])(?:-[a-z0-9-]+| WI-\S+)?", re.ASCII)
+OWNER_BRANCH_RE = re.compile(
+    r"(?=\[?([0-9]{3}))(?:\[[0-9]{3} WI-[^\]\s]+\]\([^)\s]*\)|[0-9]{3}(?:-[a-z0-9-]+)?)(?: .*)?",
+    re.ASCII | re.S,
+)
 
 
 def d12_target_has_address(target: str) -> bool:
@@ -201,7 +206,7 @@ def parse_owner_branch(cell: str) -> Optional[str]:
     first = BOLD_RE.search(STRIKE_RE.sub("", cell))
     if first is None:
         return None
-    m = OWNER_BRANCH_RE.match(first.group(1))
+    m = OWNER_BRANCH_RE.fullmatch(first.group(1))
     return m.group(1) if m else None
 
 
@@ -591,6 +596,12 @@ def _pin(target: str, row: str = "WI-5#1", half: str = "all") -> dict:
         ("随 012 一起兑付", None),
         ("~~**待定**~~（…）⬛ …", None),
         ("", None),
+        # FX-6-01 (fix-plan WI-6, #7): the whole bold span is anchored, not just its first digits.
+        ("**012→018-library-routes**", None),
+        ("**018x**", None),
+        ("**[018x WI-7](x.md)**", None),
+        ("**012-storage-format (随 #35 同批)**", "012"),
+        ("**[018 WI-7](./018-library-routes.md) 收尾对账**", "018"),
     ],
 )
 def test_parse_owner_branch_table(cell: str, expected: "str | None") -> None:
@@ -625,6 +636,33 @@ def test_parse_owner_branch_properties(n: int, slug: str, d: str, noise: str, ta
         label="p",
     )
     assert parse_owner_branch(f"**{p}{num}-{slug}**") is None  # (e)
+    # FX-6-02 (fix-plan WI-6, #7): a digit run followed by a character outside the grammar's
+    # continuations (`-`, space, or `]` in the link form) is no owner, plain or link form.
+    c = data.draw(
+        st.characters(blacklist_characters="- ]*~[()", blacklist_categories=("Nd", "Cs", "Cc")), label="c"
+    )
+    rest = data.draw(st.from_regex(r"[a-z0-9-]{0,12}", fullmatch=True), label="rest")
+    assert parse_owner_branch(f"**{num}{c}{rest}**") is None  # (f)
+    assert parse_owner_branch(f"**[{num}{c}WI-7](x.md)**") is None  # (g)
+
+
+#: FX-6-03: the owner regex as it stood before fix-plan WI-6 (#7), frozen. Do not update it.
+_OLD_OWNER_BRANCH_RE = re.compile(r"\[?([0-9]{3})(?![0-9])(?:-[a-z0-9-]+| WI-\S+)?", re.ASCII)
+
+
+def test_parse_owner_branch_conserves_every_real_row_the_old_parser_read() -> None:
+    """FX-6-03: anchoring the whole span changes no real register row the old `.match` parsed."""
+    owners = register_owners(REGISTER.read_text(encoding="utf-8"))
+    old: Dict[int, str] = {}
+    for n, cell in owners.items():
+        first = BOLD_RE.search(STRIKE_RE.sub("", cell))
+        m = _OLD_OWNER_BRANCH_RE.match(first.group(1)) if first else None
+        if m:
+            old[n] = m.group(1)
+    assert old, "the register yielded no parsed owner at all"
+    assert {n: parse_owner_branch(owners[n]) for n in old} == old
+    pinned = (31, 51, 53, 54, 55, 56, 58)
+    assert {n: old[n] for n in pinned} == {31: "018", 51: "018", 53: "018", 54: "012", 55: "012", 56: "018", 58: "018"}
 
 
 def test_parse_owner_branch_reads_the_real_31_row_as_is() -> None:
