@@ -40,7 +40,28 @@ def _lock_file(books: Path, folder: str = BOOK) -> Path:
     return books / ".locks" / f"{folder}.lock"
 
 
+def _assert_one_winner_three_losers(results: list, winner_cat: str = "import") -> None:
+    """Exactly one winner; every loser a ``BookLockBusy`` naming the winner or ``unknown``.
+
+    The category is best-effort (#12): a winner preempted for longer than
+    ``_CATEGORY_SETTLE_S`` between its ``flock`` and its record write legitimately
+    yields ``busy:unknown``. It must never name another category. The payload checks
+    run on *every* loser, whichever of the two categories it reports.
+    """
+    outcomes = [outcome(r) for r in results]
+    assert Counter(outcomes)["acquired"] == 1, results
+    losers = [r for r in results if outcome(r) != "acquired"]
+    assert len(losers) == 3, results
+    allowed = {f"busy:{winner_cat}", "busy:unknown"}
+    for r in losers:
+        assert outcome(r) in allowed, (f"loser outcome not in {sorted(allowed)}", results)
+        assert r["type"] == "BookLockBusy", results
+        assert isinstance(r["retry_after"], int) and r["retry_after"] >= 1, results
+        assert r["is_runtime_error"] is False, results
+
+
 def test_w2_15_ex_vs_ex_across_processes_exactly_one_winner(books_dir: Path, tmp_path: Path) -> None:
+    """W2-15, amended as W5-01 of ``tests-20261001-170000.md`` (#12): exactly one winner."""
     ctx = spawn_ctx()
     barrier = ctx.Barrier(4)
     release_evt = ctx.Event()
@@ -60,13 +81,7 @@ def test_w2_15_ex_vs_ex_across_processes_exactly_one_winner(books_dir: Path, tmp
         release_evt.set()
         codes = [c.reap(CHILD_TIMEOUT_S) for c in children]
 
-    outcomes = Counter(outcome(r) for r in results)
-    assert outcomes == Counter({"acquired": 1, "busy:import": 3}), results
-    for r in results:
-        if outcome(r) == "busy:import":
-            assert r["type"] == "BookLockBusy"
-            assert isinstance(r["retry_after"], int) and r["retry_after"] >= 1
-            assert r["is_runtime_error"] is False
+    _assert_one_winner_three_losers(results)
     assert codes == [0, 0, 0, 0]
     assert _lock_file(books_dir).exists()
 
@@ -204,6 +219,7 @@ def test_fx_5_04_a_teardown_error_in_the_child_is_an_error_outcome_and_a_nonzero
 def test_fx_5_05_the_winners_result_file_does_not_exist_while_it_still_holds(
     books_dir: Path, tmp_path: Path
 ) -> None:
+    """FX-5-05, final outcome check amended as W5-02 of ``tests-20261001-170000.md`` (#12)."""
     ctx = spawn_ctx()
     barrier = ctx.Barrier(4)
     release_evt = ctx.Event()
@@ -226,7 +242,7 @@ def test_fx_5_05_the_winners_result_file_does_not_exist_while_it_still_holds(
     assert acquired_at_check == [], "the winner reported 'acquired' while it still held the lock"
     assert len(absent_at_check) == 1, f"while the winner still held, {4 - len(absent_at_check)} results existed"
     assert probe_at_check == "blocked"
-    assert Counter(outcome(r) for r in results) == Counter({"acquired": 1, "busy:import": 3}), results
+    _assert_one_winner_three_losers(results)
     assert codes == [0, 0, 0, 0]
 
 
