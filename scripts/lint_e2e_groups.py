@@ -205,7 +205,8 @@ baseline 全部 skipped、push gate 全绿。「扫顶层」是这类检查最�
   `notes_conflict_support.py` 同批迁入（不贡献 item，但从此落进域 R 的零 skip 约束）。到期条件是
   2026-09-30 推迟时写下的那一条：在 master 上宣布第一个批次（012 开工前那一批）之前迁入，让一次
   `suite_hash` 变化、一个新的 10 轮批次一并覆盖。白名单条目同批撤掉，`EXPECTED_UNGROUPED_ITEMS`
-  同批 −56（68 → 12），派生总数 269 不变。
+  同批 −56（68 → 12），派生总数 270 不变（变基到 018 合并后的 `c08317b` 重数；018 那 1 条在
+  `shell_4a`，不碰这两段）。
 """
 
 from __future__ import annotations
@@ -397,7 +398,7 @@ UNGROUPED_E2E_MODULES = {
 # `tests/e2e/test_conflict_resolution_single_flight.py` 4、`tests/e2e/test_conflict_settled_text_keeps_its_base_etag.py` 4
 # 迁入 `baseline_1b/`（共享的非测试模块 `notes_conflict_support.py` 同批迁入，不贡献 item），白名单条目已撤，
 # `EXPECTED_BASELINE_ITEMS` 同批 76 → 132。**−56 是执行过的 `--collect-only` 实测值**
-# （baseline 132 / 白名单 12 / 全量 269，总数不变）。
+# （baseline 132 / 白名单 12 / 全量 270，总数不变；变基到 `c08317b` 后重数）。
 EXPECTED_UNGROUPED_ITEMS = 12
 
 # 派生值，不是字面量。见文件头「为什么必须派生」。

@@ -126,7 +126,8 @@ SUBPROCESS_TIMEOUT_S = 300
 # （`test_notes_write_failure_is_attributable.py` 45、`test_stored_cfi_must_agree_with_quote.py` 3、
 # `test_conflict_resolution_single_flight.py` 4、`test_conflict_settled_text_keeps_its_base_etag.py` 4，
 # 连同它们共用的非测试模块 `notes_conflict_support.py`）迁入 `baseline_1b/`；**实测**
-# （`pytest tests/e2e --collect-only -q -m baseline_1b` 数出 132）。白名单同批 68 → 12，总数 269 不变。
+# （`pytest tests/e2e --collect-only -q -m baseline_1b` 数出 132）。白名单同批 68 → 12，总数 270 不变
+# （变基到 `c08317b` 后重数）。
 CANONICAL_BASELINE_ITEMS = 132
 CANONICAL_ACCEPTANCE_PER_DIR: Dict[str, int] = {
     "acceptance_4b1": 8,
@@ -216,7 +217,7 @@ CANONICAL_ACCEPTANCE_ITEMS = 126
 # 它是工具用的观测面，没有到期条件——理由写在 `scripts/lint_e2e_groups.py` 的白名单注释里。
 # 68 → 12：2026-10-01 023 #65，moved 56 items——四个带到期条件的白名单模块迁入 `baseline_1b/`
 # （见上面 76 → 132；45 + 3 + 4 + 4），白名单条目撤掉；**实测**白名单 12、baseline 132。
-# 一段换一段，`CANONICAL_E2E_ITEMS` 不动（269）。
+# 一段换一段，`CANONICAL_E2E_ITEMS` 不动（270，变基到 `c08317b` 后重数）。
 CANONICAL_UNGROUPED_ITEMS = 12
 # 140 → 149：同上，`shell_4a` 的 9 条。
 # 149 → 183：2026-09-24 013 WI-10 往 `shell_4a` 加的 34 条（见上面 26 → 60 那条注释）。
@@ -230,7 +231,7 @@ CANONICAL_UNGROUPED_ITEMS = 12
 # 264 → 265：2026-09-30 009 #49，WI-2 of 019: +1（见上面 71 → 72；全量实测 265）。
 # 265 → 269：2026-10-01 020-debug-state WI-2 的 4 条白名单 item（见上面 64 → 68；全量实测 269）。
 # 269 → 270：2026-10-01 018 WI-3 / 欠账 #51 的 1 条（见上面 125 → 126 那条注释；全量实测 270）。
-# 269 不变：2026-10-01 023 #65 的 56 条只是从白名单段换到 baseline 段（全量实测仍 269）——
+# 270 不变：2026-10-01 023 #65 的 56 条只是从白名单段换到 baseline 段（变基到 `c08317b` 后全量实测仍 270）——
 # 这正是那次迁移的守恒检查。
 CANONICAL_E2E_ITEMS = 270
 
