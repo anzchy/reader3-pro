@@ -958,7 +958,13 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # process_epub publishes book.pkl itself, as the last step of its atomic
     # commit. Calling save_to_pickle here too would flip the marker twice.
-    book_obj = process_epub(epub_file, out_dir)
+    try:
+        book_obj = process_epub(epub_file, out_dir)
+    except (book_lock.BookLockError, book_lock.BookGone) as e:
+        # 018 FU2 WI-3 (#18): same exit shape as the --index branch -- non-zero,
+        # one readable line naming the holder, no traceback. Exactly these two:
+        # BookGone is a FileNotFoundError, but other OSErrors must propagate as-is.
+        raise SystemExit(str(e))
     print("\n--- Summary ---")
     print(f"Title: {book_obj.metadata.title}")
     print(f"Authors: {', '.join(book_obj.metadata.authors)}")

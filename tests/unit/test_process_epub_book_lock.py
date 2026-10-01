@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import pickle
+import shutil
 import subprocess
 import sys
 import time
@@ -217,3 +218,121 @@ def test_w2_42_in_process_cli_index_refused_is_a_systemexit_naming_the_holder(
     assert isinstance(info.value.code, str), info.value.code
     assert "import" in info.value.code
     assert not (published / "chroma_db").exists()
+
+
+# --------------------------------------------------------------------------- CLI import (018 FU2 WI-3, #18)
+#
+# Cases W3-01..W3-04 of ``.claude/tdd-guardian/tests-20261001-170000.md``. ``main()``
+# maps exactly ``BookLockError`` (and subclasses) and ``BookGone`` to
+# ``SystemExit(str(e))`` on the import branch, as it already does on ``--index``.
+
+
+@pytest.fixture
+def x_epub(tmp_path: Path, epub_v1: Path) -> Path:
+    # ``epub_v1`` is ``v1.epub``; copied so the CLI's out_dir is ``books/x_data``.
+    dst = tmp_path / "x.epub"
+    shutil.copy(epub_v1, dst)
+    return dst
+
+
+def test_w3_01_cli_import_refused_exits_with_the_busy_message_and_no_traceback(
+    books_dir: Path, tmp_path: Path, x_epub: Path
+) -> None:
+    env = dict(os.environ)
+    env["READER3_BOOKS_DIR"] = str(books_dir)
+    env["ANONYMIZED_TELEMETRY"] = "False"
+    with Holder(str(books_dir), BOOK, "exclusive", "delete", str(tmp_path)):
+        proc = subprocess.run(
+            [sys.executable, "-m", "reader3_app.reader3", str(x_epub)],
+            cwd=str(tmp_path),
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        listing = sorted(os.listdir(books_dir))
+    assert proc.returncode == 1, (proc.returncode, proc.stderr)
+    assert "Traceback" not in proc.stderr, proc.stderr
+    assert proc.stderr.strip().splitlines()[-1] == "book busy: delete", proc.stderr
+    assert "--- Summary ---" not in proc.stdout, proc.stdout
+    assert listing == [".locks"]
+
+
+@pytest.mark.parametrize("state", ["fresh", "published"])
+def test_w3_02_in_process_main_import_refused_is_a_systemexit_naming_the_holder(
+    state: str,
+    books_dir: Path,
+    tmp_path: Path,
+    epub_v1: Path,
+    x_epub: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    out = books_dir / BOOK
+    h0 = None
+    if state == "published":
+        reader3.process_epub(str(epub_v1), str(out))
+        h0 = snapshot_tree(out)
+    monkeypatch.setenv("READER3_BOOKS_DIR", str(books_dir))
+    monkeypatch.setenv("ANONYMIZED_TELEMETRY", "False")
+    with Holder(str(books_dir), BOOK, "shared", "reindex", str(tmp_path)):
+        with pytest.raises(SystemExit) as info:
+            reader3.main([str(x_epub)])
+    assert info.value.code == "book busy: reindex"
+    if state == "fresh":
+        assert sorted(os.listdir(books_dir)) == [".locks"]
+    else:
+        assert snapshot_tree(out) == h0
+        assert [p for p in os.listdir(books_dir) if p.startswith(f"{BOOK}.staging")] == []
+
+
+def test_w3_03_a_non_lock_failure_is_not_turned_into_a_lock_message(
+    books_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bad = tmp_path / "y.epub"
+    bad.write_bytes(b"this is not a zip archive")
+    monkeypatch.setenv("READER3_BOOKS_DIR", str(books_dir))
+    monkeypatch.setenv("ANONYMIZED_TELEMETRY", "False")
+    with pytest.raises(Exception) as info:
+        reader3.main([str(bad)])
+    name = type(info.value).__name__
+    assert not isinstance(info.value, SystemExit), name
+    assert "book busy" not in str(info.value), name
+    assert "y_data" not in os.listdir(books_dir)
+
+
+_GONE_MSG = "book 'x_data' was removed; refusing to recreate it"
+
+
+@pytest.mark.parametrize(
+    "err, converted",
+    [
+        (FileNotFoundError(2, "No such file", "img.png"), False),
+        (PermissionError(13, "Permission denied", "img.png"), False),
+        (book_lock.BookGone(_GONE_MSG), True),
+    ],
+    ids=["FileNotFoundError", "PermissionError", "BookGone"],
+)
+def test_w3_04_only_book_lock_error_and_book_gone_are_converted(
+    err: BaseException,
+    converted: bool,
+    books_dir: Path,
+    x_epub: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def stub(epub_path: str, output_dir: str):
+        raise err
+
+    monkeypatch.setattr(reader3, "process_epub", stub)
+    monkeypatch.setenv("READER3_BOOKS_DIR", str(books_dir))
+    monkeypatch.setenv("ANONYMIZED_TELEMETRY", "False")
+    if converted:
+        with pytest.raises(SystemExit) as info:
+            reader3.main([str(x_epub)])
+        assert info.value.code == _GONE_MSG
+    else:
+        with pytest.raises(BaseException) as raised:
+            reader3.main([str(x_epub)])
+        assert raised.value is err
+        if isinstance(err, FileNotFoundError):
+            assert type(raised.value) is FileNotFoundError
+    assert os.listdir(books_dir) == []
