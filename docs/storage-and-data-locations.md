@@ -129,6 +129,29 @@ The EPUB ingestion pipeline writes processed outputs per book:
 - **Original EPUB copy**: `books/{book_id}/book.epub` (source file for epub.js rendering, served at `/read/{book_id}/book.epub`)
 - **Extracted images**: `books/{book_id}/images/`
 
+## Per-book write lock (018 WI-2, [ADR-0015](adr/0015-per-book-write-coordination.md))
+
+Every writer of a book coordinates through one lock file per book: `books/.locks/{book_id}.lock`.
+
+- **Where it lives:** outside the book directory, and it is never deleted, so an `rmtree` of the book cannot hand the next writer a fresh inode.
+- **Directory:** `books/.locks/` is created on first use and is the only thing the lock module ever creates. It is not a book: the library scan only lists `*_data` directories, and `.locks` doesn't match.
+- **Exclusive holders:** import and delete.
+- **Shared holders:** notes, reindex, `ai_meta.json`, conversations, and the vector read path (`search`). Each then takes its own resource lock as well.
+- **Wait limit:** everything shares one 2-second deadline. Exclusive requests never wait.
+- **Holder category:** the first 64 bytes of the lock file record who holds the lock. This is best-effort telemetry for the error message. Nothing decides on it, and a stale, torn, empty or dead-pid record reads as `unknown`.
+
+HTTP responses when a write meets the lock (one handler for every route, `src/reader3_app/web/book_lock_http.py`):
+
+| Outcome | Status | Body / headers |
+|---|---|---|
+| Busy (someone else holds it past the deadline) | 409 | `{"detail": "book busy: <category>", "holder_category": "<category>", "retry_after": N}`, header `Retry-After: N` (N >= 1) |
+| Changed (the folder now holds a different book than the page opened) | 409 | `{"detail": "book changed: reload before writing"}`, no `Retry-After` |
+| Gone (book deleted while waiting) | 404 | `{"detail": "Book not found"}` |
+
+`<category>` is one of `import`, `delete`, `reindex`, `notes`, `ai_meta`, `conversations`, `search`, or `unknown`. The busy 409 deliberately differs from the notes version-conflict 409 (no `etag`), so a client can tell "retry later" apart from "your copy is stale".
+
+The CLI (`uv run reader3 ...`) reports the same refusals as a one-line error with a non-zero exit code.
+
 ## Reader rendering sources
 
 - Frontend reader renders content from `book.epub` via epub.js (iframe).
