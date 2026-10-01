@@ -28,7 +28,9 @@ this module ever creates; it never creates the book dir.
 The holder category written into the lock file is best-effort telemetry for the
 409 message (ADR-0015 R6). It is read only after a non-blocking attempt has
 already failed, and no decision is ever taken on it: stale, empty, torn, or
-naming a dead pid all read as ``"unknown"``.
+naming a dead pid all read as ``"unknown"``. A shared holder clears its own record
+on release, while it still holds the flock, and only if the record still names it;
+two shared holders racing that clear degrade to ``"unknown"``, never to a wrong name.
 """
 
 from __future__ import annotations
@@ -278,6 +280,21 @@ def _write_category(fd: int, text: str) -> None:
         os.pwrite(fd, record, 0)
 
 
+def _clear_own_category(fd: int, holder: str) -> None:
+    """Blank the record only if it is exactly this acquisition's ``"holder pid"``.
+
+    Never raises: a failed read skips the clear, and a failed write is suppressed by
+    ``_write_category``. Not atomic across processes -- losing that race blanks another
+    shared holder's record, which reads as ``unknown``, never as a wrong name.
+    """
+    try:
+        raw = os.pread(fd, _RECORD_BYTES, 0)
+    except OSError:
+        return
+    if raw.decode("ascii", errors="replace").split() == [holder, str(os.getpid())]:
+        _write_category(fd, "")
+
+
 # --------------------------------------------------------------------------- acquire
 
 
@@ -371,8 +388,11 @@ def acquire(
             yield
         finally:
             held.pop(key, None)
+            # Still under the flock: an SH can only overwrite another SH's record (#21).
             if mode == EXCLUSIVE:
                 _write_category(fd, "")
+            else:
+                _clear_own_category(fd, holder)
     finally:
         try:
             if fd >= 0:

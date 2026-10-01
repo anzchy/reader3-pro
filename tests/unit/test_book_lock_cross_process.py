@@ -217,3 +217,78 @@ def test_fx_5_05_the_winners_result_file_does_not_exist_while_it_still_holds(
     assert probe_at_check == "blocked"
     assert Counter(outcome(r) for r in results) == Counter({"acquired": 1, "busy:import": 3}), results
     assert codes == [0, 0, 0, 0]
+
+
+# --------------------------------------------------------------------------- fix-up 2, WI-1 (#21)
+#
+# W1-01..W1-03 and W1-08 of ``.claude/tdd-guardian/tests-20261001-170000.md``. Law: a
+# refusal never names a category that has no live holder. A shared holder clears its
+# own record on release, and only its own: across processes the record at most
+# degrades to ``unknown``, never to another holder's name.
+
+
+def _ex_refusal_category(books: Path) -> tuple:
+    """One parent-side EX attempt that must be refused; ``(holder_category, elapsed)``."""
+    t0 = time.monotonic()
+    with pytest.raises(book_lock.BookLockBusy) as info:
+        with book_lock.acquire(str(books), BOOK, mode="exclusive", holder="delete"):
+            pass
+    return info.value.holder_category, time.monotonic() - t0
+
+
+def test_fu2_w1_01_a_released_sh_holder_is_not_named_by_a_later_ex_refusal(
+    books_dir: Path, tmp_path: Path
+) -> None:
+    with Holder(str(books_dir), BOOK, "shared", "reindex", str(tmp_path)):
+        with book_lock.acquire(str(books_dir), BOOK, mode="shared", holder="notes"):
+            pass
+        category, elapsed = _ex_refusal_category(books_dir)
+    assert category != "notes", "#21: the refusal named a shared holder that had already released"
+    assert category == "unknown"
+    assert elapsed < 0.5
+
+
+def _ex_child_outcome_while_parent_holds_sh(books: Path, tmp_path: Path, child_category: str) -> tuple:
+    """Child A holds SH ``child_category``; the parent takes SH notes, A releases, an EX child tries."""
+    a = Holder(str(books), BOOK, "shared", child_category, str(tmp_path)).start()
+    try:
+        with book_lock.acquire(str(books), BOOK, mode="shared", holder="notes"):
+            a_code = a.release()
+            path = str(tmp_path / "ex-after-release.json")
+            child = Child(try_exclusive, (str(books), BOOK, "delete", path), path).start()
+            result = child.wait_result(CHILD_WAIT_S)
+            code = child.reap(CHILD_TIMEOUT_S)
+    finally:
+        a.release()
+    return a_code, result, code
+
+
+def test_fu2_w1_02_release_leaves_another_categorys_record_alone(books_dir: Path, tmp_path: Path) -> None:
+    a_code, result, code = _ex_child_outcome_while_parent_holds_sh(books_dir, tmp_path, "reindex")
+    assert a_code == 0
+    assert outcome(result) == "busy:notes", f"a reindex release cleared the parent's notes record: {result!r}"
+    assert result is not None and result["type"] == "BookLockBusy"
+    assert code == 0
+
+
+def test_fu2_w1_03_release_leaves_a_same_category_record_of_another_pid_alone(
+    books_dir: Path, tmp_path: Path
+) -> None:
+    a_code, result, code = _ex_child_outcome_while_parent_holds_sh(books_dir, tmp_path, "notes")
+    assert a_code == 0
+    assert outcome(result) == "busy:notes", f"a notes release cleared another pid's notes record: {result!r}"
+    assert result is not None and result["type"] == "BookLockBusy"
+    assert code == 0
+
+
+def test_fu2_w1_08_a_body_that_raises_still_compares_and_clears_its_record(
+    books_dir: Path, tmp_path: Path
+) -> None:
+    with Holder(str(books_dir), BOOK, "shared", "reindex", str(tmp_path)):
+        with pytest.raises(RuntimeError, match="fu2-body-raise"):
+            with book_lock.acquire(str(books_dir), BOOK, mode="shared", holder="notes"):
+                raise RuntimeError("fu2-body-raise")
+        category, elapsed = _ex_refusal_category(books_dir)
+    assert category != "notes", "#21: a shared holder whose body raised was still named after release"
+    assert category == "unknown"
+    assert elapsed < 0.5

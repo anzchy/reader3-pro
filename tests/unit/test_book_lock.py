@@ -74,6 +74,8 @@ class Held:
         self.ready = threading.Event()
         self._go = threading.Event()
         self.error: Optional[BaseException] = None
+        #: fix-up 2 (W1-04): when set before ``_go``, the body exits by raising.
+        self._raise = False
         self.thread = threading.Thread(target=self._run, args=(str(books), folder, mode, holder), daemon=True)
 
     def _run(self, books: str, folder: str, mode: str, holder: str) -> None:
@@ -81,6 +83,8 @@ class Held:
             with book_lock.acquire(books, folder, mode=mode, holder=holder):
                 self.ready.set()
                 self._go.wait(JOIN_TIMEOUT_S)
+                if self._raise:
+                    raise RuntimeError("fu2-body-raise")
         except BaseException as exc:  # noqa: BLE001 - reported to the test
             self.error = exc
             self.ready.set()
@@ -95,6 +99,11 @@ class Held:
         self._go.set()
         self.thread.join(JOIN_TIMEOUT_S)
         assert not self.thread.is_alive(), "holder thread deadlocked on release"
+
+    def release_raising(self) -> None:
+        """Release by making the body raise ``RuntimeError("fu2-body-raise")``."""
+        self._raise = True
+        self.release()
 
 
 def _run_in_thread(fn: Callable[[], Any], timeout: float = JOIN_TIMEOUT_S) -> Dict[str, Any]:
@@ -1358,3 +1367,255 @@ def test_fx_5_06_the_short_budget_fixture_actually_shortens_a_real_refusal(
         a.release()
     assert info.value.holder_category == "import"
     assert 0.25 <= elapsed < 0.6, elapsed
+
+
+# --------------------------------------------------------------------------- fix-up 2, WI-1 (#21)
+#
+# W1-04..W1-07 and W1-09 of ``.claude/tdd-guardian/tests-20261001-170000.md``. The
+# cross-process edges (W1-01..W1-03, W1-08) are in ``test_book_lock_cross_process.py``.
+#
+# Law: a refusal never names a category that has no live holder. Over one process,
+# with no same-category count guard (plan decision 3), the on-disk record obeys
+# ``acquire C`` -> ``record := C``; ``release C`` (normal or raising exit) ->
+# ``record := None if record == C else record``; an EX cycle leaves ``record := None``.
+# The SH clear runs before ``LOCK_UN`` / ``close`` on the one fd it opened (decision 1),
+# never raises (decision 4), and clears only an exact ``holder pid`` record (decision 5).
+
+from typing import Tuple  # noqa: E402
+
+from hypothesis import example  # noqa: E402
+
+FU2_CATEGORIES = ["notes", "reindex", "search"]
+FU2_RAISE_MSG = "fu2-body-raise"
+
+
+def _read_record(books: Path, folder: str = BOOK) -> bytes:
+    """The first record-width bytes of the lock file; ``b""`` if it does not exist yet."""
+    try:
+        with open(_lock_file(books, folder), "rb") as f:
+            return f.read(64)
+    except FileNotFoundError:
+        return b""
+
+
+_fu2_step = st.one_of(
+    st.tuples(st.just("acq"), st.sampled_from(FU2_CATEGORIES)),
+    st.tuples(st.just("rel"), st.integers(min_value=0, max_value=7)),
+    st.tuples(st.just("rel_raise"), st.integers(min_value=0, max_value=7)),
+    st.just(("ex",)),
+)
+
+
+@settings(max_examples=25, deadline=None, suppress_health_check=[HealthCheck.too_slow])
+@given(steps=st.lists(_fu2_step, min_size=1, max_size=8))
+@example(steps=[("acq", "notes"), ("rel", 0)])
+@example(steps=[("acq", "notes"), ("acq", "reindex"), ("rel", 0)])
+@example(steps=[("acq", "reindex"), ("acq", "notes"), ("rel", 1)])
+@example(steps=[("acq", "notes"), ("acq", "notes"), ("rel", 0)])
+@example(steps=[("acq", "notes"), ("rel", 0), ("ex",)])
+@example(steps=[("acq", "notes"), ("rel_raise", 0)])
+@example(steps=[("acq", "notes"), ("acq", "reindex"), ("rel_raise", 0)])
+def test_fu2_w1_04_category_record_matches_the_model(steps: List[tuple]) -> None:
+    books = Path(tempfile.mkdtemp(prefix="fu2-w1-04-"))
+    live: List[Tuple[Held, str]] = []
+    model: Optional[str] = None
+    done: List[tuple] = []
+    try:
+        for step in steps:
+            done.append(step)
+            kind = step[0]
+            if kind == "acq":
+                category = step[1]
+                live.append((Held(books, SH, category).start(), category))
+                model = category
+            elif kind in ("rel", "rel_raise"):
+                if live:
+                    held, category = live.pop(step[1] % len(live))
+                    if kind == "rel":
+                        held.release()
+                        assert held.error is None, f"after {done!r}: clean release raised {held.error!r}"
+                    else:
+                        held.release_raising()
+                        err = held.error
+                        assert type(err) is RuntimeError and str(err) == FU2_RAISE_MSG, (
+                            f"after {done!r}: the body's raise did not come back through acquire: {err!r}"
+                        )
+                    if model == category:
+                        model = None
+            else:  # "ex": only when no SH is live
+                if not live:
+                    with book_lock.acquire(str(books), BOOK, mode=EX, holder="delete"):
+                        inside = book_lock._parse_category(_read_record(books))
+                        assert inside == "delete", f"after {done!r}: EX record parses to {inside!r}"
+                    model = None
+            got = book_lock._parse_category(_read_record(books))
+            assert got == (model or "unknown"), (
+                f"after {done!r}: on-disk record parses to {got!r}, the model says {model or 'unknown'!r} (#21)"
+            )
+    finally:
+        for held, _ in live:
+            held.release()
+        shutil.rmtree(books, ignore_errors=True)
+
+
+class _ClearWriteFailsShim:
+    """``book_lock.os`` whose blank-payload ``pwrite`` (the clear) raises EIO; the rest is real."""
+
+    def __init__(self) -> None:
+        self.clear_attempts = 0
+
+    def pwrite(self, fd: int, data: bytes, offset: int) -> int:
+        if data.strip() == b"":
+            self.clear_attempts += 1
+            raise OSError(errno.EIO, "pwrite failed")
+        return os.pwrite(fd, data, offset)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(os, name)
+
+
+class _ReadFailsShim:
+    """``book_lock.os`` whose ``pread`` always raises EIO; the rest is real."""
+
+    def __init__(self) -> None:
+        self.read_attempts = 0
+
+    def pread(self, fd: int, n: int, offset: int) -> bytes:
+        self.read_attempts += 1
+        raise OSError(errno.EIO, "pread failed")
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(os, name)
+
+
+def test_fu2_w1_05_a_failing_clear_write_never_makes_sh_release_raise(
+    books_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, short_budget: float
+) -> None:
+    shim = _ClearWriteFailsShim()
+    monkeypatch.setattr(book_lock, "os", shim)
+    with book_lock.acquire(str(books_dir), BOOK, mode=SH, holder="notes"):
+        pass
+    attempts = shim.clear_attempts
+    monkeypatch.setattr(book_lock, "os", os)
+
+    assert attempts == 1, (
+        f"SH release made {attempts} clear attempts, expected exactly 1. If the clear no longer goes "
+        "through book_lock.os.pwrite with a blank payload, retarget the shim rather than weaken this."
+    )
+    box = _ex_ok_in_fresh_thread(books_dir)
+    assert not box["alive"]
+    assert box.get("value") == "ok", repr(box.get("error"))
+    assert box["elapsed"] < 0.5
+    assert probe(str(_lock_file(books_dir)), "EX", str(tmp_path)) == "ok"
+
+
+def test_fu2_w1_06_a_failing_record_read_skips_the_clear_and_never_raises(
+    books_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    shim = _ReadFailsShim()
+    monkeypatch.setattr(book_lock, "os", shim)
+    with book_lock.acquire(str(books_dir), BOOK, mode=SH, holder="notes"):
+        pass
+    attempts = shim.read_attempts
+    monkeypatch.setattr(book_lock, "os", os)
+
+    assert attempts >= 1, (
+        "SH release never read the record. If the compare no longer reads through book_lock.os.pread, "
+        "retarget the shim rather than weaken this."
+    )
+    tokens = _read_record(books_dir).decode("ascii", errors="replace").split()
+    assert tokens == ["notes", str(os.getpid())], f"a failed read must skip the clear, record is {tokens!r}"
+    box = _ex_ok_in_fresh_thread(books_dir)
+    assert not box["alive"]
+    assert box.get("value") == "ok", repr(box.get("error"))
+
+
+class _TeardownSpyOs:
+    """Pass-through ``book_lock.os`` that logs the clear, ``close`` and every ``open`` before delegating."""
+
+    def __init__(self, log: List[str], opens: List[str]) -> None:
+        self._log = log
+        self._opens = opens
+
+    def pwrite(self, fd: int, data: bytes, offset: int) -> int:
+        if data.strip() == b"":
+            self._log.append("clear")
+        return os.pwrite(fd, data, offset)
+
+    def close(self, fd: int) -> None:
+        self._log.append("close")
+        os.close(fd)
+
+    def open(self, path: str, flags: int, mode: int = 0o777) -> int:
+        self._opens.append(path)
+        return os.open(path, flags, mode)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(os, name)
+
+
+class _TeardownSpyFcntl:
+    """Pass-through ``book_lock.fcntl`` that logs ``flock(LOCK_UN)`` before delegating."""
+
+    def __init__(self, log: List[str]) -> None:
+        self._log = log
+
+    def flock(self, fd: int, op: int) -> None:
+        if op == fcntl.LOCK_UN:
+            self._log.append("unlock")
+        fcntl.flock(fd, op)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(fcntl, name)
+
+
+@pytest.mark.parametrize("mode", [SH, EX])
+def test_fu2_w1_07_release_clears_while_still_holding_the_flock_on_its_one_fd(
+    books_dir: Path, monkeypatch: pytest.MonkeyPatch, mode: str
+) -> None:
+    (books_dir / ".locks").mkdir()
+    log: List[str] = []
+    opens: List[str] = []
+    monkeypatch.setattr(book_lock, "os", _TeardownSpyOs(log, opens))
+    monkeypatch.setattr(book_lock, "fcntl", _TeardownSpyFcntl(log))
+    with book_lock.acquire(str(books_dir), BOOK, mode=mode, holder=("notes" if mode == SH else "delete")):
+        pass
+    monkeypatch.setattr(book_lock, "os", os)
+    monkeypatch.setattr(book_lock, "fcntl", fcntl)
+
+    assert log == ["clear", "unlock", "close"], (
+        f"{mode} teardown was {log!r}; expected ['clear', 'unlock', 'close']: the record is cleared with a "
+        "blank pwrite while the flock is still held, then flock(LOCK_UN), then close. A deliberate change of "
+        "syscall retargets this spy; it does not relax the order."
+    )
+    assert opens == [book_lock.lock_path(str(books_dir), BOOK)], f"expected one os.open of the lock path: {opens!r}"
+    assert _read_record(books_dir).strip() == b"", "the record was not left blank"
+    box = _ex_ok_in_fresh_thread(books_dir)
+    assert not box["alive"]
+    assert box.get("value") == "ok", repr(box.get("error"))
+    assert box["elapsed"] < 0.5
+
+
+@pytest.mark.parametrize(
+    "template",
+    [b"notes {me}7", b"notes {me} extra", b"\xff\xfe junk", b"notes 12ab", b"notes"],
+    ids=["pid-prefix", "extra-field", "non-ascii", "non-numeric-pid", "one-field"],
+)
+def test_fu2_w1_09_the_compare_never_clears_or_raises_on_a_foreign_or_torn_record(
+    books_dir: Path, template: bytes
+) -> None:
+    raw = template.replace(b"{me}", str(os.getpid()).encode())
+    injected = raw[:63].ljust(63, b" ") + b"\n"
+    lock_file = _lock_file(books_dir)
+    with book_lock.acquire(str(books_dir), BOOK, mode=SH, holder="notes"):
+        fd2 = os.open(str(lock_file), os.O_RDWR)
+        try:
+            os.pwrite(fd2, injected, 0)
+        finally:
+            os.close(fd2)
+
+    assert lock_file.read_bytes()[:64] == injected, "the release rewrote a record it does not own"
+    box = _ex_ok_in_fresh_thread(books_dir)
+    assert not box["alive"]
+    assert box.get("value") == "ok", repr(box.get("error"))
+    assert box["elapsed"] < 0.5
