@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
@@ -60,7 +61,6 @@ async def library_view(request: Request):
                         cover_image = None
 
                     cover_url = f"/read/{item}/images/{cover_image}" if cover_image else None
-                    book_uuid = _server._book_uuid_or_none(item)
                     books.append({
                         "id": item,
                         "title": book.metadata.title,
@@ -69,8 +69,13 @@ async def library_view(request: Request):
                         "section_count": len(book.spine),
                         "cover_url": cover_url,
                         "format": "epub",
-                        "book_uuid": book_uuid,
+                        "book_uuid": None,
                     })
+
+    # 018 WI-2 (#6)：解析 uuid 可能要取书锁，整张列表一次进线程池，不在事件循环上等。
+    uuids = await run_in_threadpool(_server._book_uuids_or_none, [str(b["id"]) for b in books])
+    for b in books:
+        b["book_uuid"] = uuids.get(str(b["id"]))
 
     existing_book_ids = {b.get("id") for b in books if b.get("id")}
     collections = []

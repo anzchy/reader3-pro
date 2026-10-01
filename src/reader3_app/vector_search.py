@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import os
-import shutil
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+from . import book_lock
 from .safe_paths import safe_book_folder
 from .safe_pickle import load_book_file
 
@@ -93,10 +94,14 @@ class SemanticSearchResult:
 
 
 class BookVectorIndex:
+    #: Identity captured at request start (018 WI-2 ABA recheck); the route sets it on
+    #: the instance. The class default means "no check" (CLI, direct callers).
+    expected_book_uuid: object = book_lock.NO_UUID_CHECK
+
     def __init__(self, book_id: str, *, books_dir: str = ".") -> None:
-        # 在构造处拒绝，而不是在 rmtree 前一行：index_book(force_reindex=True)
-        # 对 self.chroma_path 走 shutil.rmtree，而 BookVectorIndex("..") 的
-        # chroma_path 是 books/../chroma_db。少一个可绕过的窗口。
+        # 在构造处拒绝，而不是在销毁前一行：index_book(force_reindex=True)
+        # 会删 self.chroma_path 下的 meta 和集合（018 WI-1 之前是整棵 rmtree），
+        # 而 BookVectorIndex("..") 的 chroma_path 是 books/../chroma_db。少一个可绕过的窗口。
         book_id = safe_book_folder(book_id)
         self.book_id = book_id
         self.books_dir = books_dir
@@ -111,9 +116,9 @@ class BookVectorIndex:
     def _prepare_deps(self):
         """依赖 + 嵌入模型，**不碰磁盘**。
 
-        单独拆出来是为了让 ``index_book(force_reindex=True)`` 能在删掉可用索引之前
+        单独拆出来是为了让 ``index_book(force_reindex=True)`` 能在丢弃可用索引之前
         先把「依赖装了没、模型加载得起来没」验完：``_client_and_collection`` 会
-        ``os.makedirs`` 并建集合，在 rmtree 之前跑它会让集合句柄指向一个随后被删掉的目录。
+        建 ``chroma_db`` 并建集合，而 force_reindex 要先删集合、再建新的——验证必须排在删之前。
         """
         chromadb, SentenceTransformerEmbeddingFunction = _require_semantic_deps()
         embed_fn = _build_embedding_function(SentenceTransformerEmbeddingFunction)
@@ -121,19 +126,107 @@ class BookVectorIndex:
         self._deps = deps
         return deps
 
-    def _client_and_collection(self):
+    def _not_indexed(self) -> RuntimeError:
+        return RuntimeError(f"Book {self.book_id} not indexed. Run indexing first.")
+
+    def _ensure_chroma_dir(self) -> None:
+        """Create ``chroma_db`` inside an existing book dir; never the book dir itself.
+
+        018 WI-2 (ADR-0015 contract item 5): ``os.makedirs`` here used to recreate a
+        deleted book as a folder holding only an index.
+        """
+        if not os.path.isdir(self.book_dir):
+            raise book_lock.BookGone(f"book {self.book_id!r} was removed; refusing to recreate it")
+        with contextlib.suppress(FileExistsError):
+            os.mkdir(self.chroma_path)
+
+    def _client_and_collection(self, create: bool = True):
+        """Open the collection. ``create=False`` is the read path: it creates nothing.
+
+        On the read path a missing ``chroma_db`` (book deleted, or imported and never
+        indexed) or a missing collection is a clean "not indexed", not a new
+        empty store written into the book dir.
+        """
         chromadb, embed_fn = getattr(self, "_deps", None) or self._prepare_deps()
-        os.makedirs(self.chroma_path, exist_ok=True)
+        if not create:
+            return self._open_for_read(chromadb, embed_fn)
+        self._ensure_chroma_dir()
         client = chromadb.PersistentClient(path=self.chroma_path)
         try:
             collection = client.get_collection(COLLECTION_NAME, embedding_function=embed_fn)
-        except Exception:  # noqa: BLE001 - 第 3 档：chromadb 在集合不存在时抛的类型跨版本不稳定，这里只能宽捕获后建集合；建失败会照常抛
+        except Exception:  # noqa: BLE001 - 第 3 档：建索引路径上集合不存在就建；建失败会照常抛
             collection = client.create_collection(
                 COLLECTION_NAME,
                 embedding_function=embed_fn,
                 metadata={"hnsw:space": SPACE},
             )
         return client, collection
+
+    def _open_for_read(self, chromadb: Any, embed_fn: Any):
+        """The read-path open: SH ``search`` on the book lock across recheck + open only.
+
+        Fix-plan WI-4 (audit #44, #48; ADR-0015 item 2): ``PersistentClient(path)``
+        creates ``path`` -- and the book dir above it -- if they are gone, so an
+        unlocked "is ``chroma_db`` there?" check followed by the open resurrected a
+        book deleted in between. The order is:
+
+        1. unlocked pre-check: no ``chroma_db`` -> not indexed, no lock taken (keeps an
+           import in progress answering fast);
+        2. SH as ``search`` with ``SHORT_BUDGET_S``: an EX import / delete in progress
+           is a ``BookLockBusy``, translated to the same "not indexed" every caller
+           (search route, RAG, chat) already handles, chained;
+        3. in-lock recheck of ``chroma_db``; 4. open + ``get_collection``; 5. release.
+        The query itself runs unlocked.
+
+        Only chromadb's collection-not-found (``chromadb.errors.NotFoundError`` in
+        1.3.x, not a ``ValueError`` subclass) means "not indexed" (#45). Any other
+        failure -- permissions, an embedding-function conflict, an internal error --
+        propagates as itself rather than telling the user to re-index.
+        """
+        if not os.path.isdir(self.chroma_path):
+            raise self._not_indexed()
+        not_found = chromadb.errors.NotFoundError
+        try:
+            with book_lock.acquire(
+                self.books_dir,
+                self.book_id,
+                mode=book_lock.SHARED,
+                holder="search",
+                budget=book_lock.SHORT_BUDGET_S,
+            ):
+                if not os.path.isdir(self.chroma_path):
+                    raise self._not_indexed()
+                client = chromadb.PersistentClient(path=self.chroma_path)
+                try:
+                    collection = client.get_collection(COLLECTION_NAME, embedding_function=embed_fn)
+                except not_found as e:
+                    raise self._not_indexed() from e
+        except book_lock.BookLockBusy as e:
+            raise self._not_indexed() from e
+        return client, collection
+
+    def _drop_index_for_rebuild(self) -> None:
+        """force_reindex 的「销毁」一步：先删 meta，再经 chromadb 公开 API 删集合。
+
+        018 WI-1（FX-1-18）：这里以前是 ``shutil.rmtree(chroma_path)``。chromadb 按路径
+        缓存进程内的 system，同一进程里先索引过、再 rmtree 并在同一路径上开新 client，
+        拿到的是指向已删 sqlite 的旧句柄——"attempt to write a readonly database"。
+        ``delete_collection`` 走同一个缓存的 system，没有这个问题。
+
+        meta 先删：它以前随 rmtree 一起消失，重建半途失败时书就是「未索引」。现在
+        目录留着，不先删 meta，失败的重建就会留下一份描述旧集合的 "indexed"。
+        ``chroma_db`` 不存在时什么都不建（交给随后的 ``_client_and_collection``）。
+        """
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(self.meta_path)
+        if not os.path.isdir(self.chroma_path):
+            return
+        chromadb, _ = getattr(self, "_deps", None) or self._prepare_deps()
+        client = chromadb.PersistentClient(path=self.chroma_path)
+        # 1.x 的 list_collections 返回 Collection，0.6 之前返回名字；两种都认。
+        names = {getattr(c, "name", c) for c in client.list_collections()}
+        if COLLECTION_NAME in names:
+            client.delete_collection(COLLECTION_NAME)
 
     def _existing_chunk_ids(self, collection) -> Optional[set]:
         """collection 当前持有的 id 集合；读不出来时返回 None（调用方据此保守处理）。"""
@@ -211,14 +304,36 @@ class BookVectorIndex:
             start = max(end - overlap, start + 1)
         return chunks
 
-    def index_book(self, *, force_reindex: bool = False) -> Dict[str, Any]:
+    def index_book(
+        self,
+        *,
+        force_reindex: bool = False,
+        expected_book_uuid: object = book_lock.NO_UUID_CHECK,
+    ) -> Dict[str, Any]:
+        """(Re)build the index under the book lock: SH ``reindex`` for the whole run.
+
+        018 WI-2 (ADR-0015 contract items 3, 5, 6): the HTTP route and the CLI take
+        the same lock here; the book dir and (if given) its identity are rechecked
+        inside it. ``expected_book_uuid`` may also be set as an attribute of the
+        same name -- that is how the route passes it without widening the call.
+        """
+        if expected_book_uuid is book_lock.NO_UUID_CHECK:
+            expected_book_uuid = self.expected_book_uuid
+        with book_lock.writer_scope(
+            self.books_dir, self.book_id, holder="reindex", expected_book_uuid=expected_book_uuid
+        ), book_lock.resource_lock(self.books_dir, self.book_id, category="reindex"):
+            # 018 WI-1 (#3): SH admits two reindexes of one book; the resource lock
+            # refuses the second (409 reindex) instead of letting both drop the collection.
+            return self._index_book_locked(force_reindex=force_reindex)
+
+    def _index_book_locked(self, *, force_reindex: bool) -> Dict[str, Any]:
         # 先验证，再销毁。依赖、模型、book.pkl 任何一步失败时，force_reindex 之前
         # 那个可用的索引必须原封不动——否则用户既没有新索引也没有旧索引。
         self._prepare_deps()
         book = self._load_book()
 
-        if force_reindex and os.path.exists(self.chroma_path):
-            shutil.rmtree(self.chroma_path, ignore_errors=True)
+        if force_reindex:
+            self._drop_index_for_rebuild()
 
         _, collection = self._client_and_collection()
 
@@ -270,7 +385,7 @@ class BookVectorIndex:
             "space": SPACE,
             "indexed_at": _utc_now_iso(),
         }
-        os.makedirs(self.chroma_path, exist_ok=True)
+        self._ensure_chroma_dir()
         with open(self.meta_path, "w", encoding="utf-8") as f:
             json.dump(meta, f, ensure_ascii=False, indent=2)
         return meta
@@ -320,9 +435,10 @@ class BookVectorIndex:
         if not query:
             return []
         if not self.is_indexed():
-            raise RuntimeError(f"Book {self.book_id} not indexed. Run indexing first.")
+            raise self._not_indexed()
 
-        _, collection = self._client_and_collection()
+        # Read path: creates nothing; holds SH "search" only across the open (fix-plan WI-4).
+        _, collection = self._client_and_collection(create=False)
         res = collection.query(query_texts=[query], n_results=n_results, include=["documents", "metadatas", "distances"])
         docs = (res.get("documents") or [[]])[0]
         metas = (res.get("metadatas") or [[]])[0]

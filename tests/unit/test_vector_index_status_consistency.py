@@ -254,6 +254,8 @@ def test_s7_刚建好的索引立刻被status报成indexed(books_dir: Path, monk
     """
     monkeypatch.setattr(vector_search, "_require_semantic_deps", lambda: (object(), _FakeEmbedFn))
     idx = make_index(books_dir)
+    # 018 WI-2 amendment: writers no longer create the book dir (contract item 5); the book exists in setup.
+    os.makedirs(idx.book_dir, exist_ok=True)
     collection = _FakeCollection()
     monkeypatch.setattr(idx, "_client_and_collection", lambda *a, **kw: (object(), collection))
     monkeypatch.setattr(idx, "_load_book", lambda *a, **kw: _FakeBook())

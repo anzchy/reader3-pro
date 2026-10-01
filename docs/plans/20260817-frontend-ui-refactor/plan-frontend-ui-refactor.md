@@ -1092,19 +1092,19 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 9. **迁出的样式不许带着硬编码走**：4b 产生的那些 `.css` 文件全部通过 **§9.3 的 token 硬编码 lint**，即 `library.html` 这一项从该 lint 的白名单里**划掉**。少了这一条，4b 就只是把 1075 行硬编码从模板搬进 CSS 文件——`<style` 计数归零了，`#rrggbb` 与离档字号一个没少。本条与 4b 必须同批转绿，不许分两次。
 10. **Track D 的 4A 半边在这里结账**：WI-1–WI-8 中标着 `〔实现类·前置 WI-9〕验于 013` 的**全部** 34 条验收已实际执行并全绿，条数与 §4.0 分布表一致。少了这一条，那 34 条从 `010` 的账上划走之后落不到任何账上——`010` 说「未激活」，`013` 从不提它们，等于谁都不欠。**判法**：跑一遍 §4.0 那 34 条，逐条二值记录，全绿才算本 WI 完成。
     - **裁定（2026-09-24，用户裁定 D1＋D2）**：`acceptance-4a4` 那道出口门挪到 `014`。本条与第 11 条逐条给出二选一的判词：「013 全绿」，或「书库半边绿、阅读器半边钉到 `014` 的某个具名 WI」。每条的判词与归属写进 013 结账记录，不许有无主条目。
-    - **延后条目总表（2026-09-25 重述，用户裁定 R2 / R3 / R4）**：下表是 013 延后的**全部**条目，每条都有主。Track-D 行的逐条钉值（`row` × `half`）以 `tests/fixtures/track_d_pinned_014.json` 为准，`tests/unit/test_track_d_ledger.py` 机械校验「钉值 ＋ 已测 ＝ 34 条」、D12 钉条必须写出 014 WI 与 `012 debt #N`、且该号在欠账表里归 012，书库侧钉条（`library` / `all` 半边）的 WI 必须是 WI-16b、阅读器半边是 WI-16b 或 WI-14–WI-19 之一。书库侧的 UI 验收一律在 [**WI-16b**](#wi-16b-书库侧延后验收)（014 的书库 WI，2026-09-25 用户裁定开立）结账；此前挂在 WI-16 验收 16 上。
+    - **延后条目总表（2026-09-25 重述，用户裁定 R2 / R3 / R4）**：下表是 013 延后的**全部**条目，每条都有主。Track-D 行的逐条钉值（`row` × `half`）以 `tests/fixtures/track_d_pinned_014.json` 为准，`tests/unit/test_track_d_ledger.py` 机械校验「钉值 ＋ 已测 ＝ 34 条」、D12 钉条必须写出 014 WI 与 `012 debt #N` / `018 debt #N`、且前缀恰等于该号在欠账表里兑付方的分支号（⬛ 2026-09-30：D1 改归 018，见 [018 WI-1](../20260816-tech-stack-migration/tasks/018-library-routes.md) 泛化；原写「`012 debt #N`、该号归 012」），书库侧钉条（`library` / `all` 半边）的 WI 必须是 WI-16b、阅读器半边是 WI-16b 或 WI-14–WI-19 之一。书库侧的 UI 验收一律在 [**WI-16b**](#wi-16b-书库侧延后验收)（014 的书库 WI，2026-09-25 用户裁定开立）结账；此前挂在 WI-16 验收 16 上。
 
       | 延后条目 | UI 验收归属 | 路由 / 后端归属 | 依据 |
       |---|---|---|---|
       | Track-D WI-3#5 阅读器半边 | 014 WI-16 | — | C-8 |
-      | Track-D WI-4#1–#7（DEG-S3；#1 / #2 / #7 两个半边） | 014 WI-16b | [012 债 #54](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账)（#6 另加 [012 债 #56](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账)） | D12 → R2 |
+      | Track-D WI-4#1–#7（DEG-S3；#1 / #2 / #7 两个半边） | 014 WI-16b | [012 债 #54](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账)（#6 另加 [018 债 #56](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账)，⬛ 2026-09-30：D1 改归 018，见 [018 WI-1](../20260816-tech-stack-migration/tasks/018-library-routes.md)） | D12 → R2 |
       | Track-D WI-5#1–#6（DEG-S4）、FD-05 | 014 WI-16b | [012 债 #55](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账) | D12 → R2 |
-      | Track-D WI-8#4（即第 34 条）、FD-20、FD-03、验收 7 的「加载失败」分支、C13.06 | 014 WI-16b | [012 债 #56](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账) | D12 → R2 |
+      | Track-D WI-8#4（即第 34 条）、FD-20、FD-03、验收 7 的「加载失败」分支、C13.06 | 014 WI-16b | [018 债 #56](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账)（⬛ 2026-09-30：D1 改归 018，见 [018 WI-1](../20260816-tech-stack-migration/tasks/018-library-routes.md)） | D12 → R2 |
       | 验收 5（A13.5） | 014 WI-19 | — | C-10a |
       | 验收 11（A13.11） | 014 WI-16 | — | C-8b |
       | EXIT-3（`acceptance-4a4` 出口门） | 014 的出口门（不属单个 WI） | — | C-6 / D1＋D2 |
       | FB-L01–03（上传 / 选文件 / 拖放区） | 014 WI-16b | [012 债 #57](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账) | D13 |
-      | FB-L18（删书后的陈旧写） | 014 WI-16b | [012 债 #58](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账) | D13 |
+      | FB-L18（删书后的陈旧写） | 014 WI-16b | [018 债 #58](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账)（⬛ 2026-09-30：D1 改归 018，见 [018 WI-1](../20260816-tech-stack-migration/tasks/018-library-routes.md)） | D13 |
       | FA-08 / FB-L15 | **不延后，按偏离交付** | — | D14 |
 11. **接 D-8 移交**：笔记面板的 **chip 四色选择器**已是字面量，且与 `spec §3.3` 的四个 `--r3-hl-*-rgb` **一一对应**——四个 chip 选择器逐个列出，每个只引用与自己同色的那个 `-rgb` token，alpha 恒为 `.35`（D-8 已定死的九个之一）。**判法**：对四个色名各跑一次，取 chip 元素的 `background-color` 计算值，与「该色 `-rgb` 三元组 ＋ `.35`」算出的 `rgba()` 逐位相等；交叉引用（绿 chip 引用了黄的 `-rgb`）必须判红。这一条 2026-09-23 从 `010` 的 D-8 移交过来，理由是它依赖「笔记面板迁进源码根」这个本 WI 的前置——**移交不是免掉**，它在这里翻牌。
 
@@ -1118,7 +1118,7 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 
 > **裁定 D13（2026-09-25，用户裁定 R3）——上传与删书延后给后端，与 D11 / D12 同形。**
 > - FB-L01–03（`lib-add-books` / `lib-choose-files` / `lib-dropzone`）与 FB-L18（A 标签页删书、B 标签页对它写）在 013 **Deferred**：没有上传路由、没有删书路由，而 HTTP API 冻结（ADR-0011）。
-> - 路由半边：上传 [012 债 #57](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账)，删书 [012 债 #58](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账)。FB-L18 的陈旧写本身服务端今天已回 404，缺的只是造出前提的删书路由（核实记录在 #58）。
+> - 路由半边：上传 [012 债 #57](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账)，删书 [018 债 #58](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账)（⬛ 2026-09-30：D1 改归 018，见 [018 WI-1](../20260816-tech-stack-migration/tasks/018-library-routes.md)）。FB-L18 的陈旧写本身服务端今天已回 404，缺的只是造出前提的删书路由（核实记录在 #58）。
 > - UI 验收：014 [WI-16b](#wi-16b-书库侧延后验收)（2026-09-25 由 WI-16 验收 16 移交）。不归 015——迁移计划 §9 的 M5 只含 `reader3 launch` 与 PWA，没有导入流程。
 > - 矩阵行 FB-L01–03、FB-L18 标 Deferred 并链到本条；归属总表在验收 10。
 
@@ -1299,7 +1299,7 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 
 **为什么单开、为什么叫 16b**（2026-09-25 用户裁定，经 reader-a2 转达）：R2 当时把这些条目挂到 WI-16，理由是「014 没有书库页 WI」；WI-16 是阅读器外壳，拿它结书库的账等于让一个 WI 同时欠两页。现在给书库侧开一个专门的 WI。编号取 `16b`：`WI-20` 已归 015 PWA，又不重排已有编号；字母后缀插入沿用迁移侧 `011` 的 `WI-0a` / `WI-0b`、`WI-5a` / `WI-5b`。排在 WI-16 之后，是因为 DEG-S3 的三个阅读器半边要挂在 WI-16 建好的阅读器外壳上。
 
-**前置 WI**：WI-13（书库页已在源码根）、WI-16（阅读器半边的挂载点）。**外部前置**：012 债 [#54–#58](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账)，每条验收只等自己点名的那一条。
+**前置 WI**：WI-13（书库页已在源码根）、WI-16（阅读器半边的挂载点）。**外部前置**：012 债 [#54 / #55 / #57](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账) ＋ 018 债 [#56 / #58](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账)（⬛ 2026-09-30：D1 改归 018，见 [018 WI-1](../20260816-tech-stack-migration/tasks/018-library-routes.md)；原写「012 债 #54–#58」），每条验收只等自己点名的那一条。
 
 **做什么**：债兑付一条，就把等它的那几条跑绿；Track-D 条目跑绿的同一改动里删掉对应钉条，否则台账按重叠律判红（[WI-13 验收 10](#wi-13-4a4-书库页切片)）。三个 DEG-S3 阅读器半边也在这里，不回 WI-16：它们与书库半边等同一条债（#54）、跑同一个共享组件（WI-4 验收 7），拆两处结账会让一次兑付分两次验。台账规则（D12 钉条的 UI 归属必须是本 WI）由 `tests/unit/test_track_d_ledger.py` 机械校验。
 
@@ -1655,7 +1655,7 @@ E2E 侧：**不要写 Node Playwright Test 的 `webServer` 语法**，用 pytest
 | FB-L15 | WI-13 | `lib-book-card`（role=button） | Enter 与 Space 都能进入阅读器；`aria-label` 含书名。 ⚠️ **偏离（2026-09-25，用户裁定 D14，见 [WI-13 的裁定 D14](#wi-13-4a4-书库页切片)）**：不加 `role="button"`，保留卡内「Read {title}」链接 ＋ Space 激活（冻结的 `baseline_1b` 要这个链接）；`aria-label` 与 Enter / Space 照做 |
 | FB-L16 | WI-13 | `lib-refresh-stats` | 连点 3 次只发 1 次；陈旧数据点击后统计数字被替换而不是叠加 |
 | FB-L17 | WI-13 | `lib-nav-settings` / `lib-nav-library` | 当前页对应项 `aria-current="page"`，另一项没有 |
-| FB-L18 | WI-13 | **陈旧数据写入** | 在 A 标签页删掉一本书，B 标签页点该书的 `lib-bulk-index`：不静默成功，显示错误或刷新提示。 ⏸ **Deferred（2026-09-25，用户裁定 D13，见 [WI-13 的裁定 D13](#wi-13-4a4-书库页切片)）**：路由 [012 债 #58](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账)，UI 验收 014 [WI-16b](#wi-16b-书库侧延后验收) |
+| FB-L18 | WI-13 | **陈旧数据写入** | 在 A 标签页删掉一本书，B 标签页点该书的 `lib-bulk-index`：不静默成功，显示错误或刷新提示。 ⏸ **Deferred（2026-09-25，用户裁定 D13，见 [WI-13 的裁定 D13](#wi-13-4a4-书库页切片)）**：路由 [018 债 #58](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账)（⬛ 2026-09-30：D1 改归 018，见 [018 WI-1](../20260816-tech-stack-migration/tasks/018-library-routes.md)），UI 验收 014 [WI-16b](#wi-16b-书库侧延后验收) |
 | FB-L19 | WI-13 | `lib-theme-toggle` | 三态循环，连点 3 次回到初始态；`aria-label` 随态更新；与设置页「外观」共用 `reader3.ui.colorScheme`（设置页选 `dark` 后回书库，按钮显示 `dark`） |
 
 #### 5.1.2 阅读器
@@ -1692,10 +1692,10 @@ E2E 侧：**不要写 Node Playwright Test 的 `webServer` 语法**，用 pytest
 | FB-S03 | WI-12 | `set-provider-test` | 测试中 `disabled`；成功 / 失败分别渲染 `set-provider-result` 的两种态，文案不同 |
 | FB-S04 | WI-12 | `set-provider-refresh-models` | 连点 3 次只发 1 次；失败时下拉保持原值而不是清空 |
 | FB-S05 | WI-12 | `set-data-cache` / `set-data-conversations` / `set-data-reindex` | 三个破坏性操作**都**先弹各自的 `set-modal-{reindex,conversations,cache}`；`-cancel` 后请求数为 0（2026-09-24，用户裁定 D10：按 ADR-0014 与原型改为逐操作对话框）。⏸ **reindex 的服务端效果半条 Deferred（2026-09-25，用户裁定 D11：延后）**：`-primary` 显示可见的「暂不支持」、0 请求；服务端效果是 [012 债 #52](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账)。conversations / cache 全量 |
-| FB-S06 | WI-12 | `set-export-json` / `set-export-settings` | 导出内容非空且是合法 JSON；导出中按钮 `disabled`。⏸ **`set-export-json` Deferred（2026-09-25，用户裁定 D11：延后）**：冻结 API 没有书库导出路由，按钮显示可见的「暂不支持」、0 请求；服务端效果是 [012 债 #53](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账)。`set-export-settings` 照原文全量验收 |
+| FB-S06 | WI-12 | `set-export-json` / `set-export-settings` | 导出内容非空且是合法 JSON；导出中按钮 `disabled`。⏸ **`set-export-json` Deferred（2026-09-25，用户裁定 D11：延后）**：冻结 API 没有书库导出路由，按钮显示可见的「暂不支持」、0 请求；服务端效果是 [018 债 #53](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账)（⬛ 2026-09-30：D1 改归 018，见 [018 WI-1](../20260816-tech-stack-migration/tasks/018-library-routes.md)；`set-export-json` 的前端半边随 018 WI-6，归属见 [018 §2.3](../20260816-tech-stack-migration/tasks/018-library-routes.md)）。`set-export-settings` 照原文全量验收 |
 | FB-S07 | WI-12 | `set-rag-chunks` / `set-rag-context` / `set-rag-embedding` | 越界输入被钳到合法区间而不是保存越界值；保存后刷新仍是钳后的值 |
 | FB-S08 | WI-12 | `set-provider-key` | 输入框 `type="password"`；保存后重新加载页面，返回值不含明文 key |
-| FB-S09 | WI-12 | **陈旧数据写入** ⏸ **Deferred（2026-09-24，用户裁定 D8）** | A 标签页改了 provider 配置，B 标签页用旧值点 `set-provider-save`：不静默覆盖。**挪到后端**：服务端半条是 [012 债 #51](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账)；013 只断言保存失败时设置页出现可见错误（`tests/e2e/shell_4a/test_settings_rows.py::test_provider_save_failure_is_visible`） |
+| FB-S09 | WI-12 | **陈旧数据写入** ⏸ **Deferred（2026-09-24，用户裁定 D8）** | A 标签页改了 provider 配置，B 标签页用旧值点 `set-provider-save`：不静默覆盖。**挪到后端**：服务端半条是 [018 债 #51](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账)（⬛ 2026-09-30：D1 改归 018，见 [018 WI-1](../20260816-tech-stack-migration/tasks/018-library-routes.md)；客户端半边随 018 WI-3，归属见 [018 §2.3](../20260816-tech-stack-migration/tasks/018-library-routes.md)）；013 只断言保存失败时设置页出现可见错误（`tests/e2e/shell_4a/test_settings_rows.py::test_provider_save_failure_is_visible`） |
 | FB-S10 | WI-12 | `set-appearance-scheme-system` / `-light` / `-dark` | `role="radiogroup"`，恰有一个 `aria-checked="true"`，无存储值时是 `-system`；选 `system` 时 `<html>` 上**没有** `data-theme` 属性，选另两个时属性值等于所选；三次切换都不触碰 `data-reading-theme` |
 
 ---
@@ -1761,7 +1761,7 @@ E2E 侧：**不要写 Node Playwright Test 的 `webServer` 语法**，用 pytest
 |---|---|---|---|---|
 | FD-01 | WI-13 | 空库 | `lib-empty` | 可见，且 `lib-book-card` 数量为 0；`lib-filter-empty` 不可见 |
 | FD-02 | WI-13 | 筛选零结果 | `lib-filter-empty` | 可见，且 `lib-empty` 不可见（两者互斥） |
-| FD-03 | WI-13 | 加载失败 | 书库错误态 testid | 可见且含重试入口；点重试重新发请求 **〔D12 2026-09-25：Deferred → [012 债 #56](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账) / 014 [WI-16b](#wi-16b-书库侧延后验收)（R2；2026-09-25 由 WI-16 移交）〕** |
+| FD-03 | WI-13 | 加载失败 | 书库错误态 testid | 可见且含重试入口；点重试重新发请求 **〔D12 2026-09-25：Deferred → [018 债 #56](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账) / 014 [WI-16b](#wi-16b-书库侧延后验收)（R2；2026-09-25 由 WI-16 移交；⬛ 2026-09-30：D1 改归 018，见 [018 WI-1](../20260816-tech-stack-migration/tasks/018-library-routes.md)）〕** |
 | FD-04 | WI-13 | 三态互斥 | 空 / 零结果 / 错误 | 任意时刻三者可见数 ≤1 |
 | FD-05 | WI-13 | 部分失败 | 批量索引 10 本失败 3 本 | 成功 7 本正常显示，3 个 `lib-migrate-failed-item`，**不是整批回滚也不是整批标成功** **〔D12 2026-09-25：Deferred → [012 债 #55](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账) / 014 [WI-16b](#wi-16b-书库侧延后验收)（R2；2026-09-25 由 WI-16 移交）〕** |
 | FD-06 | WI-13 | 超长文本 | 书名 500 字符 | 卡片不撑破容器（卡片 `getBoundingClientRect().width` ≤ 网格列宽），文本截断或换行 |
@@ -1778,7 +1778,7 @@ E2E 侧：**不要写 Node Playwright Test 的 `webServer` 语法**，用 pytest
 | FD-17 | WI-12 | 加载失败 | provider 模型列表拉取失败 | 下拉保持原值 ＋ 显示错误提示；不是清空成空下拉 |
 | FD-18 | WI-12 | 空 | 未配置任何 provider | 设置页显示引导态而不是空白 |
 | FD-19 | WI-3 | 部分失败 | 批量索引部分成功 | 成功项 `lib-status-indexed`、失败项 `lib-status-error`，两者同时存在 |
-| FD-20 | WI-13 | 首屏顺序 | 数据返回前后 | 返回前 `lib-book-card` 数为 0，返回后等于接口条数（**不断言骨架**） **〔D12 2026-09-25：Deferred → [012 债 #56](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账) / 014 [WI-16b](#wi-16b-书库侧延后验收)（R2；2026-09-25 由 WI-16 移交）〕** |
+| FD-20 | WI-13 | 首屏顺序 | 数据返回前后 | 返回前 `lib-book-card` 数为 0，返回后等于接口条数（**不断言骨架**） **〔D12 2026-09-25：Deferred → [018 债 #56](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账) / 014 [WI-16b](#wi-16b-书库侧延后验收)（R2；2026-09-25 由 WI-16 移交；⬛ 2026-09-30：D1 改归 018，见 [018 WI-1](../20260816-tech-stack-migration/tasks/018-library-routes.md)）〕** |
 
 ---
 

@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, HTMLResponse
 
 
@@ -72,7 +73,8 @@ async def read_chapter(request: Request, book_id: str, chapter_index: int):
     prev_idx = chapter_index - 1 if chapter_index > 0 else None
     next_idx = chapter_index + 1 if chapter_index < len(book.spine) - 1 else None
 
-    book_uuid = _server._book_uuid_or_none(safe_book_id)
+    # 018 WI-2 (#6)：可能要取书锁，放进线程池，不在事件循环上等。
+    book_uuid = await run_in_threadpool(_server._book_uuid_or_none, safe_book_id)
     cover_image = None
     try:
         images_dir = os.path.join(_server.BOOKS_DIR, safe_book_id, "images")

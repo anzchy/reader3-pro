@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional
 from uuid import UUID, uuid4
 
+from .. import book_lock
 from ..safe_paths import safe_book_folder
 
 
@@ -106,7 +107,9 @@ def _write_meta_to_scratch(meta_path: str, meta: Dict[str, Any]) -> str:
     looking at the file we think we are, and quietly truncating it is how the
     previous version lost data.
     """
-    os.makedirs(os.path.dirname(meta_path) or ".", exist_ok=True)
+    # No makedirs (018 WI-2, ADR-0015 contract item 5): every caller holds the book
+    # lock and has just seen the book dir; if it is gone, O_EXCL below fails rather
+    # than a deleted book coming back as a directory holding only ai_meta.json.
     tmp_path = f"{meta_path}.{os.getpid()}.{os.urandom(6).hex()}.tmp"
     fd = os.open(tmp_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666)
     try:
@@ -197,7 +200,25 @@ def _add_uuid_to_existing_meta(meta_path: str, meta: Dict[str, Any]) -> str:
     return new_uuid
 
 
-def ensure_book_uuid(books_dir: str, book_folder: str) -> str:
+def ensure_book_uuid(
+    books_dir: str,
+    book_folder: str,
+    *,
+    deadline: Optional[float] = None,
+    budget: Optional[float] = None,
+) -> str:
+    """The book's uuid; minted (or added to an existing meta) if it has none yet.
+
+    The read of an existing uuid takes no lock. Minting is a write into the book
+    dir, so it runs under the book lock (SH, category ``ai_meta``) with the
+    existence recheck inside it (018 WI-2): a book deleted meanwhile raises
+    ``BookGone`` instead of being recreated as a folder holding only ai_meta.json.
+    The meta is re-read inside the lock, so a uuid another writer minted while this
+    one waited is returned rather than overwritten.
+
+    ``deadline`` / ``budget`` go to ``book_lock.acquire`` unchanged: a ``budget`` is
+    turned into a deadline there, when the lock is actually requested.
+    """
     book_folder = _safe_folder_name(book_folder)
     meta_path = _ai_meta_path(books_dir, book_folder)
     meta = _read_ai_meta(meta_path)
@@ -206,9 +227,18 @@ def ensure_book_uuid(books_dir: str, book_folder: str) -> str:
     if existing:
         return existing
 
-    if meta is None:
-        return _mint_first_uuid(meta_path)
-    return _add_uuid_to_existing_meta(meta_path, meta)
+    # 018 WI-1 (#43): SH admits two minters at once, each re-reading "no uuid" and
+    # minting its own; the ai_meta resource lock makes re-read + mint one step.
+    with book_lock.writer_scope(
+        books_dir, book_folder, holder="ai_meta", deadline=deadline, budget=budget
+    ), book_lock.resource_lock(books_dir, book_folder, category="ai_meta"):
+        meta = _read_ai_meta(meta_path)
+        existing = _uuid_from_meta(meta_path, meta or {})
+        if existing:
+            return existing
+        if meta is None:
+            return _mint_first_uuid(meta_path)
+        return _add_uuid_to_existing_meta(meta_path, meta)
 
 
 class BookUuidResolver:
@@ -227,17 +257,26 @@ class BookUuidResolver:
             full = os.path.join(self.books_dir, item)
             if not os.path.isdir(full):
                 continue
+            # 018 WI-2 (#23): a short budget *per book*, not one deadline for the whole
+            # loop -- a busy book must not use up the others' time. This bounds every
+            # caller (startup, folder_for_book_uuid on request paths) to about
+            # N x SHORT_BUDGET_S instead of N x BUDGET_S. A budget rather than a
+            # deadline (fix-plan WI-3): ``acquire`` starts the clock when it is called.
             try:
-                self._load_folder(item)
+                self._load_folder(item, budget=book_lock.SHORT_BUDGET_S)
+            except book_lock.BookLockBusy as e:
+                # A book being imported or deleted (EX) is skipped after one short
+                # poll, not fatal to startup; its uuid is resolved on first use.
+                logger.info("skipping %s for now: %s", item, e)
             except (OSError, ValueError) as e:
                 # 第 2 档：这个扫描跑在服务启动时。一本书的 ai_meta.json 坏了不该
                 # 让整个书库起不来——跳过并留痕。该书的 AI 端点随后 404（明确的
                 # 缺失），而不是被悄悄换上一个新 uuid（无声的数据丢失）。
                 logger.warning("skipping %s: cannot resolve its book_uuid: %s", item, e)
 
-    def _load_folder(self, book_folder: str) -> str:
+    def _load_folder(self, book_folder: str, *, budget: Optional[float] = None) -> str:
         book_folder = _safe_folder_name(book_folder)
-        book_uuid = ensure_book_uuid(self.books_dir, book_folder)
+        book_uuid = ensure_book_uuid(self.books_dir, book_folder, budget=budget)
         with self._lock:
             self._register(book_folder, book_uuid)
         return book_uuid
@@ -279,7 +318,8 @@ class BookUuidResolver:
             raise FileNotFoundError(f"book folder {book_folder!r} is gone")
         return _uuid_from_meta(meta_path, meta or {})
 
-    def book_uuid_for_folder(self, book_folder: str) -> str:
+    def book_uuid_for_folder(self, book_folder: str, *, budget: Optional[float] = None) -> str:
+        """``budget`` bounds only the mint on a miss; a cached or on-disk hit takes no lock."""
         book_folder = _safe_folder_name(book_folder)
         with self._lock:
             cached = self._folder_to_uuid.get(book_folder)
@@ -305,7 +345,7 @@ class BookUuidResolver:
                 with self._lock:
                     self._register(book_folder, on_disk)
                 return on_disk
-        return self._load_folder(book_folder)
+        return self._load_folder(book_folder, budget=budget)
 
     def folder_for_book_uuid(self, book_uuid: str) -> str:
         normalized = str(UUID(str(book_uuid)))

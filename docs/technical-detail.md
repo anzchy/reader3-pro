@@ -17,6 +17,8 @@ This directory collects implementation notes and “where things live” referen
 - Reader rendering now uses epub.js in an iframe (`/static/js/epub-renderer.js`), with `book.pkl` reserved for metadata/TOC/search.
 - Annotations now support an optional `cfi` anchor field and color for underline/wavy (details in storage & data locations).
 - Notes writes carry optimistic-concurrency headers (`ETag` out, optional `If-Match` in) with a 409 payload the conflict dialog consumes — contract in storage & data locations.
+- Book writers share a per-book lock at `books/.locks/{book_id}.lock` (persistent, never deleted). Lock refusals map to 409 + `Retry-After` (busy), 409 (changed) or 404 (gone). See [ADR-0015](adr/0015-per-book-write-coordination.md); the contract is in storage & data locations.
+- Settings reads and writes carry the same kind of headers (`ETag` out, optional `If-Match` in, 409 on a stale revision), under a global `config/.ai_settings.lock` — 018 WI-3, contract in storage & data locations.
 
 ## Update Rule (project convention)
 

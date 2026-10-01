@@ -35,7 +35,7 @@ from ..ai.conversations import (
     save_conversation_multi as save_disk_conversation_multi,
 )
 from ..ai.config import (
-    AiSettingsError,
+    AiSettingsError, ai_settings_transaction, if_match_satisfied,
     default_settings_dict,
     get_provider_api_key,
     get_provider_settings,
@@ -332,10 +332,21 @@ async def _notes_file_error_handler(request: Request, exc: NotesFileError) -> JS
     return JSONResponse(status_code=500, content={"detail": str(exc)})
 
 
+# 018 WI-2：书锁的三种结果（Busy / Changed / Gone）在这里一处映射到 HTTP，
+# 理由同上——逐个路由 try 只会漏掉下一个调用点。映射本身在 book_lock_http。
+from . import book_lock_http  # noqa: E402
+# 放在这里而不是顶部 import 块：server.py:51/107 被 EXPECTED_CAPTURES 按行号钉着。
+from .. import book_lock  # noqa: E402
+
+book_lock_http.install(app)
+
+
 @app.on_event("startup")
 async def _startup_scan_books() -> None:
     # Ensure stable UUID mapping exists for all processed books.
-    book_uuid_resolver.scan()
+    # 018 WI-2 (#23)：扫描会取书锁（缺 uuid 的书要铸一个），放进线程池，不占事件循环；
+    # 每本书只等一个短预算（见 BookUuidResolver.scan）。
+    await run_in_threadpool(book_uuid_resolver.scan)
 
 def _share_loader_cache_surface(
     wrapper: Callable[[str], Optional[Book]]
@@ -447,12 +458,24 @@ def _book_uuid_or_none(book_folder: str) -> Optional[str]:
 
     **原文件一个字节都不会被改。** 这是与旧行为的根本区别：坏掉的 ai_meta.json
     仍然躺在那里，人可以修；旧代码会把它覆盖掉，谁也救不回来。
+
+    018 WI-2 (#5/#6)：书锁被占（导入/删除中）同样降级成 None，且只等一个短预算
+    （``book_lock.SHORT_BUDGET_S``），不让一页渲染等满 2 s。会取锁，所以调用方必须
+    在线程池里调它（``run_in_threadpool``），不能直接在 async 路由里调。
+    传的是预算不是截止时刻（fix-plan WI-3）：``book_lock.acquire`` 在真正取锁时才起算，
+    取锁之前花掉的时间（线程池排队等）不吃这一个 poll 的预算。
     """
     try:
-        return book_uuid_resolver.book_uuid_for_folder(book_folder)
-    except (OSError, ValueError) as e:
+        return book_uuid_resolver.book_uuid_for_folder(book_folder, budget=book_lock.SHORT_BUDGET_S)
+    except (OSError, ValueError, book_lock.BookLockError) as e:
         logger.warning("cannot resolve book_uuid for %s: %s", book_folder, e)
         return None
+
+
+def _book_uuids_or_none(book_folders: list[str]) -> dict[str, Optional[str]]:
+    """Batch form of ``_book_uuid_or_none`` for the library page: one threadpool hop
+    for the whole row list, each book with its own short deadline."""
+    return {folder: _book_uuid_or_none(folder) for folder in book_folders}
 
 
 

@@ -128,7 +128,7 @@ CANONICAL_ACCEPTANCE_PER_DIR: Dict[str, int] = {
     "acceptance_p3": 4,
     "acceptance_4a4": 4,
     "acceptance_2a": 1,
-    "shell_4a": 108,
+    "shell_4a": 109,
 }
 # 17 → 26：2026-09-24 013 WI-9 批 A（REG-1 基线，A9.10）新增已激活组 `shell_4a`，
 # **实测 9 条 item**（C9.22 按页参数化 ×3、C9.24、C9.25、C9.26、C9.38、C9.39 ×2）。
@@ -156,7 +156,11 @@ CANONICAL_ACCEPTANCE_PER_DIR: Dict[str, int] = {
 # **实测**（`pytest tests/e2e/shell_4a --collect-only -q` 数出 108 = 104 + 4）：
 # `test_toast.py`（C11.07 ×1、C11.08 ×1、C11.15 按 1500 / 7000 参数化 ×2）。
 # 理由写在 `scripts/lint_e2e_groups.py` 的「常量的变更史」里。
-CANONICAL_ACCEPTANCE_ITEMS = 125
+# 125 → 126：2026-10-01 018 WI-3（欠账 #51，计划 WI-4）往 `shell_4a` 加 1 条，**实测**
+# （`pytest tests/e2e/shell_4a --collect-only -q` 数出 109 = 108 + 1）：
+# `test_settings_rows.py::test_provider_save_conflict_is_visible`。
+# 理由写在 `scripts/lint_e2e_groups.py` 的「常量的变更史」里。
+CANONICAL_ACCEPTANCE_ITEMS = 126
 # 7 → 8 / 91 → 92：2026-09-20 欠账 #44 新增
 # `tests/e2e/test_w8a_selection_survives_rerender.py`（恰好一条 item）。它按内容属于
 # `baseline_1b`，落在白名单是为了不动 `suite_hash` 的覆盖面——理由与到期动作写在
@@ -217,7 +221,8 @@ CANONICAL_UNGROUPED_ITEMS = 68
 # 256 → 264：2026-09-30 009 #50，WI-1 of 019: +8（见上面 63 → 71；全量实测 264）。
 # 264 → 265：2026-09-30 009 #49，WI-2 of 019: +1（见上面 71 → 72；全量实测 265）。
 # 265 → 269：2026-10-01 020-debug-state WI-2 的 4 条白名单 item（见上面 64 → 68；全量实测 269）。
-CANONICAL_E2E_ITEMS = 269
+# 269 → 270：2026-10-01 018 WI-3 / 欠账 #51 的 1 条（见上面 125 → 126 那条注释；全量实测 270）。
+CANONICAL_E2E_ITEMS = 270
 
 #: **已激活**的 acceptance 组，与 `scripts/lint_e2e_groups.py` 的
 #: `ACTIVATED_ACCEPTANCE_DIRS` 各写一份——本文件是守卫的独立 oracle，不从被测脚本 import

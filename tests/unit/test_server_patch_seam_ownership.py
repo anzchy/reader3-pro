@@ -117,6 +117,9 @@ SERVER_MODULE = "reader3_app.web.server"
 WEB_PACKAGE = "reader3_app.web"
 
 #: 打桩接缝上的 20 个名字（2026-09-07 AST 实测；任务文档 §1 的 70/12 是行级 grep 的产物）。
+#: 018 WI-3（2026-10-01）：+1 `ai_settings_transaction`，共 21 个。设置锁 + revision 的接缝，
+#: 凡把 load/save_ai_settings 重定向到 tmp 的测试都要把它重定向到同一路径（见
+#: test_ai_settings_seam_pairing.py）。
 EXPECTED_NAMES: FrozenSet[str] = frozenset(
     {
         "retrieve_passages",
@@ -139,6 +142,7 @@ EXPECTED_NAMES: FrozenSet[str] = frozenset(
         "choose_routing",
         "get_provider_base_url",
         "_http_get_json",
+        "ai_settings_transaction",
     }
 )
 
@@ -165,6 +169,7 @@ OWNERSHIP: Dict[str, Tuple[str, str]] = {
     "choose_routing": (SERVER_MODULE, "choose_routing"),
     "get_provider_base_url": (SERVER_MODULE, "get_provider_base_url"),
     "_http_get_json": (SERVER_MODULE, "_http_get_json"),
+    "ai_settings_transaction": (SERVER_MODULE, "ai_settings_transaction"),
 }
 
 #: 三道检查扫的名字集合：名单 ∪ 别名的 owner 侧名字。
@@ -263,6 +268,9 @@ GLOBAL_RESOLVERS: Dict[str, FrozenSet[str]] = {
     # test_event_loop_not_blocked.py::test_T2b / test_T3，以及本文件的 a15（Check C）。
     "search_book": frozenset(),
     "search_library": frozenset(),
+    # 018 WI-3：新接缝。server.py 只 import 不载入；ai/config.py 只定义不载入
+    # （def 是 Store）。路由经 `_server.ai_settings_transaction(...)` 属性访问。
+    "ai_settings_transaction": frozenset(),
 }
 
 #: Check C 真树基线（2026-09-07 实测）。name -> [(相对路径, 行号, kind)]。

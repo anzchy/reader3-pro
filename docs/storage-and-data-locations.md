@@ -84,6 +84,29 @@ Valid values for `conversation_disk_storage`:
 
 - AI settings (including provider API keys): `config/ai_settings.json` (gitignored)
 - Example template: `config/ai_settings.example.json`
+- Lock file: `config/.ai_settings.lock` (gitignored, created `0600`, never deleted; it sits next to whichever settings file is in use). If it cannot be created because the directory is not writable, the two GETs still answer from an unlocked read, and every writer fails with a 500 that names the lock path.
+
+### Settings write concurrency (018 WI-3)
+
+Every settings read and write runs inside one exclusive `flock` on the lock file. The lock is global, not per book.
+
+- **Covered endpoints:**
+  - Both reads (`GET /api/settings`, `GET /api/settings/providers/{name}`) return an `ETag`.
+  - All four writers honour an optional `If-Match`: `PUT /api/settings`, `POST /api/settings/import`, `PUT /api/settings/providers/{name}` and `DELETE /api/settings/providers/{name}`.
+- **ETag value:**
+  - A strong, quoted, 64-hex HMAC-SHA256 of the file's raw bytes.
+  - The key is private to the server process, so the value says nothing about whether an API key changed.
+  - A server restart invalidates every ETag a page already holds. The next conditional write gets a 409, and reloading the page fixes it.
+- **If-Match outcomes:**
+
+  | Request | Result |
+  |---|---|
+  | No `If-Match` header | Behaves as before (unconditional) |
+  | Malformed `If-Match` | 400 |
+  | Stale `If-Match` | 409, with a fixed message and no ETag |
+
+- **Order of checks:** a missing provider is a 404 and is checked first. The `If-Match` checks (400, then 409) come before any validation of the request body.
+- **Settings page:** it keeps one revision for the whole page and sends it as `If-Match` on toggle, provider save and preference save, one write at a time. Import stays unconditional.
 
 ## Server-side library collections (004)
 
@@ -105,6 +128,31 @@ The EPUB ingestion pipeline writes processed outputs per book:
 - **Pickled book**: `books/{book_id}/book.pkl` (parsed spine + metadata)
 - **Original EPUB copy**: `books/{book_id}/book.epub` (source file for epub.js rendering, served at `/read/{book_id}/book.epub`)
 - **Extracted images**: `books/{book_id}/images/`
+
+## Per-book write lock (018 WI-2, [ADR-0015](adr/0015-per-book-write-coordination.md))
+
+Every writer of a book coordinates through one lock file per book: `books/.locks/{book_id}.lock`.
+
+- **Where it lives:** outside the book directory, and it is never deleted, so an `rmtree` of the book cannot hand the next writer a fresh inode.
+- **Directory:** `books/.locks/` is created on first use and is the only thing the lock module ever creates. It is not a book: the library scan only lists `*_data` directories, and `.locks` doesn't match.
+- **Exclusive holders:** import and delete.
+- **Shared holders:** notes, reindex, `ai_meta.json`, conversations, and the vector read path (`search`). Each then takes its own resource lock as well.
+- **Wait limit:** everything shares one 2-second deadline. Exclusive requests never wait.
+- **Holder category:** the first 64 bytes of the lock file record who holds the lock. This is best-effort telemetry for the error message, and nothing decides on it. A torn, empty or dead-pid record reads as `unknown`, and a shared holder clears its own record when it releases. Two limits:
+  - A record left by a holder killed with SIGKILL, whose pid has since been reused by another process, still reads as its old category.
+  - `unknown` can be reported while a shared holder is live, because a same-category holder in the same process, or a racing release in another process, may have blanked the record.
+
+HTTP responses when a write meets the lock (one handler for every route, `src/reader3_app/web/book_lock_http.py`):
+
+| Outcome | Status | Body / headers |
+|---|---|---|
+| Busy (held by another writer: an exclusive request is refused immediately, a shared request at the 2-second deadline) | 409 | `{"detail": "book busy: <category>", "holder_category": "<category>", "retry_after": N}`, header `Retry-After: N` (N >= 1) |
+| Changed (the folder now holds a different book than the page opened) | 409 | `{"detail": "book changed: reload before writing"}`, no `Retry-After` |
+| Gone (book deleted while waiting) | 404 | `{"detail": "Book not found"}` |
+
+`<category>` is one of `import`, `delete`, `reindex`, `notes`, `ai_meta`, `conversations`, `search`, or `unknown`. The busy 409 deliberately differs from the notes version-conflict 409 (no `etag`), so a client can tell "retry later" apart from "your copy is stale".
+
+The CLI (`uv run reader3 ...`) reports the same refusals as a one-line error with a non-zero exit code.
 
 ## Reader rendering sources
 

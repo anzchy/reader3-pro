@@ -52,11 +52,20 @@ from typing import Any, Dict, List, Optional, Tuple
 import pytest
 
 from book_uuid_concurrency import ensure_uuid_interleaved
+from reader3_app import book_lock
 from reader3_app.ai import books as books_mod
 from reader3_app.ai.books import BookUuidResolver, _read_ai_meta, ensure_book_uuid
 
 # Escape hatch only; see the module docstring. Neither path waits this long.
-RENDEZVOUS_TIMEOUT_S = 5.0
+#
+# Below the book lock's budget, by construction (018 WI-2 audit fix-up, WI-1): minting
+# now runs under the ``ai_meta`` resource lock, so the pinned interleaving (both read,
+# then one writes) is impossible -- the second caller waits on the lock, not at the
+# barrier. The first caller's rendezvous therefore always times out, and it must do
+# so well before the waiter's budget runs out, or the waiter is refused instead of
+# adopting the winner's uuid. Was 5.0; the expectation (three-way equality) is
+# unchanged.
+RENDEZVOUS_TIMEOUT_S = book_lock.BUDGET_S / 4
 
 # Anything beyond this means a worker is wedged rather than merely slow.
 JOIN_TIMEOUT_S = 30.0
@@ -424,3 +433,106 @@ def test_resolver_hands_two_threads_one_uuid_and_maps_it_back(
         f"returned={first!r} and {second!r}, {diagnostic}"
     )
     assert resolver.folder_for_book_uuid(first) == FOLDER
+
+
+# --------------------------------------------------------------------------- FX-1-14 / FX-1-15
+#
+# 018 WI-2 audit fix-up, WI-1 (#43): the same convergence law on a book whose
+# ai_meta.json *exists but carries no uuid*. That path used to be write-then-replace
+# under SH only, so two minters each wrote their own uuid and the last replace won.
+
+
+def _is_uuid(value: object) -> bool:
+    import uuid as uuid_lib
+
+    try:
+        return str(uuid_lib.UUID(str(value))) == value
+    except ValueError:
+        return False
+
+
+@pytest.mark.parametrize(
+    "meta",
+    [{"indexed_at": 1}, {"indexed_at": 1, "title": "t", "nested": {"a": [1, 2]}}, {}],
+    ids=["indexed_at", "nested", "empty"],
+)
+def test_fx_1_14_two_interleaved_threads_on_a_uuid_less_meta_converge(
+    books_root: Path, monkeypatch: pytest.MonkeyPatch, meta: Dict[str, Any]
+) -> None:
+    """FX-1-14 (L3/S5): three-way equality, every other key kept, nothing else left."""
+    _meta_path(books_root).write_text(json.dumps(meta), encoding="utf-8")
+    calls: List[int] = []
+    real_uuid4 = books_mod.uuid4
+
+    def counting_uuid4():
+        calls.append(1)
+        return real_uuid4()
+
+    # Installed before the harness wraps uuid4, so the harness delegates through it.
+    monkeypatch.setattr(books_mod, "uuid4", counting_uuid4)
+
+    results, errors = _run_interleaved_threads(
+        lambda: ensure_book_uuid(str(books_root), FOLDER), monkeypatch
+    )
+
+    assert len(calls) >= 1, "the harness never reached uuid4; the interleaving was not pinned"
+    assert not errors, f"ensure_book_uuid must return a uuid, not raise: {errors}"
+    assert set(results) == {FIRST, SECOND}, f"expected two return values, got {results!r}"
+    first, second = results[FIRST], results[SECOND]
+    on_disk, diagnostic = _uuid_on_disk(books_root)
+    assert first == second == on_disk, (
+        "two concurrent first-time callers on a uuid-less ai_meta.json must converge; "
+        f"returned={first!r} and {second!r}, {diagnostic}"
+    )
+    assert _is_uuid(first) and _is_uuid(second)
+    stored = json.loads(_meta_path(books_root).read_text("utf-8"))
+    assert {k: v for k, v in stored.items() if k != "book_uuid"} == meta
+    assert _leftover_temp_files(books_root) == []
+
+
+def test_fx_1_15_two_processes_on_a_uuid_less_meta_converge(books_root: Path) -> None:
+    """FX-1-15 (L3/S5): the cross-process variant; a thread-only lock passes FX-1-14 only.
+
+    ``timeout_s=0.5`` keeps each child's rendezvous below its real 2 s budget, for the
+    same reason ``RENDEZVOUS_TIMEOUT_S`` is below it.
+    """
+    _meta_path(books_root).write_text(json.dumps({"indexed_at": 1}), encoding="utf-8")
+    ctx = mp.get_context("spawn")
+    barrier = ctx.Barrier(2)
+    first_done = ctx.Event()
+    result_queue = ctx.Queue()
+    procs = [
+        ctx.Process(
+            target=ensure_uuid_interleaved,
+            args=(str(books_root), FOLDER, index, barrier, first_done, 0.5, result_queue),
+        )
+        for index in (0, 1)
+    ]
+    for p in procs:
+        p.start()
+
+    reported: List[Tuple[str, str]] = []
+    deadline = time.monotonic() + JOIN_TIMEOUT_S
+    for _ in range(2):
+        try:
+            reported.append(result_queue.get(timeout=max(0.1, deadline - time.monotonic())))
+        except queue_mod.Empty:
+            break
+    for p in procs:
+        p.join(JOIN_TIMEOUT_S)
+    alive = [p.pid for p in procs if p.is_alive()]
+    for p in procs:
+        if p.is_alive():
+            p.kill()
+    assert not alive, f"child minter(s) never finished within {JOIN_TIMEOUT_S}s: {alive}"
+
+    assert [p.exitcode for p in procs] == [0, 0], f"reported={reported!r}"
+    assert len(reported) == 2 and all(kind == "ok" for kind, _ in reported), reported
+    first, second = (value for _, value in reported)
+    on_disk, diagnostic = _uuid_on_disk(books_root)
+    assert first == second == on_disk, (
+        f"two processes on a uuid-less ai_meta.json must converge; returned={first!r} "
+        f"and {second!r}, {diagnostic}"
+    )
+    assert json.loads(_meta_path(books_root).read_text("utf-8"))["indexed_at"] == 1
+    assert _leftover_temp_files(books_root) == []

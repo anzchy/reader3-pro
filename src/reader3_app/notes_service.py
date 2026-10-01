@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-import fcntl
 import hashlib
 import json
 import os
@@ -9,6 +8,7 @@ import tempfile
 import threading
 from typing import Callable, Iterator, List, Optional, Tuple
 
+from . import book_lock
 from .models.annotations import Annotation
 from .safe_paths import safe_book_folder
 
@@ -43,6 +43,8 @@ class NotesVersionConflict(RuntimeError):
 NOTES_FILENAME = "notes.json"
 NOTES_LOCK_FILENAME = "notes.json.lock"
 NOTES_SCHEMA_VERSION = 1
+#: The holder category notes writers report, for both the book lock and the resource lock.
+RESOURCE_CATEGORY = "notes"
 
 # One threading.Lock per book, keyed by the absolute lock-file path. Bounded by
 # the number of books ever written to in this process, so it is never evicted.
@@ -91,22 +93,37 @@ def _book_write_lock(books_dir: str, book_id: str) -> Iterator[None]:
     each other.
     """
     path = _lock_path(books_dir, book_id)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-
+    # 018 WI-2 (ADR-0015 contract items 2, 4, 5): this is the *resource* layer under
+    # the book lock -- no book-dir creation, no blocking, one deadline for all layers.
+    # 018 WI-1: the body is now the shared ``book_lock.resource_lock``. Notes keeps
+    # its in-dir ``notes.json.lock`` and its own thread-lock registry (ADR-0015 item 2);
+    # the order check there still refuses before any fd is opened.
     key = os.path.abspath(path)
     with _LOCK_REGISTRY_GUARD:
         thread_lock = _BOOK_THREAD_LOCKS.setdefault(key, threading.Lock())
+    with book_lock.resource_lock(
+        books_dir, book_id, category=RESOURCE_CATEGORY, path=path, thread_lock=thread_lock
+    ):
+        yield
 
-    with thread_lock:
-        fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(fd, fcntl.LOCK_UN)
-        finally:
-            os.close(fd)
+
+@contextlib.contextmanager
+def _notes_write(
+    books_dir: str,
+    book_id: str,
+    expected_book_uuid: object,
+    deadline: Optional[float],
+) -> Iterator[None]:
+    """Book lock (SH, in-lock existence + identity recheck) → notes resource lock."""
+    with book_lock.writer_scope(
+        books_dir,
+        book_id,
+        holder=RESOURCE_CATEGORY,
+        expected_book_uuid=expected_book_uuid,
+        deadline=deadline,
+    ):
+        with _book_write_lock(books_dir, book_id):
+            yield
 
 
 def load_annotations(books_dir: str, book_id: str) -> List[Annotation]:
@@ -220,8 +237,10 @@ def save_annotations(books_dir: str, book_id: str, annotations: List[Annotation]
     Payload shape is deliberately unchanged here: 012 owns the schema.
     """
     path = _notes_path(books_dir, book_id)
+    # No makedirs (018 WI-2, ADR-0015 contract item 5): a missing book dir means the
+    # book was deleted, and recreating it would resurrect a partial book. mkstemp
+    # below raises FileNotFoundError instead.
     directory = os.path.dirname(path)
-    os.makedirs(directory, exist_ok=True)
 
     payload = {
         "schema_version": NOTES_SCHEMA_VERSION,
@@ -351,6 +370,9 @@ def refresh_annotations_and_version(
     books_dir: str,
     book_id: str,
     refresh: Callable[[List[Annotation]], bool],
+    *,
+    expected_book_uuid: object = book_lock.NO_UUID_CHECK,
+    deadline: Optional[float] = None,
 ) -> Tuple[List[Annotation], str]:
     """load → 让调用者改 → 改动了就 save，**全程握着同一把书级锁**。
 
@@ -369,7 +391,7 @@ def refresh_annotations_and_version(
     ``refresh`` 必须是纯粹的「改这份列表，返回改没改」：它在锁里跑，做的任何 I/O 都在
     加长别人的等待。返回的是**整份**标注（含 orphaned 的那些），因为 ETag 算的是整本书。
     """
-    with _book_write_lock(books_dir, book_id):
+    with _notes_write(books_dir, book_id, expected_book_uuid, deadline):
         annotations = load_annotations(books_dir, book_id)
         if refresh(annotations):
             save_annotations(books_dir, book_id, annotations)
@@ -380,6 +402,9 @@ def add_annotation_and_version(
     books_dir: str,
     annotation: Annotation,
     if_match: Optional[str] = None,
+    *,
+    expected_book_uuid: object = book_lock.NO_UUID_CHECK,
+    deadline: Optional[float] = None,
 ) -> Tuple[Annotation, str]:
     """Append one annotation; return it together with the resulting version.
 
@@ -389,7 +414,7 @@ def add_annotation_and_version(
     client that chose to send ``If-Match`` said its create was based on a list
     it had seen — but it carries only the current version.
     """
-    with _book_write_lock(books_dir, annotation.book_id):
+    with _notes_write(books_dir, annotation.book_id, expected_book_uuid, deadline):
         annotations = load_annotations(books_dir, annotation.book_id)
         _require_version(annotations, if_match, None)
         annotations.append(annotation)
@@ -402,6 +427,9 @@ def delete_annotation_and_version(
     book_id: str,
     note_id: str,
     if_match: Optional[str] = None,
+    *,
+    expected_book_uuid: object = book_lock.NO_UUID_CHECK,
+    deadline: Optional[float] = None,
 ) -> Tuple[bool, str]:
     """Delete by id; return whether it was there, and the resulting version.
 
@@ -410,7 +438,7 @@ def delete_annotation_and_version(
     404 invites a retry ("wrong id?"); 409 says what actually happened —
     something you did not see has changed here, re-read it.
     """
-    with _book_write_lock(books_dir, book_id):
+    with _notes_write(books_dir, book_id, expected_book_uuid, deadline):
         annotations = load_annotations(books_dir, book_id)
         _require_version(annotations, if_match, note_id)
         before = len(annotations)
@@ -427,9 +455,12 @@ def update_annotation_and_version(
     note_id: str,
     note_text: str,
     if_match: Optional[str] = None,
+    *,
+    expected_book_uuid: object = book_lock.NO_UUID_CHECK,
+    deadline: Optional[float] = None,
 ) -> Tuple[Optional[Annotation], str]:
     """Update note_text; return the updated annotation (or None) and the version."""
-    with _book_write_lock(books_dir, book_id):
+    with _notes_write(books_dir, book_id, expected_book_uuid, deadline):
         annotations = load_annotations(books_dir, book_id)
         _require_version(annotations, if_match, note_id)
         for ann in annotations:

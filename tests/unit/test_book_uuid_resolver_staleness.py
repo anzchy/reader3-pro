@@ -651,8 +651,9 @@ def test_c15_real_threads_late_registration(books: Path, monkeypatch: pytest.Mon
     release_a = threading.Event()
     real_ensure = books_mod.ensure_book_uuid
 
-    def paused_ensure(books_dir: str, book_folder: str) -> str:
-        got = real_ensure(books_dir, book_folder)
+    def paused_ensure(books_dir: str, book_folder: str, **kwargs: Any) -> str:
+        # **kwargs: the resolver passes ``deadline=`` through (018 WI-2 #23).
+        got = real_ensure(books_dir, book_folder, **kwargs)
         if threading.current_thread().name == "A":
             a_read.set()
             release_a.wait(timeout=5)

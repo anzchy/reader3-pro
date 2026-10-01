@@ -107,6 +107,12 @@ def client(settings_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(
         server, "save_ai_settings", functools.partial(ai_config.save_ai_settings, path=str(settings_path))
     )
+    # Seam pairing (018 WI-3): lock and revision on the same tmp path as load/save.
+    monkeypatch.setattr(
+        server,
+        "ai_settings_transaction",
+        functools.partial(ai_config.ai_settings_transaction, path=str(settings_path)),
+    )
     monkeypatch.setattr(
         server.book_uuid_resolver, "books_dir", str(settings_path.parent / "no-books-here")
     )

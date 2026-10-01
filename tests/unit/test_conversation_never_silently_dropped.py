@@ -87,6 +87,18 @@ def _thread() -> ConversationThread:
     )
 
 
+def _seed_book(books_dir: Path) -> Path:
+    """018 WI-2 amendment: the book exists, with the identity the thread names.
+
+    Contract item 5: writers no longer create the book dir. Contract item 6: a
+    per-book save re-checks ``thread.book_uuid`` against ``ai_meta.json`` in the lock.
+    """
+    meta = books_dir / BOOK_FOLDER / "ai_meta.json"  # 018 contract items 5 + 6
+    meta.parent.mkdir(parents=True)  # 018 contract item 5: the book dir pre-exists
+    meta.write_text(json.dumps({"book_uuid": BOOK_UUID}), encoding="utf-8")  # 018 contract item 6
+    return meta
+
+
 def _json_files(root: Path) -> List[str]:
     """Every ``.json`` anywhere under ``root``, as sorted relative paths."""
     return sorted(p.relative_to(root).as_posix() for p in root.rglob("*.json"))
@@ -219,12 +231,17 @@ def test_both_mode_without_a_root_writes_neither_half(books_dir: Path, tmp_path:
 @pytest.mark.parametrize("root", MISSING_ROOTS, ids=["none", "empty", "blank"])
 def test_per_book_mode_ignores_the_missing_root(books_dir: Path, tmp_path: Path, root) -> None:
     """L2: per_book writes to the book folder and has no use for a project root."""
+    meta = _seed_book(books_dir)  # 018 contract items 5 + 6
+    meta_bytes = meta.read_bytes()  # 018 contract items 5 + 6
     err = _save(books_dir, storage_mode="per_book", project_conversations_root=root)
 
     assert err is None, f"per_book does not use project_conversations_root, got {err!r}"
 
     expected = books_dir / BOOK_FOLDER / "ai_conversations" / f"{CONVERSATION_ID}.json"
-    assert _json_files(tmp_path) == [expected.relative_to(tmp_path).as_posix()]
+    assert _json_files(tmp_path) == sorted(
+        [meta.relative_to(tmp_path).as_posix(), expected.relative_to(tmp_path).as_posix()]
+    )
+    assert meta.read_bytes() == meta_bytes
 
     reloaded = load_conversation(
         str(books_dir),
@@ -250,13 +267,18 @@ def test_unrecognised_mode_falls_back_to_per_book_and_says_so(
     part that is unacceptable: the operator needs something to grep for when a
     user asks why their conversations are not in the project root.
     """
+    meta = _seed_book(books_dir)  # 018 contract items 5 + 6
+    meta_bytes = meta.read_bytes()  # 018 contract items 5 + 6
     with caplog.at_level(logging.WARNING, logger="reader3.ai.conversations"):
         err = _save(books_dir, storage_mode="projekt_root", project_conversations_root=None)
 
     assert err is None, f"a misspelled mode must not raise, got {err!r}"
 
     expected = books_dir / BOOK_FOLDER / "ai_conversations" / f"{CONVERSATION_ID}.json"
-    assert _json_files(tmp_path) == [expected.relative_to(tmp_path).as_posix()]
+    assert _json_files(tmp_path) == sorted(
+        [meta.relative_to(tmp_path).as_posix(), expected.relative_to(tmp_path).as_posix()]
+    )
+    assert meta.read_bytes() == meta_bytes
 
     warnings = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
     assert any("projekt_root" in m for m in warnings), (

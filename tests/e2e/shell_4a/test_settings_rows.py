@@ -15,14 +15,19 @@ under test is that the page renders the two outcomes as distinct states.
 **Deferred (user rulings).** FB-S09 (D8): only "a failed save shows a visible error and keeps
 the input" is asserted, not stale-write detection. `set-export-json` (D11): a visible
 「暂不支持」 line and 0 requests; its server half is backend debt "library export route".
+Stale-write detection was paid later by 018 WI-3 (debt #51): `test_provider_save_conflict_is_visible`.
 """
 
 from __future__ import annotations
 
 import json
+import os
+import re
+import stat
 import uuid
 from pathlib import Path
 from typing import Any, Iterator, List
+from urllib.parse import urlparse
 
 import pytest
 import shell_4a_fixtures as s4
@@ -331,6 +336,58 @@ def test_provider_save_failure_is_visible(ctx: Any, live_server: str, sandbox: P
     expect(page.locator(_sel("set-provider-result", "openai"))).not_to_have_attribute(STATE_ATTR, "error")
     after = sandbox.read_bytes() if sandbox.exists() else None
     assert after == before, "a save the browser saw fail must not have reached the settings file"
+
+
+OTHER_WRITER_MODEL = "other-writer"
+CONFLICT_HINT = "设置已在别处更改"
+QUOTED_REVISION = re.compile(r'^"[0-9a-f]{64}"$')
+
+
+def test_provider_save_conflict_is_visible(ctx: Any, live_server: str, sandbox: Path) -> None:
+    """018 WI-3 (debt #51, matrix R3-4-01): a stale provider save is refused and the refusal is visible.
+
+    The page boots and holds the settings revision. A second writer then changes the same
+    provider through the real server (no browser stub), so the revision moves. The page's save,
+    still carrying the boot revision in `If-Match`, gets a 409: the card shows the conflict, the
+    typed value stays in the field, and the file keeps the second writer's content.
+    """
+    page = ss.open_settings(ctx, live_server)
+    puts: List[tuple[str, str | None]] = []
+
+    def record(request: Any) -> None:
+        if request.method == "PUT":
+            puts.append((urlparse(request.url).path, request.headers.get("if-match")))
+
+    page.on("request", record)
+
+    # The second writer: an unconditional server write. `page.request` traffic does not fire
+    # `page.on("request")`, so it is not counted among the page's PUTs.
+    resp = page.request.put(
+        live_server + "/api/settings/providers/ollama", data={"model_name": OTHER_WRITER_MODEL}
+    )
+    assert resp.status == 200, (resp.status, resp.text())
+
+    model = page.locator(_sel("set-provider-model", "ollama"))
+    model.fill(EDITED_MODEL)
+    page.locator(_sel("set-provider-save", "ollama")).click()
+
+    result = page.locator(_sel("set-provider-result", "ollama"))
+    expect(result).to_have_attribute(STATE_ATTR, "error")
+    expect(result).to_be_visible()
+    expect(result).to_contain_text(PROVIDER_SAVE_FAILED)
+    expect(result).to_contain_text(CONFLICT_HINT)
+    _settle(page, "set-provider-save", "ollama")
+    expect(model).to_have_value(EDITED_MODEL)
+    expect(page.locator(_sel("set-provider-result", "openai"))).not_to_have_attribute(STATE_ATTR, "error")
+
+    ui_puts = [p for p in puts if p[0] == "/api/settings/providers/ollama"]
+    assert len(ui_puts) == 1, puts
+    if_match = ui_puts[0][1]
+    assert if_match is not None and QUOTED_REVISION.match(if_match), if_match
+
+    stored = json.loads(sandbox.read_text(encoding="utf-8"))
+    assert stored["providers"]["ollama"]["model_name"] == OTHER_WRITER_MODEL
+    assert stat.S_IMODE(os.stat(sandbox).st_mode) == 0o600
 
 
 # ---------------------------------------------------------------------------

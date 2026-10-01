@@ -20,6 +20,8 @@ import ebooklib
 from ebooklib import epub
 from bs4 import BeautifulSoup, Comment
 
+from . import book_lock
+
 # --- Data structures ---
 
 @dataclass
@@ -731,30 +733,39 @@ def process_epub(epub_path: str, output_dir: str) -> Book:
     # conversations and semantic index, none of which this function may touch.
     # normpath first: dirname("books/x/") is "books/x", which would create the
     # output directory itself as a side effect of preparing its parent.
-    os.makedirs(os.path.dirname(os.path.normpath(output_dir)) or ".", exist_ok=True)
-    _clear_staging_dirs(output_dir)
-    staging = _staging_dir(output_dir)
-    # exist_ok=False: if a leftover survived the cleanup above, its stale images
-    # would merge into this run and be committed. Fail instead of publishing them.
-    os.makedirs(staging, exist_ok=False)
-    # Taken immediately, and held until the staging tree is gone: it is what a
-    # later run consults to tell "still being written" from "left by a crash".
-    lock_fd = _acquire_staging_lock(staging)
+    normalized_output = os.path.normpath(output_dir)
+    books_dir = os.path.dirname(normalized_output) or "."
+    os.makedirs(books_dir, exist_ok=True)
+    # 018 WI-2 (ADR-0015): at most one import per book, and no reindex / notes /
+    # delete while it runs. EX is taken before any staging or output dir is
+    # touched and held until the staging tree is gone, so a refused import
+    # changes nothing -- fresh book or existing. EX never waits: BookLockBusy.
+    with book_lock.acquire(
+        books_dir, os.path.basename(normalized_output), mode="exclusive", holder="import"
+    ):
+        _clear_staging_dirs(output_dir)
+        staging = _staging_dir(output_dir)
+        # exist_ok=False: if a leftover survived the cleanup above, its stale images
+        # would merge into this run and be committed. Fail instead of publishing them.
+        os.makedirs(staging, exist_ok=False)
+        # Taken immediately, and held until the staging tree is gone: it is what a
+        # later run consults to tell "still being written" from "left by a crash".
+        lock_fd = _acquire_staging_lock(staging)
 
-    # Everything after the lock sits inside the try, makedirs included: a
-    # failure outside it would keep the fd, and with it the lock, for the life
-    # of the process, and every later run on this book would be refused.
-    try:
-        images_dir = os.path.join(staging, 'images')
-        os.makedirs(images_dir)
-        final_book, image_digests = _build_into_staging(
-            book, metadata, epub_path, staging, images_dir
-        )
-        _validate_staged_artifacts(staging, epub_path, image_digests)
-        _commit_staged_artifacts(staging, output_dir)
-    finally:
-        os.close(lock_fd)
-        _discard_own_staging(staging)
+        # Everything after the lock sits inside the try, makedirs included: a
+        # failure outside it would keep the fd, and with it the lock, for the life
+        # of the process, and every later run on this book would be refused.
+        try:
+            images_dir = os.path.join(staging, 'images')
+            os.makedirs(images_dir)
+            final_book, image_digests = _build_into_staging(
+                book, metadata, epub_path, staging, images_dir
+            )
+            _validate_staged_artifacts(staging, epub_path, image_digests)
+            _commit_staged_artifacts(staging, output_dir)
+        finally:
+            os.close(lock_fd)
+            _discard_own_staging(staging)
 
     print(f"Saved structured data to {os.path.join(output_dir, 'book.pkl')}")
     return final_book
@@ -921,6 +932,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         idx = BookVectorIndex(book_id, books_dir=books_dir)
         try:
             meta = idx.index_book(force_reindex=args.force)
+        except (book_lock.BookLockBusy, book_lock.BookChanged, book_lock.BookGone) as e:
+            # 018 WI-2: another writer holds the book (the message names its
+            # category), or it changed / vanished under us. Same exit shape as
+            # every other failure here: non-zero, one readable line, no traceback.
+            # BookLockMisuse is a programmer error and keeps its traceback (018 FU3).
+            raise SystemExit(str(e))
         except RuntimeError as e:
             # 缺 [semantic] extra 时 _require_semantic_deps 抛的就是 RuntimeError，
             # 它带着一句用户照着做就能修好的话。让它一路穿到顶层，终端上得到的是一屏
@@ -942,7 +959,15 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # process_epub publishes book.pkl itself, as the last step of its atomic
     # commit. Calling save_to_pickle here too would flip the marker twice.
-    book_obj = process_epub(epub_file, out_dir)
+    try:
+        book_obj = process_epub(epub_file, out_dir)
+    except book_lock.BookLockBusy as e:
+        # 018 FU2 WI-3 (#18): same exit shape as the --index branch -- non-zero,
+        # one readable line naming the holder, no traceback. Busy only (018 FU3,
+        # coordinator ruling 2026-10-01): BookLockMisuse is a programmer error and
+        # keeps its traceback, and process_epub takes only EX, so BookChanged /
+        # BookGone cannot come out of it.
+        raise SystemExit(str(e))
     print("\n--- Summary ---")
     print(f"Title: {book_obj.metadata.title}")
     print(f"Authors: {', '.join(book_obj.metadata.authors)}")

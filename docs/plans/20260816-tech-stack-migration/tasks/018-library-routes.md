@@ -1,6 +1,6 @@
 # 018-library-routes —— 任务
 
-- **状态**: 评审通过、待开工（任务书 2026-09-26 评审通过，§6 Q1–Q12 全部裁定）。分支**未开**，没有一项已实施。2026-09-28 批次规则取消 soak 等待期后，本分支是挡在 012 前面的关键路径（顺序见 [进度盘 §2](../../20260824-frontend-backend-plan-progress.md)；⬛ 2026-09-30：排在冻结集欠账窗口之后开工，WI-8 规则同日订正，见 §6 Q10）
+- **状态**: 🚧 **进行中**（⬛ 2026-09-30 分支从 `master` 开出，与 `019` 并行，先做 WI-1 / WI-2，调度见[进度盘「现在该做什么」第 2 步](../../20260824-frontend-backend-plan-progress.md#现在该做什么)）。~~评审通过、待开工~~（任务书 2026-09-26 评审通过，§6 Q1–Q12 全部裁定）。~~分支**未开**，没有一项已实施。~~2026-09-28 批次规则取消 soak 等待期后，本分支是挡在 012 前面的关键路径（顺序见 [进度盘 §2](../../20260824-frontend-backend-plan-progress.md)；⬛ 2026-09-30：排在冻结集欠账窗口之后开工，WI-8 规则同日订正，见 §6 Q10）
 - **对应阶段**: M4a-债（013 延后到后端的欠账兑付之一部分，[§9 编号表](../plan-tech-stack-migration.md)）。不是新里程碑，与 016 / 017 同类
 - **计划文件夹**: [`20260816-tech-stack-migration/`](../plan-tech-stack-migration.md)（归属 **A**）
 - **上游**: `013`（✅ 已合入）、`017`（✅ 已合入）；从 `master` 开
@@ -111,10 +111,10 @@
   - `api_index_book` 在线程池里**同步**跑 `index_book`，所以锁能包住整次重建
 - **契约**（§6 Q2 / Q3 / Q12 已裁定，2026-09-26）。[ADR-0015](../../../adr/0015-per-book-write-coordination.md) 已按本段成稿（Proposed）；Proposed 期间**本段是定义处**，改契约先改这里再同步 ADR；ADR 转 Accepted 的那个 commit 把本段换成一行链接:
   1. **锁文件位置**：`books/.locks/{book_folder}.lock`，在书目录**之外**，**建了就永不 unlink**（在线删锁文件本身就重新引入 inode 分裂；`.locks/` 累积是设计，回收只许停机时做）。理由：锁在书目录里时，删书的 `rmtree` 把它 unlink，随后 `makedirs` 建出新 inode——两个进程各持一把「同名」独占锁；首次导入时还得先建出空书目录，整个构建期书库里有坏条目，被杀即永久留下（原型「Q2 锁在目录里」「首次导入·锁在目录里」两剧本）。书库枚举不收它，靠的是**只收 `_data` 后缀**（`search_service.py`、`routers/library.py`、`ai/books.py` 三处），不是「点目录隐藏」——这条枚举规则 ADR-0015 里写成一处定义
-  2. **分层，不合并**：书锁有**共享 / 独占**两种模式（`LOCK_SH` / `LOCK_EX`）。改目录结构的写手（import / delete / migrate / 上传 / 墓碑清扫）持**独占**；只写自己那份文件的写手（notes / reindex / ai_meta / conversations）持**共享**，再取各自的**资源锁**。**固定顺序：书锁 → 资源锁**，反序即 AB-BA 死锁（原型「Q3 反例」）。`notes.json.lock` 等资源锁可留在书目录内——共享持有者在时没人能 `rmtree` 它。合并成一把独占锁被否决：重建（分钟级）期间每次划线要么挂起、要么 409（原型「Q3 合并」两剧本）
+  2. **分层，不合并**：书锁有**共享 / 独占**两种模式（`LOCK_SH` / `LOCK_EX`）。改目录结构的写手（import / delete / migrate / 上传 / 墓碑清扫）持**独占**；只写自己那份文件的写手（notes / reindex / ai_meta / conversations）持**共享**，再取各自的**资源锁**。**固定顺序：书锁 → 资源锁**，反序即 AB-BA 死锁（原型「Q3 反例」）。~~`notes.json.lock` 等资源锁可留在书目录内——共享持有者在时没人能 `rmtree` 它。~~ ⬛ 2026-10-01 订正（审计 #3 / #4 / #43 修复轮）：reindex / ai_meta / conversations 的资源锁在 `books/.locks/{resource}/{book_folder}.lock`（书目录之外、建了永不 unlink、不在书目录里建任何东西），统一由 `book_lock.resource_lock` 实现，与书锁共用同一个截止时间；**notes 例外，保留书目录内的 `notes.json.lock`**——共享持有者在时没人能 `rmtree` 它，挪位置只改语义不得收益。合并成一把独占锁被否决：重建（分钟级）期间每次划线要么挂起、要么 409（原型「Q3 合并」两剧本）
   3. **锁包住服务层整次操作**，不是只包 HTTP handler——CLI `reader3 --index`（`reader3.py` 的 `--index` 分支）与路由走同一把锁
-  4. **拒绝语义**：独占写手**非阻塞**获取，拿不到 → HTTP **409** / CLI 非零退出码并说明持有者类别。共享写手**限时等待**：`flock` 阻塞模式没有超时，所以用 `LOCK_NB` 轮询，**一个 2 秒总预算**（`time.monotonic` 截止时刻）覆盖进程内层、书锁、资源锁三层，不许逐层重新计时；超时 → 409 ＋ `Retry-After`，前端保留未保存的内容；等待不得阻塞事件循环
-  5. **不复活**：持锁后、写之前，**在锁内**复核书目录存在（`_validate_book_id` 枚举到取锁之间有窗口）；除 import 外任何写手**不得** `makedirs` 书目录本身——`notes_service._book_write_lock` 与 `save_annotations` 里的 `makedirs`、`vector_search._client_and_collection` 在**读路径**上的 `makedirs` 都要改成「断言父目录存在」
+  4. **拒绝语义**：独占写手**非阻塞**获取，拿不到 → HTTP **409** / CLI 非零退出码并说明持有者类别。共享写手**限时等待**：`flock` 阻塞模式没有超时，所以用 `LOCK_NB` 轮询，**一个 2 秒总预算**（`time.monotonic` 截止时刻）覆盖进程内层、书锁、资源锁三层，不许逐层重新计时；超时 → 409 ＋ `Retry-After`，前端保留未保存的内容；等待不得阻塞事件循环。⬛ 2026-10-01 订正（审计 #42 / #20 修复轮）：**截止规则**——一层只在成功那一刻 `now < deadline` 才算拿到；在截止时刻或之后才拿到的那一层被释放并拒绝（已拿到的各层一并释放），截止时刻已到的请求一层都不尝试；持有者类别的读取记在同一个截止时间上（等空记录的窗口为 `min(0.1 s, 剩余时间)`），拒绝不晚于截止时刻。只想「不等」的调用方（页面渲染与启动扫描解析 uuid）传预算 `SHORT_BUDGET_S`（= 一个轮询间隔），由 `acquire` 在真正取锁时起算
+  5. **不复活**：持锁后、写之前，**在锁内**复核书目录存在（`_validate_book_id` 枚举到取锁之间有窗口）；除 import 外任何写手**不得** `makedirs` 书目录本身——`notes_service._book_write_lock` 与 `save_annotations` 里的 `makedirs`、`vector_search._client_and_collection` 在**读路径**上的 `makedirs` 都要改成「断言父目录存在」。⬛ 2026-10-01 订正（审计 #44 / #45 / #48 修复轮）：只断言不够——`PersistentClient(path)` 会把消失的 `chroma_db` 连同书目录一起建回来，无锁的「先查后开」有窗口。读路径改为：无锁预检（没有 `chroma_db` → 未索引，不取锁）→ 以持有者类别 `search` 短预算（`SHORT_BUDGET_S`）取**共享**书锁 → 锁内复核 `chroma_db` → 打开并 `get_collection` → 放锁，查询本身不持锁；取锁拿不到（独占的 import / delete 在进行）按「未索引」处理；只有 chromadb 的集合不存在（1.3.x 为 `NotFoundError`）映射为「未索引」，其余错误原样抛出。`search` 进入持有者类别封闭列表（`book_lock.CATEGORIES`）
   6. **身份复核（防 ABA）**：共享写手在请求开始时记下书的 `book_uuid`，拿到锁后复核；不一致 → 409（书已换代——同名的书存在，但不是请求开始时那一本，所以不是 404）。只查存在性挡不住「等锁期间书被删、同一 EPUB 又被导入」——醒来的笔记请求会写进新书（Codex 在原型上复现）
   7. **进程内层**：不能照搬 notes 的整段 `threading.Lock`（会把共享持有者串行化）——要真正的读写语义；同一调用栈重复取书锁 → 抛错（thread-local 检测）；**禁止共享→独占升级**（`flock` 的模式转换是先放再取，中间可被插入），写手开工前定死模式；不许用 dup / 继承的 fd 冒充线程互斥（`flock` 按 open file description 计）
   8. **崩溃**：`flock` 随进程死亡释放；锁文件残留不等于被持有
@@ -126,6 +126,8 @@
   - 持锁进程被 `SIGKILL` 后锁立即可取
   - 删书进行中，notes / ai_meta / conversations / vector 写手（含 vector 的**读**路径）都**不会**把书目录重新建出来（每个写手一条测试）
   - 同一本书的 notes 并发写仍不丢（沿用 notes 现有并发测试，不改一字仍绿）
+    - ⬛ 2026-09-30 订正：「不改一字」做不到，改了两个文件——`tests/unit/test_notes_concurrent_write.py` 的 `RENDEZVOUS_TIMEOUT_S` 由 2.0 改为 1.25，`tests/fixtures/notes_concurrency.py` 的 `ObservableBookLock` 追加 `acquire` / `release` / `locked` 垫片（纯追加，`__enter__` 一字未动）。原因：契约第 4 条的 2 秒总预算也覆盖资源锁这一层——旧测试让第一个写手在锁内恰好停 2.0 秒，第二个写手的预算与之同时耗尽，只会 409；有界等待又必须对注册表里的锁对象调 `.acquire`。被测的主张不变：同一本书两个并发写手的标注都留在盘上。变异回执：把书锁与资源锁都改成空操作，线程版与进程版两条并发写测试在 1.25 下均转红（018 WI-2 报告）
+    - ⬛ 2026-09-30 订正（既有单测随契约修订，主控裁定）：WI-2 使既有单测 18 条转红，18 条全部修订。（1）书库根目录列举排除 `.locks`：3 条（`test_process_epub_commit` / `test_process_epub_staging` 各 1 条，`test_process_epub_sigkill_recovery::test_w1_c22_message_law`）；（2）第 i 类（断言与建目录无关，书目录只是附带的准备）：15 条。其中 11 条只需在 setup 里建出书目录（`test_notes_no_annotation_loss` 3、`test_fixture_annotation_corpus` 2、`test_vector_index_freshness` 5、`test_vector_index_status_consistency` 1）；另 4 条对话测试（`test_conversation_never_silently_dropped` 的 `per_book_mode_ignores_the_missing_root`×3 与 `unrecognised_mode_falls_back_to_per_book_and_says_so`）因 per-book 对话在锁内复核 `thread.book_uuid`（契约第 6 条），setup 还要写出带该 uuid 的 `ai_meta.json`；期望的文件清单仍是精确相等，显式列出 `ai_meta.json` 与对话文件两项，并新增一条断言：调用前后 `ai_meta.json` 逐字节不变；（3）按契约第 5 条反转为「拒绝、不复活」（第 ii 类）：0 条——没有一条既有测试的主张是「往不存在的书目录写能成功或会建出它」。没有一条断言被放宽；`.locks/` 里只有 `*.lock` 文件，在 `w1_c22` 里用一条正向断言钉住（契约第 1 条）
   - 重建持共享锁期间，notes 保存照常成功；独占写手在场时 notes 在 2 秒预算内 409（不是挂起）
   - ABA：notes 等锁 → 删书 → 同名重导入 → notes 醒来 → 409，新书的 `notes.json` 不变
   - 交叉获取（资源锁 → 书锁）与同栈重入都抛错，不死锁
@@ -136,15 +138,23 @@
 ### WI-3: 欠账 #51 —— provider 保存版本校验（后端 ＋ FB-S09 客户端半边）
 
 - **目标 / 验收**: 见 [#51 行](./009-e2e-annotations.md#跨波欠账)（同 revision 两个客户端 → 第二个 409 且文件保留第一个；不带 revision 的客户端行为不变；加法式）。本文只补约束
-- **今天的事实**: `ai_settings.json` 有四个写入端——`PUT /api/settings`、`POST /api/settings/import`、`PUT /api/settings/providers/{provider_name}`、`DELETE /api/settings/providers/{provider_name}`；`save_ai_settings` 已是 `mkstemp` ＋ `os.replace` 原子写。处理函数都是 `async def` 且读—改—写之间没有 `await`，所以**单进程内**事实上串行，**跨进程**没有任何协调
-- **已定**（§6 Q5）:
+- **今天的事实**（实施前）: `ai_settings.json` 有四个写入端——`PUT /api/settings`、`POST /api/settings/import`、`PUT /api/settings/providers/{provider_name}`、`DELETE /api/settings/providers/{provider_name}`；`save_ai_settings` 已是 `mkstemp` ＋ `os.replace` 原子写。处理函数都是 `async def` 且读—改—写之间没有 `await`，所以**单进程内**事实上串行，**跨进程**没有任何协调
+- **已定**（§6 Q5；实施取值见下方「实施记录」）:
   - **revision** = `ai_settings.json` 原始字节的 sha256（可选：用进程外不可见的 key 做 keyed hash，免得 revision 本身成为「猜 key 是否变过」的探针——便宜，实施时定）。不用 `st_mtime_ns`（粒度与拷贝保留 mtime 都靠不住），不往文件里加计数字段（改了配置 schema）
   - **传法**：读响应带 `ETag`，四个写入端都认 `If-Match`（`DELETE` 没有 body，只能走头，所以统一走头）。不带 `If-Match` 的请求照旧放行（加法式）
   - **锁**：一把全局 `config/.ai_settings.lock`（`flock` 独占），比对与写入都在锁内；这**不是** WI-2 的每书锁
   - 不匹配 → 409，响应体按 #51 行，不回显任何 key
 - **涉及文件**: `web/routers/settings.py`、`ai/config.py`（`load_ai_settings` / `save_ai_settings`）；`frontend/src/settings/index.ts`（provider 保存的 `requestJson` 带 revision、409 走可见错误）；`tests/contract/routes.snapshot`（若加 `If-Match` 头或响应字段，按 ADR-0011 同 commit）
 - **验收补充（种子）**: 409 的响应体不回显任何 key（ADR-0012 / 「API key 不回浏览器」）；前端 409 可见错误有 Vitest ＋ 一条 e2e；013 的 `test_provider_save_failure_is_visible` 不改仍绿
-- 测试矩阵：待 /tdd-guardian:design-tests
+- 测试矩阵：`.claude/tdd-guardian/tests-20261001-114124.md`（59 条，R3-1 … R3-4；对抗两轮共补 14 个缺口）
+- **实施记录（2026-10-01）**:
+  - **revision** = `HMAC-SHA256(进程启动时的 secrets.token_bytes(32), b"file:"+原始字节 | b"absent")`，强 ETag（带引号的 64 位小写十六进制）。key 不出进程，revision 不能被拿来离线猜 key；代价是服务重启后旧页面的 revision 全部失效（一次 409，刷新即好）
+  - **If-Match**：强比较；逗号列表、`*` 命中；`W/` 永不命中；任何空元素或不合 RFC 7232 的写法 → 400。不匹配 → 409，`detail` 是固定句子，响应头里不带 ETag 也不带 revision
+  - **锁**：`dirname(settings)/.ai_settings.lock`，0600 创建、永不删除；比对、读、写、算新 ETag 在**同一次持锁**里完成，经 `run_in_threadpool` 跑在事件循环外；两个 GET 也取这把锁，免得读到写到一半的 ETag；锁文件建不出来（`config/` 不可写）时两个 GET 退回不持锁的读，写手一律 500 并点名锁路径（终审 M1）
+  - **判定顺序**：422 → 404（provider 不存在，锁外先判）→ 400 畸形 If-Match → 409 → 400 语义错误
+  - **前端**：页面级唯一 revision（成功但没 ETag 时保留旧值，失败从不更新）；toggle / provider 保存 / 偏好三类写入共用一条页面级队列，revision 在请求**发出时**读取；队首失败不卡住后面的写入。导入无条件、不排队
+  - e2e：`tests/e2e/shell_4a/test_settings_rows.py::test_provider_save_conflict_is_visible`（真第二写手，非 mock），`shell_4a` 108 → 109
+  - 路由快照未变（只加了请求头 / 响应头，没有新路由或字段）
 
 ### WI-4: 欠账 #56 —— 客户端书目列表路由
 
@@ -271,7 +281,7 @@
 | Q3a | 书锁与 notes 锁：合并还是分层 | WI-2 | 分层：书锁 SH / EX ＋ 资源锁，固定顺序书锁 → 资源锁；锁包服务层整次操作（含 CLI `--index`）。见 WI-2 契约项 2 / 3 / 7 | ✅ 已裁定 |
 | Q3b | 短写手阻塞等待还是 409 | WI-2 | `LOCK_NB` 轮询，三层共用一个 2 秒总预算，超时 409 ＋ `Retry-After`，不阻塞事件循环。见 WI-2 契约项 4 | ✅ 已裁定 |
 | Q4 | 新 router 模块名；是否为 012 预留 | WI-4 | `library_books.py`（列表 ＋ 删书）、`library_export.py`（导出）；不为 012 预留 | ✅ 已裁定 |
-| Q5 | #51 revision 的取值、覆盖面、传法 | WI-3 | 原始字节 sha256；四个写入端都认 `ETag` / `If-Match`；无条件请求放行；全局 `config/.ai_settings.lock`。见 WI-3 | ✅ 已裁定 |
+| Q5 | #51 revision 的取值、覆盖面、传法 | WI-3 | 原始字节 sha256（实施时取了括注里的可选项：进程私有 key 的 HMAC-SHA256，见 WI-3「实施记录」）；四个写入端都认 `ETag` / `If-Match`；无条件请求放行；全局 `config/.ai_settings.lock`。见 WI-3 | ✅ 已裁定 |
 | Q6 | #56 列表字段集 | WI-4 | `book_id`、`title`、`authors`、`cover_url`、`book_uuid`；损坏条目显式错误态；章节数与存储格式留给 012。见 WI-4 | ✅ 已裁定 |
 | Q7 | #53 导出 schema | WI-6 | metadata ＋ annotations；对话只在 `?include=conversations`；不含章节正文；整库（维护者取舍）。见 WI-6 | ✅ 已裁定 |
 | Q8 | 删书对集合 / 对话的处置；墓碑清理时机 | WI-5 | 集合成员在提交点前移除；对话**删时问**——`delete_conversations` 参数默认 `false`，确认框归 014 WI-16b（维护者取舍）；墓碑在启动与每次删书前清扫，清扫持锁。见 WI-5 | ✅ 已裁定 |
@@ -288,6 +298,51 @@
 
 | # | 欠什么 | 欠账方 | 兑付方 | 验收怎么查 | 状态 |
 |---|---|---|---|---|---|
+
+### 7.1 审计修复轮（WI-1 / WI-2，审计 `audit-20260930-231519`）
+
+⬛ 2026-10-01。审计对 WI-1 / WI-2 报出 51 条。**修复轮 1** 修了 23 条，逐项提交：`aa83ab8`（#3 #4 #43 #5 #6 #23 #14）、`1c6dae3`（#41 #42 #20 #46）、`f27b8a1`（#44 #45 #48）、`b7a1792`（#1 #2 #47 #49 #9 #10 #11 #15）、`53a280b`（#7）。契约变更已就地订进 WI-2 第 2 / 4 / 5 条。余下 28 条按 `audit-findings-triage` 分拣（先复核、再按「常规使用可达 / 是否证伪本分支主张 / 修法是否碰冻结集」三轴归类），结果如下：**Must 1、Should 6、Could 17、Won't 4**。Must 与 Should 在本分支 CP3 之前修完；Could 与 Won't 不修，理由各一句；没有一条转给 012（如要转，需主控裁定）。
+
+| # | 判定 | 核实 | 一句理由 |
+|---|---|---|---|
+| 21 | Must | verified | SH 持有者释放时不清类别记录，导致跨进程拒绝报出 `busy:notes`，实际持有者是 reindex（主控复现）；违背 ADR-0015 第 4 条「409 说明持有者类别」。严重度 Low → Medium |
+| 8 | Should | verified | N1 每次都等满 1.25 s 会合超时，2 s 预算只剩约 0.7 s，属于容易抖的测试 |
+| 12 | Should | plausible | W2-15 要求 3 个败者都精确报 `busy:import`；赢家若在 flock 与写类别之间被抢占，这条就会抖 |
+| 13 | Should | verified | 「把活 pid 当租约」的变异仍能过 W2-20；去掉 `_pid_alive` 的变异能活过全部锁测试 |
+| 18 | Should | verified | CLI 导入被拒时打出整屏 traceback；`main` 只有 `--index` 分支转成 SystemExit。~~修法：BookLockError / BookGone 都转成一行退出~~ ⬛ 2026-10-01 coordinator ruling: misuse must not be swallowed; BookGone unreachable from process_epub——导入分支只转 `BookLockBusy`，`BookLockMisuse` 带 traceback 传播；测试矩阵 W3-04 的 BookGone 行改为「原样传播」（矩阵在 gitignore 的 tdd-guardian 产物里，不入库） |
+| 33 | Should | plausible | W2-03 先起计时器再起等待线程，等待线程调度晚了，0.4 s 下界就会抖 |
+| 51 | Should | verified | `books/.locks/` 与锁相关的 409 / 404 都没写进 `storage-and-data-locations.md` / `technical-detail.md`，违反文档更新规则 |
+| 16 | Could | verified | 列目录时排除 `.locks`，却没有正向断言其内容；背后没有已知缺陷 |
+| 17 | Could | verified | 同 #16，位于 staging 测试 |
+| 22 | Could | plausible | `.locks` 里放一个符号链接就能把 `pwrite` 导向别处，但前提是攻击者已经能写 books/，属于加固 |
+| 25 | Could | verified | `deadline=` 已在两个写手上有测试，另外三个 notes 写手没测，但背后没有缺陷 |
+| 26 | Could | verified | `_AI_META_FILENAME` 常量重复；宽容读取是有意为之 |
+| 28 | Could | verified | `DEBT_RE` 只在人为构造的输入下漏匹配，属于扫描精度问题 |
+| 29 | Could | verified | `STRIKE_RE` 不跳过代码片段，同样只在人为构造的输入下出现 |
+| 30 | Could | verified | `assert locks.is_dir()` 把实现顺序钉死了，无缺陷 |
+| 31 | Could | plausible | 共享工厂里的 makedirs 遮住了「书不存在」这个前提，没有实际损失 |
+| 32 | Could | verified | 计数断言可以去重；合成集合 007…020 是有意保留的 |
+| 34 | Could | verified | `Holder.start()` 失败时不回收子进程；子进程是 daemon，书目录每个测试独立 |
+| 35 | Could | verified | 多处测试辅助函数重复 |
+| 36 | Could | verified | 文档串少说了被 patch 的对象 |
+| 37 | Could | verified | 测试文件引用的矩阵文件没有入库 |
+| 39 | Could | verified | `process_epub_run` 只是一个别名 |
+| 40 | Could | verified | `_exc_name` 与 `_raised` 功能重叠 |
+| 50 | Could | verified | finally 只发 go 信号，失败时不回收子进程；daemon 加 go 信号，不会挂住 |
+| 19 | Won't | false | HEAD 已由 `1c6dae3` 解决（第一层轮询移进 `acquire` 外层 try，由 `registered` 守卫） |
+| 24 | Won't | false | HEAD 已由 `aa83ab8` 解决（notes 改走 `resource_lock`，`_wait_or_refuse` 已删） |
+| 27 | Won't | disputed | 有意为之：`index_book` 文档串说明用属性传参，以免拓宽调用形状 |
+| 38 | Won't | false | HEAD 已由 `aa83ab8` 解决（`scan` 改用 `SHORT_BUDGET_S`，`test_fx_2_12` 钉住耗时） |
+
+本节所有 SHA 都是 2026-10-01 变基到 `master` `f621175` 之后的值（修复轮 1 原记的 `d9c37c7` 等是更早一次变基前的值，已同步改写）。
+
+**修复轮 2**（⬛ 2026-10-01，Must 1 ＋ Should 6，逐项提交，经 `/tdd-guardian:workflow`）：`3a33a5f`（#21，共享持有者释放时比较并清除自己的类别记录）、`6a71222`（#13，W2-20 改用存活 pid ＋ `_parse_category` 参数化表；去掉 `_pid_alive` 的变异 5 条失败）、`22c5b3f`（#18）、`aadc99a`（#51）、`fc40e15`（#8，`RENDEZVOUS_TIMEOUT_S = BUDGET_S * 0.5` ＋ 余量守卫）、`574b3ab`（#12）、`adfbcd9`（#33，W2-03 改断言「获取 ≥ 释放开始」）。7 条全部结清。
+
+**修复轮 3**（⬛ 2026-10-01，tdd-guardian 终审 APPROVED WITH NOTES 的四条注记，经主控裁决后逐条提交）：
+- `2227e80` 裁决 a：导入分支 except 收窄为 `BookLockBusy`（#18 的修法见上表订正）；`--index` 分支的 except 是本分支 WI-2 加的，同样收窄，只留可达的 Busy / Changed / Gone，`BookLockMisuse` 两条分支都带 traceback 传播。
+- `97083c3` 裁决 b：W2-20 加「他人活 pid」（`os.getppid()`）一行；豁免自身 pid 的租约变体只在这一行失败。
+- `daddca5` 裁决 c：`book_lock` 文档串与 `storage-and-data-locations.md` 写明类别记录的两条真实限制（SIGKILL 后 pid 复用；共享持有者存活时也可能报 `unknown`），Busy 行写明 EX 立即拒绝。
+- `9d2dd95` 裁决 d：ADR-0015 第 4 条补一句「类别可能报 `unknown` 及原因」，状态仍为 Proposed。
 
 ---
 

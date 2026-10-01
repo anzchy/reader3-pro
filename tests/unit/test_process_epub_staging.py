@@ -176,7 +176,12 @@ def test_reprocess_does_not_touch_sibling_book_directories(
     process_epub(str(epub_v2), str(seeded_book_dir))
 
     assert {name: snapshot(path) for name, path in decoys.items()} == before
-    assert sorted(os.listdir(books_dir)) == ["other_data", "sample_data", "sample_data_old"]
+    # 018 WI-2 amendment: `.locks/` is the book-lock dir (ADR-0015 contract item 1), not a book.
+    assert sorted(n for n in os.listdir(books_dir) if n != ".locks") == [
+        "other_data",
+        "sample_data",
+        "sample_data_old",
+    ]
 
 
 def test_reprocess_spares_siblings_matching_the_staging_glob(
