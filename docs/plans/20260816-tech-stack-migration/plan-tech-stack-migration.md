@@ -737,6 +737,8 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 | ⟂ | `Reader3Epub.getDebugState()` 只读状态观测面（2026-09-30 分配） | `020-debug-state` | 独立计划 [`20260928-debug-state-getter.md`](../20260928-debug-state-getter.md) |
 | ⟂ | E2E 互斥锁改为 fcntl 包装：e2e lane 的 `command` 经 `scripts/e2e_lock.py` 运行，进程退出即由内核释放，不再手删 mkdir 锁（2026-10-01 分配；不碰冻结集，不另开 task 文件） | `021-e2e-lock` | A |
 | ⟂ | 功能台账 Summary 表 Evidence 列校验：`scripts/build_feature_ledger.py` 解析了该列却从不校验，补上校验并按规则 7 订正不合格行（2026-10-01 分配；只碰该脚本、其单测与台账数据，不碰冻结集，不另开 task 文件） | `022-ledger-evidence` | A |
+| M1b-债 | 012 开工核验前的冻结集准备：009 欠账 #65 / #66 / #67 / #68（2026-10-01 分配；本轮冻结集唯一 owner；兑付记在 009 欠账表，不另开 task 文件；合入排在 `018` 之后，rebase 时重数分组常量） | `023-frozen-set-prep` | A |
+| ⟂ | 012 Q2 提交机制原型：持久化恢复日志 vs generation 目录 ＋ 指针原子换，崩溃注入对比，顺带给 Q8 建议（2026-10-01 分配；产物只在 `tasks/evidence/q2-commit-prototype/`，不进 `src/`，不写裁定格与 ADR，不另开 task 文件） | `024-q2-commit-prototype` | A |
 
 M1b 与 MD 可与 M1/M2 交错推进；M4a 可与 M2/M3 交错推进；**M3 与 M4b 严格串行**。
 
