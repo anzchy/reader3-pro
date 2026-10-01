@@ -43,12 +43,21 @@ from typing import List, Optional, Set, Tuple
 import pytest
 
 from notes_concurrency import add_annotation_at_barrier
-from reader3_app import notes_service
+from reader3_app import book_lock, notes_service
 from reader3_app.models.annotations import Annotation
 
 # Escape hatch for a rendezvous a correct implementation makes impossible; see
-# the module docstring. Only the green path ever waits this long.
-RENDEZVOUS_TIMEOUT_S = 1.25
+# the module docstring. Only the green path ever waits this long -- and it waits
+# it out while the second writer is parked on the book lock under
+# ``book_lock.BUDGET_S``, so the value is coupled to that budget and derived from
+# it (read once at import; nothing in this module patches the budget). A
+# hard-coded 1.25 s spent 1.28 s of a 2.0 s budget and flaked as
+# ``BookLockBusy: book busy: notes``. The red path never waits on it.
+RENDEZVOUS_TIMEOUT_S = book_lock.BUDGET_S * 0.5
+
+# How much of the book-lock budget the rendezvous must leave unspent. The bound
+# has to reject the old hard-coded 1.25 s: with BUDGET_S = 2.0 it is 1.1 s.
+MIN_SLACK_S = 0.9
 
 # Anything that would mean a thread is wedged rather than merely slow.
 JOIN_TIMEOUT_S = 30.0
@@ -157,6 +166,31 @@ def _park_save_at(barrier: threading.Barrier, monkeypatch: pytest.MonkeyPatch) -
         return real_save(books_dir, book_id, annotations)
 
     monkeypatch.setattr(notes_service, "save_annotations", save_at_barrier)
+
+
+# --------------------------------------------------------------------------- W4-01
+
+
+def test_fu2_w4_01_rendezvous_timeout_leaves_budget_slack() -> None:
+    """W4-01 (L1/S2, guard): the escape hatch leaves the lock budget its slack.
+
+    On the green path writer 2 sits on the book lock for the whole rendezvous,
+    so a timeout too close to ``BUDGET_S`` turns scheduler jitter into a
+    ``BookLockBusy: book busy: notes`` flake. This guard makes that a loud
+    static failure instead. Read ``BUDGET_S`` at call time, not import time.
+    """
+    budget = book_lock.BUDGET_S
+    numbers = (
+        f"RENDEZVOUS_TIMEOUT_S={RENDEZVOUS_TIMEOUT_S}, BUDGET_S={budget}, "
+        f"MIN_SLACK_S={MIN_SLACK_S}"
+    )
+    assert RENDEZVOUS_TIMEOUT_S >= 0.25, (
+        f"rendezvous timeout too short for the red path to meet under jitter: {numbers}"
+    )
+    assert RENDEZVOUS_TIMEOUT_S <= budget - MIN_SLACK_S, (
+        "rendezvous timeout leaves the parked writer less than MIN_SLACK_S of its "
+        f"book-lock budget (upper bound {budget - MIN_SLACK_S}): {numbers}"
+    )
 
 
 # --------------------------------------------------------------------------- N1
