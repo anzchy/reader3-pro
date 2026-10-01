@@ -152,8 +152,10 @@ jobs:
   # Playwright、无 e2e），2026-09-19 裁定为「建 job，不删承诺」，本 job 即是。
   #
   # **跟着上面那个 `on:` 走，一个触发器都不新增**（release.published / push.tags: v* /
-  # workflow_dispatch）。日常 commit 与 PR 一律不跑，日常门禁仍归本地 tdd-guardian
-  # 的三条 lane。这一条是 2026-08-23 定的全仓口径，不为这个 job 破例。
+  # pull_request → master / workflow_dispatch）。所以它**也跑在每个向 `master` 开的 PR 上**
+  # （2026-09-23 起，理由与代价见文件头）；日常 push 到分支不跑，日常门禁仍归本地
+  # tdd-guardian 的 lane（`.claude/tdd-guardian/config.json`）。不加 `push` 触发是
+  # 2026-08-23 定的全仓口径，不为这个 job 破例。
   #
   # **它同时是迁移计划 §7「机制挑战闸」第一项（干净 Linux / CI 环境）的载体。**
   # 那道闸的通过条件是 76/76 **首次**通过（重试通过不算绿，只能用来分类），
