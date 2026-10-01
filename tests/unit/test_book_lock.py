@@ -1619,3 +1619,99 @@ def test_fu2_w1_09_the_compare_never_clears_or_raises_on_a_foreign_or_torn_recor
     assert not box["alive"]
     assert box.get("value") == "ok", repr(box.get("error"))
     assert box["elapsed"] < 0.5
+
+
+# --------------------------------------------------------------------------- fix-up 2, WI-2 (#13)
+#
+# W2-02..W2-09 of ``.claude/tdd-guardian/tests-20261001-170000.md`` (W2-01 amends W2-20
+# in ``test_book_lock_cross_process.py``).
+#
+# Law: for every category ``c`` and every pid ``p`` known to be alive, the parse of the
+# record ``_write_category`` writes for ``"c p"`` is ``c``; for ``p`` dead or ``p <= 0``
+# it is ``"unknown"``. The parser is total: any bytes give a member of the closed
+# codomain and nothing is raised. The category list is a literal on purpose -- not
+# ``book_lock.CATEGORIES`` -- so dropping a member from the module is a red.
+
+from book_lock_workers import reaped_pid  # noqa: E402
+
+FU2_ALL_CATEGORIES = ["import", "delete", "reindex", "notes", "ai_meta", "conversations", "search"]
+FU2_CODOMAIN = frozenset(FU2_ALL_CATEGORIES) | {"unknown"}
+
+
+@pytest.mark.parametrize("cat", FU2_ALL_CATEGORIES)
+def test_fu2_w2_02_a_live_pid_record_reads_as_its_category(cat: str) -> None:
+    assert book_lock._parse_category(f"{cat} {os.getpid()}\n".encode()) == cat
+
+
+def test_fu2_w2_03_a_dead_pid_record_reads_as_unknown() -> None:
+    pid = reaped_pid()
+    assert book_lock._parse_category(f"import {pid}".encode()) == "unknown"
+
+
+@pytest.mark.parametrize("pid", [0, -1, -12345])
+def test_fu2_w2_04_a_non_positive_pid_reads_as_unknown(pid: int) -> None:
+    # Without the ``pid <= 0`` guard, ``os.kill(0, 0)`` signals the process group and
+    # succeeds, and ``kill(-1, 0)`` succeeds for an unprivileged user.
+    assert book_lock._parse_category(f"notes {pid}".encode()) == "unknown"
+
+
+def test_fu2_w2_05_pid_1_reads_as_alive() -> None:
+    """pid 1 exists but is not ours when not root: the ``PermissionError`` -> alive branch.
+
+    Limit: as root pid 1 is signalable, so this passes on the plain-alive branch and
+    does not reach ``PermissionError``.
+    """
+    assert book_lock._parse_category(b"reindex 1") == "reindex"
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [b"imp", b"import", b"import ", f"import {os.getpid()}"[:-1].encode() + b"ab"],
+    ids=["prefix", "category-only", "category-space", "live-prefix-non-digits"],
+)
+def test_fu2_w2_06_a_torn_record_reads_as_unknown(raw: bytes) -> None:
+    assert book_lock._parse_category(raw) == "unknown"
+
+
+_ME = os.getpid()
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [b"", b" " * 63 + b"\n", b"\xff\xfe junk", f"notes {_ME} extra".encode(), f"bogus {_ME}".encode()],
+    ids=["empty", "blank-record", "non-ascii", "three-fields", "unknown-category-live-pid"],
+)
+def test_fu2_w2_07_garbage_reads_as_unknown_even_with_a_live_pid(raw: bytes) -> None:
+    assert book_lock._parse_category(raw) == "unknown"
+
+
+def test_fu2_w2_08_write_then_parse_round_trips_by_pid_liveness_class() -> None:
+    dead = reaped_pid()
+    with tempfile.TemporaryFile() as f:
+        fd = f.fileno()
+
+        @settings(max_examples=60, deadline=None)
+        @given(
+            cat=st.sampled_from(FU2_ALL_CATEGORIES),
+            pid=st.one_of(st.sampled_from(["self", "parent"]), st.just("reaped"), st.integers(max_value=0)),
+        )
+        def check(cat: str, pid: Any) -> None:
+            if pid == "self":
+                value, expected = os.getpid(), cat
+            elif pid == "parent":
+                value, expected = os.getppid(), cat
+            elif pid == "reaped":
+                value, expected = dead, "unknown"
+            else:
+                value, expected = pid, "unknown"
+            book_lock._write_category(fd, f"{cat} {value}")
+            raw = os.pread(fd, 64, 0)
+            assert book_lock._parse_category(raw) == expected, (cat, pid, raw)
+
+        check()
+
+
+@settings(max_examples=100, deadline=None)
+@given(raw=st.binary(max_size=64))
+def test_fu2_w2_09_the_parser_is_total_over_arbitrary_bytes(raw: bytes) -> None:
+    assert book_lock._parse_category(raw) in FU2_CODOMAIN

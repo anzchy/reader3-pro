@@ -136,10 +136,21 @@ def test_w2_19_ex_refused_against_a_cross_process_sh_holder_naming_it(books_dir:
     assert elapsed < 0.25
 
 
-def test_w2_20_a_lock_file_left_behind_is_not_a_held_lock(books_dir: Path) -> None:
+@pytest.mark.parametrize("who", ["live", "dead"])
+def test_w2_20_a_lock_file_left_behind_is_not_a_held_lock(books_dir: Path, who: str) -> None:
+    """W2-01 (fix-up 2, #13): the record is telemetry, never a decision input.
+
+    ``live`` names this test process's own pid -- the partition the old ``999999``
+    record never reached (that pid is never alive on macOS), so an EX that refused on
+    a live recorded pid used to pass. ``dead`` is a reaped child's pid, carrying the
+    old case's coverage over to a pid that is dead on every OS.
+    """
+    from book_lock_workers import reaped_pid
+
+    pid = os.getpid() if who == "live" else reaped_pid()
     lock_file = _lock_file(books_dir)
     lock_file.parent.mkdir()
-    lock_file.write_text("import 999999\n")
+    lock_file.write_text(f"import {pid}\n")
     t0 = time.monotonic()
     with book_lock.acquire(str(books_dir), BOOK, mode="exclusive", holder="delete"):
         elapsed = time.monotonic() - t0

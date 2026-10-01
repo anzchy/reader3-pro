@@ -514,3 +514,20 @@ def _interpose(monkeypatch: Any, before: Callable[[], None], *, count_all: bool)
         yield calls
     finally:
         monkeypatch.setattr(book_lock, "acquire", real)
+
+
+def reaped_pid() -> int:
+    """The pid of a child that has exited and been reaped -- dead on every OS.
+
+    Used instead of a magic number (999999 is never alive on macOS but can be on
+    Linux). The sanity assertion turns pid reuse into a test *error*, never a false pass.
+    """
+    import subprocess
+    import sys
+
+    from reader3_app import book_lock
+
+    p = subprocess.Popen([sys.executable, "-c", "pass"])
+    p.wait(timeout=CHILD_TIMEOUT_S)
+    assert book_lock._pid_alive(p.pid) is False, "pid reused before use; rerun"
+    return p.pid
