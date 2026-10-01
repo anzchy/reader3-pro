@@ -125,6 +125,11 @@ Two things `ls` won't tell you:
   script was deleted in 013 WI-9, so don't look for a second renderer.
 - JavaScript is vanilla ES6+ (no frameworks). CSS is plain CSS (no preprocessors).
 
+To read reader state from an agent or a test, call `window.Reader3Epub.getDebugState()`
+(read-only, JSON-serializable, no book text; contract in
+[`docs/plans/20260928-debug-state-getter.md`](docs/plans/20260928-debug-state-getter.md) §3):
+`$B js "JSON.stringify(window.Reader3Epub.getDebugState())"` under gstack `/browse`.
+
 ## Constitution Principles (Summary)
 
 Reader3 Pro follows 7 core principles. This list is the authority — the former
