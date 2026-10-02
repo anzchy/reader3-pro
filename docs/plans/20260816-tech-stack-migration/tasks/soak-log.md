@@ -9,6 +9,7 @@
 > `suite_hash` **重新冻结**在 `1e868c7bf811`——~~覆盖面里再动一个字节，下表全部作废、从零重数。~~
 > （⬛ 2026-09-29：按批次规则读——覆盖面里再动一个字节，已通过的批次就不再覆盖新 `suite_hash`，须在新值上另开一批；表中各行照旧不改。）
 > （⬛ 2026-09-30：`019-frozen-set-debts` 已把它改为 `6dcbb1110288`，见变更史首条；新批次在合入后开。）
+> （⬛ 2026-10-02：023（PR #34）再改为 `abfc0cc9c59e`；该值上的批次 `B2` 已判定通过（`94dd1e0`），见下方「批次声明」与变更史首条。）
 > 前值 `2747100dadf6` 已作废；作废的理由、被作废的那 10 行、以及为什么这笔代价是有意付的，
 > 写在下方「`suite_hash` 的变更史」第一条。
 > **2026-09-23 起下表不再是空的：清零后的首行已落账**（`baddc61`，green）。此前「下表现在是空的，
@@ -68,6 +69,14 @@
 >   行用 `--ledger` 写回主工作区，10 次跑完前不提交。
 >   **判定：通过**——上面的核对命令输出恰好一行 `10 9be446c green 1e868c7bf811 chromium-1234 darwin-25.3.0`
 >   （2026-09-28T15:14:07Z – 15:22:26Z，每次 68 passed，53.8–56.4s）。只满足次数；机制挑战闸第 1~~、3~~ 项仍须在最终候选上过（⬛ 2026-09-30：第 3 项只在 `suite_hash` 变了时重跑，见 迁移计划 §7「012 开工核验」）。
+> - `B2`｜`2026-10-01T16:56:16Z`｜`94dd1e0`｜`abfc0cc9c59e`｜`chromium-1234`｜`darwin-25.3.0`
+>   ——`suite_hash` 经 019（PR #29）与 023（PR #34）两次改覆盖面后在 master 上的首批，见下方变更史首条。
+>   在 `94dd1e0`（024 合入后的 master）的干净 detached worktree 里跑；行用 `--ledger` 写回主工作区，10 次跑完前不提交。
+>   **判定：通过**（⬛ 2026-10-02）——`uv run python scripts/soak_run.py --verdict B2` 输出
+>   `PASS B2 10/10（2026-10-01T16:57:14Z – 2026-10-01T17:14:08Z）`（每次 132 passed、138 deselected，107.5–119.4s）。
+>   只满足次数；机制挑战闸第 1 项须在最终候选 `commit` 上通过，第 3 项因 `suite_hash` 变了须重跑——都按
+>   [迁移计划 §7「012 开工核验」](../plan-tech-stack-migration.md)办，本文件不复述。
+>   这 10 行的 `log` 列指向跑批会话的临时目录，不随仓库保存；可复核的是行本身与上面的判决输出。
 >
 > ⚠️ **次数数满 ≠ Phase 3 解锁。** §7 里另有**机制挑战闸**三项（干净 Linux / CI 环境、CPU 压力、
 > 随机化 pytest 收集顺序），原定三项都是阻塞性的——**2026-09-24 起第 2 项经维护者裁定降为不阻塞的记录项**，
@@ -99,6 +108,16 @@
 | 2026-09-28T15:20:37Z | 9be446c | green | 54.12 | 1e868c7bf811 | chromium-1234 | darwin-25.3.0 | .claude/tdd-guardian/soak-logs/2026-09-28T152037Z-9be446c-769938875-8cdc18.log |
 | 2026-09-28T15:21:32Z | 9be446c | green | 53.84 | 1e868c7bf811 | chromium-1234 | darwin-25.3.0 | .claude/tdd-guardian/soak-logs/2026-09-28T152132Z-9be446c-126970833-0e77bb.log |
 | 2026-09-28T15:22:26Z | 9be446c | green | 53.97 | 1e868c7bf811 | chromium-1234 | darwin-25.3.0 | .claude/tdd-guardian/soak-logs/2026-09-28T152226Z-9be446c-637035250-74d0a3.log |
+| 2026-10-01T16:57:14Z | 94dd1e0 | green | 111.71 | abfc0cc9c59e | chromium-1234 | darwin-25.3.0 | /private/tmp/claude-501/-Users-jackcheng-Documents-01-Coding-Front-end-projects-reader3-pro/bc5b24e0-7ce5-4a9a-a73d-be20a60170f4/scratchpad/soak-b2-logs/2026-10-01T165714Z-94dd1e0-819154958-37f45c.log |
+| 2026-10-01T16:59:07Z | 94dd1e0 | green | 119.38 | abfc0cc9c59e | chromium-1234 | darwin-25.3.0 | /private/tmp/claude-501/-Users-jackcheng-Documents-01-Coding-Front-end-projects-reader3-pro/bc5b24e0-7ce5-4a9a-a73d-be20a60170f4/scratchpad/soak-b2-logs/2026-10-01T165907Z-94dd1e0-076851833-b44212.log |
+| 2026-10-01T17:01:08Z | 94dd1e0 | green | 114.84 | abfc0cc9c59e | chromium-1234 | darwin-25.3.0 | /private/tmp/claude-501/-Users-jackcheng-Documents-01-Coding-Front-end-projects-reader3-pro/bc5b24e0-7ce5-4a9a-a73d-be20a60170f4/scratchpad/soak-b2-logs/2026-10-01T170108Z-94dd1e0-467569375-40835e.log |
+| 2026-10-01T17:03:04Z | 94dd1e0 | green | 114.6 | abfc0cc9c59e | chromium-1234 | darwin-25.3.0 | /private/tmp/claude-501/-Users-jackcheng-Documents-01-Coding-Front-end-projects-reader3-pro/bc5b24e0-7ce5-4a9a-a73d-be20a60170f4/scratchpad/soak-b2-logs/2026-10-01T170304Z-94dd1e0-465062166-42d906.log |
+| 2026-10-01T17:05:00Z | 94dd1e0 | green | 107.5 | abfc0cc9c59e | chromium-1234 | darwin-25.3.0 | /private/tmp/claude-501/-Users-jackcheng-Documents-01-Coding-Front-end-projects-reader3-pro/bc5b24e0-7ce5-4a9a-a73d-be20a60170f4/scratchpad/soak-b2-logs/2026-10-01T170500Z-94dd1e0-498198875-b057b7.log |
+| 2026-10-01T17:06:48Z | 94dd1e0 | green | 109.56 | abfc0cc9c59e | chromium-1234 | darwin-25.3.0 | /private/tmp/claude-501/-Users-jackcheng-Documents-01-Coding-Front-end-projects-reader3-pro/bc5b24e0-7ce5-4a9a-a73d-be20a60170f4/scratchpad/soak-b2-logs/2026-10-01T170648Z-94dd1e0-622310583-0ec95d.log |
+| 2026-10-01T17:08:38Z | 94dd1e0 | green | 108.8 | abfc0cc9c59e | chromium-1234 | darwin-25.3.0 | /private/tmp/claude-501/-Users-jackcheng-Documents-01-Coding-Front-end-projects-reader3-pro/bc5b24e0-7ce5-4a9a-a73d-be20a60170f4/scratchpad/soak-b2-logs/2026-10-01T170838Z-94dd1e0-962314541-d637e6.log |
+| 2026-10-01T17:10:28Z | 94dd1e0 | green | 108.13 | abfc0cc9c59e | chromium-1234 | darwin-25.3.0 | /private/tmp/claude-501/-Users-jackcheng-Documents-01-Coding-Front-end-projects-reader3-pro/bc5b24e0-7ce5-4a9a-a73d-be20a60170f4/scratchpad/soak-b2-logs/2026-10-01T171028Z-94dd1e0-775074375-8c60c0.log |
+| 2026-10-01T17:12:16Z | 94dd1e0 | green | 111.18 | abfc0cc9c59e | chromium-1234 | darwin-25.3.0 | /private/tmp/claude-501/-Users-jackcheng-Documents-01-Coding-Front-end-projects-reader3-pro/bc5b24e0-7ce5-4a9a-a73d-be20a60170f4/scratchpad/soak-b2-logs/2026-10-01T171216Z-94dd1e0-622938041-d50f57.log |
+| 2026-10-01T17:14:08Z | 94dd1e0 | green | 109.97 | abfc0cc9c59e | chromium-1234 | darwin-25.3.0 | /private/tmp/claude-501/-Users-jackcheng-Documents-01-Coding-Front-end-projects-reader3-pro/bc5b24e0-7ce5-4a9a-a73d-be20a60170f4/scratchpad/soak-b2-logs/2026-10-01T171408Z-94dd1e0-236542125-6f3e09.log |
 
 ---
 
@@ -175,10 +194,15 @@ docstring 都算数——现在这条规则对所有人生效，包括「就改�
   | git hash-object --stdin; } | cut -c1-12
 ```
 
-当前 `suite_hash` 值：`1e868c7bf811`（2026-09-21 实测输出，非誊抄：`scripts/soak_run.py`
-dry run 在 68/68 green 的那一次同时打印出来的）。
+当前 `suite_hash` 值：`abfc0cc9c59e`（⬛ 2026-10-02：`94dd1e0` 上实测，非誊抄——`soak_run.py` 为批次 `B2`
+落账的 10 行逐行打印的就是它；见下方变更史首条）。
+~~当前值 `1e868c7bf811`（2026-09-21 实测输出，非誊抄：`scripts/soak_run.py`
+dry run 在 68/68 green 的那一次同时打印出来的）。~~（⬛ 2026-10-02：已被上一行取代；`B1` 的 10 行仍是这个值。）
 （⬛ 2026-09-30：`019-frozen-set-debts` 改了覆盖面，该分支上实测为 `6dcbb1110288`，`B1` 不覆盖它；
-本行在 master 上新值的批次声明前保持原值，见下方变更史首条。）
+~~本行在 master 上新值的批次声明前保持原值，见下方变更史首条。~~）
+（⬛ 2026-10-02：新值上的批次 `B2` 已声明并通过，本行随之改为 `abfc0cc9c59e`。表中值不同于它的行**不因此**变成
+pre-freeze：契约测试按「等于当前值 / 落在某个已声明批次的 10 行窗口内且四项身份与声明相同 / 早于第一条批次声明」
+三者之一放行，见 `tests/unit/test_soak_log_contract.py` Case 4。）
 前值 `2747100dadf6` 已作废——见下方变更史第一条。
 
 **这个值已冻结（2026-09-06 G2 达成），不再是 pre-freeze。** 上表首行落账那一刻起，
@@ -208,6 +232,22 @@ dry run 在 68/68 green 的那一次同时打印出来的）。
 
 值的变更史（每次改都要写清作废原因，不要只覆盖数字）：
 
+- **`abfc0cc9c59e` ← 2026-10-01 `023-frozen-set-prep`（PR #34，覆盖面改动在 `9d504bd`）。前值 `6dcbb1110288`（019）在 master 上
+  从未声明过批次；`B1` 只覆盖 `1e868c7bf811`，**不覆盖本值**。本值上的首批是 `B2`（`94dd1e0`），已判定通过。**
+  - **为什么会变**：`eda9694`（019 合入）到 `94dd1e0` 之间，八条覆盖路径只被 `9d504bd` 一个提交动过
+    （`git diff --name-status eda9694 94dd1e0 -- <八条>` ＝ 5 个新增、2 个修改）。按 `git ls-tree` 重算：
+    `eda9694` 与 `9d504bd^` 都是 `6dcbb1110288`，`9d504bd` 与 `94dd1e0` 都是 `abfc0cc9c59e`。
+    1. 009 欠账 #65：`notes_conflict_support.py` 与四个原挂在 `UNGROUPED_E2E_MODULES` 白名单里的模块
+       （`test_conflict_resolution_single_flight.py`、`test_conflict_settled_text_keeps_its_base_etag.py`、
+       `test_notes_write_failure_is_attributable.py`、`test_stored_cfi_must_agree_with_quote.py`）迁入 `tests/e2e/baseline_1b/`——
+       支撑模块随之进覆盖面，堵上「冻结集依赖冻结集外的文件」那个洞。`EXPECTED_BASELINE_ITEMS` 76 → **132**、
+       `EXPECTED_UNGROUPED_ITEMS` 68 → **12**，`tests/e2e` 全量不变。
+    2. 009 欠账 #67：`tests/e2e/baseline_1b/test_write_recolor_and_delete.py` 的 W-5a-③ docstring（四件事 → 六件事，修一处悬空指针）。
+    3. 009 欠账 #68：`tests/e2e/helpers.py` 的 `wait_for_note_text` 死线后重读一次，已匹配即返回。
+  - 019 那条里的三处改动（#49 / #62 / 017 #10）**也在本值里**——本值是在 `6dcbb1110288` 之上再改，不是替代它。
+  - `src/` 零改动；这一次清零是有意的（`9d504bd` 提交说明：「suite_hash 有意变化（一次重置，由协调者结算 soak-log）」）。
+  - 表头「当前 `suite_hash` 值」随 `B2` 判定通过改为本值（2026-10-02）。机制挑战闸第 1、3 项的重跑归属见 §7「012 开工核验」，不在本文件。
+
 - **`6dcbb1110288` ← 2026-09-30 `019-frozen-set-debts`（冻结集欠账窗口）。前值 `1e868c7bf811` 在本分支上不再是当前值；
   批次 `B1` 只覆盖前值，**不覆盖新值**。**
   - **为什么会变**：覆盖面里动了三处。
@@ -218,7 +258,9 @@ dry run 在 68/68 green 的那一次同时打印出来的）。
   - **本分支上没有声明批次，也不追加台账行**。新值上的新一批、第 3 项重跑、第 1 项首跑通过，按
     迁移计划 §7「012 开工核验」在合入 master 之后做（本文件只留三条 §7 链接，见「三类清零触发器」）；
     本分支上第 2 项的记录性重跑见下方「#49 修后」一节。
-  - 表头「当前 `suite_hash` 值」一行在合入并在新值上声明批次之前**不改**：台账各行仍是前值，改了会让它们被误判为 pre-freeze。
+  - ~~表头「当前 `suite_hash` 值」一行在合入并在新值上声明批次之前**不改**：台账各行仍是前值，改了会让它们被误判为 pre-freeze。~~
+    （⬛ 2026-10-02：`6dcbb1110288` 在 master 上从未声明过批次——023 先把它改掉了；新值 `abfc0cc9c59e` 上的 `B2`
+    已声明并通过，表头随之改了。「误判为 pre-freeze」那个顾虑由契约测试改按批次窗口放行来解决，见上一条。）
 
 - **`1e868c7bf811` ← 2026-09-21 修 009 欠账 #9（选区塌陷丢写）并同批兑付一笔 parked 的白名单欠账。
   前值 `2747100dadf6` 作废，连同它下面已经攒够的 **10 行绿账全部作废，计数归零**。**

@@ -23,6 +23,7 @@ import ast
 import importlib.util
 import re
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import ModuleType
 from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple
@@ -535,28 +536,186 @@ def test_recorded_suite_hash_has_legal_shape():
     )
 
 
-def test_rows_predating_the_freeze_are_marked_pre_freeze():
-    text = read_soak_log()
+# Case 4b: 每一行都**有账可查**——值不同于表头当前值，不等于「产生于冻结之前」（2026-10-02 改写）
+#
+# 原用例只读表头一个值，凡不等于它的行一律要求标 `pre-freeze`。表里只有一个 `suite_hash` 时这没问题；
+# 批次规则（迁移计划 §7，2026-09-28）之后，`suite_hash` 每变一次就在新值上另开一批，旧批次的行**原样
+# 保留且仍然有效**（`B1` 的 10 行至今是 `--verdict B1` 的判据）。表头一改成新值，原用例就把 `B1` 的
+# 10 行和批次规则之前的 4 行全判成「拿冻结前的绿充数」——把「不是今天的值」读成了「冻结之前」。
+#
+# 现在一行放行，当且仅当下列之一成立：
+#   (a) `suite_hash` 等于表头「当前 `suite_hash` 值」；
+#   (b) 它落在某个已声明批次的**位置窗口**里（`soak_run.batch_verdict` 实际判的那至多 10 行），
+#       且 commit / suite_hash / browser / os 四项与**该**声明逐字相同；
+#   (c) 它的 `ts_utc` 早于**最早**一条批次声明的起始时刻（批次规则之前的行，表头写明「不计入任何批次」）；
+#   (d) 行内显式标注 `pre-freeze`。
+# (b) 是按位置、不是按值：**只声明一个 hash 不豁免任何行**——窗口之外再追加的同 hash 行照样判红。
+# 那正是本次改写要堵的洞：若按「哈希在任一声明里出现过」放行，往 B1 之后再补一行 `1e868c7bf811`
+# 的绿就能永远躲过这条检查（见下面的 4c 负例）。
+#
+# 声明解析与窗口取法**直接用 `scripts/soak_run.py` 的**，不在这里另写一份：这里要断的正是
+# 「判决器认为属于某批的那些行」，自己再实现一遍，两边一漂移就会出现「判决器认、契约不认」的缝。
+# 声明不合形状时 `parse_batch_declarations` 抛错，本用例随之红——fail closed，与 `--verdict` 同口径。
+def unaccounted_rows(text: str) -> List[str]:
+    """返回台账第一张表里**无账可查**的数据行原文（四条放行理由一条都不满足的行）。"""
     m = CURRENT_HASH_RE.search(text)
-    assert m is not None, "表头里找不到当前 `suite_hash` 值，无法判定哪些行产生于冻结之前。"
-    frozen = m.group("value")
+    assert m is not None, "表头里找不到当前 `suite_hash` 值，无法判定哪些行有账可查。"
+    current = m.group("value")
 
-    header, rows = first_table(text)
-    idx = header.index("suite_hash") if "suite_hash" in header else None
-    assert idx is not None, f"表头没有 suite_hash 列：{header}"
+    header, lines = first_table(text)
+    assert "suite_hash" in header, f"表头没有 suite_hash 列：{header}"
+    idx = header.index("suite_hash")
 
-    unmarked: List[str] = []
-    for line in rows:
+    sr = _soak_run()
+    decls = sr.parse_batch_declarations(text)
+    rows = sr.ledger_rows(text)
+    # 两个解析器读的必须是同一组行，否则下面按下标对位就是错位。
+    assert [list(r.cells) for r in rows] == [split_row(ln) for ln in lines], (
+        "`soak_run.ledger_rows` 与 `first_table` 读出的数据行不一致，无法按位置对账。"
+    )
+
+    # (b)：每个声明的窗口，按对象身份映射回下标（`batch_verdict` 返回的就是传入列表里的那些对象）。
+    in_batch: Set[int] = set()
+    for decl in decls.values():
+        verdict = sr.batch_verdict(decl, rows)
+        window_ids = {id(r) for r in verdict.rows}
+        for i, row in enumerate(rows):
+            if id(row) not in window_ids:
+                continue
+            if (row.commit, row.suite_hash, row.browser, row.os) == (
+                decl.commit,
+                decl.suite_hash,
+                decl.browser,
+                decl.os,
+            ):
+                in_batch.add(i)
+
+    # (c)：最早一条声明的起始时刻；没有任何声明时这一条不放行任何行。
+    earliest = min((d.start_ts for d in decls.values()), default=None)
+
+    out: List[str] = []
+    for i, line in enumerate(lines):
         cells = split_row(line)
         if len(cells) <= idx:
             continue
         cell = cells[idx].strip("`* ")
-        if cell and cell != frozen and "pre-freeze" not in line.lower():
-            unmarked.append(line)
+        if not cell or cell == current:  # (a)
+            continue
+        if i in in_batch:  # (b)
+            continue
+        ts = sr._parse_row_ts(cells[0]) if cells else None
+        if earliest is not None and ts is not None and ts < earliest:  # (c)
+            continue
+        if "pre-freeze" in line.lower():  # (d)
+            continue
+        out.append(line)
+    return out
+
+
+def test_every_row_is_accounted_for_by_current_hash_or_a_declared_batch():
+    unmarked = unaccounted_rows(read_soak_log())
     assert not unmarked, (
-        "以下数据行的 suite_hash 与表头记录的冻结值不同，却没有标注 `pre-freeze`——"
-        "那正是「拿冻结前的绿充数」：\n  " + "\n  ".join(unmarked)
+        "以下数据行的 suite_hash 不等于表头当前值，又不在任何已声明批次的 10 行窗口里（或身份与该批声明不符），"
+        "也不早于第一条批次声明、没有标注 `pre-freeze`——那正是「拿冻结前的绿充数」：\n  "
+        + "\n  ".join(unmarked)
     )
+
+
+# --------------------------------------------------------------------------
+# Case 4c: 上一条的放行规则在合成台账上逐条钉死（tmp_path，不碰真台账）
+# --------------------------------------------------------------------------
+_SYN_OLD = "1111111111aa"  # 旧批次的 suite_hash
+_SYN_NEW = "2222222222bb"  # 表头当前值
+_SYN_DECL_TS = datetime(2026, 1, 10, 12, 0, 0, tzinfo=timezone.utc)
+
+
+def _syn_row(ts: datetime, commit: str, suite_hash: str, extra: str = "", os_: str = "darwin-25.3.0") -> str:
+    return (
+        f"| {ts.strftime('%Y-%m-%dT%H:%M:%SZ')} | {commit} | green | 55.00 | {suite_hash} "
+        f"| chromium-1234 | {os_} | logs/{commit}-{ts:%H%M%S}.log{extra} |"
+    )
+
+
+def _syn_ledger(tmp_path: Path, extra_rows: List[str], decl_hash: str = _SYN_OLD) -> str:
+    """一份最小合成台账：批次 `Q1` 声明在 `_SYN_OLD` 上，其后紧跟恰好 10 行吻合的窗口行，再接 `extra_rows`。"""
+    decl = (
+        f"> - `Q1`｜`{_SYN_DECL_TS:%Y-%m-%dT%H:%M:%SZ}`｜`abc1234`｜`{decl_hash}`｜`chromium-1234`｜`darwin-25.3.0`"
+    )
+    window = [_syn_row(_SYN_DECL_TS + timedelta(minutes=1 + i), "abc1234", _SYN_OLD) for i in range(10)]
+    text = "\n".join(
+        [
+            "# 合成台账",
+            "",
+            decl,
+            "",
+            "| ts_utc | commit | result | duration_s | suite_hash | browser | os | log |",
+            "|---|---|---|---|---|---|---|---|",
+            *window,
+            *extra_rows,
+            "",
+            f"当前 `suite_hash` 值：`{_SYN_NEW}`",
+            "",
+        ]
+    )
+    (tmp_path / "soak-log.md").write_text(text, encoding="utf-8")
+    return (tmp_path / "soak-log.md").read_text(encoding="utf-8")
+
+
+_AFTER_WINDOW = _SYN_DECL_TS + timedelta(hours=1)
+
+
+def test_4c1_declared_batch_window_rows_are_accounted(tmp_path: Path):
+    """(b) 正例：旧 hash 的 10 行窗口行全部放行；当前 hash 的后续行按 (a) 放行。"""
+    text = _syn_ledger(tmp_path, [_syn_row(_AFTER_WINDOW, "def5678", _SYN_NEW)])
+    assert unaccounted_rows(text) == []
+
+
+def test_4c2_declaring_a_hash_does_not_exempt_rows_outside_its_window(tmp_path: Path):
+    """要堵的洞：窗口之外再补一行与声明**完全同身份**的旧 hash 绿行——只因 hash 被声明过，不得放行。"""
+    stray = _syn_row(_AFTER_WINDOW, "abc1234", _SYN_OLD)
+    text = _syn_ledger(tmp_path, [stray])
+    assert unaccounted_rows(text) == [stray]
+
+
+def test_4c3_window_row_with_foreign_identity_is_not_accounted(tmp_path: Path):
+    """(b) 要求四项身份与**该**声明相同：窗口里一行 os 不同的旧 hash 行不放行（它也不在任何别的批次里）。"""
+    text = _syn_ledger(tmp_path, [])
+    lines = text.split("\n")
+    i = next(k for k, ln in enumerate(lines) if ln.startswith("| 2026-01-10T12:05:00Z"))
+    foreign = lines[i].replace("darwin-25.3.0", "linux-6.1.0")
+    lines[i] = foreign
+    assert unaccounted_rows("\n".join(lines)) == [foreign]
+
+
+def test_4c4_rows_before_the_earliest_declaration_are_accounted(tmp_path: Path):
+    """(c)：最早一条声明之前的旧 hash 行放行（批次规则之前的行，不计入任何批次）。"""
+    early = _syn_row(_SYN_DECL_TS - timedelta(days=3), "0ld0001", _SYN_OLD)
+    text = _syn_ledger(tmp_path, [])
+    lines = text.split("\n")
+    sep = lines.index("|---|---|---|---|---|---|---|---|")
+    lines.insert(sep + 1, early)
+    assert unaccounted_rows("\n".join(lines)) == []
+
+
+def test_4c5_explicit_pre_freeze_mark_is_accounted(tmp_path: Path):
+    """(d)：窗口之外的旧 hash 行，显式标注 `pre-freeze` 即放行。"""
+    stray = _syn_row(_AFTER_WINDOW, "abc1234", _SYN_OLD, extra=" pre-freeze")
+    assert unaccounted_rows(_syn_ledger(tmp_path, [stray])) == []
+
+
+def test_4c6_no_declarations_means_only_current_hash_or_mark(tmp_path: Path):
+    """没有任何批次声明时 (b)(c) 都不放行：回到原用例的口径——值不同于当前值就必须标 `pre-freeze`。"""
+    text = _syn_ledger(tmp_path, [])
+    lines = [ln for ln in text.split("\n") if not ln.startswith("> - `Q1`")]
+    unmarked = unaccounted_rows("\n".join(lines))
+    assert len(unmarked) == 10 and all(_SYN_OLD in ln for ln in unmarked)
+
+
+def test_4c7_malformed_declaration_fails_closed(tmp_path: Path):
+    """声明写错时整次判定失败，而不是悄悄当作「没有声明」——与 `--verdict` 同口径。"""
+    text = _syn_ledger(tmp_path, []).replace("｜`darwin-25.3.0`", "｜`darwin-25.3.0` 注记")
+    with pytest.raises(_soak_run().BatchDeclarationError):
+        unaccounted_rows(text)
 
 
 def test_no_ledger_row_strays_outside_the_table():

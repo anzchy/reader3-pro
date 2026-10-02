@@ -75,6 +75,10 @@ def _render(fields: List[str], sep: str = "｜", trailing: str = "") -> str:
 B1_FIELDS = ["B1", "2026-09-28T15:13:15Z", "9be446c", "1e868c7bf811", "chromium-1234", "darwin-25.3.0"]
 B1_LINE = _render(B1_FIELDS)
 B0_LINE = _render(["B0", "2026-09-27T00:00:00Z", "d3ceaf4", "1e868c7bf811", "chromium-1234", "darwin-25.3.0"])
+#: 真台账里已判过的批次，按声明顺序（只许追加；再判一批就在这里追加，不改前面的）。
+HISTORICAL_BATCH_IDS: List[str] = ["B1", "B2"]
+#: 合成「第二批」的 ID。原先用 `B2`，真台账 2026-10-01 声明了真 `B2` 后两者撞名（D1c 守着这条）。
+SYNTH_ID = "Z2"
 # 抄自 2026-09-29 真台账表头的近似行（D2 语料，也是 D3 的噪声源）。表头改写后不必同步——真台账由 D1 直接覆盖。
 # 真台账表头里的近似行，逐字抄来（D2 语料，也是 D3 的噪声源）。
 FORMAT_DESCRIPTION_LINE = (
@@ -111,10 +115,15 @@ def _insert_after_b1_block(text: str, line: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def test_d1_real_ledger_yields_exactly_b1() -> None:
+# 2026-10-02 改写：原先断「恰好声明 B1」，`B2` 一追加就红——那是把「截至 09-29 的台账」当成了永久不变量。
+# 台账只许追加，所以钉的是**已判过的历史前缀**：声明顺序以 `HISTORICAL_BATCH_IDS` 开头、`B1` 逐字段不变；
+# 之后再追加的批次不影响本用例。强度没降：B1 每个字段照旧逐一比对，另把 B2 也钉进历史前缀（D1b）。
+def test_d1_real_ledger_declares_historical_batches_first_b1_exact() -> None:
     parse, BatchDeclaration, _ = _api()
     result = parse(_real_text())
-    assert list(result) == ["B1"], f"真台账应当恰好声明 B1，得到 {list(result)}"
+    assert list(result)[: len(HISTORICAL_BATCH_IDS)] == HISTORICAL_BATCH_IDS, (
+        f"真台账的批次声明应当以 {HISTORICAL_BATCH_IDS} 开头（只许追加），得到 {list(result)}"
+    )
     d = result["B1"]
     expected = BatchDeclaration(
         "B1", _utc(2026, 9, 28, 15, 13, 15), "9be446c", "1e868c7bf811", "chromium-1234", "darwin-25.3.0"
@@ -124,6 +133,20 @@ def test_d1_real_ledger_yields_exactly_b1() -> None:
     assert d == expected
     assert d.start_ts.tzinfo is not None, "start_ts 必须带 UTC 时区（Q3）"
     assert d.start_ts.utcoffset().total_seconds() == 0
+
+
+def test_d1b_real_ledger_b2_exact() -> None:
+    parse, BatchDeclaration, _ = _api()
+    d = parse(_real_text())["B2"]
+    assert d == BatchDeclaration(
+        "B2", _utc(2026, 10, 1, 16, 56, 16), "94dd1e0", "abfc0cc9c59e", "chromium-1234", "darwin-25.3.0"
+    )
+
+
+def test_d1c_synthetic_batch_id_is_not_declared_in_real_ledger() -> None:
+    """合成批次（C2–C4、D5、D6）用的 ID 若与真台账撞名，插进去就成了「重复声明」，用例会因错的理由红/绿。"""
+    parse, _, _ = _api()
+    assert SYNTH_ID not in parse(_real_text()), f"合成批次 ID {SYNTH_ID!r} 已被真台账占用，换一个"
 
 
 # ---------------------------------------------------------------------------
@@ -252,7 +275,7 @@ def test_d4_malformed_candidate_raises_naming_line(case: str) -> None:
 
 def test_d5_malformed_b2_blocks_b1() -> None:
     parse, _, BatchDeclarationError = _api()
-    bad = "> - `B2`｜`2026-09-29T00:00:00Z`｜`9be446c`｜`1e868c7bf811`｜`chromium-1234`"
+    bad = f"> - `{SYNTH_ID}`｜`2026-09-29T00:00:00Z`｜`9be446c`｜`1e868c7bf811`｜`chromium-1234`"
     text = _insert_after_b1_block(_real_text(), bad)
     with pytest.raises(BatchDeclarationError):
         parse(text)
@@ -265,7 +288,7 @@ def test_d5_malformed_b2_blocks_b1() -> None:
 
 def test_d6_all_ascii_pipe_declaration_fails_closed() -> None:
     parse, _, BatchDeclarationError = _api()
-    ascii_line = "> - `B2`|`2026-09-29T00:00:00Z`|`9be446c`|`1e868c7bf811`|`chromium-1234`|`darwin-25.3.0`"
+    ascii_line = f"> - `{SYNTH_ID}`|`2026-09-29T00:00:00Z`|`9be446c`|`1e868c7bf811`|`chromium-1234`|`darwin-25.3.0`"
     text = _insert_after_b1_block(_real_text(), ascii_line)
     with pytest.raises(BatchDeclarationError) as ei:
         parse(text)
@@ -349,6 +372,33 @@ def _real_cells() -> List[List[str]]:
     return [split_row(ln) for ln in first_table(_real_text())[1]]
 
 
+#: B1 判定时（2026-09-29）台账的行数与各行 ts。台账只许追加，这一段永远是真台账的前缀。
+B1_ERA_ROWS = 14
+B1_ERA_TS: List[str] = [
+    "2026-09-23T10:51:23Z",
+    "2026-09-25T22:31:21Z",
+    "2026-09-27T04:00:05Z",
+    "2026-09-28T04:00:05Z",
+    "2026-09-28T15:14:07Z",
+    "2026-09-28T15:15:03Z",
+    "2026-09-28T15:15:59Z",
+    "2026-09-28T15:16:56Z",
+    "2026-09-28T15:17:51Z",
+    "2026-09-28T15:18:46Z",
+    "2026-09-28T15:19:41Z",
+    "2026-09-28T15:20:37Z",
+    "2026-09-28T15:21:32Z",
+    "2026-09-28T15:22:26Z",
+]
+
+
+def _b1_era_cells() -> List[List[str]]:
+    """真台账的前 `B1_ERA_ROWS` 行（B1 判定时的快照），先核对它确实还是那一段前缀。"""
+    cells = _real_cells()
+    assert [c[0] for c in cells[:B1_ERA_ROWS]] == B1_ERA_TS, "真台账的历史前缀被改动过——台账只许追加"
+    return cells[:B1_ERA_ROWS]
+
+
 def _mk(decl, n: int, start: Optional[datetime] = None, first_offset_s: int = 52) -> List[List[str]]:  # type: ignore[no-untyped-def]
     """合成一批与声明完全吻合的绿行：自 `start + first_offset_s` 起每 55 秒一行。"""
     base = decl.start_ts if start is None else start
@@ -376,9 +426,12 @@ def test_r1_real_ledger_rows() -> None:
     mod = _api2()
     text = _real_text()
     rows = mod.ledger_rows(text)
-    assert len(rows) == len(first_table(text)[1]) == 14
+    # 2026-10-02：原先钉总数 == 14、末行 == B1 末行；B2 追加后总数是 24。台账只许追加，所以改钉历史前缀：
+    # 前 14 行的 ts 逐条不变（含首行、红行、B1 末行），总数只要求不少于它；与 first_table 逐行一致照旧。
+    assert len(rows) == len(first_table(text)[1]) >= B1_ERA_ROWS
+    assert [r.ts_utc for r in rows[:B1_ERA_ROWS]] == B1_ERA_TS
     assert rows[0].ts_utc == "2026-09-23T10:51:23Z"
-    assert rows[-1].ts_utc == "2026-09-28T15:22:26Z"
+    assert rows[B1_ERA_ROWS - 1].ts_utc == "2026-09-28T15:22:26Z"
     assert rows[2].result == "red"
     assert rows[2].commit == "8e1cf48"
     assert [list(r.cells) for r in rows] == _real_cells()
@@ -458,6 +511,17 @@ def test_v1_real_ledger_real_b1_passes() -> None:
     assert not {r.commit for r in v.rows} & PRE_BATCH_COMMITS
 
 
+def test_v1b_real_ledger_real_b2_passes() -> None:
+    mod = _api2()
+    parse, _, _ = _api()
+    v = mod.batch_verdict(parse(_real_text())["B2"], mod.ledger_rows(_real_text()))
+    assert v.passed is True, v.reason
+    assert len(v.rows) == 10
+    assert v.rows[0].ts_utc == "2026-10-01T16:57:14Z"
+    assert v.rows[-1].ts_utc == "2026-10-01T17:14:08Z"
+    assert {r.commit for r in v.rows} == {"94dd1e0"}
+
+
 def test_v1_verdict_is_frozen_dataclass() -> None:
     mod = _api2()
     v = mod.batch_verdict(_b1_decl(), mod.ledger_rows(_real_text()))
@@ -487,8 +551,10 @@ PERTURB = {
 )
 def test_v2_single_field_perturbation_fails_naming_row_and_column(pos: int, column: str) -> None:
     decl = _b1_decl()
-    cells = _real_cells()
-    assert len(cells) == 14
+    # 2026-10-02：原先 `_real_cells()` 且断 `len == 14`；B2 追加后改取 B1 判定时的 14 行快照（前缀已核对），
+    # 第 4 行起的 10 行仍是 B1 的窗口，扰动与判据一字未改。
+    cells = _b1_era_cells()
+    assert len(cells) == B1_ERA_ROWS
     target = cells[4 + pos]
     declared = "green" if column == "result" else getattr(decl, column)
     assert target[_col(column)] == declared
@@ -783,9 +849,11 @@ def test_v12b_result_reported_before_os() -> None:
 
 CLI_TIMEOUT_S = 60.0
 
-B2_EARLY_LINE = _render(["B2", "2026-09-23T00:00:00Z", "baddc61", "1e868c7bf811", "chromium-1234", "darwin-25.3.0"])
-D5_MALFORMED_B2 = "> - `B2`｜`2026-09-29T00:00:00Z`｜`9be446c`｜`1e868c7bf811`｜`chromium-1234`"
-D6_ASCII_B2 = "> - `B2`|`2026-09-29T00:00:00Z`|`9be446c`|`1e868c7bf811`|`chromium-1234`|`darwin-25.3.0`"
+# 2026-10-02：三条合成声明的 ID 由 `B2` 改为 `SYNTH_ID`——真台账已声明真 `B2`，再插一条 `B2` 就成了重复声明，
+# C2 / C4「fail」会因「重复」而不是「4178b8a 不符」判败（后者恰好还是 rc=1，红不出来）。变量名随之去掉 B2。
+SYNTH_EARLY_LINE = _render([SYNTH_ID, "2026-09-23T00:00:00Z", "baddc61", "1e868c7bf811", "chromium-1234", "darwin-25.3.0"])
+D5_MALFORMED_SYNTH = f"> - `{SYNTH_ID}`｜`2026-09-29T00:00:00Z`｜`9be446c`｜`1e868c7bf811`｜`chromium-1234`"
+D6_ASCII_SYNTH = f"> - `{SYNTH_ID}`|`2026-09-29T00:00:00Z`|`9be446c`|`1e868c7bf811`|`chromium-1234`|`darwin-25.3.0`"
 
 
 def _run(cmd: List[str], *, timeout: float = CLI_TIMEOUT_S, **kwargs: object) -> "subprocess.CompletedProcess[str]":
@@ -863,15 +931,16 @@ def test_c1_real_ledger_verdict_b1_passes() -> None:
 
 
 # ---------------------------------------------------------------------------
-# C2 · 加一条 2026-09-23 起的 B2：B2 判败在 4178b8a；B1 不受影响（蜕变）
+# C2 · 加一条 2026-09-23 起的合成批次：它判败在 4178b8a；B1 不受影响（蜕变）
 # ---------------------------------------------------------------------------
 
 
-def test_c2_early_b2_fails_at_4178b8a_and_b1_unaffected(tmp_path: Path) -> None:
-    ledger = _ledger_copy(tmp_path, B2_EARLY_LINE)
-    b2 = _cli("--verdict", "B2", "--ledger", str(ledger))
+def test_c2_early_synthetic_batch_fails_at_4178b8a_and_b1_unaffected(tmp_path: Path) -> None:
+    ledger = _ledger_copy(tmp_path, SYNTH_EARLY_LINE)
+    b2 = _cli("--verdict", SYNTH_ID, "--ledger", str(ledger))
     assert b2.returncode == 1, b2.stdout
-    assert b2.stdout.startswith("FAIL B2"), b2.stdout
+    assert b2.stdout.startswith(f"FAIL {SYNTH_ID}"), b2.stdout
+    assert "重复" not in b2.stdout, b2.stdout
     assert "2026-09-25T22:31:21Z" in b2.stdout
     assert "4178b8a" in b2.stdout
     assert "2026-09-27T04:00:05Z" not in b2.stdout
@@ -903,11 +972,11 @@ def test_c3b_duplicate_b1(tmp_path: Path) -> None:
 
 
 def test_c3c_malformed_b2_blocks_b1(tmp_path: Path) -> None:
-    proc = _cli("--verdict", "B1", "--ledger", str(_ledger_copy(tmp_path, D5_MALFORMED_B2)))
+    proc = _cli("--verdict", "B1", "--ledger", str(_ledger_copy(tmp_path, D5_MALFORMED_SYNTH)))
     assert proc.returncode == 1, proc.stdout
     out = _combined(proc)
     assert "Traceback" not in out
-    assert D5_MALFORMED_B2.strip() in out
+    assert D5_MALFORMED_SYNTH.strip() in out
 
 
 def test_c3d_missing_ledger(tmp_path: Path) -> None:
@@ -920,13 +989,13 @@ def test_c3d_missing_ledger(tmp_path: Path) -> None:
 
 def test_c3e_ascii_pipe_b2_is_malformed_not_unknown(tmp_path: Path) -> None:
     unknown = _cli("--verdict", "B9", "--ledger", str(_ledger_copy(tmp_path, name="plain.md")))
-    proc = _cli("--verdict", "B2", "--ledger", str(_ledger_copy(tmp_path, D6_ASCII_B2)))
+    proc = _cli("--verdict", SYNTH_ID, "--ledger", str(_ledger_copy(tmp_path, D6_ASCII_SYNTH)))
     assert proc.returncode == 1, proc.stdout
     out = _combined(proc)
     assert "Traceback" not in out
-    assert D6_ASCII_B2.strip() in out
+    assert D6_ASCII_SYNTH.strip() in out
     # 若这一行被当成非候选静默跳过，输出会与「未知 ID」同形——那正是 Q1 要堵的。
-    assert proc.stdout != unknown.stdout.replace("B9", "B2")
+    assert proc.stdout != unknown.stdout.replace("B9", SYNTH_ID)
 
 
 # ---------------------------------------------------------------------------
@@ -938,9 +1007,9 @@ def test_c3e_ascii_pipe_b2_is_malformed_not_unknown(tmp_path: Path) -> None:
     "case,batch_id,extra_line,want_rc",
     [
         ("pass", "B1", None, 0),
-        ("fail", "B2", B2_EARLY_LINE, 1),
+        ("fail", SYNTH_ID, SYNTH_EARLY_LINE, 1),
         ("unknown", "B9", None, 1),
-        ("malformed", "B1", D5_MALFORMED_B2, 1),
+        ("malformed", "B1", D5_MALFORMED_SYNTH, 1),
     ],
     ids=["pass", "fail", "unknown", "malformed"],
 )
