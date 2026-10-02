@@ -39,7 +39,7 @@
 | 每个 Phase 的进入 / 退出门槛、soak 门槛 | `plan-tech-stack-migration.md` §7 |
 | **分支编号分配（全仓库唯一真相源）** | `plan-tech-stack-migration.md` §9 |
 | Playwright E2E 用例清单与激活分组 | `tasks/009-e2e-annotations.md` |
-| `reader3 launch` 打开的 origin（规范形、端口优先级与端口记忆） | [`tasks/015-launch-experience.md`](./tasks/015-launch-experience.md) §2.3（⬛ 2026-10-02 起） |
+| `reader3 launch` 打开的 origin（规范形、端口优先级与端口记忆） | [`docs/adr/0017`](../../adr/0017-data-home-resolution.md) 子问题 g（⬛ 2026-10-02 自 `tasks/015-launch-experience.md` §2.3 迁入：本文件夹随 015 归档，这条规则不能跟着走） |
 | 书库目录与设置文件的定位（数据家、绑定文件） | [`docs/adr/0017`](../../adr/0017-data-home-resolution.md)（⬛ 2026-10-02 起，Proposed） |
 | API v1 冻结**规则** | [`docs/adr/0011`](../../adr/0011-api-v1-freeze.md)（清单本身是 `tests/contract/routes.snapshot`） |
 | 覆盖率门槛数值 | `.claude/tdd-guardian/config.json`（拓扑与理由见 [`docs/adr/0010`](../../adr/0010-test-and-ci-topology.md)） |

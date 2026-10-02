@@ -21,9 +21,10 @@
 | [0012](0012-security-boundaries.md) | 三条安全边界 | Accepted | Retrospective | Full | 受限 unpickler 无回退；路径只在拼路径前挡一次；凭据文件走 `mkstemp` |
 | [0013](0013-testid-invariant.md) | `data-testid` 是新旧 UI 间唯一不变量 | Accepted（复合选择器适用范围一节由 [0014](0014-bounded-testid-enumeration.md) 取代） | Prospective | Full | 先原型后模板；E2E 只许 testid/ARIA；三条 lint 守它 |
 | [0014](0014-bounded-testid-enumeration.md) | 有界元素集合逐个枚举唯一 testid | Accepted | Prospective | None | 删 `data-modal`/`data-sheet`；复合选择器只留给无界 id |
-| [0015](0015-per-book-write-coordination.md) | 每书写协调（书锁） | Accepted | Prospective | Partial | `books/.locks/` 下 SH/EX 书锁，书锁 → 资源锁；不复活、身份复核、2 秒预算后 409 |
+| [0015](0015-per-book-write-coordination.md) | 每书写协调（书锁） | Accepted（第 3 条 project-root 对话不取书锁的例外由 [0018](0018-project-root-conversations-take-book-lock.md) 取代） | Prospective | Partial | `books/.locks/` 下 SH/EX 书锁，书锁 → 资源锁；不复活、身份复核、2 秒预算后 409 |
 | [0016](0016-generation-directory-publish.md) | 书目录发布：generation 目录＋单指针 | Proposed | Prospective | None | `gen/{g}/` ＋ 根 `manifest.json` 一次 `os.replace` 提交；GC 延后一代；迁移不删平铺文件 |
-| [0017](0017-data-home-resolution.md) | 数据家：书库与设置文件的统一定位 | Proposed | Prospective | None | 显式路径胜出 → 已有绑定 → 首次运行绑 cwd 现成书库或 `~/Reader3/`；多候选就停，不迁移不合并 |
+| [0017](0017-data-home-resolution.md) | 数据家：书库与设置文件的统一定位；launch 的 origin 钉死 | Proposed | Prospective | None | 显式路径胜出 → 已有绑定 → 首次运行绑 cwd 现成书库或 `~/Reader3/`；多候选就停，不迁移不合并；origin 钉 `127.0.0.1:{port}`、从不自动换端口 |
+| [0018](0018-project-root-conversations-take-book-lock.md) | project-root 对话写手也持共享书锁 | Proposed | Prospective | None | 项目级对话按书目录名持 SH 书锁并锁内复核；`both` 模式两份一次持锁写完；删书后迟到写入 404、不复活 |
 
 「合规」是 **Current compliance**：Full＝代码今天就这样；Partial＝部分落地，缺口在该文的 Migration Strategy；None＝尚未实现（Proposed 才会出现）。
 

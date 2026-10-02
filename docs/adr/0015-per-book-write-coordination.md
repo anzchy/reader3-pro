@@ -2,7 +2,7 @@
 
 | 字段 | 值 |
 |---|---|
-| Status | Accepted（2026-10-02 合入回写：契约随 `018-library-routes` 第一段 WI-1 – WI-3 合入 `master`，PR #33，合并 commit `c08317b`；原定「合入的同一 PR 里转 Accepted」（018 §4 门槛 7）当时漏转，此处补上） |
+| Status | Accepted（2026-10-02 合入回写：契约随 `018-library-routes` 第一段 WI-1 – WI-3 合入 `master`，PR #33，合并 commit `c08317b`；原定「合入的同一 PR 里转 Accepted」（018 §4 门槛 7）当时漏转，此处补上）。Decision Outcome 第 3 条里「对话只在 per-book 存储模式下取书锁……不是遗漏」这一处 project-root 例外已由 [ADR-0018](0018-project-root-conversations-take-book-lock.md) 取代（2026-10-02 裁定；0018 在 018 第二段合入前为 Proposed，期间代码仍按本文运行）。本文其余部分继续有效，正文按规则不改。 |
 | Decision date | 2026-09-26 |
 | Recorded date | 2026-09-26 |
 | Record type | Prospective |
