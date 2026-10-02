@@ -305,6 +305,17 @@ class BookUuidResolver:
             if self._uuid_to_folder.get(book_uuid) == book_folder:
                 del self._uuid_to_folder[book_uuid]
 
+    def forget_folder(self, book_folder: str) -> None:
+        """Drop every entry for ``book_folder``, both directions (018 WI-5a delete invalidator).
+
+        Idempotent and memory-only: an unknown folder is a no-op, and nothing is
+        read from or written to disk -- the folder is already gone when this runs.
+        """
+        with self._lock:
+            self._folder_to_uuid.pop(book_folder, None)
+            for book_uuid in [u for u, f in self._uuid_to_folder.items() if f == book_folder]:
+                del self._uuid_to_folder[book_uuid]
+
     def _uuid_on_disk(self, book_folder: str) -> Optional[str]:
         """The folder's uuid as ``ai_meta.json`` holds it now -- read only, never written.
 

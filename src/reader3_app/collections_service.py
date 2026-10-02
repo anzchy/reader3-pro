@@ -284,3 +284,28 @@ def update_collection_books(
         save_collections(path, collections)
         return updated
 
+
+
+def remove_book_everywhere(path: Path, book_id: str) -> None:
+    """Drop ``book_id`` from every collection (018 WI-5a, the delete finalizer's step).
+
+    Order and empty collections are kept. A missing file is tolerated and never
+    created; when no collection names the book the file is not rewritten, so a
+    repeated call (a re-run finalize) leaves the bytes and the mtime alone.
+    """
+    path = Path(path)
+    if not path.exists():
+        return
+    with _collections_write_lock(path):
+        if not path.exists():
+            return
+        collections = load_collections(path)
+        changed = False
+        next_collections: list[Collection] = []
+        for c in collections:
+            kept = [x for x in c.book_ids if x != book_id]
+            if len(kept) != len(c.book_ids):
+                changed = True
+            next_collections.append(Collection(id=c.id, name=c.name, created_at=c.created_at, book_ids=kept))
+        if changed:
+            save_collections(path, next_collections)

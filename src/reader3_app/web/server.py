@@ -290,6 +290,27 @@ app.add_middleware(RequestGuardMiddleware)
 
 _stats_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 
+#: 018 WI-5a: bumped by every delete. A stats computation that started before a
+#: delete finished must not be cached (it may still count the deleted book), so
+#: ``api_library_stats`` stores its result only if this did not move meanwhile.
+_stats_generation: int = 0
+
+
+def _bump_stats_generation() -> None:
+    global _stats_generation
+    _stats_generation += 1
+    _stats_cache.clear()
+
+
+from .. import library_delete  # noqa: E402 - kept below line 107 (seam registry pins server.py:51 / :107)
+
+# Call-time lambdas: tests (and nothing else) re-seat ``book_uuid_resolver``; the
+# registration must reach whichever resolver is installed when the delete runs.
+library_delete.register_invalidator(lambda folder, book_uuid: _bump_stats_generation(), folder_scoped=False)
+library_delete.register_invalidator(
+    lambda folder, book_uuid: book_uuid_resolver.forget_folder(folder), folder_scoped=True
+)
+
 
 def _project_root_dir_from_books_dir() -> str:
     return os.path.dirname(os.path.abspath(BOOKS_DIR))

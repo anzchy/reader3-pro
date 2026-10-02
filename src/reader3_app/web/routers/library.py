@@ -310,6 +310,7 @@ async def api_library_stats(scope: str = "all", fresh: bool = False):
             if now - ts <= 5.0:
                 return payload
 
+    generation = _server._stats_generation
     try:
         stats = _compute_stats_for_scope(validated_scope).to_dict()
     except HTTPException:
@@ -317,7 +318,10 @@ async def api_library_stats(scope: str = "all", fresh: bool = False):
     except Exception as e:  # noqa: BLE001 - 第 2 档：HTTP 边界，转译成 500 且 detail 带上原因
         raise HTTPException(status_code=500, detail=str(e))
 
-    _server._stats_cache[cache_key] = (now, stats)
+    # 018 WI-5a: a delete during the computation bumps the generation; its result
+    # may still count the deleted book, so it is returned but not cached.
+    if _server._stats_generation == generation:
+        _server._stats_cache[cache_key] = (now, stats)
     return stats
 
 # 017 WI-1（审计 #7）：必须留在文件末尾。理由见 `routers/__init__.py` 的 docstring。

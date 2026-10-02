@@ -188,7 +188,28 @@
 - **涉及文件**: `web/routers/library_books.py`、`web/server.py`（`_stats_cache` ＋ 代次；`_startup_scan_books` 调清扫）、`search_service.py`、`ai/books.py`（`BookUuidResolver` 加公开的 `forget_folder`，D6）、`collections_service.py`（新 `remove_book_everywhere` 或等价物，D7；`update_collection_books` 锁内复核，D13）、`ai/conversations.py`（范围扩到 `save_project_conversation` 与 `save_conversation_multi`——项目级写手持共享书锁，D16 / ADR-0018）、WI-2 的锁模块、`tests/contract/routes.snapshot`；⬛ 2026-10-02 补：`reader3.py`（`process_epub` 取锁前跑清扫，D12）、`web/routers/library.py`（`api_collections_update_books` 的复核，D13）、`vector_search.py`（chromadb system 退役，D14）
 - **e2e**: 删书测试**不得**改动 `baseline_1b` 共用的会话语料库——用自己的库目录与自己起的服务（`tests/fixtures/deg_assertions.py` 的起服务形状），不在任何分组目录里放 `conftest.py`
 - **验收补充（种子）**: ~~删书与单本重建并发 → 一方 409~~（⬛ 2026-10-02 D15：两种次序分别写——**重建先持共享锁** → 删书 409，书完好；**删书先持独占锁** → 重建在 2 秒预算内等到删书结束，锁内复核得 `BookGone` → 404，删书超过预算时才是 409），且不出现「删掉的目录被重建出来」；删后 `/api/library/stats` 立即反映；删后该书不再出现在 WI-4 的列表里、不在任何集合里；`delete_conversations` 缺省时对话文件~~原样保留~~保留在磁盘 `{配置的根}/{book_uuid}/` 下（默认 `per_book` 模式也一样，D5 / Q-B），为 `true` 时两处都删掉；删后重导入同一 EPUB 得到新 `book_uuid`；在提交点前后各注入一次 `SIGKILL`，重启后书库分别是「书完好」与「书不在、墓碑被清扫」（⬛ 2026-10-02 D12：崩溃点扩到意图写入前后、对话发布中途、`rmtree` 前后，每点 × `delete_conversations` 两个取值；清单见执行计划 §3 WI-5）；集合竞态：加书进集合与删书交错后，集合里没有它，同名重导入的新书不在任何集合里（D13）；同进程「索引 → 删 → 同名重导入 → 索引 → 查询」用真 chromadb 全部成功（D14）
-- 测试矩阵：待 /tdd-guardian:design-tests
+- ~~测试矩阵：待 /tdd-guardian:design-tests~~ ⬛ 2026-10-02 协调者裁定：测试矩阵 rev 3（78 例：5a 53 / 5b 11 / 5c 14 ＋ 4 行 `LIBRARY_CASES` ＋ 1 行快照），对抗审查两轮（第 2 轮后的定稿未再受审，CP2 由评审补查 rev 3 新增例）；分三段落地 5a 服务层 → 5b 写手与入口 → 5c 路由，各一张红灯收据（W5-12）
+- **⬛ 2026-10-02 协调者裁定（WI-5 实现期，Q1 – Q6、W5-7 – W5-23；与上文冲突处以本节为准）**:
+  - **Q1 / W5-7 意图先于提交**：意图文件写入并 `fsync` 后才改名。**只有墓碑、没有（或损坏的）意图 → 一律保全**：墓碑原地留下、记日志，不跑终结器（取代上文 D12「只有墓碑 → 按 `false` 跑终结器」）。
+  - **Q6 意图记绝对路径**：意图记删时解析出的项目级对话根（或 `null`）与集合文件 `collections_service.collections_path(dirname(books_dir))`；终结器只读意图，不导入 `web.server`、不读设置。缓存失效走调用时注册的钩子（`register_invalidator`，可注销）与代次计数。
+  - **Q2 根解析不出（`None`）**：`true` → 跳过项目级一步，204，记日志；`false` 且有按书对话 → 提交点前、锁内 **409**，书不动（取代上文 D12 的 500）；没有按书对话 → 照常。
+  - **Q3 `book_uuid` 畸形视为 `None`**：`false` 且有按书对话 → 提交点前 409；`true` → 丢弃并记日志。W5-9：单个对话文件自带 uuid 畸形 → 退回意图里的 uuid，Q3 的拒绝不变。
+  - **Q4 失效范围（在本 WI 内）**：`search_service.load_book_index`（`cache_clear`）、`book_store.load_book_cached`、统计代次、`BookUuidResolver.forget_folder`、chromadb system 退役；其余向量侧缓存记入 Limits。提交点之后的失效放在 `finally`，终结器中途失败也不会留下「204 ＋ 旧缓存」。
+  - **Q5 锁内复核**：书目录已不在 → 走现有 not-found 路径 404，集合不变。
+  - **W5-8 `delete_conversations` 手工解析**：缺省 / `true` / `false`（大小写不敏感）有效，其余 400。
+  - **W5-10 / W5-11 集合移除移入终结器**（提交点之后；取代上文第 3 步「提交点前移除」）；请求内清扫用 `SHORT_BUDGET_S`；`save_project_conversation` 增必填 `books_dir`，调用方随 5b 更新。
+  - **W5-13 发布前全量预检**：终结器先预检全部按书对话，任一不可读 → 不发布、不清理，墓碑保全并记日志，不出现半发布状态。
+  - **W5-14 保全无副作用 ＋ 同名活书**：保全的墓碑跨多次清扫零集合 / 映射 / chroma 副作用；同名活书（判据与书库列表同一谓词）存在时，终结器跳过集合移除、`forget_folder`、chroma 退役。
+  - **W5-15 删书预检（仅 `false`）**：锁内、提交点前预检按书对话，任一不可读 → 409 并点名该文件，书原样在列、字节不变、无意图无墓碑；`true` 跳过预检。终结器预检（W5-13）保留为兜底。
+  - **W5-16 同名活书时**：照常发布对话，再删墓碑与意图；只跳过集合移除、`forget_folder`、chroma 退役；发布或预检失败 → 按 W5-13 保全。
+  - **W5-17 / W5-21「不可读」的定义** = 发布循环的校验不通过：非对象（如 `[]`）、不安全的 `conversation_id`、文件名不是 uuid、目标 uuid 解析不出、项目级根下已有的同名目标文件无法解析（W5-21）。**缺失或非字符串的 `last_updated` 算可读**，按 `""`（最旧）比较；预检绝不比现有读路径更严。
+  - **W5-22 新者胜的比较键**：删除路径上 `last_updated` 非字符串 / `None` / 缺失一律按 `""`；同值时保留项目级根下已有的那份（严格 `>`）。`conversations.py:344` 的 `str(v or "")` 不改，二者的差异记入 F-005 Limits。
+  - **W5-18 清扫报告**：`SweepReport` 增 `failed`；某个墓碑终结失败不挡住其余墓碑；`process_epub` 遇同名条目在 `failed` 里则拒绝导入。
+  - **W5-19**：独占锁取不到立即 `BookLockBusy`、从不等待，清扫不加轮询；`SHORT_BUDGET_S` 只透传给共享锁等待。
+  - **W5-20**：失效钩子注册表提供重置 / 注销接口；服务端注册调用时查找的 lambda（`book_uuid_resolver.forget_folder`），保持补丁接缝可替换。
+  - **配对键**：墓碑与意图按 `(folder, pid, token)` 配对，不只按 folder；清扫在取得每个条目的锁之后重新分类（条目已配对 → 终结；已消失 → 跳过）。对话发布顺序按文件名排序。
+  - **W5-23**：D-8(b) 的 `unresolvable_uuid` 一格收窄 —— 磁盘上取不到 uuid 时 true 模式不碰项目级根（`R/U` 保留、不为文件自带 uuid 建 `R/V`），并记一条点名 `book_uuid` 的 WARNING（同 F-5(c)）。矩阵原断言与 Q3 / F-5(c) 相矛盾；WI-5a 回执因此一行 SEPARATION-BROKEN，经裁定接受，仅限该行。
+  - 机制细节（意图格式、终结器步骤次序、测试分层）以执行计划 §3 WI-5 与本节为准。
 
 ### WI-6: 欠账 #53 —— 书库导出
 
