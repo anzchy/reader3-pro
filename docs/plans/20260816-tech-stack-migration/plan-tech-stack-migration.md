@@ -325,6 +325,7 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 目标格式（`manifest.json` + `chapters.jsonl`）、双写与日落规则、`reader3 --migrate` 的硬约束（原地读写、禁止复用摄取路径、不得改变 `book_fingerprint()`）的正文已迁至 [ADR-0009](../../adr/0009-book-format-manifest-jsonl.md)（唯一定义处）；写入协议与读取三态见 [ADR-0007](../../adr/0007-crash-safe-publish-protocol.md)。本节只留任务清单，不复述约束：
 
 - [ ] 版本化中立格式落地（ADR-0009 Decision Outcome）
+- [ ] `book_fingerprint()`（A1）落地，写进 manifest；notes / chroma meta 各存所绑定的指纹（[012 WI-2](./tasks/012-storage-format.md)；⬛ 2026-10-02 补入，012 §6 Q9 裁定其为本阶段隐含必需项）
 - [ ] 摄取时双写；读取按三态（ADR-0007）
 - [ ] `book_store.py` 封装格式判断，调用方无感知
 - [ ] `reader3 --migrate <book_id>`，遵守 ADR-0009 的硬约束与配套断言
@@ -335,6 +336,8 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 #### 两文件提交协议（唯一定义处已迁至 ADR-0007）
 
 > `manifest.json` + `chapters.jsonl` 的八步写入顺序、marker-last 的意义，正文已迁至 [ADR-0007](../../adr/0007-crash-safe-publish-protocol.md)（唯一定义处）。§4 的回滚条目、附录 A 的 A2 条款与 `tasks/007` P0-1 只引用该 ADR，不复述步骤。
+>
+> ⬛ 2026-10-02：提交点与崩溃恢复（本节与下面「两条协议缺口」）已由 [ADR-0016](../../adr/0016-generation-directory-publish.md) 取代（`gen/{g}/` ＋ 根 `manifest.json` 单指针）；三态读取仍在 ADR-0007。
 
 ##### 两条协议缺口（Phase 0 的 P0-1 实施中撞出来，已在 `reader3.py` 落地）
 
@@ -732,13 +735,13 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 | M5 | Phase 5 launch + PWA | `015-launch-experience` | A（`reader3 launch`）＋ **B**（PWA，WI-20） |
 | M1b-债 | 欠账 #22 字号/间距慢一拍（合入 009 后、冻结 G2 前的一条独立小分支） | `016-settings-apply-order` | A（兑付记在 [`tasks/009` 欠账表 #22](./tasks/009-e2e-annotations.md)，不另开 task 文件） |
 | M2-债 | 011 合入后的全量审计欠账：44 条 findings 中判为 must / should 的 22 条 | `017-audit-followup` | A（任务展开写在 [`tasks/017-audit-followup.md`](./tasks/017-audit-followup.md)） |
-| M4a-债 | 013 延后的后端半边中**不依赖 012 存储格式**的四条（#51 / #56 / #58 / #53）＋ 每书写协调契约 ＋ 009 欠账 #31 收尾对账（job 已于 2026-09-20 建成并结清；018 只核验合并头与改掉过期措辞） | `018-library-routes` | A（[任务文件](./tasks/018-library-routes.md)，2026-09-26 评审通过；🚧 2026-09-30 分支已开、进行中；分拆裁定见 [`tasks/012` §6 D1](./tasks/012-storage-format.md)） |
+| M4a-债 | 013 延后的后端半边中**不依赖 012 存储格式**的四条（#51 / #56 / #58 / #53）＋ 每书写协调契约 ＋ 009 欠账 #31 收尾对账（job 已于 2026-09-20 建成并结清；018 只核验合并头与改掉过期措辞） | `018-library-routes` | A（[任务文件](./tasks/018-library-routes.md)，2026-09-26 评审通过；🚧 2026-09-30 分支已开、进行中；⬛ 2026-10-02：WI-1 – WI-3 已合入（PR #33，`c08317b`），WI-4 – WI-8 未做，合入记录见任务文件 §8；分拆裁定见 [`tasks/012` §6 D1](./tasks/012-storage-format.md)） |
 | M1b / M2-债 | 冻结集欠账窗口：009 #49 / #50 / #62 ＋ 017 finding #10（2026-09-30 分配；兑付记在 009 / 017 各自的表上，不另开 task 文件） | `019-frozen-set-debts` | A |
 | ⟂ | `Reader3Epub.getDebugState()` 只读状态观测面（2026-09-30 分配） | `020-debug-state` | 独立计划 [`20260928-debug-state-getter.md`](../20260928-debug-state-getter.md) |
 | ⟂ | E2E 互斥锁改为 fcntl 包装：e2e lane 的 `command` 经 `scripts/e2e_lock.py` 运行，进程退出即由内核释放，不再手删 mkdir 锁（2026-10-01 分配；不碰冻结集，不另开 task 文件） | `021-e2e-lock` | A |
 | ⟂ | 功能台账 Summary 表 Evidence 列校验：`scripts/build_feature_ledger.py` 解析了该列却从不校验，补上校验并按规则 7 订正不合格行（2026-10-01 分配；只碰该脚本、其单测与台账数据，不碰冻结集，不另开 task 文件） | `022-ledger-evidence` | A |
-| M1b-债 | 012 开工核验前的冻结集准备：009 欠账 #65 / #66 / #67 / #68（2026-10-01 分配；本轮冻结集唯一 owner；兑付记在 009 欠账表，不另开 task 文件；合入排在 `018` 之后，rebase 时重数分组常量） | `023-frozen-set-prep` | A |
-| ⟂ | 012 Q2 提交机制原型：持久化恢复日志 vs generation 目录 ＋ 指针原子换，崩溃注入对比，顺带给 Q8 建议（2026-10-01 分配；产物只在 `tasks/evidence/q2-commit-prototype/`，不进 `src/`，不写裁定格与 ADR，不另开 task 文件） | `024-q2-commit-prototype` | A |
+| M1b-债 | 012 开工核验前的冻结集准备：009 欠账 #65 / #66 / #67 / #68（2026-10-01 分配；本轮冻结集唯一 owner；兑付记在 009 欠账表，不另开 task 文件；合入排在 `018` 之后，rebase 时重数分组常量；⬛ 2026-10-02：✅ 已合入，PR #34，合并 commit `cc8ad27`，兑付见 009 欠账表 #65–#68） | `023-frozen-set-prep` | A |
+| ⟂ | 012 Q2 提交机制原型：持久化恢复日志 vs generation 目录 ＋ 指针原子换，崩溃注入对比，顺带给 Q8 建议（2026-10-01 分配；产物只在 `tasks/evidence/q2-commit-prototype/`，不进 `src/`，不写裁定格与 ADR，不另开 task 文件；⬛ 2026-10-02：✅ 已合入，PR #35，合并 commit `94dd1e0`；裁定见 [012 §6 Q2](./tasks/012-storage-format.md) 与 ADR-0016） | `024-q2-commit-prototype` | A |
 
 M1b 与 MD 可与 M1/M2 交错推进；M4a 可与 M2/M3 交错推进；**M3 与 M4b 严格串行**。
 
@@ -767,9 +770,9 @@ must / should 两桶共 22 条落在本分支。**它从 `master` 开、不回 0
 [`008-test-safety-net.md`](./tasks/008-test-safety-net.md)、
 [`009-e2e-annotations.md`](./tasks/009-e2e-annotations.md)、
 [`011-backend-refactor.md`](./tasks/011-backend-refactor.md)、
-[`012-storage-format.md`](./tasks/012-storage-format.md)（~~骨架，2026-09-26~~ ⬛ 2026-09-30：评审进行中，Q7+ 待裁；分支未开）、
+[`012-storage-format.md`](./tasks/012-storage-format.md)（~~骨架，2026-09-26~~ ~~⬛ 2026-09-30：评审进行中，Q7+ 待裁；分支未开~~ ⬛ 2026-10-02：评审完成，Q1–Q13 全部裁定；分支未开）、
 [`017-audit-followup.md`](./tasks/017-audit-followup.md)、
-[`018-library-routes.md`](./tasks/018-library-routes.md)（~~骨架，2026-09-26~~ ~~⬛ 2026-09-30：评审通过、待开工~~ 🚧 2026-09-30：分支已开、进行中）。
+[`018-library-routes.md`](./tasks/018-library-routes.md)（~~骨架，2026-09-26~~ ~~⬛ 2026-09-30：评审通过、待开工~~ 🚧 2026-09-30：分支已开、进行中；⬛ 2026-10-02：WI-1 – WI-3 已合入 PR #33，余下 WI-4 – WI-8）。
 
 > ⬛ 2026-09-30：**冻结集欠账窗口**（009 #49 / #50、017 finding #10、009 欠账表中 PR #28 遗留那一行；排在 `018` 之前，
 > 理由与位置见[进度盘](../20260824-frontend-backend-plan-progress.md)）走一条 016 式的小分支，~~**编号在它开分支时才在上表分配**，
@@ -883,7 +886,7 @@ must / should 两桶共 22 条落在本分支。**它从 `master` 开、不回 0
 
 **P0-1 数据丢失：重新处理一本书会静默删光该书全部用户标注。**
 `reader3.py` 的 `process_epub()` 在写入任何内容前 `shutil.rmtree(output_dir)`，而 `output_dir` 即 `books/{name}_data/`，`notes.json` / `ai_meta.json` / `chroma_db/` 均在其中。无警告、无备份。叠加缓存不失效（三处 `lru_cache` 的 key 均不含 mtime），服务器还会继续供着旧 `Book`。
-→ 改为 staging 目录 + 完整校验 + 原子切换，manifest 作为 commit marker（步骤见 [ADR-0007](../../adr/0007-crash-safe-publish-protocol.md)——那是唯一定义处，Phase 0 先按同一顺序落 staging 切换）。**列入 Phase 0。**
+→ 改为 staging 目录 + 完整校验 + 原子切换，manifest 作为 commit marker（步骤见 [ADR-0007](../../adr/0007-crash-safe-publish-protocol.md)——那是唯一定义处，Phase 0 先按同一顺序落 staging 切换；⬛ 2026-10-02 起 012 的提交协议改由 [ADR-0016](../../adr/0016-generation-directory-publish.md) 定义）。**列入 Phase 0。**
 ✅ **已完成**（`7a807c9`，分支 `007-hygiene-and-contracts`）。实施中发现八步协议覆盖不了三件产物，两条缺口已回写进该小节的「两条协议缺口」——Phase 3 动这块之前先读那里。缓存失效不在本项修复范围内，归 Phase 2a 的 `book_store.py`。
 
 **P0-2 发布损坏：打出的 wheel 阅读器不可用。**
@@ -914,8 +917,9 @@ Phase 1b 从 Phase 1 中拆出并降级为「仅阻塞 Phase 4」，使 Phase 2/
 
 ### 架构决策（A1–A5）
 
-- **A1 隐式契约显式化**：`manifest.json` 记录 `spine_fingerprint`。指纹须涵盖原 EPUB hash、spine href/order、每个 XHTML 的**原始内容** hash 与解析器版本——只 hash `chapter.text`（`extract_plain_text()` 的空白折叠产物）检测不到影响 CFI 的 HTML 结构变化。`notes.json` 与 chroma `meta.json` 各自存所绑定的指纹。
-  **指纹不匹配按消费方分级降级，不阻断 `load_book()`**：notes 不匹配 → 停止套用标注并返回 stale；chroma 不匹配 → 索引标记 stale 提示重建。坏索引不得导致书打不开。
+- **A1 隐式契约显式化**：`manifest.json` 记录 `spine_fingerprint`。指纹须涵盖原 EPUB hash、spine href/order、每个 XHTML 的**原始内容** hash 与~~解析器版本~~ `EXTRACTOR_VERSION`（⬛ 2026-10-01，[012 §6 Q13](./tasks/012-storage-format.md)：标注相关输出——每个 spine 项的 `text` 与 spine href/order——经评审的改动才 bump；金样测试须能发现已知改动，但不是唯一判据；0 = 未知旧提取器，不代表等价）——只 hash `chapter.text`（`extract_plain_text()` 的空白折叠产物）检测不到影响 CFI 的 HTML 结构变化。`notes.json` 与 chroma `meta.json` 各自存所绑定的指纹。
+  （⬛ 2026-10-01，Q13）**指纹随每个 generation 存储并从那里读取**，按该 generation 记录的产物校验，绝不用当前提取器重算。
+  **指纹不匹配按消费方分级降级，不阻断 `load_book()`**：notes 不匹配 → ~~停止套用标注并返回 stale~~（⬛ 2026-10-01，Q13）逐条标注的解析状态：重导入后唯一匹配的标注 resolved，歧义 / 无匹配的保留旧绑定、警告可见；书级 notes 指纹只在全部 resolved 或用户显式处置后前移；chroma 不匹配 → 索引标记 stale 提示重建。坏索引不得导致书打不开。
 - **A2 pickle 读取回退**：默认关闭、退出机制与「双写期 / 停写 pkl 之后」两个时间窗的分界，正文已迁至 [ADR-0009](../../adr/0009-book-format-manifest-jsonl.md)（唯一定义处）；三态判定见 [ADR-0007](../../adr/0007-crash-safe-publish-protocol.md)。
 - **A3 `static/dist/` 提交进 git**，Node/Vite 仅作构建期工具。须配 lockfile、固定 Node/Vite 版本、可重复构建 CI 检查，以及 wheel 内容测试（见 P0-2）。
 - **A4 PWA 缓存策略写死**：HTML 与 `/api/*` 一律 network-first 不缓存；只缓存内容哈希过的 `dist/` 资源与 vendor bundle；SW 内嵌 build version。**`skipWaiting()` + `clients.claim()` + activate 立即清旧缓存三者同用会撕裂版本**——仍打开的旧页面加载旧 hash chunk 会失败；改为保留前一代缓存（清 N-2），或强制提示并刷新全部 client。

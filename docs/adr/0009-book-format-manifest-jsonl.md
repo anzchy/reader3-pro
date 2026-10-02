@@ -39,6 +39,8 @@ Reader3 Pro 今天用 `pickle.dump`/`pickle.load` 序列化整本书（`reader3.
 
 新处理的书写双份：`manifest.json` + `chapters.jsonl`（新格式）与 `book.pkl`（旧格式）同时产出，读取优先新格式（`plan-tech-stack-migration.md:319`）。两文件的写入顺序、崩溃安全保证、以及 `missing`/`corrupt`/`valid` 三态读取判定，是 ADR-0007 的定义范围，本文只引用、不重复。
 
+> ⬛ **2026-10-02 指针：** 写入顺序与崩溃安全、产物落在 `gen/{g}/` 还是平铺、`--migrate` 以拷贝构建 `gen/1` 且不删平铺文件，现由 [ADR-0016](0016-generation-directory-publish.md) 定义；本文 Considered Options 1 的「同目录平铺」、下段 `--migrate` 的落盘方式、以及 Negative 与 Migration Strategy 里对 ADR-0007 两文件提交／第 7、8 步的引用，一律按 ADR-0016 读。三态读取仍归 ADR-0007。
+
 存量书库的迁移由独立命令 `reader3 --migrate <book_id>` 提供，硬约束是**原地读写、禁止复用摄取路径**：摄取路径在写入前 `shutil.rmtree(output_dir)`，会连带抹掉 `notes.json`/`ai_meta.json`/`chroma_db/`；`--migrate` 只允许「读 `book.pkl`（或 `book.epub`）→ 写 `manifest.json` + `chapters.jsonl` → 校验 → 结束」，全程不删任何既有文件（`plan-tech-stack-migration.md:322-323`）。且 `--migrate` **不得改变** `book_fingerprint()`——指纹涵盖原 EPUB hash、spine href/order、每个 XHTML 原始内容 hash 与解析器版本，纯粹的存储格式转换一样都不该碰；指纹若变，ADR-0001 的分级降级会让全库标注一次性判 stale（`:381`）。
 
 日落分两段，以「停写 pkl」为界：

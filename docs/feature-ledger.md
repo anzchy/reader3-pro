@@ -1,6 +1,6 @@
 # Feature Ledger
 
-**Synced:** 2026-10-01 at commit `1844f66`
+**Synced:** 2026-10-02 at commit `94dd1e0`
 
 The as-built record of what Reader3 Pro **can do today**: one row per user-visible (or
 operator-visible) capability, where it lives, what tests prove it, and the evidence it was
@@ -135,6 +135,7 @@ Each feature section is headed `#### F-NNN Name — status` and carries bullets 
 | F-039 | Library chat all-books / collection scope | AI | stub | 013 WI-13 · baseline |
 | F-040 | Notes "点评此书" (review this book) | Notes | stub | baseline |
 | F-041 | Interactive API docs | Infra | unknown | 008 snapshot · baseline |
+| F-042 | Per-book write lock | EPUB processing | partial | 018 · PR #33 |
 
 ## Features
 
@@ -173,6 +174,14 @@ Paths are written out in full from the repo root (e.g. `src/reader3_app/reader3.
 - **Tests:** `tests/contract/test_book_store_route_freshness.py`
 - **Confirm:** With `uv run reader3-server` running, open `/read/{book_id}/0`, re-process the same EPUB with `uv run reader3`, then reload the page: the re-processed content is served without restarting the server.
 - **Evidence:** 011 (PR #22)
+
+#### F-042 Per-book write lock — partial
+- **What:** one cross-process lock per book (`books/.locks/{book_id}.lock`): import / reprocess takes it exclusive; notes, reindex, `ai_meta` and conversation writers take it shared. A write that meets a held lock gets 409 with `Retry-After` naming the holder category instead of interleaving with an import.
+- **Code:** `src/reader3_app/book_lock.py`, `src/reader3_app/web/book_lock_http.py` · ADR-0015
+- **Tests:** `tests/unit/test_book_lock.py`, `tests/unit/test_book_lock_cross_process.py`, `tests/unit/test_book_lock_routes.py`
+- **Confirm:** Run `uv run reader3 ./books/dracula.epub`, then `ls books/.locks/`: `dracula_data.lock` exists and stays after the run (the lock file is never unlinked). Contention (409 + `Retry-After`) is only verifiable through the tests named above.
+- **Evidence:** 018 WI-2 · PR #33 (`48bdfa4`)
+- **Limits:** ADR-0015 is Partial: book delete (#58, 018 WI-5) and the 012 writers are not wired yet (see F-035).
 
 ### Library
 
@@ -374,13 +383,13 @@ Paths are written out in full from the repo root (e.g. `src/reader3_app/reader3.
 ### Settings & UI
 
 #### F-020 Settings page + API — accepted
-- **What:** `/settings`, `GET/PUT /api/settings`, export/import without API keys; keys never returned to the browser; file written `0600`.
+- **What:** `/settings`, `GET/PUT /api/settings`, export/import without API keys; keys never returned to the browser; file written `0600`. Every settings write is conditional on the page's revision (`ETag` / `If-Match`, one global flock), so a stale tab gets 409 and the page shows 「设置已在别处更改，请刷新页面后再试」 instead of overwriting.
 - **Routes:** `GET /settings`, `GET /api/settings`, `PUT /api/settings`, `GET /api/settings/export`, `POST /api/settings/import`
 - **Code:** `src/reader3_app/web/routers/settings.py`, `frontend/src/settings/`
-- **Tests:** `tests/unit/test_settings_file_permissions.py`, `tests/unit/test_ai_settings_no_key_loss.py`
-- **Confirm:** Click Settings in the library top bar → `/settings` shows AI 偏好, 服务商, 外观, 数据, 导出与导入. Change 每次检索的片段数 and press 保存偏好: the value survives a reload. 导出设置（不含密钥） downloads JSON with no API keys, 导入设置 reads one back; `curl http://127.0.0.1:8123/api/settings` contains no key values, and `ls -l config/ai_settings.json` shows `-rw-------` after a save.
-- **Evidence:** 002 · TS port 013 WI-12 (PR #25)
-- **Limits:** a stale tab can silently overwrite provider settings (#51, 018). The page's 重建全部索引 and 导出书库 JSON are stubs (see F-036, F-037).
+- **Tests:** `tests/unit/test_settings_file_permissions.py`, `tests/unit/test_ai_settings_no_key_loss.py`, `tests/unit/test_ai_settings_revision.py`, `tests/unit/test_ai_settings_lock.py`, `tests/contract/test_settings_revision.py`, `frontend/tests/settings/revision.test.ts`
+- **Confirm:** Click Settings in the library top bar → `/settings` shows AI 偏好, 服务商, 外观, 数据, 导出与导入. Change 每次检索的片段数 and press 保存偏好: the value survives a reload. 导出设置（不含密钥） downloads JSON with no API keys, 导入设置 reads one back; `curl http://127.0.0.1:8123/api/settings` contains no key values, and `ls -l config/ai_settings.json` shows `-rw-------` after a save. Open `/settings` in two tabs, save in one, then save in the other: the second shows 「设置已在别处更改，请刷新页面后再试」 and its change is not written.
+- **Evidence:** 002 · TS port 013 WI-12 (PR #25) · revision check 018 WI-3, debt #51 (PR #33, `2d5f96f`)
+- **Limits:** The page's 重建全部索引 and 导出书库 JSON are stubs (see F-036, F-037).
 
 #### F-036 Library JSON export — stub
 - **What:** `/settings` → 导出与导入 has a 导出书库 JSON button; there is no export route, so it only shows a "not supported" line.
@@ -487,6 +496,11 @@ Paths are written out in full from the repo root (e.g. `src/reader3_app/reader3.
 - **Limits:** with `READER3_TOKEN` set these pages need the token, which a browser cannot send (F-023).
 
 ## Audit log
+
+### 2026-10-01 — Live pass of F-009 and F-018 Confirm via verify-reader3 (`1844f66`)
+- **Scope:** the `Confirm` bullets of F-009 and F-018 executed in a running app via the project skill `.claude/skills/verify-reader3/` (sandboxed `reader3-server` on a free port, temp books dir, sandbox `READER3_AI_SETTINGS`; driven with gstack `/browse`). Books: the synthetic `smoke_data` (e2e corpus `build_epub2`) and one real 32-section EPUB. No row's Status or Evidence changed.
+- **Found:** F-009 — all sub-steps PASS: book card → `/read/{book_id}/0` paginated; `→`/`PageDown` and `←`/`PageUp` turn pages, `↓`/`↑` change section; pill reads 「当前阅读至 N%」 (N is the per-section `sectionPercent`, not book progress); TOC button opens the list with the "Search chapters..." filter, which filters; back arrow returns to `/`; `getDebugState()` gives `v: 1`, `ready: true`, current `section.index` (read via the browse JS hook, not the DevTools console). The stale first-render `sectionPage.total` (#63) was observed (5, then 7). F-018 — toolbar contents PASS (selection was made with the DOM Selection API inside the iframe, as `select_in_frame` does, because the driver has no mouse drag); Marker PASS; Add Note → "Write your thoughts..." → Save PASS on a fresh selection; Notes panel lists them with 「共3条笔记」 PASS; survives reload PASS; `notes.json` in the sandbox books dir holds them PASS. **Confirm deviates from behaviour** at "Pick Marker, then Add Note": the toolbar closes after Marker (PR #28), so Add Note needs it reopened; reopening by clicking the new mark then Add Note saved a separate `type: note` annotation whose `quote` is only the first character of the mark (2/2 reproductions, two books). Row text left unchanged; reported for triage.
+- **Not audited:** evidence is local and gitignored (`.claude/verify-evidence/20261001-104743-F-009/`, `.claude/verify-evidence/20261001-104909-F-018/`, each with a `result.txt`). No lane or e2e run. A real mouse-drag selection was not exercised. Every other row's `Confirm` remains derived from code, not executed.
 
 ### 2026-09-27 — Format extension + surface pass (`8e1cf48`)
 - **Scope:** every row F-001..F-030 re-read against code, templates and `tests/contract/routes.snapshot` to fill the new `Routes` / `Confirm` / `Tracked` bullets; the `Limits` of every row plus the 009 debt table (#11, #21, #52, #53, #57, #58) and `spec-frontend-design.md` §D1 checked for surfaces with no behaviour. Added the `stub` / `absent` / `unknown` statuses and rows F-031..F-041.

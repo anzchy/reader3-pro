@@ -31,7 +31,7 @@
 
 | 事实 | 唯一定义处 |
 |---|---|
-| 两文件提交协议（`manifest.json` ＋ `chapters.jsonl`）、读取状态机三态 | [`docs/adr/0007`](../../adr/0007-crash-safe-publish-protocol.md)（2026-08-26 自 Phase 3 迁出） |
+| 两文件提交协议（`manifest.json` ＋ `chapters.jsonl`）、读取状态机三态 | [`docs/adr/0007`](../../adr/0007-crash-safe-publish-protocol.md)（2026-08-26 自 Phase 3 迁出）；提交点与崩溃恢复 2026-10-02 起归 [`docs/adr/0016`](../../adr/0016-generation-directory-publish.md) |
 | 存储格式、双写 / 日落、`--migrate` 硬约束 | [`docs/adr/0009`](../../adr/0009-book-format-manifest-jsonl.md) |
 | `data-testid` 命名正则 | `scripts/lint_testid_naming.py` 的 `CANONICAL`（裁决见 [`docs/adr/0013`](../../adr/0013-testid-invariant.md)） |
 | 三条 lint 的约束边界（选择器 / 命名 / token 悬空） | `plan-tech-stack-migration.md` §6（0.5、0.8） |

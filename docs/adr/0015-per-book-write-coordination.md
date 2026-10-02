@@ -2,13 +2,13 @@
 
 | 字段 | 值 |
 |---|---|
-| Status | Proposed——在 `018-library-routes` 合入的同一 PR 里转 Accepted（018 §4 门槛 7） |
+| Status | Accepted（2026-10-02 合入回写：契约随 `018-library-routes` 第一段 WI-1 – WI-3 合入 `master`，PR #33，合并 commit `c08317b`；原定「合入的同一 PR 里转 Accepted」（018 §4 门槛 7）当时漏转，此处补上） |
 | Decision date | 2026-09-26 |
 | Recorded date | 2026-09-26 |
 | Record type | Prospective |
 | Original rationale known | Yes |
-| Confidence | Medium——契约经逻辑原型推演、Codex 与独立 Fable 子代理分别裁定，尚未有实现与跨进程测试 |
-| Current compliance | None——见 Migration Strategy |
+| Confidence | High——契约经逻辑原型推演、Codex 与独立 Fable 子代理分别裁定；2026-10-02 起已有实现（`book_lock`）与跨进程测试（见 Confirmation） |
+| Current compliance | Partial——锁已接入 import、notes、reindex（HTTP 与 CLI）、`ai_meta`、对话、向量读路径；删书（018 WI-5）与 012 的写手尚未接入，见 Migration Strategy |
 | Evidence | 以符号定位（行号会漂）：`notes_service._book_write_lock`（018 前：进程内 `threading.Lock` ＋ `flock` 阻塞锁，锁文件在书目录内，且与 `notes_service.save_annotations` 一样在持锁路径上 `os.makedirs` 书目录）；`vector_search.BookVectorIndex._client_and_collection`（在**读**路径上 `makedirs`）；`ai.books._write_meta_to_scratch`（`ai_meta.json` 写入前 `makedirs`）、`ai.books.ensure_book_uuid`、`ai.books.BookUuidResolver`；`ai.conversations.save_conversation`；`search_service` 与 `web/routers/library.py` 的书库枚举（只收 `_data` 后缀）；`reader3.main` 的 `--index` 分支（CLI，不经 HTTP）；`web.server._stats_cache`、`web.server._validate_book_id`；`docs/plans/20260816-tech-stack-migration/tasks/018-library-routes.md` §6（Q2 / Q3a / Q3b / Q8 / Q12 裁定）；原型 `018-lock-protocol.PROTOTYPE.html`（分支 `prototype/018-book-lock`） |
 | Confirmation | `tests/unit/test_book_lock_cross_process.py`（跨进程互斥、SH 兼容、持有者被 SIGKILL 即释放、拒绝带类别；018 WI-2） |
 

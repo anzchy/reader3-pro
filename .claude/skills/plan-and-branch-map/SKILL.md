@@ -13,6 +13,18 @@ description: >-
 **The spec-kit framework is no longer used.** `.specify/` and the `/speckit.*` commands were
 removed on 2026-08-16. Do not attempt to invoke them.
 
+<example>
+user: "I want to fix the F-018 Marker-then-Add-Note bug. Which branch number do I use?"
+assistant: "Numbers come only from §9 of `plan-tech-stack-migration.md`, so I'll check whether it
+already allocates one there. If not, I'll add the row in §9 first, mirror it in the milestone
+table below, and take the slot that `20260824-frontend-backend-plan-progress.md` gives it in the
+execution order — I won't name a number that isn't in §9."
+<commentary>
+A branch-number question: the answer comes from the one allocation site, never from guessing
+the next integer.
+</commentary>
+</example>
+
 ### Where documents live
 
 | Directory | Contents | Lifecycle |
@@ -47,7 +59,7 @@ There are two active efforts today, and they are two halves of one program:
 [`docs/plans/20260824-frontend-backend-plan-progress.md`](docs/plans/20260824-frontend-backend-plan-progress.md)
 is the progress dashboard and **the sole definition site for the execution order**. The two plan
 folders define *dependencies* (who waits on whom); that file defines *sequence* (who goes first) —
-the dependency graph permits several legal orders and they do not cost the same. Its status column
+the dependency graph permits more than one legal order and they do not cost the same. Its status column
 mirrors the milestone table below; when they disagree, the table below wins.
 
 Start at either `README.md`. Each folder holds **exactly one plan document** —
@@ -77,14 +89,14 @@ Do not invent a new number without updating that table.
 | MD — design degradation states | `010-design-degradation-states` | **frontend** | ✅ Merged (PR #24) **— merged 2026-09-24, merge commit `671f580` (branch tip `4fb33c9`: all nine exit gates green after rulings D-2 / D-5 / D-6 / D-8). Work items are WI-1 – WI-8 in the frontend plan.** |
 | M2 — backend refactor | `011-backend-refactor` | migration | ✅ Merged (PR #22) **— merged 2026-09-22 with 9 ✅ ＋ 1 ⚠️: gate #7 was partial, its blocking formally revoked rather than passed. CI on `4af73cc` was green (tests 35733667011, lint 35733681164), which retired the earlier "green only on the local profile" qualifier.** |
 | M2-债 — audit follow-up | `017-audit-followup` | migration | ✅ Merged (PR #23) **— merged 2026-09-23, merge commit `6df5026`. The 22 must/should findings from the post-merge audit of PR #22. Three lanes re-run green on the merge head before merging. This does NOT retire 011's ⚠️: that gate is #7 (bench C1), whose remaining half is debt #35 and lands in 012.** |
-| M4a-债 — library routes not tied to the new format | `018-library-routes` | migration | 🚧 In progress **(2026-10-01: branch open with commits; WI-1 / WI-2 done, rebased onto `e3dde84`, WI-3 onward in progress — on the critical path to 012; order in the progress dashboard. Reviewed 2026-09-26, Q1–Q12 all ruled; Q10 / WI-8 amended 2026-09-30: `--append` is refused under `GITHUB_ACTIONS`, otherwise unless `git merge-base --is-ancestor HEAD origin/master` succeeds.) — 2026-09-26 ruling D1: takes 013-deferred debts #51 / #56 / #58 / #53 plus a per-book write-coordination contract, and the closing reconciliation of 009 debt #31 (the CI `e2e` job already exists since 2026-09-20; CI runs never append to the soak ledger); runs before 012 (it was scheduled into the soak wait; since the 2026-09-28 batch rule there is no multi-week wait left). Rationale lives in `tasks/012-storage-format.md` §6 D1. 018 WI-1 (2026-09-30) rewrote the 009 debt-table owner column for #51 / #53 / #56 / #58 to 018 and generalised `test_track_d_ledger.py` to `012|018 debt #N`, prefix equal to the owner's branch number.** |
+| M4a-债 — library routes not tied to the new format | `018-library-routes` | migration | 🚧 In progress, first slice merged **— WI-1 – WI-3 merged 2026-10-01 as PR #33, merge commit `c08317b` (branch tip `42c0728`): debt-owner rewrite, the per-book write lock (ADR-0015, Accepted 2026-10-02), and #51 settings revision check. WI-4 – WI-8 (#56 list route, #58 delete, #53 export, #31 reconciliation, `--append` hard block) are not on `master`; the PR body says so. Merge facts and the undelivered list live in `tasks/018-library-routes.md` §8. Scope ruling D1 lives in `tasks/012-storage-format.md` §6.** |
 | M1b/M2-债 — frozen-set debt window | `019-frozen-set-debts` | migration | ✅ Merged (PR #29) **— merged 2026-10-01, merge commit `eda9694` (branch tip `d31f53d`). Paid 009 #49 (partly) / #50 / #62 and 017 finding #10; opened 009 #65–#68. No task file — payments are recorded in the 009 / 017 debt tables. Changed `suite_hash` (value in `soak-log.md`); the 012 pre-start batch covers it.** |
 | ⟂ — debug-state getter | `020-debug-state` | standalone plan `docs/plans/20260928-debug-state-getter.md` | ✅ Merged (PR #30) **— merged 2026-10-01, merge commit `40e807d` (branch tip `7fc0dbf`). `Reader3Epub.getDebugState()` read-only state surface; opened 009 #63 (owner 014 WI-19). No frozen-set change.** |
 | ⟂ — E2E lock as an fcntl wrapper | `021-e2e-lock` | migration (§9 row; no task file) | ✅ Merged (PR #32) **— merged 2026-10-01, merge commit `e3dde84` (branch tip `f9b3d1f`). The e2e lane `command` now runs through `scripts/e2e_lock.py` (fcntl lock on `~/.cache/reader3-e2e.flock`, kernel-released on exit; BUSY exits 75; bypassed under `GITHUB_ACTIONS`). Retires the hand-managed mkdir lock. No frozen-set change.** |
 | ⟂ — feature-ledger Summary Evidence validation | `022-ledger-evidence` | migration (§9 row; no task file) | ✅ Merged (PR #31) **— merged 2026-10-01, merge commit `ebf4ad7` (branch tip `7ce1bed`). `build_feature_ledger.py --check` now validates the Summary `Evidence` cell against Rule 7 (form only, not existence); rows F-001 / F-004 / F-012 / F-015 / F-019 / F-029 corrected with verified evidence. No frozen-set change.** |
-| M1b-债 — frozen-set prep before the 012 start check | `023-frozen-set-prep` | migration (§9 row; no task file — payments in the 009 debt table #65–#68) | Allocated (2026-10-01) **— sole frozen-set owner this round; merges after 018 and recounts the `lint_e2e_groups.py` constants on rebase.** |
-| ⟂ — 012 Q2 commit-mechanism prototype | `024-q2-commit-prototype` | migration (§9 row; no task file) | Allocated (2026-10-01) **— artifacts only under `tasks/evidence/q2-commit-prototype/`; never `src/`. Ruling and the ADR superseding ADR-0007 stay with the maintainer / 012.** |
-| M3 — storage migration | `012-storage-format` | migration | Tasks drafted **(review in progress: D1, Q1–Q6 ruled, Q7+ open (§6); branch not opened. Blocked by 018 not yet merged and by the 012 start check — a fresh 10/10 batch on the exact `commit` 012 branches from, with mechanism gate item 1 first-passing on that same `commit` (2026-09-30 ruling, defined only in §7 of `plan-tech-stack-migration.md`, "012 开工核验"); entry conditions in `tasks/012-storage-format.md` §1, gate F in §4.) Keeps #35 / #54 / #55 and, as its last wave, #57 (acceptance requires new-format output) and #52 (needs the generation swap).** |
+| M1b-债 — frozen-set prep before the 012 start check | `023-frozen-set-prep` | migration (§9 row; no task file — payments in the 009 debt table #65–#68) | ✅ Merged (PR #34) **— merged 2026-10-02, merge commit `cc8ad27` (branch tip `b75d1a5`), after 018. Paid 009 #65 / #66 / #67 and the High half of #68. Changed `suite_hash` on purpose (value in `soak-log.md`); the 012 start check batch covers it.** |
+| ⟂ — 012 Q2 commit-mechanism prototype | `024-q2-commit-prototype` | migration (§9 row; no task file) | ✅ Merged (PR #35) **— merged 2026-10-02, merge commit `94dd1e0` (branch tip `15df015`). Artifacts only under `tasks/evidence/q2-commit-prototype/`; no `src/` change. The maintainer ruled B (generation directory + single pointer); the superseding ADR is ADR-0016 (Proposed, flips with 012).** |
+| M3 — storage migration | `012-storage-format` | migration | Tasks drafted **(review complete: D1 and Q1–Q13 all ruled, 2026-10-02 (§6); branch not opened. Before it opens: the 012 start check in §7 of `plan-tech-stack-migration.md` ("012 开工核验"); entry conditions in `tasks/012-storage-format.md` §1. Open question: whether 012 may open before 018 WI-4 – WI-8 merge. 012 WI-5 / WI-10 build on 018's #56 route.) Keeps #35 / #54 / #55 and, as its last wave, #57 and #52.** |
 | M4a — TS shell + settings + library | `013-ts-frontend-shell` | **frontend** | ✅ Merged (PR #25) **— merged 2026-09-26, merge commit `1ec5ff7`. Work items WI-9 – WI-13 plus the Track D implementation items; the reader-side and backend-dependent halves are pinned to 014 (WI-16 / WI-16b) and 012 debts #51–#58 (#51 / #53 / #56 / #58 re-assigned to 018 on 2026-09-26).** |
 | M4b — TS reader | `014-ts-frontend-reader` | **frontend** | WI-14 – WI-19 (incl. inserted WI-16b, library-side deferred acceptance) |
 | M5 — launch + PWA | `015-launch-experience` | migration (CLI) ＋ **frontend** (PWA) | Allocated / WI-20 |
@@ -102,10 +114,8 @@ one declared batch of exactly 10 consecutive first-try green full runs on a sing
 `suite_hash` / browser / os / lock (no calendar span; rule adopted 2026-09-28, replacing ≥10 runs /
 ≥5 workdays; defined in §7 of `plan-tech-stack-migration.md`). A batch has passed (see
 `soak-log.md`), but since the 2026-09-30 ruling no earlier batch admits 012 by itself: 012 needs
-018 merged, then a fresh batch on the exact `commit` it branches from, with mechanism gate item 1
-first-passing on that same `commit` and item 3 re-run only if `suite_hash` changed (§7 "012 开工核验").
-Before 018 comes a frozen-set debt window (009 #49 / #50, 017 finding #10, the PR #28 leftover);
-its branch number is allocated in §9 when it opens.** History, condensed: on
+the start check in §7 ("012 开工核验") on the exact `commit` it branches from. 019 and 023 changed
+`suite_hash`, so that check includes mechanism gate item 3.** History, condensed: on
 2026-09-21 fixing a real data-loss bug (009 debt #9) required re-judging a frozen test, so the
 ledger and all three of §7's **mechanism-challenge gates** were reset together — a deliberate,
 recorded trade. Against the new hash, items 1 (clean Linux) and 3 (random collection order)
@@ -138,3 +148,7 @@ frontend branches have no task files.
 
 See the feature ledger [`docs/feature-ledger.md`](../../../docs/feature-ledger.md) — the single
 definition site. When a milestone here flips to ✅ Merged, update the ledger in the same write-back.
+
+**Not covered here:** triaging audit findings (`audit-findings-triage`), running two or more branches
+in parallel (`/coordinate`, with this repo's `coordinate-bindings`), and proving a feature in the
+running app (`verify-reader3`).

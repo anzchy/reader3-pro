@@ -127,7 +127,7 @@
 | 三条 lint 的边界 | 同上 §6（0.5、0.8） |
 | Playwright E2E 用例 ID（`R-1`…`R-6` / `W-1`…`W-10` / `K-1`…`K-6` / `X-1` / `X-2`）与激活分组 | [`tasks/009-e2e-annotations.md`](../20260816-tech-stack-migration/tasks/009-e2e-annotations.md) |
 | API v1 冻结清单、覆盖率门槛数值 | [`tasks/008-test-safety-net.md`](../20260816-tech-stack-migration/tasks/008-test-safety-net.md) |
-| 两文件提交协议、读取状态机三态 | [`docs/adr/0007`](../../adr/0007-crash-safe-publish-protocol.md) |
+| 两文件提交协议、读取状态机三态 | [`docs/adr/0007`](../../adr/0007-crash-safe-publish-protocol.md)（提交点与崩溃恢复 2026-10-02 起归 [`docs/adr/0016`](../../adr/0016-generation-directory-publish.md)） |
 
 **testid 命名**：canonical 正则的唯一定义处是 `scripts/lint_testid_naming.py` 的 `CANONICAL` 常量（[ADR-0013](../../adr/0013-testid-invariant.md)），从那里 import 或复制，不要从任何 Markdown 表格里复制。本计划涉及的所有新建元素一律 `lib-` / `rd-` / `set-` 三前缀之一。原型原有 138 个 testid 站点**零个合规**，其中 24 个带 `reader-` / `library-` 前缀的**看起来像合规但不是**。重命名本身归 0.5，**已于 2026-08-23 完成**（新旧对照见 [`contracts/testid-rename-map.md`](../20260816-tech-stack-migration/contracts/testid-rename-map.md)）；本计划只负责新元素首次就写对。
 
@@ -1416,7 +1416,7 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 
 **旧偏好迁移（Codex #10）**：现状**已经**实现了字号与行距，偏好存在 `reader3-font-settings` 这个 JSON key 里。直接换新 key 会把用户偏好重置。必须做一次性迁移：读 legacy JSON → 范围校验（越界的钳到合法区间，不是丢弃）→ 写入新 key → 写迁移完成标记 → 之后不再读 legacy。**迁移不为主题写任何值**——legacy 里没有主题，`reader3.reader.theme` 缺席即 `auto`，这正是我们要的默认。
 
-**涉及 testid**：`rd-rail-font`、`rd-font-popover`、`rd-pref-theme-auto` / `-paper` / `-sepia` / `-green` / `-night`、`rd-pref-size`、`rd-pref-size-inc`、`rd-pref-size-dec`、`rd-pref-leading`、`rd-pref-font-system`、`rd-pref-font-serif`。
+**涉及 testid**：`rd-rail-font`、`rd-font-popover`、`rd-pref-theme-auto` / `-paper` / `-sepia` / `-green` / `-night`、`rd-pref-size`、`rd-pref-size-inc`、`rd-pref-size-dec`、`rd-pref-leading`、`rd-pref-font-system`、`rd-pref-font-serif`。⬛ 2026-10-02 注：行距的加 / 减控件缺一对 testid（本清单只有 `rd-pref-leading`，没有对应 `rd-pref-size-inc` / `-dec` 的那一对），缺口与补名归属见 FB-R13a，此处不另起名。
 
 **涉及降级状态**：无。
 
@@ -1528,6 +1528,8 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 | `/read/{book_id}/book.epub` 与 `images/` | **network-only** | 正文不落盘缓存 |
 
 缓存名带构建版本号（例如 `reader3-v{buildHash}`）；`activate` 事件里删除所有前缀匹配但版本不等的 cache。
+
+> ⬛ 2026-10-02（来源：Codex 评审 2026-10-02）：**上一句与 Phase 5 退出条件冲突，未裁。** `activate` 立即删掉其他版本的全部缓存，会让仍开着的旧版本页面去取旧 hash chunk 时失败——这正是 Phase 5 退出条件「PWA 版本切换不撕裂」（[迁移计划 §7 阶段门槛表 Phase 5 行](../20260816-tech-stack-migration/plan-tech-stack-migration.md)）与 [迁移计划附录 A 的 A4](../20260816-tech-stack-migration/plan-tech-stack-migration.md)（「activate 立即清旧缓存」与 `skipWaiting()` + `clients.claim()` 同用会撕裂版本；改为保留前一代、清 N-2，或强制提示并刷新全部 client）明令避免的形状；下面验收 7「`activate` 后 `caches.keys()` 里不含 A」同样钉的是这个形状。归属 **WI-20**；须在 Phase 5 验收之前定下清理策略并同步改验收 7。
 
 **涉及 testid**：无。
 
