@@ -1,11 +1,12 @@
 # 018-library-routes —— 任务
 
 - **状态**: 🚧 **进行中，首段已合入**（⬛ 2026-10-02 回写：WI-1 – WI-3 随 PR #33 于 2026-10-01 合入 `master`，合并 commit `c08317b`，见 §8；**WI-4 – WI-8 未做**，PR 正文明写「WI-4 – WI-8 不在本 PR」。§4 出口闸按整个分支计，尚未全部满足）。~~🚧 **进行中**~~（⬛ 2026-09-30 分支从 `master` 开出，与 `019` 并行，先做 WI-1 / WI-2，调度见[进度盘「现在该做什么」第 2 步](../../20260824-frontend-backend-plan-progress.md#现在该做什么)）。~~评审通过、待开工~~（任务书 2026-09-26 评审通过，§6 Q1–Q12 全部裁定）。~~分支**未开**，没有一项已实施。~~2026-09-28 批次规则取消 soak 等待期后，本分支是挡在 012 前面的关键路径（顺序见 [进度盘 §2](../../20260824-frontend-backend-plan-progress.md)；⬛ 2026-09-30：排在冻结集欠账窗口之后开工，WI-8 规则同日订正，见 §6 Q10）
+- **2026-10-02 开工**：按[第二段执行计划 §1.3](../../20261002-018-second-slice-plan.md#13-任务书的漂移开工当天改进任务书本文不改) D1–D19 修正任务书（⬛ 本次修正各处以「⬛ 2026-10-02 D*n*」标注；§6 补 Q-A – Q-H 裁定）。第二段怎么做（测试分层、红灯检查、检查点）只在[执行计划](../../20261002-018-second-slice-plan.md)，本文仍是 WI-4 – WI-8 目标 / 涉及文件 / 验收 / 出口闸的定义处
 - **对应阶段**: M4a-债（013 延后到后端的欠账兑付之一部分，[§9 编号表](../plan-tech-stack-migration.md)）。不是新里程碑，与 016 / 017 同类
 - **计划文件夹**: [`20260816-tech-stack-migration/`](../plan-tech-stack-migration.md)（归属 **A**）
 - **上游**: `013`（✅ 已合入）、`017`（✅ 已合入）；从 `master` 开
 - **下游**: `012-storage-format` 在本分支之上开工（WI-6 / WI-7 / WI-12 / WI-13 持本分支的锁，WI-5 / WI-10 建在本分支的列表路由上）；014 WI-16b 里等 #56 / #58 的各项等本分支。顺序的定义处是 [进度盘 §2](../../20260824-frontend-backend-plan-progress.md)
-- **节奏**: WI 严格按号串行；WI-1 是**单个 commit**；路由新增与 `routes.snapshot` 同 commit
+- **节奏**: WI 严格按号串行（⬛ 2026-10-02 D11 例外：**WI-8 可提前，其余按号**——WI-8 只碰 `scripts/soak_run.py` 与它的单测，与 WI-4 – WI-7 无共享文件）；WI-1 是**单个 commit**；路由新增与 `routes.snapshot` 同 commit
 
 > **权威范围**：本文**定义**的只有五件事——018 的工作项切分与先后约束、每个 WI 的验收占位、018 的出口闸与合入记录、
 > **每书写协调契约的工作项**（契约正文落地后以 ADR-0015 为定义处，本文改为链接）、#51 / #53 / #56 / #58 的**前端半边归属**（§2.3）。
@@ -109,18 +110,9 @@
   - `notes_service._book_write_lock` 已是一把两层锁（进程内 `threading.Lock` 注册表 ＋ `fcntl.flock` 阻塞锁），锁文件在书目录里（`notes.json.lock`），且会 `os.makedirs` 书目录
   - 会建书目录的写手不止 notes：`ai/books.py`（`ai_meta.json`）、`ai/conversations.py`（每书存储）、`vector_search.py`（`chroma_db/`）
   - `api_index_book` 在线程池里**同步**跑 `index_book`，所以锁能包住整次重建
-- **契约**（§6 Q2 / Q3 / Q12 已裁定，2026-09-26）。[ADR-0015](../../../adr/0015-per-book-write-coordination.md) 已按本段成稿（Proposed）；Proposed 期间**本段是定义处**，改契约先改这里再同步 ADR；ADR 转 Accepted 的那个 commit 把本段换成一行链接:
-  1. **锁文件位置**：`books/.locks/{book_folder}.lock`，在书目录**之外**，**建了就永不 unlink**（在线删锁文件本身就重新引入 inode 分裂；`.locks/` 累积是设计，回收只许停机时做）。理由：锁在书目录里时，删书的 `rmtree` 把它 unlink，随后 `makedirs` 建出新 inode——两个进程各持一把「同名」独占锁；首次导入时还得先建出空书目录，整个构建期书库里有坏条目，被杀即永久留下（原型「Q2 锁在目录里」「首次导入·锁在目录里」两剧本）。书库枚举不收它，靠的是**只收 `_data` 后缀**（`search_service.py`、`routers/library.py`、`ai/books.py` 三处），不是「点目录隐藏」——这条枚举规则 ADR-0015 里写成一处定义
-  2. **分层，不合并**：书锁有**共享 / 独占**两种模式（`LOCK_SH` / `LOCK_EX`）。改目录结构的写手（import / delete / migrate / 上传 / 墓碑清扫）持**独占**；只写自己那份文件的写手（notes / reindex / ai_meta / conversations）持**共享**，再取各自的**资源锁**。**固定顺序：书锁 → 资源锁**，反序即 AB-BA 死锁（原型「Q3 反例」）。~~`notes.json.lock` 等资源锁可留在书目录内——共享持有者在时没人能 `rmtree` 它。~~ ⬛ 2026-10-01 订正（审计 #3 / #4 / #43 修复轮）：reindex / ai_meta / conversations 的资源锁在 `books/.locks/{resource}/{book_folder}.lock`（书目录之外、建了永不 unlink、不在书目录里建任何东西），统一由 `book_lock.resource_lock` 实现，与书锁共用同一个截止时间；**notes 例外，保留书目录内的 `notes.json.lock`**——共享持有者在时没人能 `rmtree` 它，挪位置只改语义不得收益。合并成一把独占锁被否决：重建（分钟级）期间每次划线要么挂起、要么 409（原型「Q3 合并」两剧本）
-  3. **锁包住服务层整次操作**，不是只包 HTTP handler——CLI `reader3 --index`（`reader3.py` 的 `--index` 分支）与路由走同一把锁
-  4. **拒绝语义**：独占写手**非阻塞**获取，拿不到 → HTTP **409** / CLI 非零退出码并说明持有者类别。共享写手**限时等待**：`flock` 阻塞模式没有超时，所以用 `LOCK_NB` 轮询，**一个 2 秒总预算**（`time.monotonic` 截止时刻）覆盖进程内层、书锁、资源锁三层，不许逐层重新计时；超时 → 409 ＋ `Retry-After`，前端保留未保存的内容；等待不得阻塞事件循环。⬛ 2026-10-01 订正（审计 #42 / #20 修复轮）：**截止规则**——一层只在成功那一刻 `now < deadline` 才算拿到；在截止时刻或之后才拿到的那一层被释放并拒绝（已拿到的各层一并释放），截止时刻已到的请求一层都不尝试；持有者类别的读取记在同一个截止时间上（等空记录的窗口为 `min(0.1 s, 剩余时间)`），拒绝不晚于截止时刻。只想「不等」的调用方（页面渲染与启动扫描解析 uuid）传预算 `SHORT_BUDGET_S`（= 一个轮询间隔），由 `acquire` 在真正取锁时起算
-  5. **不复活**：持锁后、写之前，**在锁内**复核书目录存在（`_validate_book_id` 枚举到取锁之间有窗口）；除 import 外任何写手**不得** `makedirs` 书目录本身——`notes_service._book_write_lock` 与 `save_annotations` 里的 `makedirs`、`vector_search._client_and_collection` 在**读路径**上的 `makedirs` 都要改成「断言父目录存在」。⬛ 2026-10-01 订正（审计 #44 / #45 / #48 修复轮）：只断言不够——`PersistentClient(path)` 会把消失的 `chroma_db` 连同书目录一起建回来，无锁的「先查后开」有窗口。读路径改为：无锁预检（没有 `chroma_db` → 未索引，不取锁）→ 以持有者类别 `search` 短预算（`SHORT_BUDGET_S`）取**共享**书锁 → 锁内复核 `chroma_db` → 打开并 `get_collection` → 放锁，查询本身不持锁；取锁拿不到（独占的 import / delete 在进行）按「未索引」处理；只有 chromadb 的集合不存在（1.3.x 为 `NotFoundError`）映射为「未索引」，其余错误原样抛出。`search` 进入持有者类别封闭列表（`book_lock.CATEGORIES`）
-  6. **身份复核（防 ABA）**：共享写手在请求开始时记下书的 `book_uuid`，拿到锁后复核；不一致 → 409（书已换代——同名的书存在，但不是请求开始时那一本，所以不是 404）。只查存在性挡不住「等锁期间书被删、同一 EPUB 又被导入」——醒来的笔记请求会写进新书（Codex 在原型上复现）
-  7. **进程内层**：不能照搬 notes 的整段 `threading.Lock`（会把共享持有者串行化）——要真正的读写语义；同一调用栈重复取书锁 → 抛错（thread-local 检测）；**禁止共享→独占升级**（`flock` 的模式转换是先放再取，中间可被插入），写手开工前定死模式；不许用 dup / 继承的 fd 冒充线程互斥（`flock` 按 open file description 计）
-  8. **崩溃**：`flock` 随进程死亡释放；锁文件残留不等于被持有
-  9. **适用范围**：单进程 uvicorn（`server.py` 入口）＋ 本地 POSIX 文件系统。多 worker 下进程内缓存（`_stats_cache`、`BookUuidResolver`、`_BOOK_THREAD_LOCKS`）只清得到一个 worker；NFS / SMB 上 `flock` 无保证——都写进 ADR-0015 的「不保证」一节
-- **原型**：`018-lock-protocol.PROTOTYPE.html`（纯 JS 状态模型 ＋ 剧本），存于一次性分支 `prototype/018-book-lock`，不进 `master`。它是裁定的推演依据，不是规格——规格以本段为准
-- **涉及文件**: 新模块 `src/reader3_app/book_lock.py`、`notes_service.py`、`ai/books.py`、`ai/conversations.py`、`vector_search.py`、`web/routers/search.py`（`api_index_book` 持锁）、`reader3.py`（`process_epub` 持锁）；[`docs/adr/0015-per-book-write-coordination.md`](../../../adr/0015-per-book-write-coordination.md)（Proposed，已成稿）
+- **契约**（§6 Q2 / Q3 / Q12 已裁定，2026-09-26）: ⬛ 2026-10-02 D1：ADR-0015 已 Accepted，契约正文的定义处是 [ADR-0015](../../../adr/0015-per-book-write-coordination.md)（「搬，不抄」；原第 1 – 9 条连同 2026-10-01 的订正都在那里，本文不再保留副本；下文「契约第 *n* 条 / 契约项 *n*」（*n* ≤ 7）与 ADR-0015 Decision Outcome 同号；project-root 对话例外由 [ADR-0018](../../../adr/0018-project-root-conversations-take-book-lock.md) 取代，Proposed）
+- **原型**：`018-lock-protocol.PROTOTYPE.html`（纯 JS 状态模型 ＋ 剧本），存于一次性分支 `prototype/018-book-lock`，不进 `master`。它是裁定的推演依据，不是规格——规格以 ADR-0015 为准
+- **涉及文件**: 新模块 `src/reader3_app/book_lock.py`、`notes_service.py`、`ai/books.py`、`ai/conversations.py`、`vector_search.py`、`web/routers/search.py`（`api_index_book` 持锁）、`reader3.py`（`process_epub` 持锁）；[`docs/adr/0015-per-book-write-coordination.md`](../../../adr/0015-per-book-write-coordination.md)（Accepted 2026-10-02）
 - **验收（种子）**:
   - 两个**进程**对同一本书同时取长写锁：恰好一个成功，另一个得到可判别的拒绝（不是超时、不是异常栈）
   - 持锁进程被 `SIGKILL` 后锁立即可取
@@ -133,7 +125,7 @@
   - 交叉获取（资源锁 → 书锁）与同栈重入都抛错，不死锁
   - 来自 PR #26 审计的两条转入项：`process_epub` 的**每书准入**（同一本书两次导入并发，今天只有各自的 staging 锁）由书锁独占覆盖；锁等待与 `run_in_threadpool` / `async` 边界——持锁的同步段不得在事件循环线程上跑，释放不得跨线程
   - 测试矩阵：待 /tdd-guardian:design-tests
-- **ADR-0015**：已过 [ADR-0000](../../../adr/0000-use-adrs.md) 准入（§6 Q11），Proposed 稿已成。实现若推翻契约某项，先改本段再同步 ADR。ADR-0001 的 Revisit When（`_book_write_lock` 多进程）即此次重访。**本分支合入时 ADR 转 Accepted、本段换链接**（门槛 7）
+- **ADR-0015**：已过 [ADR-0000](../../../adr/0000-use-adrs.md) 准入（§6 Q11），Proposed 稿已成。实现若推翻契约某项，先改本段再同步 ADR。ADR-0001 的 Revisit When（`_book_write_lock` 多进程）即此次重访。**本分支合入时 ADR 转 Accepted、本段换链接**（门槛 7）。⬛ 2026-10-02 D1：ADR-0015 已于 2026-10-02 合入回写转 Accepted，契约段已换成链接；此后改契约走 ADR 的修订流程，不再「先改本段」
 
 ### WI-3: 欠账 #51 —— provider 保存版本校验（后端 ＋ FB-S09 客户端半边）
 
@@ -159,46 +151,57 @@
 ### WI-4: 欠账 #56 —— 客户端书目列表路由
 
 - **目标 / 验收**: 见 [#56 行](./009-e2e-annotations.md#跨波欠账)（路由进快照；条数 = 书库目录数；书名 = `load_book_metadata()`）
+- **路径**（⬛ 2026-10-02 D4 / §6 Q-A）: `GET /api/library`
 - **建在接缝上**: 数据只取自 `book_store.load_book_metadata()`（今天是全量读后投影出 `book_id` / `title` / `authors`）。012 WI-5 换它的函数体、012 WI-10 在每项上加 `storage_format`——本路由不得绕过接缝直读 `book.pkl`，否则 012 换实现时它不跟着变
 - **字段集**（§6 Q6）: `book_id`、`title`、`authors`、`cover_url`、`book_uuid`。`cover_url` 是 URL 不是字节，`book_uuid` 取自 `ai_meta.json`（读不出 → `null`，按 ADR-0003 不覆写）。`chapter_count`、`storage_format` 留给 012——**不在本 WI 为此扩接缝**，扩了就是替 012 定格式。损坏条目给**显式错误态**（`{"book_id": ..., "error": "unreadable"}` 一类），不静默跳过、不让整张列表 500
-- **涉及文件**: 新 router 模块 `web/routers/library_books.py`（列表 ＋ 删书；§6 Q4；`library.py` 已 333 行）、`web/server.py`（`include_router`）、`tests/contract/routes.snapshot`、`tests/unit/test_book_store_metadata_seam.py`。**不为 012 的 #55 / #57 预留位置**——它们到时自己按体量选模块
-- **接缝守卫测试**: `test_no_production_call_site_uses_the_new_seam_yet` 有两条断言——(a)「只有 `book_store.py` 提到 `load_book_metadata`」本 WI 起**必然**不成立，改写为「调用方白名单 = {本路由模块}」；(b)「`library_view` 仍 `load_book_cached(item)`」**保留**，它是 012 WI-5 的活
+- **涉及文件**: 新 router 模块 `web/routers/library_books.py`（列表 ＋ 删书；§6 Q4；不往 `library.py` 里塞——体量以 `scripts/check_router_size.py` 为判据，不写死行数，⬛ 2026-10-02 D2）、`web/server.py`（`include_router`）、`tests/contract/routes.snapshot`、`tests/unit/test_book_store_metadata_seam.py`、`book_store.py`（接缝说明注释，见下；封面挑选函数，§6 Q-C）。**不为 012 的 #55 / #57 预留位置**——它们到时自己按体量选模块
+- **接缝守卫测试**: `tests/unit/test_book_store_metadata_seam.py` 的 `test_no_production_call_site_uses_the_new_seam_yet` 有两条断言——(a)「只有 `book_store.py` 提到 `load_book_metadata`」本 WI 起**必然**不成立，改写为「调用方白名单 = {本路由模块}」；(b)「`library_view` 仍 `load_book_cached(item)`」**保留**，它是 012 WI-5 的活。⬛ 2026-10-02 D3：改写后名字里的 `_yet` 不再成立，测试改名为 `test_seam_callers_are_the_allowlist`；`book_store.py` 里接缝说明注释中（「Nothing consumes the seam in this branch」）同一 commit 改成「唯一消费者是 `library_books` 路由」一类的现状
 - **验收补充（种子）**: 一本 `book.pkl` 损坏的书不让整张列表 500，它以显式错误态出现在列表里（契约测试写死形状）；返回顺序确定；墓碑目录与 `.locks/` 不出现在列表里
 - 测试矩阵：待 /tdd-guardian:design-tests
 
 ### WI-5: 欠账 #58 —— 删书路由（WI-2 之后）
 
 - **目标 / 验收**: 见 [#58 行](./009-e2e-annotations.md#跨波欠账)（删后读与 `POST /api/index` 都 404；FB-L18 可测）
+- **路径**（⬛ 2026-10-02 D4 / §6 Q-A）: `DELETE /api/library/{book_id}?delete_conversations=false`；成功 204、无响应体（§6 Q-F）
+- **机制的展开**（意图文件格式、终结器各步、对话发布、统计代次、chromadb 退役、测试分层与红灯检查）见[执行计划 §3 WI-5](../../20261002-018-second-slice-plan.md#3-逐-wi-执行要点)；下面只记定义与订正，不复述机制
 - **#58 行里有一句已过期**：它要求「失效 `load_book_cached` 的 lru_cache」。011 之后 `load_book_cached` 以 `(st_mtime_ns, st_size)` 为 key、每次调用先 `os.stat`，删掉的书不会从缓存里被读出来。**真正要处理的是别处**：`server._stats_cache`（5 秒 TTL 的书库统计）、搜索索引缓存、会复活目录的写手（WI-2 不复活规则）
 - **边界**（沿 [ADR-0012](../../../adr/0012-security-boundaries.md) 的思路；ADR-0012 **不**定义大小上限与 409，那些由本 WI 自定）:
   - `book_id` 过 `safe_book_folder` ＋ `_validate_book_id`（枚举目录成员）
   - **删除顺序**（§6 Q8 已裁定）:
     1. 非阻塞取该书**独占**锁；拿不到 → 409
     2. **锁内**复核书目录存在；不存在 → 404
-    3. 在全局集合锁下把该书从 `library_collections.json` 的所有集合里移除（集合锁即 [009 #60](./009-e2e-annotations.md#跨波欠账) 已合入的那把：`library_collections.json.lock`）
-    4. 书目录**原子改名**为墓碑 `books/.{book_folder}.deleted-{pid}/`，`fsync` 父目录——**这是提交点**：之前崩溃，书完好；之后崩溃，书已不在库里
-    5. 失效三处进程内缓存：`server._stats_cache`、搜索索引缓存、`ai/books.py` 的 `BookUuidResolver` 映射（[009 #61](./009-e2e-annotations.md#跨波欠账) 已让它命中时查盘，但删书仍主动失效，免得多一次扫描）
-    6. 仅当请求带 `delete_conversations=true`（默认 `false`）才删该书按 `book_uuid` 存的对话；否则对话保留为孤儿。确认对话框问用户——归 014 WI-16b
-    7. `rmtree` 墓碑
+    - ⬛ 2026-10-02 D12（插在第 2、3 步之间）：**写删除意图文件并 `fsync`**——`books/.{book_folder}.deleted-{pid}-{8hex}.intent.json`，记 `delete_conversations`、`book_uuid`（可为 `None`）、删时解析出的项目级对话根的绝对路径；根解析不出（`server._project_conversations_root` 返回 `None`）且要保留的对话存在 → 提交点前 500，书完好
+    3. 在全局集合锁下把该书从 `library_collections.json` 的所有集合里移除（集合锁即 [009 #60](./009-e2e-annotations.md#跨波欠账) 已合入的那把：`library_collections.json.lock`）。⬛ 2026-10-02 D7：用新函数 `collections_service.remove_book_everywhere`（或等价物）；D13：本步保留（ADR-0015 第 8 条的顺序不变），终结器再移除一次
+    4. 书目录**原子改名**为墓碑 `books/.{book_folder}.deleted-{pid}-{8hex}/`（⬛ 2026-10-02 D10 / §6 Q-D：加随机后缀，原为 `.{book_folder}.deleted-{pid}/`；与意图文件同后缀），`fsync` 父目录——**这是提交点**：之前崩溃，书完好；之后崩溃，书已不在库里
+    5. 失效三处进程内缓存：`server._stats_cache`、搜索索引缓存、`ai/books.py` 的 `BookUuidResolver` 映射（[009 #61](./009-e2e-annotations.md#跨波欠账) 已让它命中时查盘，但删书仍主动失效，免得多一次扫描）。⬛ 2026-10-02：`BookUuidResolver` 经新的公开 `forget_folder` 失效（D6）；统计缓存加代次，挡住删前开始的计算在删后写回旧值；另加第四处——**退役该书 `chroma_db` 路径的 chromadb 进程内 system**（D14），否则同进程「删 → 同名重导入 → 索引」拿到死句柄
+    6. ~~仅当请求带 `delete_conversations=true`（默认 `false`）才删该书按 `book_uuid` 存的对话；否则对话保留为孤儿。~~ ⬛ 2026-10-02 D5 / D16，按 §6 Q8 订正（维护者裁定 Q-B）：`delete_conversations=true`（默认 `false`）→ 删墓碑里的 `ai_conversations/`（随第 7 步）＋ 配置的项目级根下的 `{book_uuid}/`。`false` → **在独占锁内、逐个文件**把墓碑里 `ai_conversations/*.json` 发布到**配置的**项目级对话根（`server._project_conversations_root`，不是写死的 `conversations/`）下的 `{book_uuid}/`；目标已有同名文件时 `last_updated` 较新者胜；没有 `book_uuid` → 丢弃并记日志；按**磁盘上实际有什么**决定，不看当前存储模式；由终结器依意图文件执行，全部发布成功之前不许第 7 步。项目级写手按 [ADR-0018](../../../adr/0018-project-root-conversations-take-book-lock.md)（Proposed）持该书**共享**锁并锁内复核书目录，提交点后的迟到写入得 404，不会重建 `{book_uuid}/`。确认对话框问用户——归 014 WI-16b
+    7. `rmtree` 墓碑；⬛ 2026-10-02 D12：最后删意图文件
     8. 放锁
-  - **墓碑清扫**：服务启动时、以及每次删书开始前扫 `books/.*.deleted-*/`；对每个墓碑**取得并持有**对应书的独占锁再 `rmtree`，拿不到就跳过（「探测后即释放」再删是错的——探测与删除之间别人可以拿到锁，Codex 在原型上复现）。读侧照旧按 `_data` 后缀过滤，所以没清掉的墓碑只占空间，不出现在书库里
+  - ⬛ 2026-10-02 D12：**第 5 – 7 步收进一个幂等的终结器**（每一步可从任何一步重入：再做一次集合移除 → 失效缓存 → 对话 → `rmtree` 墓碑 → 删意图文件），删书请求与墓碑清扫共用。提交点之后终结器任何一步失败只记日志、留下墓碑 ＋ 意图给下一次清扫，响应仍是 204（§6 Q-F）
+  - **墓碑清扫**：服务启动时、以及每次删书开始前扫~~`books/.*.deleted-*/`~~；对每个墓碑**取得并持有**对应书的独占锁再~~`rmtree`~~跑终结器，拿不到就跳过（「探测后即释放」再删是错的——探测与删除之间别人可以拿到锁，Codex 在原型上复现）。读侧照旧按 `_data` 后缀过滤，所以没清掉的墓碑只占空间，不出现在书库里
+    - ⬛ 2026-10-02 D10：墓碑判据改为严格正则 `^\.(?P<folder>.+_data)\.deleted-(?P<pid>\d+)(-[0-9a-f]+)?$`，并要求目录名**不以 `_data` 结尾**（glob 会误收以点开头、`_data` 结尾的合法书目录）；意图文件（`.intent.json` 结尾）另有自己的正则，两类不互相匹配
+    - ⬛ 2026-10-02 D12：清扫按「墓碑 ＋ 意图 → 跑终结器；只有意图 → 提交点前崩溃，书完好，删意图；只有墓碑 → 按 `delete_conversations=false` 跑终结器」判定。清扫也在每次 `process_epub` 取锁之前跑（保证同名重导入前上一本的终结器已跑完，Q12），在取本次删书的目标锁之前跑（各墓碑各持各的锁、处理完即放）。**只有一个清扫入口**，启动、删书、导入三处调同一个函数，012 的 GC 一步加在这里，不另起入口
+  - ⬛ 2026-10-02 D13：加书进集合改为在**集合锁内**复核书目录存在（今天在锁外用 `_validate_book_id` 验书，能落在第 3 步之后），不在 → 404；锁序仍是「书锁 → 集合锁」，加书只取集合锁，没有环
   - 第 3 步落在提交点之前，崩在 3 与 4 之间 → 书还在、集合里没了它：可接受（用户可重加），反过来（书没了、集合里还挂着）才是读侧必须容忍的情形——集合读取跳过不存在的 `book_folder`
   - **删后再导入同一 EPUB = 新书**（§6 Q12）：新 `book_uuid`，旧对话不重新挂上，集合成员不恢复（第 3 步已移除）
   - **409**：该书的锁被他人持有（导入 / 重建 / 迁移 / 上传进行中）。**404**：书不存在
-- **涉及文件**: `web/routers/library_books.py`、`web/server.py`（`_stats_cache`）、`search_service.py`、`ai/books.py`（`BookUuidResolver`）、`collections_service.py`、`ai/conversations.py`、WI-2 的锁模块、`tests/contract/routes.snapshot`
+- **涉及文件**: `web/routers/library_books.py`、`web/server.py`（`_stats_cache` ＋ 代次；`_startup_scan_books` 调清扫）、`search_service.py`、`ai/books.py`（`BookUuidResolver` 加公开的 `forget_folder`，D6）、`collections_service.py`（新 `remove_book_everywhere` 或等价物，D7；`update_collection_books` 锁内复核，D13）、`ai/conversations.py`（范围扩到 `save_project_conversation` 与 `save_conversation_multi`——项目级写手持共享书锁，D16 / ADR-0018）、WI-2 的锁模块、`tests/contract/routes.snapshot`；⬛ 2026-10-02 补：`reader3.py`（`process_epub` 取锁前跑清扫，D12）、`web/routers/library.py`（`api_collections_update_books` 的复核，D13）、`vector_search.py`（chromadb system 退役，D14）
 - **e2e**: 删书测试**不得**改动 `baseline_1b` 共用的会话语料库——用自己的库目录与自己起的服务（`tests/fixtures/deg_assertions.py` 的起服务形状），不在任何分组目录里放 `conftest.py`
-- **验收补充（种子）**: 删书与单本重建并发 → 一方 409，且不出现「删掉的目录被重建出来」；删后 `/api/library/stats` 立即反映；删后该书不再出现在 WI-4 的列表里、不在任何集合里；`delete_conversations` 缺省时对话文件原样保留，为 `true` 时删掉；删后重导入同一 EPUB 得到新 `book_uuid`；在提交点前后各注入一次 `SIGKILL`，重启后书库分别是「书完好」与「书不在、墓碑被清扫」
+- **验收补充（种子）**: ~~删书与单本重建并发 → 一方 409~~（⬛ 2026-10-02 D15：两种次序分别写——**重建先持共享锁** → 删书 409，书完好；**删书先持独占锁** → 重建在 2 秒预算内等到删书结束，锁内复核得 `BookGone` → 404，删书超过预算时才是 409），且不出现「删掉的目录被重建出来」；删后 `/api/library/stats` 立即反映；删后该书不再出现在 WI-4 的列表里、不在任何集合里；`delete_conversations` 缺省时对话文件~~原样保留~~保留在磁盘 `{配置的根}/{book_uuid}/` 下（默认 `per_book` 模式也一样，D5 / Q-B），为 `true` 时两处都删掉；删后重导入同一 EPUB 得到新 `book_uuid`；在提交点前后各注入一次 `SIGKILL`，重启后书库分别是「书完好」与「书不在、墓碑被清扫」（⬛ 2026-10-02 D12：崩溃点扩到意图写入前后、对话发布中途、`rmtree` 前后，每点 × `delete_conversations` 两个取值；清单见执行计划 §3 WI-5）；集合竞态：加书进集合与删书交错后，集合里没有它，同名重导入的新书不在任何集合里（D13）；同进程「索引 → 删 → 同名重导入 → 索引 → 查询」用真 chromadb 全部成功（D14）
 - 测试矩阵：待 /tdd-guardian:design-tests
 
 ### WI-6: 欠账 #53 —— 书库导出
 
 - **目标 / 验收**: 见 [#53 行](./009-e2e-annotations.md#跨波欠账)（路由进快照；非空合法 JSON；FB-S06 半边）
+- **路径**（⬛ 2026-10-02 D4 / §6 Q-A）: `GET /api/library/export?include=conversations`（缺省不带对话）
 - **schema**（§6 Q7 已裁定）: 每本书导出 **metadata**（WI-4 的字段集）＋ **annotations**（`notes.json` 的内容）；**对话只在 `?include=conversations` 时带**；**不导出章节正文**（EPUB 本身才是正文的来源，导出不是备份）。整库导出；单本导出不在本 WI
 - **模块**: 新 router `web/routers/library_export.py`（§6 Q4）
 - **与存储格式无关**: 导出只经 `book_store` 读，所以 012 换格式后本路由不改；012 门槛 13 验的正是「导出不把 `corrupt` 当 `valid`」。#53 兑付方列原写的「内容依赖 012 存储格式」由 WI-1 改掉
 - **边界**: 整库导出可能很大——流式还是一次成型、有无大小上限、临时文件是否 `mkstemp`，本 WI 自定（ADR-0012 没有现成规则）
 - **涉及文件**: `web/routers/library_export.py`、`web/server.py`（`include_router`）、`frontend/src/settings/index.ts`（`wireExport` 的 `set-export-json`）、`tests/contract/routes.snapshot`
 - **验收补充（种子）**: 缺省请求的输出里没有对话、没有章节正文；`?include=conversations` 时带；损坏的书以 WI-4 的错误态出现，不让整次导出失败
+  - ⬛ 2026-10-02 D19：**分部件的失败策略**（每条是 WI-4 的列表条目 ＋ `annotations`，带对话时再加 `conversations`，另有一个 `component_errors` 列表，字段名由 design-tests 定）——书在枚举之后消失 → **整条跳过**（§6 Q-G，与 WI-4 同一条规则）；`book.pkl` 读不出 → 整条是 WI-4 的错误态；`notes.json` 坏 → `annotations` 为 `null` 并记进 `component_errors`；对话文件坏 → 读不出的 `conversation_id` 记进 `component_errors`，**不静默跳过**；只有枚举本身失败才 500。细节见[执行计划 §3 WI-6](../../20261002-018-second-slice-plan.md#3-逐-wi-执行要点)
+  - ⬛ 2026-10-02 D9：`tests/e2e/shell_4a/test_settings_rows.py` 的 `test_key_never_echoed_and_exports` 最后几行今天断言「导出书库 JSON 暂不支持、0 个请求」。本 WI **原地反转**它：发出 1 个请求，下载的内容是合法 JSON。这是有意地重新判一条测试，不是放宽；`shell_4a` 条数不变
 - 测试矩阵：待 /tdd-guardian:design-tests
 
 ### WI-7: 欠账 #31 —— CI e2e job 收尾对账（最后做）
@@ -209,9 +212,11 @@
   - [§7 清零规则](../plan-tech-stack-migration.md) 第 2 条：`browser` 或 `os` 变了就清零。CI 行的 `os` 是 `linux-*`、本地是 `darwin-*`，混进去每换一次就清零一次（⬛ 2026-09-28 批次规则 3：读作「就不是同一批」——一行 linux 混进批次窗口，该批判 FAIL）
   - 所以「环境多样性」由 CI job 以**独立信号**的形式提供（每次跑都是一次干净 Linux 的 68/68 首次通过核验），不是填台账的行
 - **目标**:
-  1. **对账**：修掉仍把 #31 写成「没建」「待定」的地方——009 #31 行兑付方列（WI-1 已改）、§7「该补偿至今没有建出来」一段（**§7 不归本文改**，见本 WI 末尾）、`tests.yml` 的 `e2e` job 头注释里「一个触发器都不新增」「日常 commit 与 PR 一律不跑」两句（2026-09-23 已加 `pull_request → master`，文件头注释已更新，job 注释没跟上；`.github/workflows/` 不在冻结集）
+  1. ⬛ 2026-10-02 D8：**已完成**——`tests.yml` 的 `e2e` job 头注释已写明「也跑在每个向 `master` 开的 PR 上」，plan §7 那段已标注为过期快照；本 WI 只剩下面的「核验 ＋ 记录」两项。原文：**对账**：修掉仍把 #31 写成「没建」「待定」的地方——009 #31 行兑付方列（WI-1 已改）、§7「该补偿至今没有建出来」一段（**§7 不归本文改**，见本 WI 末尾）、`tests.yml` 的 `e2e` job 头注释里「一个触发器都不新增」「日常 commit 与 PR 一律不跑」两句（2026-09-23 已加 `pull_request → master`，文件头注释已更新，job 注释没跟上；`.github/workflows/` 不在冻结集）
   2. **核验**：在本分支的**合并头**上手点一次 `gh workflow run tests.yml --ref <合并头所在 ref>`，`e2e` job 绿且 `attempt=1`；本分支 PR 上 `pull_request` 触发的那一次同样要绿（门槛 R 适用）
+     - ⬛ 2026-10-02 D17：「合并头」落实为**冻结的 PR 头 SHA** `H`——冻结后不再推任何 commit（含记录）；dispatch 后用 `gh run view <id> --json headSha` 核对等于 `H`，PR 上那次运行的 `headSha` 同样是 `H`；合并用 `gh pr merge --merge --match-head-commit H`，头被动过就拒绝、回到冻结一步。步骤见[执行计划 §3 WI-7](../../20261002-018-second-slice-plan.md#3-逐-wi-执行要点)
   3. **记录**：两次运行的 run id、commit、Chromium 版本记进 `soak-log.md` 新开的「CI 运行记录」一节（§6 Q9；**不是** soak 台账），本文 §8 只放链接
+     - ⬛ 2026-10-02 D17：这条记录放在**合入后的回写 commit** 里，不进 PR——记录 commit 本身会移动合并头
 - **不做**: 不改 `tests.yml` 的触发器与步骤；`soak_run.py` 的硬拦截是 WI-8，不在本 WI
 - **§7 / §9 的措辞归协调者改**：本 WI 只列需改之处，不动 `plan-tech-stack-migration.md`
 
@@ -219,9 +224,10 @@
 
 - **目标**: 把「soak 台账只收 `master` 上、工作站上的行」从流程约束变成机器拦截（§6 Q10）。`--append` 时：环境变量 `GITHUB_ACTIONS` 存在 → 拒绝；~~当前分支不是 `master` → 拒绝~~；都以非零退出码并说明原因。不带 `--append` 的核验跑法不受影响
   - ⬛ 2026-09-30 订正（§6 Q10）：第二条改为 **`git merge-base --is-ancestor HEAD origin/master` 不成功 → 拒绝**。原判据「当前分支是 `master`」会拒掉正确流程——批次按 `soak-log.md` 表头在被测 SHA 的**干净 detached worktree** 里跑，那里没有分支名。新判据下，`master` 上某个 SHA 的 detached worktree 放行，未合入的特性分支 SHA 拒绝。`origin/master` 解析不出来时怎么报错交给 design-tests，不是新规则
-- **涉及文件**: `scripts/soak_run.py`（不在冻结集——冻结集是 `HASH_COVERED_PATHS` 所列 8 条路径，本脚本不在其中；改它不改 `suite_hash`，开工当天复核）、它的单元测试
+- **涉及文件**: `scripts/soak_run.py`（不在冻结集——冻结集是 `HASH_COVERED_PATHS` 所列 8 条路径，本脚本不在其中；改它不改 `suite_hash`，开工当天复核）、它的单元测试 `tests/unit/test_soak_run.py`（⬛ 2026-10-02 D18：含其中已有的 `--append` 子进程用例的改写，见下）
 - **验收（种子）**: ~~三种情形各一条测试——CI 环境 ＋ `--append` → 拒绝；非 `master` ＋ `--append` → 拒绝；`master` ＋ 非 CI ＋ `--append` → 放行~~（用假 git / 假环境，不真跑 soak）
   - ⬛ 2026-09-30 按订正后的规则，至少四条：CI 环境 ＋ `--append` → 拒绝；`HEAD` 不是 `origin/master` 的祖先（未合入的特性分支 SHA）＋ `--append` → 拒绝；`master` 分支上 ＋ 非 CI ＋ `--append` → 放行；**`master` 上某个 SHA 的 detached worktree ＋ `--append` → 放行**
+  - ⬛ 2026-10-02 D18：`tests/unit/test_soak_run.py` 里已有的 `--append` 子进程用例（经 `_synthetic_append_argv` 调用、在 `cwd=REPO_ROOT` 下跑）在 `GITHUB_ACTIONS=true` 下和在未合入的 detached SHA 上**都要仍绿**。做法：子进程用受控 env（显式去掉 `GITHUB_ACTIONS`），git 判据走可注入的仓库（临时 git 仓库），且注入口**只在台账是仓库外临时文件时生效**，不能被用来往 canonical 台账写。新拦截与 `--no-precheck` 无关。见[执行计划 §3 WI-8](../../20261002-018-second-slice-plan.md#3-逐-wi-执行要点)
 - 测试矩阵：待 /tdd-guardian:design-tests
 
 ---
@@ -238,9 +244,9 @@
 | 4 | router 体量 | `python3 scripts/check_router_size.py` rc=0（新路由不许挤爆 500 行） | _待填_ |
 | 5 | 路由快照同 commit | 每个新增 / 改动路由的 commit 里同时改了 `tests/contract/routes.snapshot`，diff 只有新增行（WI-3 若给已有路由加头 / 字段，只许加法）；PR 描述写明破坏性与迁移路径（ADR-0011） | _待填_ |
 | 6 | e2e 分组登记 | 新增的每条 e2e 都登记进 `scripts/lint_e2e_groups.py`（验收目录进 `EXPECTED_ACCEPTANCE_PER_DIR`，或模块进 `UNGROUPED_E2E_MODULES` 并同步 `EXPECTED_UNGROUPED_ITEMS`；新分组还要进 `pyproject.toml` markers 与 `tests/unit/test_e2e_group_guard.py` 的钉死副本）；合入前在分支上跑一次 `soak_run.py`（只核验、不 `--append`）确认 deselected 精确相等 | _待填_ |
-| 7 | 锁契约 | WI-2 验收的跨进程互斥、`SIGKILL` 释放、各写手不复活目录、共享写手 2 秒内 409、ABA 身份复核、交叉获取抛错六类测试齐全；ADR-0015 在本分支合入的同一 PR 里由 Proposed 转 **Accepted**（§6 Q11） | _待填_ |
+| 7 | 锁契约 | WI-2 验收的跨进程互斥、`SIGKILL` 释放、各写手不复活目录、共享写手 2 秒内 409、ABA 身份复核、交叉获取抛错六类测试齐全；ADR-0015 在本分支合入的同一 PR 里由 Proposed 转 **Accepted**（§6 Q11）。⬛ 2026-10-02 D1：转 Accepted 已由第一段合入回写完成（§8），WI-2 契约段已换成一行链接到 [ADR-0015](../../../adr/0015-per-book-write-coordination.md)；本门槛剩下的是删书部分的测试，以及合入时把 ADR-0015 的 compliance 改成 Full。[ADR-0018](../../../adr/0018-project-root-conversations-take-book-lock.md) 在第二段合入 PR 里由 Proposed 转 Accepted | _待填_ |
 | 8 | 每条欠账一个 commit 结清 | 009 表 #51 / #56 / #58 / #53 / #31 各行状态改为已结清并附 commit | _待填_ |
-| 9 | #31 的 CI 核验 | 合并头上至少一次 `workflow_dispatch` 的 `tests.yml` 运行，`e2e` job 绿、`attempt=1`；PR 的 `pull_request` 运行同样绿。run id 按 WI-7 的记录位置落档 | _待填_ |
+| 9 | #31 的 CI 核验 | 合并头上至少一次 `workflow_dispatch` 的 `tests.yml` 运行，`e2e` job 绿、`attempt=1`；PR 的 `pull_request` 运行同样绿。run id 按 WI-7 的记录位置落档。⬛ 2026-10-02 D17：「合并头」= 冻结的 PR 头 SHA，两次运行的 `headSha` 都等于它，合并用 `--match-head-commit`；`soak-log.md` 的记录挪到合入后的回写 commit | _待填_ |
 | 10 | ~~合入后 soak 一次~~（⬛ 2026-09-30 被 [plan §7「012 开工核验」](../plan-tech-stack-migration.md#012-开工核验2026-09-30-维护者裁定) 取代：012 开工要在它开分支的那个 `commit` 上新跑一批，合入头红不红由那一批覆盖；本门槛不再单独要求，原文保留） | 合入后在 `master` 上跑一次 `soak_run.py --append`，green，`suite_hash` 仍是冻结值；这一行记进台账（~~它是正常计数行，commit 变不清零~~ ⬛ 2026-09-29：批次规则下单独一行不计入任何批次，只证明合入头没把 `baseline_1b` 弄红；012 开工要的批次见 [012 §4 门槛 F](./012-storage-format.md)） | _待填_ |
 | F | ~~**冻结区零字节改动**~~（⬛ 2026-09-28 随 [012 门槛 F](./012-storage-format.md) 放宽：冻结区可以改，但改了就须在合并头的新 `suite_hash` 上重跑一批并通过，否则 012 开工时对不上最后一次通过批次；仍应避免无谓改动。下面原判据保留作「没动冻结区」时的核对方式。⬛ 2026-09-30：012 开工一律新跑一批，见 [plan §7「012 开工核验」](../plan-tech-stack-migration.md#012-开工核验2026-09-30-维护者裁定)；本门槛只剩「别无谓动冻结区」的约束） | 下列 8 条路径 `git diff --stat master... -- <paths>` 为空，`suite_hash` 与 [`soak-log.md`](./soak-log.md) 表头冻结值一致：`tests/e2e/baseline_1b/**`、`tests/e2e/conftest.py`、`tests/e2e/helpers.py`、`tests/e2e/test_harness_smoke.py`、`tests/fixtures/epub_corpus.py`、`tests/fixtures/epub_zip.py`、`tests/fixtures/ai_stub.py`、`tests/conftest.py`。路径清单的定义处是 `soak-log.md`「`suite_hash` 的取法」与 `scripts/soak_run.py` 的 `HASH_COVERED_PATHS`，冲突以那里为准 | _待填_ |
 | R | **红灯必查根因** | 分支存续期间，`baseline_1b` 与 e2e lane（含 CI `e2e` job）**每一次**红都在 §8「红灯记录」追一行：时间、commit、失败用例、根因（产品缺陷 / 测试缺陷 / 环境）、处置 commit。**不允许以「重跑变绿」结案**。表为空或每行根因齐全才算过 | _待填_ |
@@ -263,7 +269,7 @@
 - **soak 收集计数**：新 e2e 漏登记分组，合入后下一次 soak 的 deselected 对不上就判 red。缓解：门槛 6。
 - **冻结集诱惑**：共享 fixture 想放 `tests/e2e/conftest.py` 或改 `helpers.py`——那两个都在冻结集里。缓解：新 fixture 放 `tests/fixtures/` 下的非冻结模块。
 - **把 CI 行当 soak 行**：有人照 #31 行旧措辞「手点 dispatch 补台账行」去 `--append`，一次就按清零规则第 2 条清零（⬛ 2026-09-28：读作让当时的批次判 FAIL）。缓解：WI-7 对账掉旧措辞；WI-8 硬拦截。
-- **router 体量**：列表 ＋ 删书 ＋ 导出塞进 `library.py`（已 333 行）会逼近 500。缓解：新 router 模块（§6 Q4），012 的 #55 / #57 还要往这里加。
+- **router 体量**：列表 ＋ 删书 ＋ 导出塞进 `library.py` 会逼近 500 行（⬛ 2026-10-02 D2：不写死当前行数，判据是 `scripts/check_router_size.py`）。缓解：新 router 模块（§6 Q4），012 的 #55 / #57 还要往这里加。
 - **#51 的无条件写**：不带 `If-Match` 的旧客户端仍可覆盖（加法式的代价）。缓解：四个写入端都认 `If-Match`，本仓前端全部带上（§6 Q5）。
 
 ---
@@ -284,11 +290,27 @@
 | Q5 | #51 revision 的取值、覆盖面、传法 | WI-3 | 原始字节 sha256（实施时取了括注里的可选项：进程私有 key 的 HMAC-SHA256，见 WI-3「实施记录」）；四个写入端都认 `ETag` / `If-Match`；无条件请求放行；全局 `config/.ai_settings.lock`。见 WI-3 | ✅ 已裁定 |
 | Q6 | #56 列表字段集 | WI-4 | `book_id`、`title`、`authors`、`cover_url`、`book_uuid`；损坏条目显式错误态；章节数与存储格式留给 012。见 WI-4 | ✅ 已裁定 |
 | Q7 | #53 导出 schema | WI-6 | metadata ＋ annotations；对话只在 `?include=conversations`；不含章节正文；整库（维护者取舍）。见 WI-6 | ✅ 已裁定 |
-| Q8 | 删书对集合 / 对话的处置；墓碑清理时机 | WI-5 | 集合成员在提交点前移除；对话**删时问**——`delete_conversations` 参数默认 `false`，确认框归 014 WI-16b（维护者取舍）；墓碑在启动与每次删书前清扫，清扫持锁。见 WI-5 | ✅ 已裁定 |
+| Q8 | 删书对集合 / 对话的处置；墓碑清理时机 | WI-5 | 集合成员在提交点前移除；对话**删时问**——`delete_conversations` 参数默认 `false`，确认框归 014 WI-16b（维护者取舍）；墓碑在启动与每次删书前清扫，清扫持锁。见 WI-5。⬛ **2026-10-02 维护者裁定 Q-B（执行计划 §6）**，改变「对话保留为孤儿」的实际语义：默认 `per_book` 模式下对话在书目录里，原文照做会随墓碑一起删掉。改为 `false` 时在独占锁内、逐个文件把墓碑里的 `ai_conversations/*.json` 发布到**配置的**项目级对话根（`server._project_conversations_root`）下的 `{book_uuid}/`，目标已有时 `last_updated` 较新者胜，无 uuid 丢弃并记日志，按磁盘上实际有什么决定、不看当前存储模式，由终结器依意图文件执行；项目级写手持共享书锁（[ADR-0018](../../../adr/0018-project-root-conversations-take-book-lock.md)，Proposed）。清扫也在每次导入取锁前跑（D12）。机制见[执行计划 §3 WI-5](../../20261002-018-second-slice-plan.md#3-逐-wi-执行要点) | ✅ 已裁定（2026-10-02 订正） |
 | Q9 | CI 运行记录落在哪 | WI-7 | `soak-log.md` 新开「CI 运行记录」一节；本文 §8 只放链接 | ✅ 已裁定 |
 | Q10 | `soak_run.py --append` 硬拦截 | WI-8 | 要：`GITHUB_ACTIONS` 或~~非 `master`~~ 即拒绝，独立小 WI。⬛ 2026-09-30 订正：第二条改为「`git merge-base --is-ancestor HEAD origin/master` 不成功即拒绝」——`master` SHA 的 detached worktree 放行、未合入的特性分支 SHA 拒绝；测试须含「detached worktree ＋ `--append` → 放行」。条文见 WI-8 | ✅ 已裁定（2026-09-30 订正） |
 | Q11 | ADR-0015 是否过 ADR-0000 准入 | WI-2 收尾 | 过（跨模块、长期、多个写手共同遵守）；契约正文搬进 ADR，合入即 Accepted（门槛 7） | ✅ 已裁定 |
 | Q12 | 删后再导入同一 EPUB 算同一本书还是新书（原型暴露：集合按目录名引用会悄悄挂回，对话按 `book_uuid` 引用挂不回，两种引用不一致） | WI-5 | **新书**：什么都不挂回。集合成员在删书时移除（WI-5 第 3 步），对话随新 `book_uuid` 自然不挂回；写手等锁醒来按 `book_uuid` 复核（WI-2 契约项 6）（维护者取舍） | ✅ 已裁定 |
+
+
+### 6.1 第二段（WI-4 – WI-8）的裁定（⬛ 2026-10-02）
+
+来源与理由的定义处是[执行计划 §6](../../20261002-018-second-slice-plan.md)（Q-A、Q-C – Q-G 由维护者 2026-10-02 按推荐默认裁定；Q-B 写进上表 Q8；Q-H 由协调者 2026-10-02 裁定）。本表只记结论。
+
+| Q | 问题 | 挡哪个 WI | 裁定 | 状态 |
+|---|---|---|---|---|
+| Q-A | 三条路由的路径 | WI-4 / 5 / 6 | `GET /api/library`；`DELETE /api/library/{book_id}?delete_conversations=false`；`GET /api/library/export?include=conversations` | ✅ 已裁定 |
+| Q-B | 默认 `per_book` / `both` 模式下 `delete_conversations=false` 怎么兑现 | WI-5 | 见上表 Q8 的订正 | ✅ 已裁定 |
+| Q-C | 封面挑选函数放哪 | WI-4 | `book_store` 里一个独立函数，`library_view` 与新路由共用；**不**放进 `BookMetadataView`（不替 012 扩接缝） | ✅ 已裁定 |
+| Q-D | 墓碑名要不要加随机后缀 | WI-5 | 要：`.{folder}.deleted-{pid}-{8hex}`；清扫正则见 WI-5（D10） | ✅ 已裁定 |
+| Q-E | 墓碑清扫用哪个持有者类别 | WI-5 | 用现有的 `delete`，不新增类别；是否并进 012 的 `gc` 由 012 定 | ✅ 已裁定 |
+| Q-F | `DELETE` 成功返回什么 | WI-5 | 204，无响应体。提交点之后的失败（终结器某步失败）仍回 204，残余交给清扫；客户端重试得 404 即「已删」；提交点之前的失败（409 / 404 / 500）书完好，可原样重试 | ✅ 已裁定 |
+| Q-G | 列表遍历时书刚好被删 | WI-4 / WI-6 | 跳过这本书，不报错误态（错误态只留给「目录在、但读不出来」）；WI-6 导出同一条规则 | ✅ 已裁定 |
+| Q-H | 删书后保留的孤儿对话要不要 HTTP 入口 | WI-5 | 本段**不加**孤儿对话的 HTTP 路由；孤儿只保证在磁盘 `{配置的根}/{book_uuid}/` 下找得到（现有对话读路由要求活书，对孤儿 404）；需要时另开，属加法式路由 | ✅ 已裁定（2026-10-02 协调者） |
 
 ---
 
