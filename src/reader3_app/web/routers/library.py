@@ -26,7 +26,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
-from ... import collections_service
+from ... import book_store, collections_service
 from ...search_service import list_book_ids
 
 router: APIRouter = APIRouter()
@@ -44,22 +44,7 @@ async def library_view(request: Request):
                 # Try to load it to get the title
                 book = _server.load_book_cached(item)
                 if book:
-                    cover_image = None
-                    try:
-                        images_dir = os.path.join(_server.BOOKS_DIR, item, "images")
-                        if os.path.isdir(images_dir):
-                            candidates = [
-                                f
-                                for f in os.listdir(images_dir)
-                                if os.path.isfile(os.path.join(images_dir, f)) and not f.startswith(".")
-                            ]
-                            preferred = [f for f in candidates if "cover" in f.lower() or "title" in f.lower()]
-                            pick_from = preferred or candidates
-                            if pick_from:
-                                cover_image = sorted(pick_from, key=lambda x: (len(x), x.lower()))[0]
-                    except Exception:  # noqa: BLE001 - 第 3 档：封面挑选失败只影响一张缩略图，书本身照常打开
-                        cover_image = None
-
+                    cover_image = book_store.pick_cover_image(item, _server.BOOKS_DIR)
                     cover_url = f"/read/{item}/images/{cover_image}" if cover_image else None
                     books.append({
                         "id": item,

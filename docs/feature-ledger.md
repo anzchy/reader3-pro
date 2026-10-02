@@ -187,8 +187,8 @@ Paths are written out in full from the repo root (e.g. `src/reader3_app/reader3.
 
 #### F-005 3-pane library — accepted
 - **What:** library page at `GET /` — grid/list view, sort, select mode, format counts, Dedao-style UI.
-- **Routes:** `GET /`, `MOUNT /static`
-- **Code:** `src/reader3_app/web/routers/library.py`, `frontend/src/library/`
+- **Routes:** `GET /`, `GET /api/library`, `MOUNT /static`
+- **Code:** `src/reader3_app/web/routers/library.py`, `src/reader3_app/web/routers/library_books.py`, `frontend/src/library/`
 - **Tests:** `tests/e2e/shell_4a/`, `tests/e2e/baseline_1b/test_library_nav_and_collections.py`
 - **Confirm:** `uv run reader3-server`, open `http://127.0.0.1:8123/`: a sidebar (Types / Collections), the book grid, and a right panel with Dashboard / Chat / Search tabs. `▦` / `☰` switch grid and list, `A→Z` sorts, `✓` enters select mode and shows the bulk bar (Select all / Clear / Add to collection / Index selected).
 - **Evidence:** 004 (PR #12/#13) · 005 restyle (PR #14) · TS port 013 WI-13 (PR #25)

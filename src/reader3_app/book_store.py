@@ -49,7 +49,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Any
+from typing import Any, Optional
 
 from .safe_pickle import load_book_file
 
@@ -106,9 +106,9 @@ load_book_cached.cache_parameters = _load_book_for_stat.cache_parameters  # type
 # name `load_book_cached`, because then the storage change and the call-site
 # change are the same commit. So the two questions get two names *now*, both
 # served by the one loader, and 012 changes what sits under
-# `load_book_metadata` without touching a caller. Nothing consumes the seam in
-# this branch — that is deliberate, and
-# `tests/unit/test_book_store_metadata_seam.py` locks it.
+# `load_book_metadata` without touching a caller. Its one consumer is
+# `web/routers/library_books.py` (`GET /api/library`, 018 WI-4 Q-A), and
+# `tests/unit/test_book_store_metadata_seam.py` locks that allowlist.
 
 
 @dataclass(frozen=True)
@@ -179,3 +179,32 @@ def load_book_metadata(book_id: str, books_dir: str) -> BookMetadataView:
         title=getattr(getattr(book, "metadata", None), "title", book_id),
         authors=tuple(getattr(getattr(book, "metadata", None), "authors", []) or []),
     )
+
+
+def pick_cover_image(book_id: str, books_dir: str) -> Optional[str]:
+    """The file name of a book's cover thumbnail, or ``None``. Never raises.
+
+    The one cover picker (018 WI-4, Q-C), lifted byte-for-byte from the inline
+    picker that ``library_view`` used to carry, so ``GET /`` and
+    ``GET /api/library`` cannot disagree. Candidates are the regular, non-dot
+    files directly in ``{books_dir}/{book_id}/images``; names containing
+    ``cover`` or ``title`` (case-folded) are preferred when any exist; the winner
+    is the minimum under ``(len, lower)``. Returns a file name, not a URL — the
+    URL shape is the web layer's.
+    """
+    cover_image = None
+    try:
+        images_dir = os.path.join(books_dir, book_id, "images")
+        if os.path.isdir(images_dir):
+            candidates = [
+                f
+                for f in os.listdir(images_dir)
+                if os.path.isfile(os.path.join(images_dir, f)) and not f.startswith(".")
+            ]
+            preferred = [f for f in candidates if "cover" in f.lower() or "title" in f.lower()]
+            pick_from = preferred or candidates
+            if pick_from:
+                cover_image = sorted(pick_from, key=lambda x: (len(x), x.lower()))[0]
+    except Exception:  # noqa: BLE001 - 第 3 档：封面挑选失败只影响一张缩略图，书本身照常打开
+        cover_image = None
+    return cover_image

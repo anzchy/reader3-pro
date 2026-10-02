@@ -220,6 +220,7 @@ LIBRARY_CASES = [
         must_contain=(BOOK_TITLE, BOOK_AUTHOR),
     ),
     ContractCase("GET", "/api/collections", 200, expected_keys=("collections",)),
+    ContractCase("GET", "/api/library", 200, expected_keys=("books",)),
     ContractCase("POST", "/api/collections", 201, body={"name": "Fresh"}, expected_keys=COLLECTION_KEYS),
     ContractCase("POST", "/api/collections", 422, body={}, note="name 缺失 -> pydantic"),
     ContractCase("POST", "/api/collections", 400, body={"name": ""}, note="name 空串 -> 业务校验"),

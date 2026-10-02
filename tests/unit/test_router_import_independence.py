@@ -38,6 +38,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 #: `server.py` 末尾 include 的全部 router 模块。少一个，这条守卫就漏一个。
 ROUTER_MODULES = [
     "reader3_app.web.routers.library",
+    "reader3_app.web.routers.library_books",
     "reader3_app.web.routers.reader",
     "reader3_app.web.routers.settings",
     "reader3_app.web.routers.health",
