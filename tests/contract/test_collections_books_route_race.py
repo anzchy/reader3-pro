@@ -73,12 +73,13 @@ class _Window:
         self.fired = 0
 
     def __call__(
-        self, path: Path, cid_: str, *, add: Iterable[str] = (), remove: Iterable[str] = ()
+        self, path: Path, cid_: str, *, add: Iterable[str] = (), remove: Iterable[str] = (), **kw: Any
     ) -> collections_service.Collection:
         if self.fired == 0:
             self.fired += 1
             self.concurrent(self.real, path, cid_)
-        return self.real(path, cid_, add=add, remove=remove)
+        # 018 WI-5b: forwards the route's in-lock ``book_exists`` recheck (Q5).
+        return self.real(path, cid_, add=add, remove=remove, **kw)
 
 
 # --------------------------------------------------------------------------- #

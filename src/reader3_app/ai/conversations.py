@@ -6,7 +6,7 @@ import logging
 import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterator, List, Optional
 from uuid import UUID
 
 from .. import book_lock
@@ -256,6 +256,55 @@ def _publish_json(path: str, payload: Dict[str, Any]) -> None:
         raise
 
 
+@contextlib.contextmanager
+def _conversation_writer(books_dir: str, thread: ConversationThread) -> Iterator[str]:
+    """SH ``conversations`` on the thread's book plus the conversations resource lock.
+
+    In-lock: the book dir must exist (``BookGone``, never recreated) and must still
+    hold the identity the thread is filed under (``BookChanged``). Yields the safe
+    book folder. One acquisition per save (ADR-0015 rule 7, ADR-0018).
+    """
+    book_folder = _safe_folder_name(thread.book_folder)
+    with book_lock.writer_scope(
+        books_dir, book_folder, holder="conversations", expected_book_uuid=thread.book_uuid
+    ), book_lock.resource_lock(books_dir, book_folder, category="conversations"):
+        # 018 WI-1 (#3): SH alone lets two saves of this book run at once; the
+        # resource lock serialises them, under the same deadline as the book lock.
+        yield book_folder
+
+
+def _write_per_book(books_dir: str, book_folder: str, thread: ConversationThread) -> None:
+    """The per-book publish; the caller holds ``_conversation_writer``."""
+    conv_dir = _conversations_dir(books_dir, book_folder)
+    with contextlib.suppress(FileExistsError):
+        os.mkdir(conv_dir)
+    path = _conversation_path(books_dir, book_folder, thread.conversation_id)
+    payload = thread.to_dict()
+    payload["schema_version"] = SCHEMA_VERSION
+    payload["last_updated"] = _utc_now_iso()
+    if not payload.get("created_at"):
+        payload["created_at"] = payload["last_updated"]
+    _publish_json(path, payload)
+
+
+def _write_project(project_conversations_root: str, book_folder: str, thread: ConversationThread) -> None:
+    """The project-root publish; the caller holds ``_conversation_writer``.
+
+    ``{root}/{book_uuid}/`` is created only here, i.e. after the in-lock rechecks.
+    """
+    book_uuid = _safe_book_uuid(thread.book_uuid)
+    os.makedirs(_project_conversations_dir(project_conversations_root, book_uuid), exist_ok=True)
+    path = _project_conversation_path(project_conversations_root, book_uuid, thread.conversation_id)
+    payload = thread.to_dict()
+    payload["schema_version"] = SCHEMA_VERSION
+    payload["book_uuid"] = book_uuid
+    payload["book_folder"] = book_folder
+    payload["last_updated"] = _utc_now_iso()
+    if not payload.get("created_at"):
+        payload["created_at"] = payload["last_updated"]
+    _publish_json(path, payload)
+
+
 def save_conversation(
     books_dir: str,
     *,
@@ -268,41 +317,25 @@ def save_conversation(
     (``BookChanged`` -- a same-name reimport is a different book). Only the
     ``ai_conversations`` dir inside the existing book dir is ever created.
     """
-    book_folder = _safe_folder_name(thread.book_folder)
-    with book_lock.writer_scope(
-        books_dir, book_folder, holder="conversations", expected_book_uuid=thread.book_uuid
-    ), book_lock.resource_lock(books_dir, book_folder, category="conversations"):
-        # 018 WI-1 (#3): SH alone lets two saves of this book run at once; the
-        # resource lock serialises them, under the same deadline as the book lock.
-        conv_dir = _conversations_dir(books_dir, book_folder)
-        with contextlib.suppress(FileExistsError):
-            os.mkdir(conv_dir)
-        path = _conversation_path(books_dir, book_folder, thread.conversation_id)
-        payload = thread.to_dict()
-        payload["schema_version"] = SCHEMA_VERSION
-        payload["last_updated"] = _utc_now_iso()
-        if not payload.get("created_at"):
-            payload["created_at"] = payload["last_updated"]
-        _publish_json(path, payload)
+    with _conversation_writer(books_dir, thread) as book_folder:
+        _write_per_book(books_dir, book_folder, thread)
 
 
 def save_project_conversation(
     project_conversations_root: str,
     *,
     thread: ConversationThread,
+    books_dir: str,
 ) -> None:
-    book_uuid = _safe_book_uuid(thread.book_uuid)
-    book_folder = _safe_folder_name(thread.book_folder)
-    os.makedirs(_project_conversations_dir(project_conversations_root, book_uuid), exist_ok=True)
-    path = _project_conversation_path(project_conversations_root, book_uuid, thread.conversation_id)
-    payload = thread.to_dict()
-    payload["schema_version"] = SCHEMA_VERSION
-    payload["book_uuid"] = book_uuid
-    payload["book_folder"] = book_folder
-    payload["last_updated"] = _utc_now_iso()
-    if not payload.get("created_at"):
-        payload["created_at"] = payload["last_updated"]
-    _publish_json(path, payload)
+    """Write one project-root conversation under the book's lock (018 WI-5b, ADR-0018).
+
+    Same shape as ``save_conversation``: SH ``conversations`` on ``thread.book_folder``
+    in ``books_dir`` plus the resource lock, so a deleted book is ``BookGone`` and a
+    late write never recreates ``{root}/{book_uuid}/``.
+    """
+    _safe_book_uuid(thread.book_uuid)
+    with _conversation_writer(books_dir, thread) as book_folder:
+        _write_project(project_conversations_root, book_folder, thread)
 
 def delete_conversation(
     books_dir: str,
@@ -432,10 +465,16 @@ def save_conversation_multi(
             f"but conversation_project_root_dir resolved to {project_conversations_root!r}. "
             "Set conversation_project_root_dir, or set conversation_disk_storage to 'per_book'."
         )
-    if mode in ("per_book", "both"):
+    if mode == "per_book":
         save_conversation(books_dir, thread=thread)
-    if mode in ("project_root", "both"):
-        save_project_conversation(root, thread=thread)
+    elif mode == "project_root":
+        save_project_conversation(root, thread=thread, books_dir=books_dir)
+    else:
+        # ADR-0018: ``both`` is one acquisition; both halves are written inside it.
+        _safe_book_uuid(thread.book_uuid)
+        with _conversation_writer(books_dir, thread) as book_folder:
+            _write_per_book(books_dir, book_folder, thread)
+            _write_project(root, book_folder, thread)
 
 
 def delete_conversation_multi(

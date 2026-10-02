@@ -367,7 +367,23 @@ async def _startup_scan_books() -> None:
     # Ensure stable UUID mapping exists for all processed books.
     # 018 WI-2 (#23)：扫描会取书锁（缺 uuid 的书要铸一个），放进线程池，不占事件循环；
     # 每本书只等一个短预算（见 BookUuidResolver.scan）。
+    # 018 WI-5b (Q6): finish crashed deletes first, so the scan never mints a uuid
+    # for a folder whose tombstone still owes it a finalize. ``BOOKS_DIR`` is read
+    # at call time (tests rebind it); the finalizer's invalidators drop the caches.
+    await run_in_threadpool(_startup_sweep)
     await run_in_threadpool(book_uuid_resolver.scan)
+
+
+def _startup_sweep() -> None:
+    report = library_delete.sweep(BOOKS_DIR, budget=book_lock.SHORT_BUDGET_S)
+    if report.busy or report.conserved or report.failed:
+        logger.warning(
+            "startup sweep left entries in %s: busy=%s conserved=%s failed=%s",
+            BOOKS_DIR,
+            report.busy,
+            report.conserved,
+            report.failed,
+        )
 
 def _share_loader_cache_surface(
     wrapper: Callable[[str], Optional[Book]]

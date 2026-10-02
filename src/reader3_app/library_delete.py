@@ -602,6 +602,22 @@ def sweep(books_dir: PathLike, *, budget: float) -> SweepReport:
     return report
 
 
+
+def pending_tombstones(books_dir: PathLike, folder: str) -> List[str]:
+    """The tombstone names in ``books_dir`` whose parsed folder is ``folder``, sorted.
+
+    What ``process_epub`` checks after its sweep (018 WI-5b, W5-18): an import never
+    publishes over a same-name tombstone the sweep could not clear (busy, conserved
+    or failed) -- that tombstone's finalizer still has to run against this name.
+    """
+    tombs, _intents = _entries(os.fspath(books_dir))
+    return sorted(name for triple, name in tombs.items() if triple[0] == folder)
+
+
+class ImportRefused(Exception):
+    """``process_epub`` found a same-name tombstone left after its sweep."""
+
+
 # --------------------------------------------------------------------------- delete
 
 

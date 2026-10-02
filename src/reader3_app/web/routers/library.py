@@ -178,8 +178,13 @@ async def api_collections_update_books(collection_id: str, body: CollectionBooks
             cid,
             add=add_ids,
             remove=remove_ids,
+            # 018 WI-5b (Q5): re-checked under the collections lock, so a delete that
+            # committed after ``_validate_book_id`` above cannot be re-added.
+            book_exists=lambda b: b in set(list_book_ids(_server.BOOKS_DIR)),
         )
         return updated.to_dict()
+    except collections_service.BookMissing:
+        raise HTTPException(status_code=404, detail="Book not found")
     except KeyError:
         raise HTTPException(status_code=404, detail="Collection not found")
     except ValueError as e:
