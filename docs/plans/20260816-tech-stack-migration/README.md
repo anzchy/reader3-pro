@@ -39,6 +39,8 @@
 | 每个 Phase 的进入 / 退出门槛、soak 门槛 | `plan-tech-stack-migration.md` §7 |
 | **分支编号分配（全仓库唯一真相源）** | `plan-tech-stack-migration.md` §9 |
 | Playwright E2E 用例清单与激活分组 | `tasks/009-e2e-annotations.md` |
+| `reader3 launch` 打开的 origin（规范形、端口优先级与端口记忆） | [`tasks/015-launch-experience.md`](./tasks/015-launch-experience.md) §2.3（⬛ 2026-10-02 起） |
+| 书库目录与设置文件的定位（数据家、绑定文件） | [`docs/adr/0017`](../../adr/0017-data-home-resolution.md)（⬛ 2026-10-02 起，Proposed） |
 | API v1 冻结**规则** | [`docs/adr/0011`](../../adr/0011-api-v1-freeze.md)（清单本身是 `tests/contract/routes.snapshot`） |
 | 覆盖率门槛数值 | `.claude/tdd-guardian/config.json`（拓扑与理由见 [`docs/adr/0010`](../../adr/0010-test-and-ci-topology.md)） |
 
@@ -56,7 +58,7 @@
 - [`tasks/008-test-safety-net.md`](./tasks/008-test-safety-net.md) —— Phase 1a 的测试网：覆盖率门槛策略、42 条路由契约、异常处理规则、性能基准、CI
 - [`tasks/009-e2e-annotations.md`](./tasks/009-e2e-annotations.md) —— Phase 1b 的 E2E 用例清单（读路径 / 写路径 / K1–K6 / DEG-S1–DEG-S4），含 `baseline-1b` 与按阶段激活的 acceptance 分组。前端计划的测试矩阵**引用本文的用例 ID**，不重写用例
 
-011 / 012 / 015 **故意还没写**——骨架**领先一个分支即时补**，且「领先一个」按
+~~011 / 012 / 015 **故意还没写**~~（⬛ 2026-10-02：三份都已写；完整清单在 [§9 末段](./plan-tech-stack-migration.md#9-里程碑与分支唯一真相源)，这里只补 015：[`tasks/015-launch-experience.md`](./tasks/015-launch-experience.md) —— Phase 5 的 CLI 半边（`reader3 launch`、数据家、实例身份）；PWA 半边是前端计划 WI-20）——骨架**领先一个分支即时补**，且「领先一个」按
 **依赖顺序**数而非编号顺序，理由见
 [`plan-tech-stack-migration.md` §9](./plan-tech-stack-migration.md#9-里程碑与分支唯一真相源)。
 这是 Codex 评审第 9 条的处置方式。

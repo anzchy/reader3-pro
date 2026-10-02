@@ -1529,7 +1529,7 @@ Track D 交付的是**朴素形态**（Phase 3 的门槛只要求「可见」，
 
 缓存名带构建版本号（例如 `reader3-v{buildHash}`）；`activate` 事件里删除所有前缀匹配但版本不等的 cache。
 
-> ⬛ 2026-10-02（来源：Codex 评审 2026-10-02）：**上一句与 Phase 5 退出条件冲突，未裁。** `activate` 立即删掉其他版本的全部缓存，会让仍开着的旧版本页面去取旧 hash chunk 时失败——这正是 Phase 5 退出条件「PWA 版本切换不撕裂」（[迁移计划 §7 阶段门槛表 Phase 5 行](../20260816-tech-stack-migration/plan-tech-stack-migration.md)）与 [迁移计划附录 A 的 A4](../20260816-tech-stack-migration/plan-tech-stack-migration.md)（「activate 立即清旧缓存」与 `skipWaiting()` + `clients.claim()` 同用会撕裂版本；改为保留前一代、清 N-2，或强制提示并刷新全部 client）明令避免的形状；下面验收 7「`activate` 后 `caches.keys()` 里不含 A」同样钉的是这个形状。归属 **WI-20**；须在 Phase 5 验收之前定下清理策略并同步改验收 7。
+> ⬛ 2026-10-02（来源：Codex 评审 2026-10-02）：**上一句与 Phase 5 退出条件冲突，未裁。** `activate` 立即删掉其他版本的全部缓存，会让仍开着的旧版本页面去取旧 hash chunk 时失败——这正是 Phase 5 退出条件「PWA 版本切换不撕裂」（[迁移计划 §7 阶段门槛表 Phase 5 行](../20260816-tech-stack-migration/plan-tech-stack-migration.md)）与 [迁移计划附录 A 的 A4](../20260816-tech-stack-migration/plan-tech-stack-migration.md)（「activate 立即清旧缓存」与 `skipWaiting()` + `clients.claim()` 同用会撕裂版本；改为保留前一代、清 N-2，或强制提示并刷新全部 client）明令避免的形状；下面验收 7「`activate` 后 `caches.keys()` 里不含 A」同样钉的是这个形状。归属 **WI-20**；须在 Phase 5 验收之前定下清理策略并同步改验收 7。（⬛ 2026-10-02：015 CLI 侧把这条登记为 [015 §6 Q16](../20260816-tech-stack-migration/tasks/015-launch-experience.md#6-开放问题)，接缝见同文 §2.3 末行；它只引用、不裁，裁定仍归本 WI。）
 
 **涉及 testid**：无。
 

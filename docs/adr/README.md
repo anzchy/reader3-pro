@@ -23,6 +23,7 @@
 | [0014](0014-bounded-testid-enumeration.md) | 有界元素集合逐个枚举唯一 testid | Accepted | Prospective | None | 删 `data-modal`/`data-sheet`；复合选择器只留给无界 id |
 | [0015](0015-per-book-write-coordination.md) | 每书写协调（书锁） | Accepted | Prospective | Partial | `books/.locks/` 下 SH/EX 书锁，书锁 → 资源锁；不复活、身份复核、2 秒预算后 409 |
 | [0016](0016-generation-directory-publish.md) | 书目录发布：generation 目录＋单指针 | Proposed | Prospective | None | `gen/{g}/` ＋ 根 `manifest.json` 一次 `os.replace` 提交；GC 延后一代；迁移不删平铺文件 |
+| [0017](0017-data-home-resolution.md) | 数据家：书库与设置文件的统一定位 | Proposed | Prospective | None | 显式路径胜出 → 已有绑定 → 首次运行绑 cwd 现成书库或 `~/Reader3/`；多候选就停，不迁移不合并 |
 
 「合规」是 **Current compliance**：Full＝代码今天就这样；Partial＝部分落地，缺口在该文的 Migration Strategy；None＝尚未实现（Proposed 才会出现）。
 

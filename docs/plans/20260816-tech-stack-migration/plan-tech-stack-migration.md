@@ -732,7 +732,7 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 | M3 | Phase 3 存储迁移 | `012-storage-format` | A |
 | M4a | Phase 4A 底座 + settings + library | `013-ts-frontend-shell` | **B**（WI-9 – WI-13） |
 | M4b | Phase 4B 阅读器 ＋ 书库侧延后验收 | `014-ts-frontend-reader` | **B**（WI-14 – WI-19，含插入项 WI-16b） |
-| M5 | Phase 5 launch + PWA | `015-launch-experience` | A（`reader3 launch`）＋ **B**（PWA，WI-20） |
+| M5 | Phase 5 launch + PWA | `015-launch-experience` | A（`reader3 launch`；⬛ 2026-10-02：[任务文件](./tasks/015-launch-experience.md)已写，§6 全部裁定（Q16 归 WI-20），分支未开；数据家规则见 [ADR-0017](../../adr/0017-data-home-resolution.md)，Proposed）＋ **B**（PWA，WI-20） |
 | M1b-债 | 欠账 #22 字号/间距慢一拍（合入 009 后、冻结 G2 前的一条独立小分支） | `016-settings-apply-order` | A（兑付记在 [`tasks/009` 欠账表 #22](./tasks/009-e2e-annotations.md)，不另开 task 文件） |
 | M2-债 | 011 合入后的全量审计欠账：44 条 findings 中判为 must / should 的 22 条 | `017-audit-followup` | A（任务展开写在 [`tasks/017-audit-followup.md`](./tasks/017-audit-followup.md)） |
 | M4a-债 | 013 延后的后端半边中**不依赖 012 存储格式**的四条（#51 / #56 / #58 / #53）＋ 每书写协调契约 ＋ 009 欠账 #31 收尾对账（job 已于 2026-09-20 建成并结清；018 只核验合并头与改掉过期措辞） | `018-library-routes` | A（[任务文件](./tasks/018-library-routes.md)，2026-09-26 评审通过；🚧 2026-09-30 分支已开、进行中；⬛ 2026-10-02：WI-1 – WI-3 已合入（PR #33，`c08317b`），WI-4 – WI-8 未做，合入记录见任务文件 §8；分拆裁定见 [`tasks/012` §6 D1](./tasks/012-storage-format.md)） |
@@ -765,14 +765,15 @@ must / should 两桶共 22 条落在本分支。**它从 `master` 开、不回 0
 它跑在 `master` 上，改一个字节就清零 soak。~~（⬛ 2026-09-28：随 012 门槛 F 放宽，018 碰冻结集不再禁止，
 代价是 012 开工前要在新 `suite_hash` 上重跑一批；判据见本文 §7 与 [012 §4 门槛 F](./tasks/012-storage-format.md)。）兑付方改写是 [018 WI-1](./tasks/018-library-routes.md)（一个 commit）；~~在它合入之前 009 表仍写 012，以本段为准。~~（⬛ 2026-09-30：已由 [018 WI-1](./tasks/018-library-routes.md) 改完，009 表四行兑付方列写 `018-library-routes`。）
 
-**后端分支**的任务清单放在本文件夹的 `tasks/{分支名}.md`，不写进本文。今天存在七个：
+**后端分支**的任务清单放在本文件夹的 `tasks/{分支名}.md`，不写进本文。今天存在~~七个~~八个（⬛ 2026-10-02：加 015 的 CLI 半边）：
 [`007-hygiene-and-contracts.md`](./tasks/007-hygiene-and-contracts.md)、
 [`008-test-safety-net.md`](./tasks/008-test-safety-net.md)、
 [`009-e2e-annotations.md`](./tasks/009-e2e-annotations.md)、
 [`011-backend-refactor.md`](./tasks/011-backend-refactor.md)、
 [`012-storage-format.md`](./tasks/012-storage-format.md)（~~骨架，2026-09-26~~ ~~⬛ 2026-09-30：评审进行中，Q7+ 待裁；分支未开~~ ⬛ 2026-10-02：评审完成，Q1–Q13 全部裁定；分支未开）、
 [`017-audit-followup.md`](./tasks/017-audit-followup.md)、
-[`018-library-routes.md`](./tasks/018-library-routes.md)（~~骨架，2026-09-26~~ ~~⬛ 2026-09-30：评审通过、待开工~~ 🚧 2026-09-30：分支已开、进行中；⬛ 2026-10-02：WI-1 – WI-3 已合入 PR #33，余下 WI-4 – WI-8）。
+[`018-library-routes.md`](./tasks/018-library-routes.md)（~~骨架，2026-09-26~~ ~~⬛ 2026-09-30：评审通过、待开工~~ 🚧 2026-09-30：分支已开、进行中；⬛ 2026-10-02：WI-1 – WI-3 已合入 PR #33，余下 WI-4 – WI-8）、
+[`015-launch-experience.md`](./tasks/015-launch-experience.md)（⬛ 2026-10-02：只写 CLI 半边；评审完成，§6 全部裁定，Q16 归 WI-20；分支未开）。
 
 > ⬛ 2026-09-30：**冻结集欠账窗口**（009 #49 / #50、017 finding #10、009 欠账表中 PR #28 遗留那一行；排在 `018` 之前，
 > 理由与位置见[进度盘](../20260824-frontend-backend-plan-progress.md)）走一条 016 式的小分支，~~**编号在它开分支时才在上表分配**，
@@ -782,7 +783,7 @@ must / should 两桶共 22 条落在本分支。**它从 `master` 开、不回 0
 `### WI-N:` 的形式直接写在 [前端计划正文](../20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) 里，
 这样 `/tdd-guardian:workflow` 能把整份计划当成单一输入来跑。
 
-其余一个（015 的后端部分）**故意还没写**。评审第 9 条要求补齐骨架，
+~~其余一个（015 的后端部分）**故意还没写**。~~（⬛ 2026-10-02：已写，见上列。下面的理由保留作来历。）评审第 9 条要求补齐骨架，
 处置方式是**领先一个分支即时补**，不是现在一次写完：骨架的价值来自它写下的
 事实（哪些代码还在、哪些已经被上一个分支改掉了），而 011 的事实要等 008 落地才成立。
 提前写只会得到一份开工时已经过期的清单。开某个分支前补它自己那份。

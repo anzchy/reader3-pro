@@ -49,7 +49,7 @@
 | **4** | `012-storage-format` | Phase 3 | 后端 | **📝** ~~任务书骨架已写（2026-09-26，待审）~~ ~~评审进行中：D1、Q1–Q6 已裁定，Q7+ 待裁~~ ⬛ 2026-10-02：评审完成，D1、Q1–Q13 全部裁定；分支未开（⬛ 2026-09-30）；~~仍被 soak 挡着开工。~~（~~⬛ 2026-09-29：soak 批次已满足，见 [`soak-log.md`](20260816-tech-stack-migration/tasks/soak-log.md) 批次声明；仍待 018 合入、机制闸第 1 项在最终候选 `commit` 上通过。~~ ~~⬛ 2026-09-30：仍待 018 合入与~~ ⬛ 2026-10-02：018 首段已合入（每书锁在 `master` 上）；仍待 [012 开工核验](20260816-tech-stack-migration/plan-tech-stack-migration.md#012-开工核验2026-09-30-维护者裁定)——开分支的那个 `commit` 上新跑一批 ＋ 机制闸第 1 项（`suite_hash` 已变，含第 3 项）；012 能否在 018 WI-4 – WI-8 合入前开分支，未裁定。）欠账 #35 / #54 / #55 ＋ 末波 #57 / #52 | [tasks/012](20260816-tech-stack-migration/tasks/012-storage-format.md) |
 | **5** | `013-ts-frontend-shell` | Phase 4A | **前端** | **✅ 已合入 `master`**（2026-09-26，PR #25，合并 commit `1ec5ff7`）。WI-9 – WI-13 ＋ Track D 实现类；阅读器侧与依赖后端的半边钉给 014（WI-16 / WI-16b）与 012 欠账 #51–#58（其中 #51 / #53 / #56 / #58 于 2026-09-26 改由 018 兑付） | 前端计划 §4 |
 | **6** | `014-ts-frontend-reader` | Phase 4B | **前端** | **⬜** WI-14 – WI-19（含插入项 WI-16b）已定义 | 前端计划 §4 |
-| **7** | `015-launch-experience` | Phase 5 | 后端 ＋ **前端** | **⬛ / ⬜** CLI 侧未写；PWA 侧是 WI-20 | 前端计划 §4 |
+| **7** | `015-launch-experience` | Phase 5 | 后端 ＋ **前端** | ~~**⬛ / ⬜** CLI 侧未写~~ **⬜** ⬛ 2026-10-02：CLI 侧任务书已写、§6 全部裁定（Q16 归 WI-20），分支未开，按依赖图排在 014 之后；数据家规则 [ADR-0017](../adr/0017-data-home-resolution.md)（Proposed）。PWA 侧是 WI-20 | [tasks/015](20260816-tech-stack-migration/tasks/015-launch-experience.md)（CLI）；前端计划 §4（PWA） |
 
 **⟂ = 可随时插入**，不占顺位。
 
@@ -90,11 +90,11 @@
    规则唯一定义处是[迁移计划 §7「012 开工核验」](20260816-tech-stack-migration/plan-tech-stack-migration.md#012-开工核验2026-09-30-维护者裁定)，结果只记在 soak-log。
 4. **`012-storage-format`**：#35（了结 011 的 ⚠️ #7）/ #54 / #55，末波 #57 / #52。范围见 [tasks/012](20260816-tech-stack-migration/tasks/012-storage-format.md)。
 5. **`014-ts-frontend-reader`**：严格排在 012 之后，**不提前开**——依赖图上 Phase 3 在 4B 之前；WI-16b 还要 012 的 #54 / #55 / #57 与 018 的 #56 / #58。
-6. **`015-launch-experience`**：CLI 侧计划未写（⬛），PWA 侧是 WI-20。
+6. **`015-launch-experience`**：~~CLI 侧计划未写（⬛）~~（⬛ 2026-10-02：CLI 侧任务书已写，见 [tasks/015](20260816-tech-stack-migration/tasks/015-launch-experience.md)；分支未开），PWA 侧是 WI-20。
 
 **可随时插入、不占顺位（⟂）**——都不开 012 分支、不写 012 的生产代码：
 - ~~012 的剩余评审项（[012 §6](20260816-tech-stack-migration/tasks/012-storage-format.md) Q7 起）~~（⬛ 2026-10-02：Q7–Q13 已全部裁定）、`/tdd-guardian:design-tests` 测试矩阵、Q2 提交机制原型（⬛ 2026-10-02 已出结果并裁定 B，见 [ADR-0016](../adr/0016-generation-directory-publish.md)）。
-- 015 CLI 侧的计划写作与隔离的 CLI 原型（写完顺位 7 由 ⬛ 变 ⬜；验收仍归 015）。
+- ~~015 CLI 侧的计划写作~~（⬛ 2026-10-02：已写，顺位 7 由 ⬛ 变 ⬜）与隔离的 CLI 原型（验收仍归 015）。
 - 功能台账审计的 Medium 项：Summary 表的 Evidence 列解析了但从不校验（`scripts/build_feature_ledger.py`）——⬛ 2026-10-01 分配为 `022-ledger-evidence`（迁移计划 §9）；**✅ 2026-10-01 已合入**，PR #31，合并 commit `ebf4ad7`，分支尖 `7ce1bed`。`--check` 现按规则 7 校验 Summary 的 Evidence 列（只校形式、不核存在）。
 - `020-debug-state`（⬛ 2026-09-30 分配；**✅ 2026-10-01 已合入**，PR #30，合并 commit `40e807d`，分支尖 `7fc0dbf`）：`Reader3Epub.getDebugState()` 只读观测面，计划见 [`20260928-debug-state-getter.md`](20260928-debug-state-getter.md)。只改 `epub-renderer.js` 与新测试文件，不碰冻结集；宜在 `014` 开工前合入。与 `019` 都改 `lint_e2e_groups.py` 的计数常量，后合入的一方 rebase 时按实测值重数。
 - `021-e2e-lock`（⬛ 2026-10-01 分配；**✅ 2026-10-01 已合入**，PR #32，合并 commit `e3dde84`，分支尖 `f9b3d1f`）：e2e lane 的 `command` 改经 `scripts/e2e_lock.py`（fcntl 锁 `~/.cache/reader3-e2e.flock`，进程退出即由内核释放；占用时 BUSY 退出码 75；`GITHUB_ACTIONS` 下不加锁），取代手工 mkdir 锁。只改该脚本、其单测、`config.json` 里 e2e lane 的 `command` 一个字段与 `CLAUDE.md` 的 e2e 一行；不碰冻结集。`018` rebase 到其后即改用新包装。
