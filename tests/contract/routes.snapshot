@@ -16,6 +16,7 @@
 # MOUNT 是 Starlette 的挂载点（子应用），没有 HTTP 方法，故单列一行。
 DELETE /api/ai/conversations/{book_uuid}/{conversation_id}
 DELETE /api/collections/{collection_id}
+DELETE /api/library/{book_id}
 DELETE /api/notes/{book_id}/{chapter_index}/{note_id}
 DELETE /api/settings/providers/{provider_name}
 GET /

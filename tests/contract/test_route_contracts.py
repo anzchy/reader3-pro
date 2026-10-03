@@ -269,6 +269,12 @@ LIBRARY_CASES = [
     ),
     ContractCase("GET", "/api/library/stats?scope=bogus", 400),
     ContractCase("GET", "/api/library/stats?scope=collection:{missing_collection_id}", 404),
+    # 018 WI-5c (W5-12): DELETE /api/library/{book_id}. No 204 / 409 rows: those are
+    # covered with real trees in test_library_delete_route.py (C-1, C-5, C-6, C-14).
+    ContractCase("DELETE", "/api/library/{missing_book_id}", 404, must_contain=("Book not found",)),
+    ContractCase("DELETE", "/api/library/notabook", 400),
+    ContractCase("DELETE", "/api/library/{book_id}?delete_conversations=maybe", 400),
+    ContractCase("DELETE", "/api/library/{book_id}?delete_conversations=1", 400, note="W5-8：只认 true/false（不分大小写）"),
 ]
 
 

@@ -187,12 +187,12 @@ Paths are written out in full from the repo root (e.g. `src/reader3_app/reader3.
 
 #### F-005 3-pane library — accepted
 - **What:** library page at `GET /` — grid/list view, sort, select mode, format counts, Dedao-style UI.
-- **Routes:** `GET /`, `GET /api/library`, `MOUNT /static`
-- **Code:** `src/reader3_app/web/routers/library.py`, `src/reader3_app/web/routers/library_books.py`, `frontend/src/library/`
-- **Tests:** `tests/e2e/shell_4a/`, `tests/e2e/baseline_1b/test_library_nav_and_collections.py`
+- **Routes:** `GET /`, `GET /api/library`, `DELETE /api/library/{book_id}`, `MOUNT /static`
+- **Code:** `src/reader3_app/web/routers/library.py`, `src/reader3_app/web/routers/library_books.py`, `src/reader3_app/library_delete.py`, `frontend/src/library/` · ADR-0015, ADR-0018
+- **Tests:** `tests/e2e/shell_4a/`, `tests/e2e/baseline_1b/test_library_nav_and_collections.py`, `tests/unit/test_library_delete.py`, `tests/unit/test_library_delete_names.py`, `tests/unit/test_library_delete_finalize.py`, `tests/unit/test_library_delete_sweep.py`, `tests/unit/test_library_delete_caches.py`, `tests/unit/test_library_delete_crash.py`, `tests/unit/test_library_delete_entry_points.py`, `tests/unit/test_library_delete_layering.py`, `tests/unit/test_project_conversation_book_lock.py`, `tests/contract/test_library_delete_route.py`, `tests/contract/test_collections_delete_race.py` (the delete rows: 018 WI-5, unit + contract lanes only, no e2e)
 - **Confirm:** `uv run reader3-server`, open `http://127.0.0.1:8123/`: a sidebar (Types / Collections), the book grid, and a right panel with Dashboard / Chat / Search tabs. `▦` / `☰` switch grid and list, `A→Z` sorts, `✓` enters select mode and shows the bulk bar (Select all / Clear / Add to collection / Index selected).
 - **Evidence:** 004 (PR #12/#13) · 005 restyle (PR #14) · TS port 013 WI-13 (PR #25)
-- **Limits:** no upload/import (#57), delete (#58), export (#53) — planned in 012/018 (see F-034, F-035, F-036).
+- **Limits:** no upload/import (#57) or export (#53) — planned in 012/018 (see F-034, F-036). Book delete (#58) is the route `DELETE /api/library/{book_id}` from 018 WI-5 on branch `018-library-routes`, not yet merged: Status / Evidence here do not cover it, and F-035 is re-graded at the merge write-back. No UI calls it yet (FB-L18 is the frontend half). Known limits of the delete path: (a) W5-22: a missing or non-string `last_updated` compares as `""` on the delete path, which differs from the newer-wins key `str(v or "")` in `_dedupe_conversation_list` (`src/reader3_app/ai/conversations.py:377`, cited as `:344` in the W5-22 ruling before 018 WI-5b moved it; an int `7` keys as `""` there vs `"7"` here); (b) a live chromadb collection object held elsewhere keeps stale handles — only the process-wide cached chromadb system for the folder is retired; (c) a conversation published into the project root keeps its source file mode; (d) `library_delete.delete_book` returns `None`: a post-commit finalize failure or a conserved tombstone is only logged and left for the next sweep (the response is still 204); (e) the `/api/library/stats` cache is guarded by a stats generation counter bumped on every delete — an invalidation not in the W5-5 list.
 
 #### F-006 Collections — accepted
 - **What:** create/rename/delete collections; add/remove books (`/api/collections*`).

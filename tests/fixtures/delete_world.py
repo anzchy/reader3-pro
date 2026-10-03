@@ -904,3 +904,29 @@ def sweep_child_main(books: str, out_path: str) -> None:
     web = sorted(n for n in sys.modules if n == "reader3_app.web" or n.startswith("reader3_app.web."))
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump({"report": report_dict(report), "web": web}, f)
+
+
+# --------------------------------------------------------------------------- 5c: EX holder that renames (C-9(b))
+
+
+def hold_ex_rename_release(
+    books_dir: str, folder: str, away: str, rename_after_s: float, release_after_s: float, ready_evt, result_path: str
+) -> None:
+    """Take EX (``delete``) on ``folder``, signal ready, rename it to ``away`` after
+    ``rename_after_s``, then release ``release_after_s`` after acquiring."""
+    import time
+
+    from reader3_app import book_lock
+
+    try:
+        with book_lock.acquire(books_dir, folder, mode=book_lock.EXCLUSIVE, holder="delete"):
+            started = time.monotonic()
+            ready_evt.set()
+            time.sleep(rename_after_s)
+            os.rename(os.path.join(books_dir, folder), os.path.join(books_dir, away))
+            time.sleep(max(0.0, release_after_s - (time.monotonic() - started)))
+    except BaseException as exc:  # noqa: BLE001 - the outcome is the observation
+        write_result(result_path, {"outcome": f"error:{type(exc).__name__}:{exc}"})
+        ready_evt.set()
+        return
+    write_result(result_path, {"outcome": "released"})
