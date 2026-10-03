@@ -1,6 +1,6 @@
 # Feature Ledger
 
-**Synced:** 2026-10-02 at commit `94dd1e0`
+**Synced:** 2026-10-03 at commit `22e387a`
 
 The as-built record of what Reader3 Pro **can do today**: one row per user-visible (or
 operator-visible) capability, where it lives, what tests prove it, and the evidence it was
@@ -361,9 +361,9 @@ Paths are written out in full from the repo root (e.g. `src/reader3_app/reader3.
 - **Routes:** `GET /api/notes/{book_id}`, `GET /api/notes/{book_id}/{chapter_index}`, `POST /api/notes/{book_id}/{chapter_index}`, `PUT /api/notes/{book_id}/{chapter_index}/{note_id}`, `DELETE /api/notes/{book_id}/{chapter_index}/{note_id}`
 - **Code:** `src/reader3_app/notes_service.py`, `src/reader3_app/models/annotations.py`, `src/reader3_app/web/static/js/annotations.js` · ADR-0005
 - **Tests:** `tests/e2e/baseline_1b/test_notes_write_failure_is_attributable.py`, `tests/e2e/baseline_1b/test_stored_cfi_must_agree_with_quote.py`
-- **Confirm:** In the reader select a sentence: the toolbar offers color dots, Marker / Wavy / Underline, Add Note, Copy, Delete, Ask AI. Pick Marker, then Add Note → "Write your thoughts..." → Save; the rail's Notes button lists it (「共N条笔记」), it survives a reload, and `books/{book_id}_data/notes.json` holds it.
+- **Confirm:** In the reader select a sentence: the toolbar offers color dots, Marker / Wavy / Underline, Add Note, Copy, Delete, Ask AI. Pick Marker: the sentence is highlighted and the toolbar closes. Select a different sentence, pick Add Note → "Write your thoughts..." → Save; the rail's Notes button lists both (「共N条笔记」), they survive a reload, and `books/{book_id}_data/notes.json` holds them.
 - **Evidence:** 006 · closed selection toolbar stays closed, PR #28 (`26bce1d`, merge `865e7eb`) · create failures (rejected POST and the two pre-request guards) report into the notes diagnostic ring, 019 (`d259f6f`, 009 #50)
-- **Limits:** text-only anchoring, CFI always null (#6–#8); `PUT` accepts only `note_text` (#29). Reader-side split is 014. The notes panel's 点评此书 button is dead (see F-040).
+- **Limits:** text-only anchoring, CFI always null (#6–#8); `PUT` accepts only `note_text` (#29); Add Note from a toolbar reopened by clicking an existing mark saves nothing or a one-character quote (#70). Reader-side split is 014. The notes panel's 点评此书 button is dead (see F-040).
 
 #### F-019 Note write-conflict handling — partial
 - **What:** ETag optimistic concurrency on note writes, with a conflict dialog (DEG-S5).
@@ -496,6 +496,11 @@ Paths are written out in full from the repo root (e.g. `src/reader3_app/reader3.
 - **Limits:** with `READER3_TOKEN` set these pages need the token, which a browser cannot send (F-023).
 
 ## Audit log
+
+### 2026-10-03 — Live pass of F-009 / F-011 / F-018 via control.py on branch 025 (`22e387a`)
+- **Scope:** the `Confirm` bullets of F-009 and F-018 and the `Tests` of F-011, driven by the new `.claude/skills/verify-reader3/scripts/control.py` (sandboxed `reader3-server` on a free port, temp books dir, sandbox `READER3_AI_SETTINGS`, Ollama-shaped AI stub; gstack `/browse` for clicks). Book: the synthetic `smoke_data` plus one unindexed copy. Status and Evidence of every row unchanged.
+- **Found:** F-009 PASS (card → `/read/{book_id}/0`; `↓` changes section with exactly one `GET /api/notes/{book_id}/1`; `getDebugState()` read through the browse JS hook). F-011 PASS on the pytest runner only (`tests/unit/test_highlight_utf16_offsets.py`, 8 passed). F-018: toolbar, Marker (one `POST … 201`, toolbar closes), Add Note on a fresh selection, 「共2条笔记」, reload, sandbox `notes.json` all PASS, so the `Confirm` text now reads "pick Marker; select a different sentence; Add Note". **Still deviating:** reopening the toolbar by clicking the mark and then Add Note → Save sent no request — the `create-empty-quote` guard fired (2/2; on 2026-10-01 the same path saved a one-character quote). Root cause in `annotations.js` `onAnnotationClick`: `range.selectNodeContents(mark)` gives a range whose containers are the element, not its text nodes, so the offsets collapse — now 009 debt #70. Also seen: at 1280×720 the notes panel (`position: fixed`, z 40) covers the right rail (z 30), so the Notes button cannot be clicked to close the panel (Playwright hit-test lands on `.notes-body`). Environment, not product: with `HF_HUB_OFFLINE=1` transformers 4.57.3 raises `OfflineModeIsEnabled` even for the cached MiniLM model, so `book index` and any semantic search or `ai ask` against an indexed book fail inside the always-offline sandbox; `--allow-download` works around it for indexing only.
+- **Not audited:** evidence is local and gitignored (`.claude/verify-evidence/20261003-04*-F-0{09,11,18}/`, each with `result.txt`). F-011's e2e and vitest runners were not run through `lane` (Playwright Chromium not installed in this venv; `npm test` run separately, 279 passed). A real mouse-drag selection was not exercised; `reader select` uses the DOM Selection API. The TOC filter and back arrow of F-009 were not re-run today (passed 2026-10-01).
 
 ### 2026-10-01 — Live pass of F-009 and F-018 Confirm via verify-reader3 (`1844f66`)
 - **Scope:** the `Confirm` bullets of F-009 and F-018 executed in a running app via the project skill `.claude/skills/verify-reader3/` (sandboxed `reader3-server` on a free port, temp books dir, sandbox `READER3_AI_SETTINGS`; driven with gstack `/browse`). Books: the synthetic `smoke_data` (e2e corpus `build_epub2`) and one real 32-section EPUB. No row's Status or Evidence changed.
