@@ -742,6 +742,7 @@ Phase 3（存储格式 + 指纹）与 Phase 4B（阅读器外壳重写）都在�
 | ⟂ | 功能台账 Summary 表 Evidence 列校验：`scripts/build_feature_ledger.py` 解析了该列却从不校验，补上校验并按规则 7 订正不合格行（2026-10-01 分配；只碰该脚本、其单测与台账数据，不碰冻结集，不另开 task 文件） | `022-ledger-evidence` | A |
 | M1b-债 | 012 开工核验前的冻结集准备：009 欠账 #65 / #66 / #67 / #68（2026-10-01 分配；本轮冻结集唯一 owner；兑付记在 009 欠账表，不另开 task 文件；合入排在 `018` 之后，rebase 时重数分组常量；⬛ 2026-10-02：✅ 已合入，PR #34，合并 commit `cc8ad27`，兑付见 009 欠账表 #65–#68） | `023-frozen-set-prep` | A |
 | ⟂ | 012 Q2 提交机制原型：持久化恢复日志 vs generation 目录 ＋ 指针原子换，崩溃注入对比，顺带给 Q8 建议（2026-10-01 分配；产物只在 `tasks/evidence/q2-commit-prototype/`，不进 `src/`，不写裁定格与 ADR，不另开 task 文件；⬛ 2026-10-02：✅ 已合入，PR #35，合并 commit `94dd1e0`；裁定见 [012 §6 Q2](./tasks/012-storage-format.md) 与 ADR-0016） | `024-q2-commit-prototype` | A |
+| ⟂ | `verify-reader3` 的控制 CLI 与 Feature Map：`.claude/skills/verify-reader3/scripts/control.py`（仅标准库，每条命令输出一个 JSON 信封）取代三个 shell 脚本，按 `F-NNN` 建 `references/features/`；沙箱内活体验证，不读真实 `books/` 与 `config/ai_settings.json`（2026-10-02 分配；只碰该技能目录、`tests/unit` 下它的单测、`.gitignore` 一行与台账 F-018 的 Confirm 措辞；不进 `src/`，不碰冻结集，不另开 task 文件） | `025-verify-control` | A |
 
 M1b 与 MD 可与 M1/M2 交错推进；M4a 可与 M2/M3 交错推进；**M3 与 M4b 严格串行**。
 
