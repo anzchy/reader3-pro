@@ -34,6 +34,7 @@ from delete_world import (
     CID_COLLIDE,
     CID_FRESH,
     D_MID,
+    D_NEW,
     U,
     U2,
     V,
@@ -50,6 +51,7 @@ from delete_world import (
     ld,
     make_book,
     new_world,
+    put_file,
     raw_conv,
     read_collections,
     seat_resolver,
@@ -618,6 +620,40 @@ def test_c14_unreadable_conversation_refuses_409_and_book_stays_listed(rw, row, 
     assert "Retry-After" not in resp.headers
     detail = _detail(resp)
     assert detail == f"unreadable conversation file: {ZERO_NAME}", resp.text
+    assert str(rw.books) not in str(detail)
+    entry = _entry(_library(rw), "a_data")
+    assert set(entry) == FULL_KEYS and entry["title"] == "Alpha", entry
+    assert tree_bytes(rw.books / "a_data") == book_before
+    assert tree_bytes(rw.R) == r_before
+    assert (intents(rw.books), tombstones(rw.books)) == ([], [])
+
+
+# =========================================================================== CP2 additions (WI-5 test-review gaps)
+
+
+def test_c14_bad_target_array_refuses_409_and_book_stays_listed(rw):
+    """C-14 (CP2 M2, W5-21): the existing ``R/U/CID_COLLIDE.json`` is valid JSON but ``[]`` (not an
+    object) -> false-mode DELETE is 409 with no ``Retry-After``, the detail names the basename, and the
+    book, R and the dot-names are exactly as before."""
+    collide = f"{CID_COLLIDE}.json"
+    make_book(
+        rw.books,
+        "a_data",
+        title="Alpha",
+        book_uuid=U,
+        convs=[conv(CID_FRESH, D_MID, "valid"), conv(CID_COLLIDE, D_NEW, "collide-book")],
+    )
+    make_book(rw.books, "b_data", title="Beta", body="BBBB beta", book_uuid=V)
+    put_file(rw.R / U / collide, b"[]")
+    book_before = tree_bytes(rw.books / "a_data")
+    r_before = tree_bytes(rw.R)
+
+    resp = rw.client.delete("/api/library/a_data")
+
+    assert resp.status_code == 409, resp.text
+    assert "Retry-After" not in resp.headers
+    detail = _detail(resp)
+    assert detail == f"unreadable conversation file: {collide}", resp.text
     assert str(rw.books) not in str(detail)
     entry = _entry(_library(rw), "a_data")
     assert set(entry) == FULL_KEYS and entry["title"] == "Alpha", entry

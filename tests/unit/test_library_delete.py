@@ -24,6 +24,8 @@ from delete_world import (
     CID_FRESH,
     D_MID,
     D_NEW,
+    READABLE_LU_KIND_IDS,
+    READABLE_LU_KINDS,
     SCHEMA_KIND_IDS,
     SCHEMA_KINDS,
     SUBPROCESS_TIMEOUT_S,
@@ -1034,3 +1036,40 @@ def test_h3c_server_forget_folder_is_resolved_at_call_time(tmp_path, monkeypatch
     w.delete(mode=False)
 
     assert "a_data" not in r2._folder_to_uuid
+
+
+# =========================================================================== CP2 additions (WI-5 test-review gaps)
+#
+# Additive only: the recorded cases above are unchanged.
+
+
+def test_d8b_unresolvable_uuid_leaves_the_files_own_uuid_dir_untouched(tmp_path, monkeypatch, chroma_env):  # noqa: F811
+    """D-8(b) (CP2 L1, W5-23): with no uuid on disk, true mode must not touch ``R/V`` (V is a
+    conversation file's own uuid). ``R/V/x.json`` is seeded first, so "no R/V afterwards" cannot
+    pass vacuously: R/V -- and R as a whole -- stay byte-identical."""
+    w, layout, probe = _d8_world(tmp_path, monkeypatch, "unresolvable_uuid")
+    put_file(w.R / V / "x.json", b'{"x": 1}')
+    rv_before = tree_bytes(w.R / V)
+    r_before = tree_bytes(w.R)
+
+    w.delete(mode=True)
+
+    assert "a_data" not in listing(w.books)
+    assert not (w.books / "a_data").exists()
+    assert tree_bytes(w.R / V) == rv_before
+    assert (w.R / V / "x.json").read_bytes() == b'{"x": 1}'
+    assert tree_bytes(w.R) == r_before
+
+
+@pytest.mark.parametrize(("kind", "klass", "reason"), READABLE_LU_KINDS, ids=READABLE_LU_KIND_IDS)
+def test_d8a_null_and_empty_last_updated_are_readable(tmp_path, monkeypatch, chroma_env, kind, klass, reason):  # noqa: F811
+    """D-8(a) (CP2 L3, W5-17): ``last_updated: null`` and ``""`` pass the in-lock pre-scan and delete."""
+    w, layout, probe = _d8_world(tmp_path, monkeypatch, kind)
+
+    w.delete(mode=False)
+
+    assert "a_data" not in listing(w.books)
+    assert dot_entries(w.books) == []
+    assert _files(tree_bytes(w.R)) == {f"{U}/{name}": payload for name, payload in layout.convs}
+    assert len(layout.convs) == 3
+    assert read_collections(w.coll) == {"c1": []}

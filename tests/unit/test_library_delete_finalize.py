@@ -25,6 +25,8 @@ from delete_world import (
     D_NEW,
     D_OLD,
     EMPTY_REPORT,
+    READABLE_LU_KIND_IDS,
+    READABLE_LU_KINDS,
     SCHEMA_KIND_IDS,
     SCHEMA_KINDS,
     U,
@@ -828,3 +830,190 @@ def test_f15a_delete_path_dated_copy_beats_undated_incumbent(tmp_path):
     assert dot_entries(w.books) == []
     assert _files(tree_bytes(w.R)) == {f"{U}/{t_name}": t_bytes}
 
+
+
+# =========================================================================== CP2 additions (WI-5 test-review gaps)
+#
+# Additive only: the recorded cases above are unchanged. Each block names the CP2 gap and ruling.
+
+
+# --------------------------------------------------------------------------- M1: F-15, the BOOK copy is the non-string 7 (W5-22)
+
+F15_INT_BOOK_ROWS = {
+    # row: (E last_updated, T last_updated, winner). T = 7 keys as "", the oldest value.
+    "i-E-dated-T-int7": (D, 7, "E"),
+    "ii-E-undated-T-int7": (ABSENT, 7, "E"),  # "" vs "": a tie keeps the incumbent (strict >)
+}
+
+
+@pytest.mark.parametrize("row", list(F15_INT_BOOK_ROWS))
+def test_f15_non_string_book_copy_keys_as_oldest(tmp_path, row):
+    """F-15 (CP2 M1, W5-22): a book copy dated ``7`` keys as "" on the book side too, so the
+    existing copy wins against a dated incumbent and on the "" tie. Kills a mutation that keys
+    the book side with ``str(raw or "")`` ("7" sorts above "2026...") and the existing side with lu_key."""
+    e_lu, t_lu, winner = F15_INT_BOOK_ROWS[row]
+    w = new_world(tmp_path / "w")
+    e_bytes = conv(CID_COLLIDE, e_lu, "existing copy E")[1]
+    t_name, t_bytes = conv(CID_COLLIDE, t_lu, "book copy T")
+    put_file(w.R / U / t_name, e_bytes)
+    p = paired(w.books, "a_data", mode=False, uuid=U, root=w.R, coll=w.coll, book_uuid=U, convs=[(t_name, t_bytes)])
+
+    report = w.sweep()
+
+    assert report.finalized == [p.tomb.name]
+    assert report.failed == []
+    assert (w.R / U / t_name).read_bytes() == (t_bytes if winner == "T" else e_bytes)
+    assert not p.tomb.exists()
+    assert not p.intent.exists()
+
+
+# --------------------------------------------------------------------------- M2: bad_target_array (W5-21)
+
+
+def test_f11_bad_target_array_is_conserved_never_failed(tmp_path, monkeypatch, caplog):
+    """F-11 (CP2 M2, W5-21): an existing ``R/U/CID_COLLIDE.json`` that is valid JSON but ``[]``
+    is unreadable -> the tombstone is conserved (never ``failed``), tombstone + intent + R kept, every sweep."""
+    caplog.set_level(logging.DEBUG)
+    w, layout, p, resolver = _f11_world(tmp_path, monkeypatch, "bad_target_array", mode=False)
+    assert (w.R / U / f"{CID_COLLIDE}.json").read_bytes() == b"[]"
+    r_before = tree_bytes(w.R)
+    tomb_before, intent_before, coll_before = tree_bytes(p.tomb), p.intent.read_bytes(), w.coll.read_bytes()
+    maps_before = resolver_maps(resolver)
+
+    for n in range(2):
+        caplog.clear()
+        report = w.sweep()
+        assert report.failed == [], f"sweep {n}: {report_dict(report)}"
+        assert report.conserved == [p.tomb.name], f"sweep {n}: {report_dict(report)}"
+        assert report.finalized == []
+        assert tree_bytes(w.R) == r_before
+        assert tree_bytes(p.tomb) == tomb_before
+        assert p.intent.read_bytes() == intent_before
+        assert w.coll.read_bytes() == coll_before
+        assert resolver_maps(resolver) == maps_before
+        assert any(f"{CID_COLLIDE}.json" in msg for msg in _messages(caplog, logging.WARNING)), _messages(caplog)
+
+
+# --------------------------------------------------------------------------- M3: live same-name book + unreadable conversation (W5-16, law 7)
+
+
+@pytest.mark.parametrize("kind", UNREADABLE_KIND_IDS)
+def test_f12_live_same_name_with_unreadable_conversation_is_conserved(
+    tmp_path, monkeypatch, caplog, chroma_env, kind  # noqa: F811
+):
+    """F-12 x F-11 (CP2 M3, W5-16 / law 7): a live re-imported a_data (U2) does NOT turn a failed
+    pre-scan into a finalize. W5-13 applies: R byte-identical, tombstone + intent kept, no collections /
+    resolver / chroma / invalidator effect, the live book untouched -- on every sweep."""
+    caplog.set_level(logging.DEBUG)
+    m = isolate_invalidators(monkeypatch)
+    w = new_world(tmp_path / "w")
+    layout = schema_kind_layout(kind)
+    put_file(w.R / U / f"{CID_COLLIDE}.json", layout.target)
+    write_collections(w.coll, {"C": ["a_data"]})
+    uuid = None if layout.uuid_null else U
+    p = paired(w.books, "a_data", mode=False, uuid=uuid, root=w.R, coll=w.coll, book_uuid=U, convs=layout.convs)
+    make_book(w.books, "a_data", title="Alpha 2", body="AAAA again", book_uuid=U2)
+    assert "a_data" in listing(w.books), "precondition: the same-name book is live"
+    resolver = seat_resolver(monkeypatch, w.books)
+    probe = IdentityProbe(resolver, "a_data", U2, w.books / "a_data" / "chroma_db")
+
+    scoped, global_ = InvalidatorRecorder(), InvalidatorRecorder()
+    m.register_invalidator(scoped, folder_scoped=True)
+    m.register_invalidator(global_, folder_scoped=False)
+
+    r_before = tree_bytes(w.R)
+    tomb_before, intent_before, coll_before = tree_bytes(p.tomb), p.intent.read_bytes(), w.coll.read_bytes()
+    live_before = tree_bytes(w.books / "a_data")
+    outside_before = _outside_r_and_books(w.root)
+
+    for n in range(2):
+        caplog.clear()
+        report = w.sweep()
+        assert report.conserved == [p.tomb.name], f"sweep {n}: {report_dict(report)}"
+        assert report.finalized == []
+        assert report.failed == []
+        assert tree_bytes(w.R) == r_before
+        assert _outside_r_and_books(w.root) == outside_before
+        assert tree_bytes(p.tomb) == tomb_before
+        assert p.intent.read_bytes() == intent_before
+        assert w.coll.read_bytes() == coll_before
+        assert read_collections(w.coll) == {"C": ["a_data"]}
+        assert scoped.calls == [] and global_.calls == []
+        assert resolver._folder_to_uuid["a_data"] == U2
+        assert resolver._uuid_to_folder[U2] == "a_data"
+        probe.assert_untouched()
+        assert tree_bytes(w.books / "a_data") == live_before
+        assert any(layout.bad_name in msg for msg in _messages(caplog, logging.WARNING)), _messages(caplog)
+
+
+# --------------------------------------------------------------------------- L2: F-12 still runs the global invalidation (W5-16)
+
+
+def _warm_live_caches(books, folder="a_data"):
+    from reader3_app import book_store, search_service
+
+    book_store.load_book_cached(folder, str(books))
+    search_service.load_book_index(folder, str(books), case_sensitive=False)
+    assert book_store.load_book_cached.cache_info().currsize >= 1
+    assert search_service.load_book_index.cache_info().currsize >= 1
+
+
+def test_f12_live_same_name_still_runs_global_invalidation(tmp_path, monkeypatch, caplog):
+    """F-12 (CP2 L2, W5-16): with a live same-name book the finalizer skips only the folder-scoped
+    effects; the global ones (book / index caches, non-folder-scoped invalidators incl. the server's
+    stats generation) still run."""
+    from reader3_app import book_store, search_service
+
+    caplog.set_level(logging.DEBUG)
+    m = isolate_invalidators(monkeypatch)
+    server = server_module()
+    w = new_world(tmp_path / "w")
+    p = paired(
+        w.books, "a_data", mode=False, uuid=U, root=w.R, coll=w.coll, book_uuid=U, convs=[conv(CID_FRESH, D_MID, "fresh")]
+    )
+    make_book(w.books, "a_data", title="Alpha 2", body="AAAA again", book_uuid=U2)
+    write_collections(w.coll, {"C": ["a_data"]})
+    resolver = seat_resolver(monkeypatch, w.books)
+    warm(resolver, "a_data", U2)
+
+    scoped, global_ = InvalidatorRecorder(), InvalidatorRecorder()
+    m.register_invalidator(scoped, folder_scoped=True)
+    m.register_invalidator(global_, folder_scoped=False)
+    _warm_live_caches(w.books)
+    g0 = getattr(server, "_stats_generation")
+
+    report = w.sweep()
+
+    assert report.finalized == [p.tomb.name]
+    assert read_collections(w.coll) == {"C": ["a_data"]}
+    assert global_.calls == [("a_data", U)]
+    assert scoped.calls == []
+    assert book_store.load_book_cached.cache_info().currsize == 0
+    assert search_service.load_book_index.cache_info().currsize == 0
+    assert getattr(server, "_stats_generation") > g0
+    assert resolver._folder_to_uuid["a_data"] == U2
+
+
+# --------------------------------------------------------------------------- L3: null / "" last_updated are readable kinds (W5-17)
+
+
+@pytest.mark.parametrize(("kind", "klass", "reason"), READABLE_LU_KINDS, ids=READABLE_LU_KIND_IDS)
+def test_f11_null_and_empty_last_updated_are_readable(tmp_path, monkeypatch, caplog, kind, klass, reason):
+    """F-11 leg (i) (CP2 L3, W5-17): ``last_updated: null`` and ``""`` publish like the other readable kinds."""
+    caplog.set_level(logging.DEBUG)
+    w, layout, p, resolver = _f11_world(tmp_path, monkeypatch, kind, mode=False)
+
+    report = w.sweep()
+
+    assert report.finalized == [p.tomb.name]
+    assert report.conserved == [] and report.failed == []
+    expected = {f"{U}/{name}": payload for name, payload in layout.convs}
+    assert _files(tree_bytes(w.R)) == expected
+    assert len(expected) == 4
+    assert not p.tomb.exists()
+    assert not p.intent.exists()
+    assert read_collections(w.coll) == {"c1": []}
+    assert not any(
+        ("unreadable" in msg.lower() or "conserv" in msg.lower()) for msg in _messages(caplog, logging.WARNING)
+    ), _messages(caplog)
+    assert report_dict(w.sweep()) == EMPTY_REPORT

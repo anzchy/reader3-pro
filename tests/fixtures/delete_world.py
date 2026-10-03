@@ -746,12 +746,21 @@ SCHEMA_KINDS: List[Tuple[str, str, Optional[str]]] = [
     ("bad_filename", "unreadable", "filename"),
     ("unresolvable_uuid", "unreadable", "uuid"),
     ("bad_target", "unreadable", "target"),
+    ("bad_target_array", "unreadable", "target"),  # CP2 M2 / W5-21: an existing target that parses but is not an object
     ("no_last_updated", "readable", None),
     ("int_last_updated", "readable", None),
 ]
 SCHEMA_KIND_IDS = [k[0] for k in SCHEMA_KINDS]
 UNREADABLE_KINDS = [k for k in SCHEMA_KINDS if k[1] == "unreadable"]
 UNREADABLE_KIND_IDS = [k[0] for k in UNREADABLE_KINDS]
+
+#: CP2 L3 / W5-17: ``null`` and ``""`` ``last_updated`` are readable too (they key as ``""``).
+#: Kept out of ``SCHEMA_KINDS`` so the recorded parametrize lists stay as they were.
+READABLE_LU_KINDS: List[Tuple[str, str, Optional[str]]] = [
+    ("null_last_updated", "readable", None),
+    ("empty_last_updated", "readable", None),
+]
+READABLE_LU_KIND_IDS = [k[0] for k in READABLE_LU_KINDS]
 
 
 def schema_kind_layout(kind: str, *, n_valid: int = 3) -> SimpleNamespace:
@@ -789,6 +798,15 @@ def schema_kind_layout(kind: str, *, n_valid: int = 3) -> SimpleNamespace:
     elif kind == "bad_target":
         target = b"{x"
         bad_name = f"{CID_COLLIDE}.json"
+    elif kind == "bad_target_array":
+        target = b"[]"
+        bad_name = f"{CID_COLLIDE}.json"
+    elif kind == "null_last_updated":
+        extra = conv(ZERO_UUID, None, "null dated")
+        bad_name = None
+    elif kind == "empty_last_updated":
+        extra = conv(ZERO_UUID, "", "empty dated")
+        bad_name = None
     elif kind == "no_last_updated":
         extra = conv(ZERO_UUID, ABSENT, "undated")
         bad_name = None
