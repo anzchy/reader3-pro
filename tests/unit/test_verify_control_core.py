@@ -48,6 +48,7 @@ from verify_control_support import (  # noqa: F401 (autouse fixtures are importe
     pointer,
     real_evidence_untouched,
     reap_fakes,
+    register_pid,
     run_cli,
     run_cli_raw,
     snapshot_tree,
@@ -89,6 +90,7 @@ def _refusal_code(exc_info):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize(
     "body",
     [
@@ -109,6 +111,7 @@ def test_c01_run_cli_rejects_anything_but_one_json_document(tmp_path, body):  # 
         assert '{"ok": true}' in str(info.value)
 
 
+@pytest.mark.verify_control_live
 def test_c02_run_cli_fails_a_hung_child_and_kills_it(tmp_path):  # WI1-C02
     script = tmp_path / "hang.py"
     pid_file = tmp_path / "pid"
@@ -225,6 +228,7 @@ USAGE_ROWS = [
 ]
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize("argv,command,needle,try_tail", USAGE_ROWS, ids=[" ".join(r[0]) or "empty" for r in USAGE_ROWS])
 def test_c07_usage_errors_become_a_usage_envelope(tmp_path, argv, command, needle, try_tail):  # WI1-C07
     fv = fake_venv(tmp_path)
@@ -294,6 +298,7 @@ def _main_captured(argv):
     return rc, out.getvalue(), err.getvalue()
 
 
+@pytest.mark.verify_control_live
 def test_c08_usage_totality_property(tmp_path):  # WI1-C08 (amended)
     dispatched: list = []
     with _tripwires(dispatched):
@@ -348,6 +353,7 @@ HELP_ARGVS = (
 )
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize("argv", HELP_ARGVS, ids=[" ".join(a) for a in HELP_ARGVS])
 def test_c09_help_lists_subcommands_and_runnable_examples(tmp_path, argv):  # WI1-C09
     res = run_cli_raw(argv, base_env(tmp_path))
@@ -375,6 +381,7 @@ STUB_ROWS = [
 ]
 
 
+@pytest.mark.verify_control_live
 def test_c10_every_invocation_prints_one_envelope_matching_its_exit(tmp_path):  # WI1-C10
     fake_venv(tmp_path)
     env = base_env(tmp_path)
@@ -416,6 +423,7 @@ def _popen_with_open_stdin(argv, env):
     return proc.returncode, out
 
 
+@pytest.mark.verify_control_live
 def test_c11_no_command_reads_stdin(tmp_path):  # WI1-C11
     fake_venv(tmp_path)
     env = base_env(tmp_path)
@@ -744,6 +752,7 @@ def test_c20_identity_truth_table_through_pid_is_ours():  # WI1-C20 (amended)
     assert got == expected
 
 
+@pytest.mark.verify_control_live
 def test_c21_read_identity_and_pid_is_ours_on_real_processes(tmp_path):  # WI1-C21 (amended)
     p1 = spawn(["sleep", "60"], tmp_path)
     fv = fake_venv(tmp_path, server="no_listen")
@@ -779,6 +788,7 @@ _GRANDCHILD = (
 )
 
 
+@pytest.mark.verify_control_live
 def test_c22_timeout_kills_the_process_group(tmp_path):  # WI1-C22
     gc_file = tmp_path / "gc.pid"
     t0 = time.monotonic()
@@ -792,10 +802,94 @@ def test_c22_timeout_kills_the_process_group(tmp_path):  # WI1-C22
     assert wait_dead(gc, 2.0)
 
 
+@pytest.mark.verify_control_live
 def test_c23_run_captures_output_and_closes_stdin(tmp_path):  # WI1-C23
     code = "import sys; d=sys.stdin.read(); print('got', len(d)); print('E', file=sys.stderr); sys.exit(4)"
     res = procs.run([sys.executable, "-c", code], env=dict(os.environ), cwd=tmp_path, timeout=5)
     assert (res.exit, res.stdout, res.stderr, res.timed_out) == (4, "got 0\n", "E\n", False)
+
+
+# ---------------------------------------------------------------------------
+# L1 (review 2026-10-03): every wait after SIGKILL is bounded by VERIFY_READER3_REAP_TIMEOUT_S
+# ---------------------------------------------------------------------------
+
+# The child starts a grandchild in a NEW session, so the group SIGKILL misses it, and the
+# grandchild inherits stdout/stderr. After the timeout kills the child the pipes stay open
+# until the grandchild exits: an unbounded communicate() waits the full 20 s for it.
+_PIPE_HOLDER = (
+    "import subprocess, sys, time\n"
+    "gc = subprocess.Popen(['sleep', '20'], start_new_session=True)\n"
+    "open(sys.argv[1], 'w').write(str(gc.pid))\n"
+    "time.sleep(20)\n"
+)
+
+
+def _reap_holder(gc_file, tmp_path):
+    if wait_until(gc_file.exists, timeout=2):
+        register_pid(int(gc_file.read_text()), tmp_path, "sleep")
+
+
+@pytest.mark.verify_control_live
+def test_l1_run_drain_after_timeout_is_bounded(tmp_path, monkeypatch):
+    monkeypatch.setenv("VERIFY_READER3_REAP_TIMEOUT_S", "0.5")
+    gc_file = tmp_path / "gc.pid"
+    t0 = time.monotonic()
+    try:
+        res = procs.run([sys.executable, "-c", _PIPE_HOLDER, str(gc_file)], env=dict(os.environ), cwd=tmp_path, timeout=1.0)
+    finally:
+        _reap_holder(gc_file, tmp_path)
+    assert time.monotonic() - t0 < 6
+    assert res.timed_out is True and res.exit != 0
+    assert "after SIGKILL" in res.stderr
+    assert wait_dead(res.pid, 2.0)
+
+
+@pytest.mark.parametrize("raw", [None, "", "0", "-1", "nan", "inf", "soon"])
+def test_l1_reap_timeout_knob_falls_back_to_default(monkeypatch, raw):
+    if raw is None:
+        monkeypatch.delenv("VERIFY_READER3_REAP_TIMEOUT_S", raising=False)
+    else:
+        monkeypatch.setenv("VERIFY_READER3_REAP_TIMEOUT_S", raw)
+    assert procs.reap_timeout() == procs.REAP_DEFAULT_S == 5.0
+
+
+def test_l1_reap_timeout_knob_is_read(monkeypatch):
+    monkeypatch.setenv("VERIFY_READER3_REAP_TIMEOUT_S", "0.25")
+    assert procs.reap_timeout() == 0.25
+
+
+class _NeverReaped:
+    """A Popen stand-in whose child outlives SIGKILL: every bounded wait times out."""
+
+    def __init__(self, pid):
+        self.pid = pid
+        self.waits = []
+
+    def poll(self):
+        return None
+
+    def wait(self, timeout=None):
+        self.waits.append(timeout)
+        if timeout is None:
+            raise AssertionError("unbounded wait() after SIGKILL")
+        raise subprocess.TimeoutExpired("fake", timeout)
+
+
+@pytest.mark.verify_control_live
+def test_l1_stop_child_gives_up_when_sigkill_does_not_reap(tmp_path, monkeypatch):
+    monkeypatch.setenv("VERIFY_READER3_REAP_TIMEOUT_S", "0.3")
+    victim = spawn(["sleep", "30"], tmp_path)  # a real group for the signals to land on
+    fake = _NeverReaped(victim.pid)
+    assert procs.stop_child(fake, 0.2) is False
+    assert fake.waits == [0.2, 0.3]
+
+
+@pytest.mark.verify_control_live
+def test_l1_stop_child_reports_a_reaped_child(tmp_path):
+    victim = spawn(["sleep", "30"], tmp_path)
+    assert procs.stop_child(victim, 1.0) is True
+    assert victim.returncode is not None
+    assert procs.stop_child(victim, 1.0) is True  # already reaped: still True, no signal sent
 
 
 # ---------------------------------------------------------------------------
@@ -888,6 +982,7 @@ def test_c25_resolution_order_and_pointer(tmp_path):  # WI1-C25
     assert info.value.code == "bad_pointer"
 
 
+@pytest.mark.verify_control_live
 def test_c26_malformed_state_is_bad_state_and_untouched(tmp_path):  # WI1-C26
     env = base_env(tmp_path)
     s1 = tmp_path / "s1.json"
@@ -1303,6 +1398,7 @@ def test_c70a_base_exceptions_still_yield_one_envelope(exc, code):  # WI1-C70 (a
         assert "SystemExit" in e["error"]["message"]
 
 
+@pytest.mark.verify_control_live
 def test_c70b_sigint_during_doctor_probe_is_interrupted(tmp_path):  # WI1-C70 (b)
     import signal
 

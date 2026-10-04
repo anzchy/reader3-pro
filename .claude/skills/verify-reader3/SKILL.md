@@ -292,8 +292,9 @@ Hidden environment knobs (not in `--help`): `VERIFY_READER3_BROWSE` (browse bina
 (default `.venv/bin`), `VERIFY_READER3_BROWSE_TIMEOUT_S` (default 30),
 `VERIFY_READER3_TOOLBAR_WAIT_S` (3), `VERIFY_READER3_MARKER_WAIT_S` (2). Timeouts in seconds:
 `VERIFY_READER3_HEALTH_TIMEOUT_S` (60, `up` waiting for `/api/health`),
-`VERIFY_READER3_KILL_GRACE_S` (10, SIGTERM to SIGKILL), `VERIFY_READER3_PROBE_TIMEOUT_S` (10,
-doctor's health probe), `VERIFY_READER3_INGEST_TIMEOUT_S` (600, `book add`),
+`VERIFY_READER3_KILL_GRACE_S` (10, SIGTERM to SIGKILL), `VERIFY_READER3_REAP_TIMEOUT_S` (5, after
+SIGKILL, the wait for the child to exit and close its pipes; past it the command fails instead of
+hanging), `VERIFY_READER3_PROBE_TIMEOUT_S` (10, doctor's health probe), `VERIFY_READER3_INGEST_TIMEOUT_S` (600, `book add`),
 `VERIFY_READER3_INDEX_TIMEOUT_S` (1800, `book index`), `VERIFY_READER3_STUB_READY_TIMEOUT_S`
 (10, the stub's startup wait). `VERIFY_READER3_STUB_MODULE` points the stub runner at a different
 stub file and executes it: it exists for the unit tests, so leave it unset.

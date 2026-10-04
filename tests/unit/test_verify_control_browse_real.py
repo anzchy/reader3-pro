@@ -154,6 +154,7 @@ def inert_env(tmp_path, servers, attrs) -> Inert:
 ARGV = ["ui", "inert", "--testid", "rd-rail-notes", "--settle", "0.1"]
 
 
+@pytest.mark.verify_control_live
 def test_a7_wrapped_attrs_identical_is_inert(tmp_path, servers):  # WI-4b A7
     ie = inert_env(tmp_path, servers, [{"stdout": ATTRS_REAL}])
     code, e, _ = run_cli(ARGV + ["--expect", "inert"], ie.env)
@@ -164,6 +165,7 @@ def test_a7_wrapped_attrs_identical_is_inert(tmp_path, servers):  # WI-4b A7
     assert [a[0] for a in read_argv_log(ie.argv_log)] == ["url", "attrs", "click", "url", "attrs"]
 
 
+@pytest.mark.verify_control_live
 def test_a8_wrapped_attrs_differ_is_active(tmp_path, servers):  # WI-4b A8
     after = dict(REAL_ATTRS, **{"class": "rt-btn"})
     ie = inert_env(tmp_path, servers, [{"stdout": ATTRS_REAL}, {"stdout": wrap(json.dumps(after, indent=2))}])
@@ -175,6 +177,7 @@ def test_a8_wrapped_attrs_differ_is_active(tmp_path, servers):  # WI-4b A8
     assert d["requests"] == [] and d["url_changed"] is False and d["inert"] is False
 
 
+@pytest.mark.verify_control_live
 def test_a9_element_not_found_is_testid_not_found(tmp_path, servers):  # WI-4b A9
     missing = ATTRS_MISSING_REAL.replace("nope-missing", "rd-rail-notes")
     ie = inert_env(tmp_path, servers, [{"stdout": missing}])
@@ -190,6 +193,7 @@ def test_a9_element_not_found_is_testid_not_found(tmp_path, servers):  # WI-4b A
     assert "verify-marker" not in ie.log.read_text(encoding="utf-8")
 
 
+@pytest.mark.verify_control_live
 def test_a10_wrapped_non_json_is_still_browse_failed(tmp_path, servers):  # WI-4b A10
     ie = inert_env(tmp_path, servers, [{"stdout": wrap("not json at all")}])
     code, e, _ = run_cli(ARGV, ie.env)
@@ -313,6 +317,7 @@ def _node(tmp_path: Path, js: str) -> Dict[str, Any]:
     return json.loads(res.stdout)
 
 
+@pytest.mark.verify_control_live
 def test_b4_node_select_script_returns_its_result(tmp_path):  # WI-4b B4
     out = _node(tmp_path, cmd_reader.build_select_js("Alpha prose.", 0))
     assert out.get("error") is None, out
@@ -323,6 +328,7 @@ def test_b4_node_select_script_returns_its_result(tmp_path):  # WI-4b B4
     assert out["elapsed_ms"] >= 150  # the debounce window (120 + 40 ms) was drained first
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize(
     "text,occ,needle",
     [("Zeta", 0, 'select_in_frame: text not found in chapter: "Zeta"'),

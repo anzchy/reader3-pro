@@ -18,6 +18,8 @@ import signal
 import subprocess
 from pathlib import Path
 
+from verify_control import procs
+
 ALLOWED = frozenset({"js", "frame", "url", "attrs", "network", "wait", "click", "screenshot"})
 FORBIDDEN = frozenset({"eval"})
 DEFAULT_TIMEOUT_S = 30.0
@@ -129,14 +131,14 @@ def run(args, *, passthrough=False, timeout=None):
         out, err = proc.communicate(timeout=limit)
     except subprocess.TimeoutExpired:
         _kill_group(proc)
-        out, err = proc.communicate()
+        out, err = procs.drain(proc, text=False)
         raise BrowseError(
             "browse_failed", f"browse {args[0]} timed out after {limit:g}s and was killed",
             stderr=err.decode("utf-8", errors="replace"), timed_out=True,
         ) from None
     except BaseException:  # noqa: BLE001 - kill the child on any interrupt, then re-raise
         _kill_group(proc)
-        proc.wait()
+        procs.drain(proc, text=False)
         raise
     stdout = out.decode("utf-8", errors="replace")
     stderr = err.decode("utf-8", errors="replace")

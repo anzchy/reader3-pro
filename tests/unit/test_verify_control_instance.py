@@ -56,6 +56,9 @@ from verify_control_support import (  # noqa: F401 (autouse fixtures are importe
 )
 from verify_control import http_client, state
 
+# Every case here spawns a child process: the verify-control lane, not the unit lane.
+pytestmark = pytest.mark.verify_control_live
+
 EPOCH = "Thu Jan  1 00:00:00 1970"
 FIXTURES = REPO / "tests" / "fixtures"
 MODEL_DIR = "models--sentence-transformers--paraphrase-multilingual-MiniLM-L12-v2"

@@ -13,6 +13,7 @@ import importlib
 import json
 import os
 import re
+import sys
 import time
 import uuid
 from pathlib import Path
@@ -39,6 +40,7 @@ from verify_control_support import (  # noqa: F401 (autouse fixtures are importe
     make_state,
     real_evidence_untouched,
     reap_fakes,
+    register_pid,
     run_cli,
     wait_until,
 )
@@ -341,6 +343,7 @@ def test_c13_allowlist_property(s):  # WI4-C13
             br.check_subcommand(s)
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize("variant", ["a-absent", "b-not-executable"])
 def test_c14_missing_binary_gives_browse_missing(tmp_path, variant):  # WI4-C14
     x = tmp_path / "nope"
@@ -355,6 +358,7 @@ def test_c14_missing_binary_gives_browse_missing(tmp_path, variant):  # WI4-C14
     assert e["error"]["try"] == TRY_PREFIX + "doctor"
 
 
+@pytest.mark.verify_control_live
 def test_c15_nonzero_exit_gives_browse_failed_with_stderr(tmp_path):  # WI4-C15
     fb = fake_browse(tmp_path, {"js": [{"exit": 1, "stderr": "boom-stderr-7f3"}]})
     code, e, _ = run_cli(["reader", "state"], base_env(tmp_path))
@@ -364,6 +368,33 @@ def test_c15_nonzero_exit_gives_browse_failed_with_stderr(tmp_path):  # WI4-C15
     assert len(read_argv_log(fb.argv_log)) == 1
 
 
+@pytest.mark.verify_control_live
+def test_l1_browse_timeout_with_held_pipes_still_returns_an_envelope(tmp_path):  # review L1
+    """A grandchild in its own session keeps browse's pipes open past the group kill."""
+    gc_file = tmp_path / "gc.pid"
+    exe = tmp_path / "browse-bin" / "browse"
+    exe.parent.mkdir(parents=True, exist_ok=True)
+    exe.write_text(
+        f"#!{sys.executable}\nimport subprocess, time\n"
+        "gc = subprocess.Popen(['sleep', '20'], start_new_session=True)\n"
+        f"open({str(gc_file)!r}, 'w').write(str(gc.pid))\ntime.sleep(20)\n",
+        encoding="utf-8",
+    )
+    os.chmod(exe, 0o755)
+    env = base_env(tmp_path) | {"VERIFY_READER3_BROWSE_TIMEOUT_S": "1", "VERIFY_READER3_REAP_TIMEOUT_S": "0.5"}
+    t0 = time.monotonic()
+    try:
+        code, e, _ = run_cli(["reader", "state"], env)
+    finally:
+        if wait_until(gc_file.exists, timeout=2):
+            register_pid(int(gc_file.read_text()), tmp_path, "sleep")
+    assert time.monotonic() - t0 < 8
+    assert code == 1
+    _fail_shape(e, "browse_failed")
+    assert "timed out" in e["error"]["message"].lower()
+
+
+@pytest.mark.verify_control_live
 def test_c16_browse_timeout_kills_child(tmp_path):  # WI4-C16
     fake_browse(tmp_path, {"js": [{"sleep_s": 20}]})
     t0 = time.monotonic()
@@ -422,6 +453,7 @@ def _assert_state_argv(argv: List[str]) -> None:
     assert "getDebugState" in argv[1] and "JSON.stringify" in argv[1]
 
 
+@pytest.mark.verify_control_live
 def test_c18_polls_until_ready_returns_third_state(tmp_path):  # WI4-C18
     fb = fake_browse(tmp_path, _js(S(False, 0), S(False, 1), S(True, 2)))
     code, e, _ = run_cli(["reader", "state", "--wait", "10"], base_env(tmp_path))
@@ -433,6 +465,7 @@ def test_c18_polls_until_ready_returns_third_state(tmp_path):  # WI4-C18
         _assert_state_argv(a)
 
 
+@pytest.mark.verify_control_live
 def test_c19_without_wait_single_read(tmp_path):  # WI4-C19
     fb = fake_browse(tmp_path, _js(S(False, 0)))
     code, e, _ = run_cli(["reader", "state"], base_env(tmp_path))
@@ -441,6 +474,7 @@ def test_c19_without_wait_single_read(tmp_path):  # WI4-C19
     assert len(read_argv_log(fb.argv_log)) == 1
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize(
     "stdout", [json.dumps(S(True, 0, v=2)), "not json", '{"ready": true}', "[1,2]"], ids=["a-v2", "b-text", "c-no-v", "d-list"]
 )
@@ -454,6 +488,7 @@ def test_c20_invalid_debug_state(tmp_path, stdout):  # WI4-C20
         assert len(read_argv_log(fb.argv_log)) == 1
 
 
+@pytest.mark.verify_control_live
 def test_c21_wait_timeout_reader_not_ready(tmp_path):  # WI4-C21
     fb = fake_browse(tmp_path, _js(S(False, 5)))
     r = run_cli(["reader", "state", "--wait", "1"], base_env(tmp_path))
@@ -465,6 +500,7 @@ def test_c21_wait_timeout_reader_not_ready(tmp_path):  # WI4-C21
     assert len(read_argv_log(fb.argv_log)) >= 2
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize(
     "resp",
     [
@@ -482,6 +518,7 @@ def test_c22_not_reader_page(tmp_path, resp):  # WI4-C22
     assert e["error"]["try"] == TRY_PREFIX + "reader state --wait 15"
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize("value", ["-1", "soon"])
 def test_c23_bad_wait_is_usage(tmp_path, value):  # WI4-C23
     fb = fake_browse(tmp_path, _js(S(True, 0)))
@@ -491,6 +528,7 @@ def test_c23_bad_wait_is_usage(tmp_path, value):  # WI4-C23
     assert not fb.argv_log.exists()
 
 
+@pytest.mark.verify_control_live
 def test_c55_null_state_under_wait_fails_fast(tmp_path):  # WI4-C55
     fb = fake_browse(tmp_path, {"js": [{"stdout": "null", "exit": 0}]})
     r = run_cli(["reader", "state", "--wait", "2"], base_env(tmp_path))
@@ -557,6 +595,7 @@ def test_c25_select_js_timing_contract():  # WI4-C25
     assert "await" not in js[js.index("addRange("): js.index("mouseup")]
 
 
+@pytest.mark.verify_control_live
 def test_c26_select_success_argv_order(tmp_path):  # WI4-C26
     fb = fake_browse(tmp_path, select_rules())
     code, e, _ = run_cli(["reader", "select", "Alpha prose.", "--occurrence", "0"], base_env(tmp_path))
@@ -569,6 +608,7 @@ def test_c26_select_success_argv_order(tmp_path):  # WI4-C26
         assert _is_toolbar(a) and not _is_select(a), a
 
 
+@pytest.mark.verify_control_live
 def test_c27_select_js_fails_frame_main_last(tmp_path):  # WI4-C27
     bad = {"exit": 1, "stderr": 'Error: select_in_frame: 章内找不到 "Zeta"'}
     fb = fake_browse(tmp_path, select_rules(select=bad))
@@ -580,6 +620,7 @@ def test_c27_select_js_fails_frame_main_last(tmp_path):  # WI4-C27
     assert argv == [["frame", IFRAME], ["js", cmd_reader.build_select_js("Zeta", 0)], ["frame", "main"]]
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize("point", ["i-frame", "ii-select-exit", "iii-select-timeout", "iv-toolbar-exit"])
 def test_c28_restore_invariant_every_failure_point(tmp_path, point):  # WI4-C28
     kw: Dict[str, Any] = {}
@@ -613,6 +654,7 @@ def test_c28_restore_invariant_every_failure_point(tmp_path, point):  # WI4-C28
             assert wait_until(lambda pid=pid: not _alive(pid), timeout=2), pid
 
 
+@pytest.mark.verify_control_live
 def test_c29_toolbar_never_visible_reported(tmp_path):  # WI4-C29
     fb = fake_browse(tmp_path, select_rules(toolbar={"stdout": "false"}))
     r = run_cli(["reader", "select", "Alpha prose."], base_env(tmp_path) | {"VERIFY_READER3_TOOLBAR_WAIT_S": "1"})
@@ -626,6 +668,7 @@ def test_c29_toolbar_never_visible_reported(tmp_path):  # WI4-C29
     assert len(tb) >= 2 and all(i > main_at for i in tb)
 
 
+@pytest.mark.verify_control_live
 def test_c30_frame_main_failure(tmp_path):  # WI4-C30
     fb = fake_browse(tmp_path, select_rules(frame_main={"exit": 1, "stderr": "frame-main-broke"}))
     code, e, _ = run_cli(["reader", "select", "Alpha prose."], base_env(tmp_path))
@@ -635,6 +678,7 @@ def test_c30_frame_main_failure(tmp_path):  # WI4-C30
     assert not any(_is_toolbar(a) for a in read_argv_log(fb.argv_log))
 
 
+@pytest.mark.verify_control_live
 def test_c31_awkward_needle_reaches_browse_intact(tmp_path):  # WI4-C31
     needle = 'it’s "x"\nz'
     fb = fake_browse(tmp_path, select_rules())
@@ -645,6 +689,7 @@ def test_c31_awkward_needle_reaches_browse_intact(tmp_path):  # WI4-C31
     assert decode_select_args(sel[0][1]) == [needle, 0, 120, 40, 8000]
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize("variant", ["a-wired", "b-negative", "c-not-int"])
 def test_c51_occurrence_wired_selected_from_page(tmp_path, variant):  # WI4-C51
     page = {"stdout": json.dumps({"text": "Alpha (page)", "occurrences": 3})}
@@ -734,6 +779,7 @@ def _subs(argv_log: Path) -> List[str]:
     return [a[0] for a in read_argv_log(argv_log)]
 
 
+@pytest.mark.verify_control_live
 def test_c32_nothing_happened_inert(tmp_path, servers):  # WI4-C32 (amended)
     ie = inert_env(tmp_path, servers)
     code, e, _ = run_cli(INERT_ARGV, ie.env)
@@ -754,6 +800,7 @@ def test_c32_nothing_happened_inert(tmp_path, servers):  # WI4-C32 (amended)
     assert argv[1] == ["attrs", SELECTOR] and argv[4] == ["attrs", SELECTOR]
 
 
+@pytest.mark.verify_control_live
 def test_c33_get_only_not_inert_no_writes(tmp_path, servers):  # WI4-C33
     ie = inert_env(tmp_path, servers, click=[http(("GET", "/api/notes/smoke_data/0"))])
     code, e, _ = run_cli(INERT_ARGV, ie.env)
@@ -767,6 +814,7 @@ def test_c33_get_only_not_inert_no_writes(tmp_path, servers):  # WI4-C33
     assert any('"GET /api/notes/smoke_data/0 ' in ln for ln in lines[b + 1:en])
 
 
+@pytest.mark.verify_control_live
 def test_c34_a_write_happened(tmp_path, servers):  # WI4-C34
     ie = inert_env(tmp_path, servers, click=[http(("GET", "/api/notes/smoke_data/0"), ("POST", "/api/notes/smoke_data/0"))])
     code, e, _ = run_cli(INERT_ARGV + ["--expect", "active"], ie.env)
@@ -776,6 +824,7 @@ def test_c34_a_write_happened(tmp_path, servers):  # WI4-C34
     assert e["data"]["inert"] is False
 
 
+@pytest.mark.verify_control_live
 def test_c35_url_changed_no_request(tmp_path, servers):  # WI4-C35
     ie = inert_env(tmp_path, servers, url=[{"stdout": "PLACEHOLDER"}])
     base = ie.base
@@ -792,6 +841,7 @@ def test_c35_url_changed_no_request(tmp_path, servers):  # WI4-C35
     assert d["url_changed"] is True and d["inert"] is False
 
 
+@pytest.mark.verify_control_live
 def test_c36_attrs_changed_no_request(tmp_path, servers):  # WI4-C36
     a0 = {"class": "rd-rail-btn", "aria-pressed": "false"}
     a1 = {"class": "rd-rail-btn is-active", "aria-pressed": "true"}
@@ -804,6 +854,7 @@ def test_c36_attrs_changed_no_request(tmp_path, servers):  # WI4-C36
     assert d["inert"] is False
 
 
+@pytest.mark.verify_control_live
 def test_c37_attr_key_order_is_not_a_change(tmp_path, servers):  # WI4-C37
     ie = inert_env(tmp_path, servers, attrs=[{"stdout": '{"a":"1","b":"2"}'}, {"stdout": '{"b":"2","a":"1"}'}])
     code, e, _ = run_cli(INERT_ARGV, ie.env)
@@ -811,6 +862,7 @@ def test_c37_attr_key_order_is_not_a_change(tmp_path, servers):  # WI4-C37
     assert e["data"]["inert"] is True
 
 
+@pytest.mark.verify_control_live
 def test_c38_assets_and_markers_never_in_requests(tmp_path, servers):  # WI4-C38
     assets = ["/static/css/reader.css", "/read/smoke_data/book.epub", "/read/smoke_data/images/a.png", "/favicon.ico"]
     ie = inert_env(tmp_path, servers, click=[http(*[("GET", p) for p in assets])])
@@ -828,6 +880,7 @@ def test_c38_assets_and_markers_never_in_requests(tmp_path, servers):  # WI4-C38
     assert len(_marks(ie.log)) == 2
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize("variant", ["i-inert-expect-active", "ii-write-expect-inert"])
 def test_c39_expect_mismatch(tmp_path, servers, variant):  # WI4-C39
     if variant.startswith("i-"):
@@ -855,6 +908,7 @@ def test_c40_compute_inert_truth_table(has_request, url_same, attrs_same):  # WI
     assert got is ((not has_request) and url_same and attrs_same)
 
 
+@pytest.mark.verify_control_live
 def test_c41_element_not_found_no_markers_no_click(tmp_path, servers):  # WI4-C41
     ie = inert_env(tmp_path, servers, attrs=[{"exit": 1, "stderr": "no element matches selector"}])
     code, e, _ = run_cli(INERT_ARGV, ie.env)
@@ -865,6 +919,7 @@ def test_c41_element_not_found_no_markers_no_click(tmp_path, servers):  # WI4-C4
     assert "click" not in _subs(ie.argv_log)
 
 
+@pytest.mark.verify_control_live
 def test_c42_end_marker_never_logged(tmp_path, servers):  # WI4-C42
     ie = inert_env(tmp_path, servers, drop=r"verify-marker=.*-end")
     r = run_cli(INERT_ARGV, ie.env | {"VERIFY_READER3_MARKER_WAIT_S": "1"})
@@ -875,6 +930,7 @@ def test_c42_end_marker_never_logged(tmp_path, servers):  # WI4-C42
     assert [m[1] for m in _marks(ie.log)] == ["begin"]
 
 
+@pytest.mark.verify_control_live
 def test_c43_passthrough_form(tmp_path, servers):  # WI4-C43
     press = {"sub": "press", "contains": None, "responses": [http(("GET", "/api/notes/smoke_data/0"))]}
     ie = inert_env(tmp_path, servers, extra=[press])
@@ -891,6 +947,7 @@ def test_c43_passthrough_form(tmp_path, servers):  # WI4-C43
     assert "attrs" not in [a[0] for a in argv]
 
 
+@pytest.mark.verify_control_live
 def test_c44_passthrough_eval_refused(tmp_path, servers):  # WI4-C44
     ie = inert_env(tmp_path, servers)
     code, e, _ = run_cli(["ui", "inert", "--", "eval", "/tmp/x.js"], ie.env)
@@ -900,6 +957,7 @@ def test_c44_passthrough_eval_refused(tmp_path, servers):  # WI4-C44
     assert _marks(ie.log) == []
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize("testid", ['x"],body[a', ""], ids=["selector-breaker", "empty"])
 def test_c45_testid_validation(tmp_path, testid):  # WI4-C45
     fb = fake_browse(tmp_path, {})
@@ -928,6 +986,7 @@ def _line_index(lines: List[str], needle: str) -> int:
     return hits[0]
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize(
     "settle,delay,captured",
     [("2.0", 1.5, True), ("0.2", 1.5, False), ("1.0", 0.4, True)],
@@ -962,6 +1021,7 @@ def test_c49_settle_window_captures_delayed_write(tmp_path, servers, settle, del
         assert post > en
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize("variant", ["a-wrapper", "b-passthrough", "c-wrapper-expect-inert"])
 def test_c50_action_failure_is_not_inertness(tmp_path, servers, variant):  # WI4-C50
     if variant == "b-passthrough":
@@ -986,6 +1046,7 @@ def test_c50_action_failure_is_not_inertness(tmp_path, servers, variant):  # WI4
     assert read_argv_log(ie.argv_log)[-1] == action
 
 
+@pytest.mark.verify_control_live
 def test_c53_marker_uuid_fresh_per_run(tmp_path, servers):  # WI4-C53
     ie = inert_env(tmp_path, servers, click=[http(("POST", "/api/notes/smoke_data/0")), {}])
     code1, e1, _ = run_cli(INERT_ARGV, ie.env)
@@ -1002,6 +1063,7 @@ def test_c53_marker_uuid_fresh_per_run(tmp_path, servers):  # WI4-C53
     uuid.UUID(u2)
 
 
+@pytest.mark.verify_control_live
 def test_c54_hash_only_url_change_counts(tmp_path, servers):  # WI4-C54
     ie = inert_env(tmp_path, servers)
     before = ie.base + "/read/smoke_data/0"

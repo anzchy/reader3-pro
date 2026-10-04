@@ -5,6 +5,7 @@ timeout or an interrupt can kill the whole process group. Identity is never a ba
 a pid is ours only if its command line, its `--port` and its start time all match.
 """
 
+import math
 import os
 import shutil
 import signal
@@ -14,6 +15,7 @@ from pathlib import Path
 from typing import NamedTuple, Optional
 
 OFFLINE = {"HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1"}
+REAP_KNOB, REAP_DEFAULT_S = "VERIFY_READER3_REAP_TIMEOUT_S", 5.0
 
 
 class RunResult(NamedTuple):
@@ -52,6 +54,41 @@ def _kill_group(pid, sig):
             pass
 
 
+def reap_timeout():
+    """How long to wait for a SIGKILLed child to exit and close its pipes (positive, finite)."""
+    raw = os.environ.get(REAP_KNOB)
+    try:
+        v = float(raw) if raw is not None else REAP_DEFAULT_S
+    except ValueError:
+        return REAP_DEFAULT_S
+    return v if math.isfinite(v) and v > 0 else REAP_DEFAULT_S
+
+
+def _as_text(v, text):
+    if v is None:
+        return "" if text else b""
+    return v.decode("utf-8", errors="replace") if text and isinstance(v, bytes) else v
+
+
+def drain(proc, *, text=True):
+    """After SIGKILL: collect the child's output for at most `reap_timeout()` seconds.
+
+    A grandchild that left the process group can hold the pipes open forever, so an
+    unbounded `communicate()` would hang the command. On expiry close our ends of the
+    pipes and return what arrived, with a note on stderr saying the output is cut.
+    """
+    limit = reap_timeout()
+    try:
+        return proc.communicate(timeout=limit)
+    except subprocess.TimeoutExpired as exc:
+        for pipe in (proc.stdout, proc.stderr):
+            if pipe is not None:
+                pipe.close()
+        note = f"\n[verify_control] pipes still open {limit:g}s after SIGKILL; output cut ({REAP_KNOB})\n"
+        err = _as_text(exc.stderr, text) + (note if text else note.encode())
+        return _as_text(exc.output, text), err
+
+
 def run(argv, *, env, cwd, timeout):
     proc = subprocess.Popen(
         [str(a) for a in argv],
@@ -70,11 +107,11 @@ def run(argv, *, env, cwd, timeout):
         return RunResult(proc.returncode, out, err, False, proc.pid)
     except subprocess.TimeoutExpired:
         _kill_group(proc.pid, signal.SIGKILL)
-        out, err = proc.communicate()
+        out, err = drain(proc)
         return RunResult(proc.returncode if proc.returncode is not None else -9, out, err, True, proc.pid)
     except BaseException:  # noqa: BLE001 - kill the child group on any interrupt, then re-raise
         _kill_group(proc.pid, signal.SIGKILL)
-        proc.communicate()
+        drain(proc)
         raise
 
 
@@ -174,17 +211,25 @@ def terminate(pid, grace):
 
 
 def stop_child(proc, grace):
-    """Stop a Popen child we own: TERM, wait, KILL, reap."""
+    """Stop a Popen child we own: TERM, wait `grace`, KILL, reap within `reap_timeout()`.
+
+    True once the child is reaped; False if it outlived SIGKILL by the reap timeout
+    (an unkillable child, e.g. stuck in uninterruptible I/O), so callers never hang.
+    """
     if proc.poll() is not None:
-        return
+        return True
     _kill_group(proc.pid, signal.SIGTERM)
     try:
         proc.wait(timeout=grace)
-        return
+        return True
     except subprocess.TimeoutExpired:
         pass
     _kill_group(proc.pid, signal.SIGKILL)
-    proc.wait()
+    try:
+        proc.wait(timeout=reap_timeout())
+    except subprocess.TimeoutExpired:
+        return False
+    return True
 
 
 def listeners(port):

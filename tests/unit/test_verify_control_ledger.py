@@ -392,6 +392,7 @@ F011_ARGV = [
 ]
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c11_lane_all_three_runs_cwd_logs(tmp_path):  # WI5-C11
     env = lane_env(tmp_path)
     evdir = _start(env, "F-011")
@@ -413,6 +414,7 @@ def test_wi5_c11_lane_all_three_runs_cwd_logs(tmp_path):  # WI5-C11
     assert "FAKE-npm-OUT" in (evdir / "lane-vitest.log").read_text()
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c12_single_runner_keeps_full_classification(tmp_path):  # WI5-C12
     env = lane_env(tmp_path)
     _start(env, "F-011")
@@ -424,6 +426,7 @@ def test_wi5_c12_single_runner_keeps_full_classification(tmp_path):  # WI5-C12
     assert len(runner_calls(tmp_path)) == 1
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c13_busy_maps_to_lane_busy(tmp_path):  # WI5-C13
     env = lane_env(tmp_path, scripts=[{"name": "uv", "contains": "e2e_lock.py", "exit": 75, "stderr": BUSY}])
     evdir = _start(env, "F-018")
@@ -434,6 +437,7 @@ def test_wi5_c13_busy_maps_to_lane_busy(tmp_path):  # WI5-C13
     assert "BUSY session=other" in (evdir / "lane-e2e.log").read_text()
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c14_rc75_without_busy_prefix_is_failure(tmp_path):  # WI5-C14
     env = lane_env(tmp_path, scripts=[{"name": "uv", "contains": "e2e_lock.py", "exit": 75, "stderr": "pytest crashed"}])
     _start(env, "F-018")
@@ -442,6 +446,7 @@ def test_wi5_c14_rc75_without_busy_prefix_is_failure(tmp_path):  # WI5-C14
     _assert_try(e)
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c15_failure_does_not_stop_later_runners(tmp_path):  # WI5-C15
     env = lane_env(tmp_path, scripts=[{"name": "uv", "contains": "test_highlight", "exit": 1}])
     _start(env, "F-011")
@@ -451,6 +456,7 @@ def test_wi5_c15_failure_does_not_stop_later_runners(tmp_path):  # WI5-C15
     assert len(runner_calls(tmp_path)) == 3
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c16_dry_run_spawns_nothing_needs_no_evidence(tmp_path):  # WI5-C16
     env = lane_env(tmp_path)
     code, e, _ = run_cli(["lane", "F-020", "--runner", "all", "--dry-run"], env)
@@ -462,6 +468,7 @@ def test_wi5_c16_dry_run_spawns_nothing_needs_no_evidence(tmp_path):  # WI5-C16
     assert list(_ev_root(env).rglob("lane-*.log")) == []
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c17_per_run_timeout_kills_runner(tmp_path):  # WI5-C17
     env = lane_env(tmp_path, scripts=[{"name": "uv", "contains": "pytest", "sleep_s": 30}])
     _start(env, "F-011")
@@ -476,6 +483,7 @@ def test_wi5_c17_per_run_timeout_kills_runner(tmp_path):  # WI5-C17
     assert wait_dead(pids[0], timeout=2.0)
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize("fid", ["F-035", "F-032"])
 def test_wi5_c18_rows_without_tests_give_no_tests(tmp_path, fid):  # WI5-C18
     assert _rows()[fid]["tests"] == []
@@ -487,6 +495,7 @@ def test_wi5_c18_rows_without_tests_give_no_tests(tmp_path, fid):  # WI5-C18
     assert not runner_log_path(tmp_path).exists()
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize("fid,want", [("F-999", (1, "unknown_feature")), ("F-9", (2, "usage")), ("f-011", (2, "usage"))])
 def test_wi5_c19_unknown_and_malformed_ids(tmp_path, fid, want):  # WI5-C19
     env = lane_env(tmp_path)
@@ -496,6 +505,7 @@ def test_wi5_c19_unknown_and_malformed_ids(tmp_path, fid, want):  # WI5-C19
     assert not runner_log_path(tmp_path).exists()
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c20_real_run_without_evidence(tmp_path):  # WI5-C20
     env = lane_env(tmp_path)
     code, e, _ = run_cli(["lane", "F-011", "--runner", "pytest"], env)
@@ -504,6 +514,7 @@ def test_wi5_c20_real_run_without_evidence(tmp_path):  # WI5-C20
     assert not runner_log_path(tmp_path).exists()
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c21_selected_runner_with_empty_bucket(tmp_path):  # WI5-C21
     env = lane_env(tmp_path)
     _start(env, "F-018")
@@ -513,6 +524,7 @@ def test_wi5_c21_selected_runner_with_empty_bucket(tmp_path):  # WI5-C21
     assert not runner_log_path(tmp_path).exists()
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c22_missing_paths_reported_not_run(tmp_path):  # WI5-C22
     root = tmp_path / "root"
     _write(root / LEDGER_REL, _real_md())
@@ -528,6 +540,7 @@ def test_wi5_c22_missing_paths_reported_not_run(tmp_path):  # WI5-C22
     assert not runner_log_path(tmp_path).exists()
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c23_unreadable_ledger_gives_ledger_invalid(tmp_path):  # WI5-C23
     root = tmp_path / "root"
     _write(root / LEDGER_REL, _ledger_without_synced())
@@ -560,6 +573,7 @@ def _no_pwned(*dirs):
     assert not (REPO / "PWNED.py").exists() and not (REPO / "PWNED2.py").exists()
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c53_lane_no_shell_no_splitting(tmp_path):  # WI5-C53
     root = _awkward_root(tmp_path)
     env = lane_env(tmp_path)
@@ -578,6 +592,7 @@ def test_wi5_c53_lane_no_shell_no_splitting(tmp_path):  # WI5-C53
     assert not (REPO / "PWNED.py").exists() and not (REPO / "PWNED2.py").exists()
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize("variant", ["a_failure_before_busy", "b_busy_before_failure"])
 def test_wi5_c55_lane_failed_beats_lane_busy(tmp_path, variant):  # WI5-C55
     busy = {"name": "uv", "contains": "e2e_lock.py", "exit": 75, "stderr": BUSY}
@@ -635,6 +650,7 @@ def test_wi5_c56_lane_spawns_from_argv_list_in_process(tmp_path, monkeypatch, ca
 STAMP_RE = re.compile(r"^(\d{8}-\d{6})-F-018$")
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c24_start_creates_utc_stamped_dir_and_makes_it_current(tmp_path):  # WI5-C24
     env = dict(base_env(tmp_path), TZ="Asia/Shanghai")
     t0 = datetime.now(timezone.utc)
@@ -652,6 +668,7 @@ def test_wi5_c24_start_creates_utc_stamped_dir_and_makes_it_current(tmp_path):  
     assert code == 0 and e2["data"]["dir"] == str(d) and e2["data"]["files"] == []
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c25_two_starts_same_second_do_not_collide(tmp_path):  # WI5-C25
     env = base_env(tmp_path)
     root = _ev_root(env).resolve()
@@ -686,6 +703,7 @@ def test_wi5_c26_add_round_trip_property(data, name):  # WI5-C26
         assert rec == {"name": name, "size": len(data)}
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c27_add_refuses_overwrite(tmp_path):  # WI5-C27
     env = base_env(tmp_path)
     evdir = _start(env)
@@ -699,6 +717,7 @@ def test_wi5_c27_add_refuses_overwrite(tmp_path):  # WI5-C27
     assert (evdir / "03-notes.json").read_bytes() == b"one"
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize("variant", ["a_settings_path", "b_symlink_to_settings", "c_symlink_into_books"])
 def test_wi5_c28_add_refuses_guarded_paths(tmp_path, variant):  # WI5-C28
     env = base_env(tmp_path)
@@ -717,6 +736,7 @@ def test_wi5_c28_add_refuses_guarded_paths(tmp_path, variant):  # WI5-C28
     assert os.listdir(evdir) == []
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c29_browse_screenshot(tmp_path):  # WI5-C29
     env = base_env(tmp_path)
     evdir = _start(env)
@@ -729,6 +749,7 @@ def test_wi5_c29_browse_screenshot(tmp_path):  # WI5-C29
     assert (evdir / "02-toolbar.png").is_file()
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c30_screenshot_name_traversal(tmp_path):  # WI5-C30
     env = base_env(tmp_path)
     _start(env)
@@ -743,6 +764,7 @@ def test_wi5_c30_screenshot_name_traversal(tmp_path):  # WI5-C30
     assert not fb.argv_log.exists()
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize("verdict", VERDICTS)
 def test_wi5_c31_result_writes_idempotent_overwrites(tmp_path, verdict):  # WI5-C31
     env = base_env(tmp_path)
@@ -773,6 +795,7 @@ def _result_verdict_action():
     return acts[0]
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c32_invalid_verdicts(tmp_path):  # WI5-C32 (amended)
     assert set(_result_verdict_action().choices or ()) == set(VERDICTS)
     env = base_env(tmp_path)
@@ -785,6 +808,7 @@ def test_wi5_c32_invalid_verdicts(tmp_path):  # WI5-C32 (amended)
         assert (evdir / "result.txt").read_bytes() == b"PASS\n"
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c33_commands_without_current_evidence(tmp_path):  # WI5-C33
     env = base_env(tmp_path)
     src = _write(tmp_path / "plain.txt", "x")
@@ -796,6 +820,7 @@ def test_wi5_c33_commands_without_current_evidence(tmp_path):  # WI5-C33
     assert [p for p in _ev_root(env).rglob("*") if p.is_file()] == []
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c34_evidence_survives_down(tmp_path):  # WI5-C34
     fake_venv(tmp_path)
     env = base_env(tmp_path)
@@ -845,6 +870,7 @@ C51_REFUSED = {
 }
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize("case", sorted(C51_REFUSED))
 def test_wi5_c51_guarded_sources_case_links(tmp_path, case):  # WI5-C51 (a)-(h)
     root, ci = _ci_repo(tmp_path)
@@ -875,6 +901,7 @@ def test_wi5_c51_guarded_sources_case_links(tmp_path, case):  # WI5-C51 (a)-(h)
         assert (_mode_mtime(settings_replica), _mode_mtime(books_replica)) == before
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c51_accepted_controls(tmp_path):  # WI5-C51 (i), (j)
     root, _ = _ci_repo(tmp_path)
     env = base_env(tmp_path)
@@ -886,6 +913,7 @@ def test_wi5_c51_accepted_controls(tmp_path):  # WI5-C51 (i), (j)
     assert sorted(os.listdir(evdir)) == ["ai_settings.example.json", "x.json"]
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c57_hidden_root_adds_never_replaces(tmp_path):  # WI5-C57
     root = tmp_path / "R"
     (root / "config").mkdir(parents=True)
@@ -899,6 +927,7 @@ def test_wi5_c57_hidden_root_adds_never_replaces(tmp_path):  # WI5-C57
     assert os.listdir(evdir) == []
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c58_guards_main_checkout_from_linked_worktree(tmp_path):  # WI5-C58
     main = tmp_path / "M"
     (main / ".git" / "worktrees" / "x").mkdir(parents=True)
@@ -917,6 +946,7 @@ def test_wi5_c58_guards_main_checkout_from_linked_worktree(tmp_path):  # WI5-C58
     assert (_mode_mtime(books_file), _mode_mtime(settings_replica)) == before
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c59_add_refuses_a_directory(tmp_path):  # WI5-C59
     root = tmp_path / "R"
     settings_replica = _replica(root / "config" / "ai_settings.json")
@@ -931,6 +961,7 @@ def test_wi5_c59_add_refuses_a_directory(tmp_path):  # WI5-C59
     assert _mode_mtime(settings_replica) == before
 
 
+@pytest.mark.verify_control_live
 def test_wi5_x01_evidence_root_inside_books_refused_for_every_wi5_command(tmp_path):  # RR5 (added case)
     repo = fake_repo(tmp_path)
     env = base_env(tmp_path)
@@ -1013,6 +1044,7 @@ def _line_of(text, needle):
     return text.split("\n").index(needle) + 1
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c35_valid_tree(tmp_path):  # WI5-C35
     root = map_tree(tmp_path)
     code, e, _ = _map(root, tmp_path)
@@ -1025,6 +1057,7 @@ def test_wi5_c35_valid_tree(tmp_path):  # WI5-C35
     assert d["problems"] == [] and d["dead_commands"] == []
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c36_wrong_h2_order(tmp_path):  # WI5-C36
     root = map_tree(tmp_path)
     _write(root / FEAT_REL / "F-009.md", map_md("F-009", h2s=[FOUR[3], FOUR[0], FOUR[1], FOUR[2]]))
@@ -1036,6 +1069,7 @@ def test_wi5_c36_wrong_h2_order(tmp_path):  # WI5-C36
     assert "Gotchas" in probs[0]["message"] and "Sub-features" in probs[0]["message"]
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c37_a_fifth_h2(tmp_path):  # WI5-C37
     root = map_tree(tmp_path)
     _write(root / FEAT_REL / "F-009.md", map_md("F-009", h2s=FOUR + ["Notes"]))
@@ -1043,6 +1077,7 @@ def test_wi5_c37_a_fifth_h2(tmp_path):  # WI5-C37
     assert code == 1 and _pairs(e) == [("F-009.md", "h2_mismatch")], e
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c38_fenced_hashes_and_h3_are_not_h2(tmp_path):  # WI5-C38
     root = map_tree(tmp_path)
     sections = {
@@ -1054,6 +1089,7 @@ def test_wi5_c38_fenced_hashes_and_h3_are_not_h2(tmp_path):  # WI5-C38
     assert code == 0 and e["data"]["problems"] == [], e
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c39_unknown_id(tmp_path):  # WI5-C39
     root = map_tree(tmp_path)
     _write(root / FEAT_REL / "F-999.md", map_md("F-999"))
@@ -1064,6 +1100,7 @@ def test_wi5_c39_unknown_id(tmp_path):  # WI5-C39
     assert "F-999" not in e["data"]["mapped"]
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c40_map_for_absent_row(tmp_path):  # WI5-C40
     root = map_tree(tmp_path)
     _write(root / FEAT_REL / "F-035.md", map_md("F-035"))
@@ -1073,6 +1110,7 @@ def test_wi5_c40_map_for_absent_row(tmp_path):  # WI5-C40
     assert "F-035" in e["data"]["excluded"] and "F-035" not in e["data"]["mapped"]
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c41_readme_missing_a_file(tmp_path):  # WI5-C41
     root = map_tree(tmp_path)
     _write(root / README_REL, _readme(["F-009.md"]))
@@ -1083,6 +1121,7 @@ def test_wi5_c41_readme_missing_a_file(tmp_path):  # WI5-C41
     assert "F-032.md" in probs[0]["message"]
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize(
     "variant,kw,kind",
     [
@@ -1112,6 +1151,7 @@ def _c43_tree(tmp_path):
     return root
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c43_independence_each_malformation_once(tmp_path):  # WI5-C43
     root = _c43_tree(tmp_path)
     code, e, _ = _map(root, tmp_path)
@@ -1129,6 +1169,7 @@ def test_wi5_c43_independence_each_malformation_once(tmp_path):  # WI5-C43
     }
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize("variant", ["a_no_features_dir", "b_no_readme"])
 def test_wi5_c44_features_dir_or_readme_missing(tmp_path, variant):  # WI5-C44
     root = tmp_path / "root"
@@ -1157,6 +1198,7 @@ def _parser_message(argv):
     return None
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c45_dead_commands_from_real_parser(tmp_path):  # WI5-C45
     root = map_tree(tmp_path)
     fenced = [
@@ -1204,6 +1246,7 @@ def test_wi5_c46_every_leaf_help_valid_unknown_flag_dead(capsys):  # WI5-C46
     assert capsys.readouterr().out == ""
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c47_quoted_commands_parsed_never_dispatched(tmp_path):  # WI5-C47
     fake_venv(tmp_path)
     root = map_tree(tmp_path)
@@ -1219,6 +1262,7 @@ def test_wi5_c47_quoted_commands_parsed_never_dispatched(tmp_path):  # WI5-C47
     assert not (tmp_path / "fakelog" / "reader3-server.jsonl").exists()
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c48_inline_backticks_and_trailing_comments(tmp_path):  # WI5-C48
     root = map_tree(tmp_path)
     prose = f"Run `{CTL} lane F-011 --runner pyest` first."
@@ -1241,6 +1285,7 @@ def _digest_tree(root):
     return out
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c49_idempotence(tmp_path):  # WI5-C49
     root = _c43_tree(tmp_path)
     before = _digest_tree(root)
@@ -1251,6 +1296,7 @@ def test_wi5_c49_idempotence(tmp_path):  # WI5-C49
     assert _digest_tree(root) == before
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c50_unreadable_ledger(tmp_path):  # WI5-C50
     root = map_tree(tmp_path, ledger=_ledger_without_synced())
     code, e, _ = _map(root, tmp_path)
@@ -1259,6 +1305,7 @@ def test_wi5_c50_unreadable_ledger(tmp_path):  # WI5-C50
     _assert_try(e)
 
 
+@pytest.mark.verify_control_live
 def test_wi5_c52_dead_command_extraction_complete(tmp_path):  # WI5-C52
     root = map_tree(tmp_path)
     s_line = CTL + " reader state --wiat 15"
@@ -1285,6 +1332,7 @@ def test_wi5_c52_dead_command_extraction_complete(tmp_path):  # WI5-C52
     assert "invalid choice: 'frobnicate'" in dead[2]["message"]
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize(
     "variant,title,want",
     [
@@ -1308,6 +1356,7 @@ def test_wi5_c54_h1_rule(tmp_path, variant, title, want):  # WI5-C54
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize(
     "variant,raw,fragment",
     [
@@ -1332,6 +1381,7 @@ def test_wi9_3_evidence_invalid_pointer(tmp_path, variant, raw, fragment):  # WI
     assert ptr.read_bytes() == raw
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize("value", ["0", "-1", "nan", "inf"])
 def test_wi9_4_lane_timeout_must_be_finite_and_positive(tmp_path, value):  # WI-9 / M8
     """Review finding M8: `lane --timeout` was a bare float, so 0, -1, nan and inf reached
@@ -1345,6 +1395,7 @@ def test_wi9_4_lane_timeout_must_be_finite_and_positive(tmp_path, value):  # WI-
     assert not runner_log_path(tmp_path).exists()
 
 
+@pytest.mark.verify_control_live
 def test_wi9_5_lane_fractional_timeout_still_accepted(tmp_path):  # WI-9 / M8
     """Review finding M8: the stricter `--timeout` check must still accept a positive fraction."""
     env = lane_env(tmp_path)

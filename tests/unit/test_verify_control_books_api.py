@@ -230,6 +230,7 @@ def test_wi2_c04_property_accept_iff_realpath_inside(tmp_path):  # WI2-C04
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c05_ls_stat_cat_inside_the_sandbox(tmp_path):  # WI2-C05
     fx = write_state(tmp_path)
     os.chmod(fx.sandbox / "ai_settings.json", 0o600)
@@ -246,6 +247,7 @@ def test_wi2_c05_ls_stat_cat_inside_the_sandbox(tmp_path):  # WI2-C05
     assert os.stat(notes).st_mtime_ns == before
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c06_cat_cap_is_exactly_256_kib(tmp_path):  # WI2-C06
     fx = write_state(tmp_path)
     (fx.sandbox / "at_cap.bin").write_bytes(b"x" * CAP)
@@ -256,6 +258,7 @@ def test_wi2_c06_cat_cap_is_exactly_256_kib(tmp_path):  # WI2-C06
     assert (len(d["content"]), d["truncated"], d["size"]) == (CAP, True, CAP + 1)
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c07_refusals_never_read_the_forbidden_file(tmp_path):  # WI2-C07
     fx = write_state(tmp_path)
     out = outside_dir(tmp_path)
@@ -277,6 +280,7 @@ def test_wi2_c07_refusals_never_read_the_forbidden_file(tmp_path):  # WI2-C07
         _absent(r, "CANARY-outside-7f3", CANARY_CONTENT, REPLICA_KEY)
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c08_missing_in_sandbox_path(tmp_path):  # WI2-C08
     fx = write_state(tmp_path)
     e = _err(run_cli(["fs", "cat", "nope.txt"], fx.env, timeout=15), 1, "not_found")
@@ -284,6 +288,7 @@ def test_wi2_c08_missing_in_sandbox_path(tmp_path):  # WI2-C08
     assert not (fx.sandbox / "nope.txt").exists()
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c48a_fifo_and_directory_are_not_a_file(tmp_path):  # WI2-C48(a)
     fx = write_state(tmp_path)
     os.mkfifo(fx.sandbox / "pipe")
@@ -295,6 +300,7 @@ def test_wi2_c48a_fifo_and_directory_are_not_a_file(tmp_path):  # WI2-C48(a)
     assert "books" in e["error"]["message"]
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c48b_sibling_prefix_escape_at_the_cli(tmp_path):  # WI2-C48(b)
     fx = write_state(tmp_path)
     evil = fx.sandbox.parent / (fx.sandbox.name + "EVIL")
@@ -317,6 +323,7 @@ _RSS_WRAPPER = (
 )
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c48c_cat_reads_a_1gib_sparse_file_with_bounded_memory(tmp_path):  # WI2-C48(c), round 2
     fx = write_state(tmp_path)
     huge = fx.sandbox / "huge.bin"
@@ -392,6 +399,7 @@ def test_wi2_c11_property_host_and_port_preserved_or_refused(s, port):  # WI2-C1
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c12_get_with_token_header_sent_no_origin_body_parsed(tmp_path):  # WI2-C12
     rec = recording_server(tmp_path, {"GET /api/library": {
         "status": 200, "headers": {"Content-Type": "application/json", "ETag": '"lib-1"', "X-Other": "y"},
@@ -413,6 +421,7 @@ def test_wi2_c12_get_with_token_header_sent_no_origin_body_parsed(tmp_path):  # 
     assert _hdrs(q, "host") == [f"127.0.0.1:{rec.port}"]
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c13_no_token_configured_no_token_header(tmp_path):  # WI2-C13
     rec = recording_server(tmp_path)
     fx = write_state(tmp_path, base_url=rec.base_url, token=None)
@@ -421,6 +430,7 @@ def test_wi2_c13_no_token_configured_no_token_header(tmp_path):  # WI2-C13
     assert _hdrs(q, "x-reader3-token") == [] and _hdrs(q, "origin") == []
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c14_post_json_file_if_match_header_inline_and_evidence_file(tmp_path):  # WI2-C14
     rec = recording_server(tmp_path)
     fx = write_state(tmp_path, base_url=rec.base_url)
@@ -454,6 +464,7 @@ def _status_routes():
     }
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c15_expect_semantics_and_no_retry(tmp_path):  # WI2-C15
     rec = recording_server(tmp_path, _status_routes())
     fx = write_state(tmp_path, base_url=rec.base_url)
@@ -468,6 +479,7 @@ def test_wi2_c15_expect_semantics_and_no_retry(tmp_path):  # WI2-C15
     assert [q["target"] for q in rec.requests()] == ["/c", "/c", "/nf", "/boom"]
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c16_body_truncation_boundary_and_elapsed(tmp_path):  # WI2-C16
     rec = recording_server(tmp_path, {
         "GET /t64": {"status": 200, "headers": {"Content-Type": "text/plain"}, "body": "y" * BODY_CAP},
@@ -495,6 +507,7 @@ def _c17_runs(evil_port):
     ]
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c17_url_host_origin_crlf_refusals_open_no_connection(tmp_path):  # WI2-C17 (amended)
     rec, evil = recording_server(tmp_path), recording_server(tmp_path)
     fx = write_state(tmp_path, base_url=rec.base_url)
@@ -506,6 +519,7 @@ def test_wi2_c17_url_host_origin_crlf_refusals_open_no_connection(tmp_path):  # 
     assert _hdrs(q, "x-a") == ["1"] and _hdrs(q, "host") == [f"127.0.0.1:{rec.port}"]
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c18_proxy_env_cannot_redirect(tmp_path):  # WI2-C18
     rec, proxy = recording_server(tmp_path), recording_server(tmp_path)
     fx = write_state(tmp_path, base_url=rec.base_url)
@@ -515,6 +529,7 @@ def test_wi2_c18_proxy_env_cannot_redirect(tmp_path):  # WI2-C18
     assert len(rec.requests()) == 1 and proxy.requests() == []
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c49_proxy_environment_has_no_effect_api_half(tmp_path):  # WI2-C49 (api half; ai ask is WI-3)
     rec, evil = recording_server(tmp_path), recording_server(tmp_path)
     fx = write_state(tmp_path, base_url=rec.base_url, token=TOKEN)
@@ -525,6 +540,7 @@ def test_wi2_c49_proxy_environment_has_no_effect_api_half(tmp_path):  # WI2-C49 
     assert evil.requests() == [] and len(rec.requests()) == 1
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c19_json_file_outside_is_refused_without_reading(tmp_path):  # WI2-C19
     rec = recording_server(tmp_path)
     fx = write_state(tmp_path, base_url=rec.base_url)
@@ -544,6 +560,7 @@ def test_wi2_c19_json_file_outside_is_refused_without_reading(tmp_path):  # WI2-
     assert rec.requests() == []
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c20_dry_run_connects_nowhere_and_redacts_token(tmp_path):  # WI2-C20
     rec = recording_server(tmp_path)
     fx = write_state(tmp_path, base_url=rec.base_url, token=TOKEN)
@@ -565,6 +582,7 @@ def test_wi2_c20_dry_run_connects_nowhere_and_redacts_token(tmp_path):  # WI2-C2
     assert rec.requests() == []
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c21a_connection_refused(tmp_path):  # WI2-C21(a)
     dead = recording_server(tmp_path)
     dead.stop()
@@ -573,6 +591,7 @@ def test_wi2_c21a_connection_refused(tmp_path):  # WI2-C21(a)
     assert "control.py doctor" in e["error"]["try"]
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c21b_request_timeout(tmp_path):  # WI2-C21(b)
     rec = recording_server(tmp_path, _status_routes())
     fx = write_state(tmp_path, base_url=rec.base_url)
@@ -582,6 +601,7 @@ def test_wi2_c21b_request_timeout(tmp_path):  # WI2-C21(b)
     assert [q["target"] for q in rec.requests()] == ["/hang"]
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize("argv", [["api", "FROB", "/x"], ["api", "POST", "/x", "--json", "{bad"], ["api", "GET"]])
 def test_wi2_c22_usage_errors_send_nothing(tmp_path, argv):  # WI2-C22
     rec = recording_server(tmp_path)
@@ -592,6 +612,7 @@ def test_wi2_c22_usage_errors_send_nothing(tmp_path, argv):  # WI2-C22
     assert rec.requests() == []
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c45_redirects_are_reported_never_followed(tmp_path):  # WI2-C45
     evil = recording_server(tmp_path)
     rec = recording_server(tmp_path, {
@@ -629,6 +650,7 @@ def _c43_tampers(evil_port):
     ]
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c43_tampered_base_url_is_refused_before_connect(tmp_path):  # WI2-C43 (round 2; api half)
     rec, evil = recording_server(tmp_path), recording_server(tmp_path)
     fx = write_state(tmp_path, base_url=rec.base_url)
@@ -643,6 +665,7 @@ def test_wi2_c43_tampered_base_url_is_refused_before_connect(tmp_path):  # WI2-C
     assert [q["target"] for q in evil.requests()] == ["/x"]
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c44_tampered_sandbox_is_refused_before_any_read(tmp_path):  # WI2-C44 (round 2; fs and api halves)
     rec = recording_server(tmp_path)
     fx = write_state(tmp_path, base_url=rec.base_url)
@@ -675,6 +698,7 @@ def test_wi2_c44_tampered_sandbox_is_refused_before_any_read(tmp_path):  # WI2-C
     assert snap() == before
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c46_token_never_leaks_on_api_failure_paths(tmp_path):  # WI2-C46 part A (part B is WI-3)
     rec, evil = recording_server(tmp_path, _status_routes()), recording_server(tmp_path)
     fx = write_state(tmp_path, base_url=rec.base_url, token=TOKEN)
@@ -771,6 +795,7 @@ def _sandbox_r3(fx):
     return {"READER3_BOOKS_DIR": str(fx.books_dir), "READER3_AI_SETTINGS": str(fx.sandbox / "ai_settings.json")}
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c26_add_sandbox_env_abs_epub_sandbox_cwd_summary(tmp_path):  # WI2-C26
     fv, fx, env = _book_setup(tmp_path)
     fv.script({"add": {"stdout": SUMMARY, "stderr": "", "exit": 0}})
@@ -786,6 +811,7 @@ def test_wi2_c26_add_sandbox_env_abs_epub_sandbox_cwd_summary(tmp_path):  # WI2-
     assert _r3(call["env"]) == _sandbox_r3(fx)
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c27_add_dry_run_spawns_nothing(tmp_path):  # WI2-C27
     fv, fx, env = _book_setup(tmp_path)
     epub = tmp_path / "src" / "a.epub"
@@ -799,6 +825,7 @@ def test_wi2_c27_add_dry_run_spawns_nothing(tmp_path):  # WI2-C27
     assert fv.calls("reader3") == [] and fv.calls("python") == []
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c28_add_failure_modes(tmp_path):  # WI2-C28
     fv, fx, env = _book_setup(tmp_path)
     epub = tmp_path / "a.epub"
@@ -815,6 +842,7 @@ def test_wi2_c28_add_failure_modes(tmp_path):  # WI2-C28
     assert len(fv.calls("reader3")) == 2
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c29_guard1_at_the_book_call_sites(tmp_path):  # WI2-C29
     fv, fx, env = _book_setup(tmp_path)
     rewrite_state(fx.state_path, books_dir=str(REPO / "books"))
@@ -841,6 +869,7 @@ def _cache(tmp_path):
     return d
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c30_branch_a_extra_missing_short_circuits(tmp_path):  # WI2-C30
     fv, fx, env = _book_setup(tmp_path, extra_installed=False)
     _cache(tmp_path)
@@ -851,6 +880,7 @@ def test_wi2_c30_branch_a_extra_missing_short_circuits(tmp_path):  # WI2-C30
     assert len(fv.calls("python")) == 1 and fv.calls("reader3") == []
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c31_branch_b_model_not_cached(tmp_path):  # WI2-C31
     fv, fx, env = _book_setup(tmp_path)
     d = _ok(run_cli(["book", "index", "smoke_data"], env, timeout=15))
@@ -859,6 +889,7 @@ def test_wi2_c31_branch_b_model_not_cached(tmp_path):  # WI2-C31
     assert fv.calls("reader3") == []
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c32_branch_c_real_run_offline_env_parsed(tmp_path):  # WI2-C32
     fv, fx, env = _book_setup(tmp_path)
     _cache(tmp_path)
@@ -872,6 +903,7 @@ def test_wi2_c32_branch_c_real_run_offline_env_parsed(tmp_path):  # WI2-C32
     assert call["cwd"] == str(fx.sandbox)
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c33_allow_download_runs_without_offline_env(tmp_path):  # WI2-C33
     fv, fx, env = _book_setup(tmp_path)
     fv.script({"index": {"stdout": INDEXED, "stderr": "", "exit": 0}})
@@ -881,6 +913,7 @@ def test_wi2_c33_allow_download_runs_without_offline_env(tmp_path):  # WI2-C33
     assert "HF_HUB_OFFLINE" not in call["env_keys"] and "TRANSFORMERS_OFFLINE" not in call["env_keys"]
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c34_hf_cache_location_precedence(tmp_path):  # WI2-C34
     fv, fx, env = _book_setup(tmp_path)
     fv.script({"index": {"stdout": INDEXED, "stderr": "", "exit": 0}})
@@ -896,6 +929,7 @@ def test_wi2_c34_hf_cache_location_precedence(tmp_path):  # WI2-C34
     assert d["skipped"] == "model_not_cached" and len(fv.calls("reader3")) == 1
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize("extra,cached,allow", list(itertools.product([False, True], repeat=3)))
 def test_wi2_c35_exhaustive_decision_table(tmp_path, extra, cached, allow):  # WI2-C35
     fv, fx, env = _book_setup(tmp_path, extra_installed=extra)
@@ -914,6 +948,7 @@ def test_wi2_c35_exhaustive_decision_table(tmp_path, extra, cached, allow):  # W
     assert len(fv.calls("python")) == 1
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize("script,needle", [
     ({"stdout": "", "stderr": "smoke_data is held by reader3-server (pid 4242)\n", "exit": 1}, "held by reader3-server"),
     ({"stdout": "", "stderr": "Book not found or not processed: smoke_data (expected /s/books/smoke_data/book.pkl)\n",
@@ -938,6 +973,7 @@ OFFLINE_TRACE = (
 )
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize("stream", ["stderr", "stdout"])
 def test_wi4b_c1_offline_mode_failure_points_at_allow_download(tmp_path, stream):  # WI-4b C1
     fv, fx, env = _book_setup(tmp_path)
@@ -954,6 +990,7 @@ def test_wi4b_c1_offline_mode_failure_points_at_allow_download(tmp_path, stream)
     assert fv.calls("reader3")[0]["env"]["HF_HUB_OFFLINE"] == "1"
 
 
+@pytest.mark.verify_control_live
 def test_wi4b_c2_offline_error_under_allow_download_keeps_doctor(tmp_path):  # WI-4b C2
     fv, fx, env = _book_setup(tmp_path)
     fv.script({"index": {"stdout": "", "stderr": OFFLINE_TRACE, "exit": 1}})
@@ -963,6 +1000,7 @@ def test_wi4b_c2_offline_error_under_allow_download_keeps_doctor(tmp_path):  # W
     assert "--allow-download" not in e["error"]["try"]
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c37_index_dry_run_spawns_neither_probe_nor_reader3(tmp_path):  # WI2-C37
     fv, fx, env = _book_setup(tmp_path)
     _cache(tmp_path)
@@ -973,6 +1011,7 @@ def test_wi2_c37_index_dry_run_spawns_neither_probe_nor_reader3(tmp_path):  # WI
     assert fv.calls("python") == [] and fv.calls("reader3") == []
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c38_book_id_confinement_and_missing_book(tmp_path):  # WI2-C38
     fv, fx, env = _book_setup(tmp_path)
     for bid in ("../x", "a/b", "/abs_data"):
@@ -981,6 +1020,7 @@ def test_wi2_c38_book_id_confinement_and_missing_book(tmp_path):  # WI2-C38
     assert fv.calls("python") == [] and fv.calls("reader3") == []
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize("parent,allow,want", [
     ({"HF_HUB_OFFLINE": "0", "TRANSFORMERS_OFFLINE": "0"}, False, ("1", "1")),
     ({"HF_HUB_OFFLINE": "0", "TRANSFORMERS_OFFLINE": "0"}, True, ("0", "0")),
@@ -1006,6 +1046,7 @@ def test_wi2_c47_offline_env_is_forced_not_defaulted(tmp_path, parent, allow, wa
 META_KEYS = {"book_id", "status", "chunk_count", "model_name", "space", "indexed_at"}
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c39_importing_vector_search_does_not_import_chromadb():  # WI2-C39
     env = {k: v for k, v in os.environ.items() if k != "READER3_EMBED_MODEL"}
     code = ("import sys, reader3_app.vector_search as v; "
@@ -1054,6 +1095,7 @@ def test_wi2_c41_real_status_reports_stale_model_name(tmp_path, no_semantic):  #
     assert s["model_name"] == no_semantic.MODEL_NAME
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c42_up_stale_index_seeds_opt_in_and_needs_corpus(tmp_path, no_semantic):  # WI2-C42
     fv = fake_venv(tmp_path)
     env = base_env(tmp_path)
@@ -1084,6 +1126,7 @@ def test_wi2_c42_up_stale_index_seeds_opt_in_and_needs_corpus(tmp_path, no_seman
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.verify_control_live
 def test_wi9_1_fs_ls_on_a_regular_file_is_not_a_directory(tmp_path):  # WI-9 / M4
     """Review finding M4: `fs ls` on a regular file must report `not_a_directory` (fs_view.py)."""
     fx = write_state(tmp_path)
@@ -1137,6 +1180,7 @@ def _garbage_server(tmp_path):
     return proc, int(port_file.read_text())
 
 
+@pytest.mark.verify_control_live
 def test_wi9_2_api_malformed_http_response_is_bad_response(tmp_path):  # WI-9 / M4
     """Review finding M4: a listener that answers with a non-HTTP status line yields `bad_response` (cmd_api.py)."""
     proc, port = _garbage_server(tmp_path)

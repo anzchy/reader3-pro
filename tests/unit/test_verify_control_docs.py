@@ -139,6 +139,7 @@ def _all_docs():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.verify_control_live
 def test_wi6_c01_real_repo_map_check_is_clean_and_maps_the_five_rows(tmp_path):
     code, env, err = run_cli(["map", "check"], base_env(tmp_path))
     data = env["data"] or {}

@@ -136,8 +136,8 @@ def _wait_health(proc, base_url, log, grace):
             raise fail("up", "server_exited", f"server exited with {proc.returncode}; log tail: {_tail(log)}", "up")
         left = deadline - time.monotonic()
         if left <= 0:
-            procs.stop_child(proc, grace)
-            raise fail("up", "startup_timeout", f"/api/health did not answer 200; log tail: {_tail(log)}", "up")
+            stuck = "" if procs.stop_child(proc, grace) else f"; server pid {proc.pid} survived SIGKILL"
+            raise fail("up", "startup_timeout", f"/api/health did not answer 200{stuck}; log tail: {_tail(log)}", "up")
         try:
             status, _, _ = http_client.request(base_url, "GET", "/api/health", timeout=max(0.1, min(1.0, left)))
             if status == 200:

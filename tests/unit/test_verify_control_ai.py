@@ -240,6 +240,7 @@ def _stats(d):
     return _read_json_retry(d / STATS_FILE)
 
 
+@pytest.mark.verify_control_live
 def test_wi3_c07_runner_lifecycle(runner):  # WI3-C07
     proc, d, ready = runner
     assert set(ready) == {"port", "pid"} and ready["pid"] == proc.pid
@@ -266,6 +267,7 @@ def test_wi3_c07_runner_lifecycle(runner):  # WI3-C07
     }
 
 
+@pytest.mark.verify_control_live
 def test_wi3_c08_gate_ipc_register_law(runner):  # WI3-C08
     _, d, _ = runner
     assert _stats(d)["gate_set"] is False
@@ -276,6 +278,7 @@ def test_wi3_c08_gate_ipc_register_law(runner):  # WI3-C08
         assert wait_until(lambda: not (d / name).exists() and _stats(d)["gate_set"] is want, timeout=1), (name, want)
 
 
+@pytest.mark.verify_control_live
 def test_wi3_c09_sigterm_while_request_held(runner):  # WI3-C09
     proc, d, ready = runner
     client = child_client_popen(CHAT_CLIENT, ready["port"])
@@ -313,6 +316,7 @@ def _up_stub(tmp_path, env):
     return d
 
 
+@pytest.mark.verify_control_live
 def test_wi3_c10_up_ai_stub_settings_and_live_stub(tmp_path):  # WI3-C10
     fv = fake_venv(tmp_path)
     env = base_env(tmp_path)
@@ -343,6 +347,7 @@ def test_wi3_c10_up_ai_stub_settings_and_live_stub(tmp_path):  # WI3-C10
         run_cli(["down"], env)
 
 
+@pytest.mark.verify_control_live
 def test_wi3_c11_down_kills_server_and_stub(tmp_path):  # WI3-C11
     fake_venv(tmp_path)
     env = base_env(tmp_path)
@@ -354,6 +359,7 @@ def test_wi3_c11_down_kills_server_and_stub(tmp_path):  # WI3-C11
     assert not os.path.exists(d["sandbox"])
 
 
+@pytest.mark.verify_control_live
 def test_wi3_c12_down_refuses_foreign_stub_pid(tmp_path):  # WI3-C12
     env = base_env(tmp_path)
     sleeper = spawn(["sleep", "60"], tmp_path)
@@ -365,6 +371,7 @@ def test_wi3_c12_down_refuses_foreign_stub_pid(tmp_path):  # WI3-C12
     assert sleeper.poll() is None
 
 
+@pytest.mark.verify_control_live
 def test_wi3_c13_runner_fails_to_start(tmp_path):  # WI3-C13
     fv = fake_venv(tmp_path)
     bad = tmp_path / "bad_stub.py"
@@ -402,6 +409,7 @@ def _kill_recorded(rec):
             pass
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize("server", ["exit", "hang"])
 def test_wi3_c28_runner_not_orphaned_when_server_fails(tmp_path, server):  # WI3-C28 (a) exit, (b) hang
     rec = pid_recording_stub_module(tmp_path)
@@ -425,6 +433,7 @@ def test_wi3_c28_runner_not_orphaned_when_server_fails(tmp_path, server):  # WI3
         _kill_recorded(rec)
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize("variant", ["timeout", "sigterm"])
 def test_wi3_c30_runner_never_ready_is_not_orphaned(tmp_path, variant):  # WI3-C30 (a) timeout, (b) SIGTERM
     rec = pid_recording_stub_module(tmp_path, hang=True)
@@ -467,6 +476,7 @@ def test_wi3_c30_runner_never_ready_is_not_orphaned(tmp_path, variant):  # WI3-C
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.verify_control_live
 def test_wi3_c14_concurrency_two_ungated(tmp_path):  # WI3-C14 (amended)
     fx, fake = _setup(tmp_path, mode="stream", chunk_delay_s=0.2)
     d = _ok(_ask(fx, "Who is Alpha?", "--book", "smoke_data", "--concurrency", "2"))
@@ -486,6 +496,7 @@ def test_wi3_c14_concurrency_two_ungated(tmp_path):  # WI3-C14 (amended)
     assert s["release_seen_at"] < min(q["t_accept"] for q in reqs)
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize("n", [1, 3, 4])
 def test_wi3_c15_conservation_across_n(tmp_path, n):  # WI3-C15 (amended)
     fx, fake = _setup(tmp_path, mode="stream")
@@ -497,6 +508,7 @@ def test_wi3_c15_conservation_across_n(tmp_path, n):  # WI3-C15 (amended)
     assert len(fake.requests()) == n
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize("delay", [1.0, 2.5])
 def test_wi3_c16_release_after_every_first_delta(tmp_path, delay):  # WI3-C16 (amended)
     fx, fake = _setup(tmp_path, mode="gate", gate_timeout_s=5, first_chunk_delay_s={1: delay})
@@ -515,6 +527,7 @@ def test_wi3_c16_release_after_every_first_delta(tmp_path, delay):  # WI3-C16 (a
     assert S["release_seen_at"] - max(q["t_first_chunk"] for q in reqs) < 0.5
 
 
+@pytest.mark.verify_control_live
 def test_wi3_c17_gate_hold_never_released(tmp_path):  # WI3-C17
     fx, fake = _setup(tmp_path, mode="gate", gate_timeout_s=1.5, split_frames=True)
     d = _ok(_ask(fx, "q", "--book", "smoke_data", "--concurrency", "2", "--gate", "hold"))
@@ -525,6 +538,7 @@ def test_wi3_c17_gate_hold_never_released(tmp_path):  # WI3-C17
     assert not (fx.stub_dir / GATE_RELEASE_FILE).exists()
 
 
+@pytest.mark.verify_control_live
 def test_wi3_c18_timeout_partial_results_bounded_exit(tmp_path):  # WI3-C18
     fx, _ = _setup(tmp_path, mode="hang")
     r = _ask(fx, "q", "--book", "smoke_data", "--concurrency", "2", "--timeout", "2", timeout=10)
@@ -535,6 +549,7 @@ def test_wi3_c18_timeout_partial_results_bounded_exit(tmp_path):  # WI3-C18
     assert r.elapsed_s < 6
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize("mode", ["error", "http404", "badjson"])
 def test_wi3_c19_error_event_http_error_bad_chunk(tmp_path, mode):  # WI3-C19 (a) error, (b) http404, (c) badjson
     fx, fake = _setup(tmp_path, mode=mode)
@@ -549,6 +564,7 @@ def test_wi3_c19_error_event_http_error_bad_chunk(tmp_path, mode):  # WI3-C19 (a
     assert len(fake.requests()) == 1
 
 
+@pytest.mark.verify_control_live
 def test_wi3_c20_dry_run_sends_nothing_touches_no_ipc(tmp_path):  # WI3-C20 (amended)
     fx, fake = _setup(tmp_path, mode="gate")
     S0 = fake.summary()
@@ -566,6 +582,7 @@ def test_wi3_c20_dry_run_sends_nothing_touches_no_ipc(tmp_path):  # WI3-C20 (ame
     assert wait_until(lambda: fake.summary()["release_seen_count"] == 1, timeout=1)
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize("book", ["../x", "a/b", "/abs", "evil_data"])
 def test_wi3_c21_book_confinement(tmp_path, book):  # WI3-C21
     fx, fake = _setup(tmp_path, mode="stream")
@@ -578,6 +595,7 @@ def test_wi3_c21_book_confinement(tmp_path, book):  # WI3-C21
     assert fake.requests() == [] and _ipc_files(fx) == []
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize("variant", ["deleted", "traversal", "not_json", "int"])
 def test_wi3_c22_missing_or_invalid_book_uuid(tmp_path, variant):  # WI3-C22 (a)-(d)
     fx, fake = _setup(tmp_path, mode="stream")
@@ -601,6 +619,7 @@ def test_wi3_c22_missing_or_invalid_book_uuid(tmp_path, variant):  # WI3-C22 (a)
         assert meta.read_bytes() == before
 
 
+@pytest.mark.verify_control_live
 def test_wi3_c23_gate_without_stub_and_plain_ask_without_stub(tmp_path):  # WI3-C23
     fx, fake = _setup(tmp_path, stub=False, mode="stream")
     _err(_ask(fx, "q", "--book", "smoke_data", "--gate", "hold"), 1, "no_stub")  # (a)
@@ -611,6 +630,7 @@ def test_wi3_c23_gate_without_stub_and_plain_ask_without_stub(tmp_path):  # WI3-
     assert not fx.stub_dir.exists()
 
 
+@pytest.mark.verify_control_live
 def test_wi3_c24_stub_that_does_not_consume_arm(tmp_path):  # WI3-C24
     fx, fake = _setup(tmp_path, mode="stream", ipc=False)
     r = _ask(fx, "q", "--book", "smoke_data", "--gate", "hold", timeout=10)
@@ -619,6 +639,7 @@ def test_wi3_c24_stub_that_does_not_consume_arm(tmp_path):  # WI3-C24
     assert fake.requests() == []
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize("n", [0, 9, 8])
 def test_wi3_c25_concurrency_bounds(tmp_path, n):  # WI3-C25
     fx, fake = _setup(tmp_path, mode="stream")
@@ -630,6 +651,7 @@ def test_wi3_c25_concurrency_bounds(tmp_path, n):  # WI3-C25
         assert fake.requests() == []
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize("style", ["clean", "abort"])
 def test_wi3_c26_stream_without_done_is_failure(tmp_path, style):  # WI3-C26
     fx, fake = _setup(tmp_path, stub=False, mode="truncated", truncate_style=style)
@@ -642,6 +664,7 @@ def test_wi3_c26_stream_without_done_is_failure(tmp_path, style):  # WI3-C26
     assert len(fake.requests()) == 1
 
 
+@pytest.mark.verify_control_live
 def test_wi3_c27a_timeout_is_an_overall_deadline(tmp_path):  # WI3-C27 (a)
     fx, fake = _setup(tmp_path, mode="trickle", trickle_interval_s=0.5)
     r = _ask(fx, "q", "--book", "smoke_data", "--concurrency", "2", "--timeout", "2", timeout=10)
@@ -655,6 +678,7 @@ def test_wi3_c27a_timeout_is_an_overall_deadline(tmp_path):  # WI3-C27 (a)
     assert len(fake.requests()) == 2
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize("n", [3, 4, 8])
 def test_wi3_c29_concurrency_really_is_n(tmp_path, n):  # WI3-C29
     fx, fake = _setup(tmp_path, mode="stream", chunk_delay_s=0.2)
@@ -672,6 +696,7 @@ def test_wi3_c29_concurrency_really_is_n(tmp_path, n):  # WI3-C29
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c43_ai_ask_tampered_base_url_refused(tmp_path):  # WI2-C43 (round 2; ai ask half)
     fx, rec = _setup(tmp_path, stub=False, mode="stream")
     evil = fake_sse_server(tmp_path, tmp_path / "evilstub", ipc=False)
@@ -692,6 +717,7 @@ def test_wi2_c43_ai_ask_tampered_base_url_refused(tmp_path):  # WI2-C43 (round 2
     assert [q["target"] for q in evil.requests()] == [TARGET]
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c44_ai_ask_tampered_sandbox_refused(tmp_path):  # WI2-C44 (round 2; ai ask half)
     fx, rec = _setup(tmp_path, stub=False, mode="stream")
     link = tmp_path / "verify-reader3.link"
@@ -704,6 +730,7 @@ def test_wi2_c44_ai_ask_tampered_sandbox_refused(tmp_path):  # WI2-C44 (round 2;
     assert snapshot_tree(fx.books_dir) == before
 
 
+@pytest.mark.verify_control_live
 @pytest.mark.parametrize("variant", ["b1", "b2", "b3", "b4"])
 def test_wi2_c46_token_sent_and_never_leaked_by_ai_ask(tmp_path, variant):  # WI2-C46 part B
     mode = {"b1": "stream", "b2": "hang", "b3": "http404", "b4": "stream"}[variant]
@@ -728,6 +755,7 @@ def test_wi2_c46_token_sent_and_never_leaked_by_ai_ask(tmp_path, variant):  # WI
         assert reqs
 
 
+@pytest.mark.verify_control_live
 def test_wi2_c49_proxy_env_has_no_effect_on_ai_ask(tmp_path):  # WI2-C49 (ai ask half)
     fx, fake = _setup(tmp_path, stub=False, token=TOKEN, mode="stream")
     evil = fake_sse_server(tmp_path, tmp_path / "evilstub", ipc=False)
