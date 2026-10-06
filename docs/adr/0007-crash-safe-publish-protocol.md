@@ -2,7 +2,7 @@
 
 | 字段 | 值 |
 |---|---|
-| Status | Accepted |
+| Status | Accepted——但提交点与崩溃恢复部分（Decision Outcome 第 1–8 步、「三产物场景的两条协议缺口」及其 rename-aside／undo 落地形态、同级 staging 命名、Neutral 中 `--migrate` 的落盘方式）已由 [ADR-0016](0016-generation-directory-publish.md) 取代（2026-10-02 裁定；0016 在 012 合入前为 Proposed，期间代码仍按本文运行）。「跨设备 rename 退化为拷贝」（第 25、52、67、78 行）是事实错误，即刻作废：跨设备 `os.replace` 抛 `OSError(EXDEV)`，正确表述见 ADR-0016。读取三态与 pickle 日落两时间窗继续有效。正文按规则不改。 |
 | Decision date | 2026-08-17（`plan-tech-stack-migration.md` 「两文件提交协议（canonical，全仓库唯一定义处）」段落首次出现于 commit `5d43c80`） |
 | Recorded date | 2026-08-25 |
 | Record type | Prospective |

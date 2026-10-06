@@ -1,6 +1,6 @@
 # 018-library-routes —— 任务
 
-- **状态**: 🚧 **进行中**（⬛ 2026-09-30 分支从 `master` 开出，与 `019` 并行，先做 WI-1 / WI-2，调度见[进度盘「现在该做什么」第 2 步](../../20260824-frontend-backend-plan-progress.md#现在该做什么)）。~~评审通过、待开工~~（任务书 2026-09-26 评审通过，§6 Q1–Q12 全部裁定）。~~分支**未开**，没有一项已实施。~~2026-09-28 批次规则取消 soak 等待期后，本分支是挡在 012 前面的关键路径（顺序见 [进度盘 §2](../../20260824-frontend-backend-plan-progress.md)；⬛ 2026-09-30：排在冻结集欠账窗口之后开工，WI-8 规则同日订正，见 §6 Q10）
+- **状态**: 🚧 **进行中，首段已合入**（⬛ 2026-10-02 回写：WI-1 – WI-3 随 PR #33 于 2026-10-01 合入 `master`，合并 commit `c08317b`，见 §8；**WI-4 – WI-8 未做**，PR 正文明写「WI-4 – WI-8 不在本 PR」。§4 出口闸按整个分支计，尚未全部满足）。~~🚧 **进行中**~~（⬛ 2026-09-30 分支从 `master` 开出，与 `019` 并行，先做 WI-1 / WI-2，调度见[进度盘「现在该做什么」第 2 步](../../20260824-frontend-backend-plan-progress.md#现在该做什么)）。~~评审通过、待开工~~（任务书 2026-09-26 评审通过，§6 Q1–Q12 全部裁定）。~~分支**未开**，没有一项已实施。~~2026-09-28 批次规则取消 soak 等待期后，本分支是挡在 012 前面的关键路径（顺序见 [进度盘 §2](../../20260824-frontend-backend-plan-progress.md)；⬛ 2026-09-30：排在冻结集欠账窗口之后开工，WI-8 规则同日订正，见 §6 Q10）
 - **对应阶段**: M4a-债（013 延后到后端的欠账兑付之一部分，[§9 编号表](../plan-tech-stack-migration.md)）。不是新里程碑，与 016 / 017 同类
 - **计划文件夹**: [`20260816-tech-stack-migration/`](../plan-tech-stack-migration.md)（归属 **A**）
 - **上游**: `013`（✅ 已合入）、`017`（✅ 已合入）；从 `master` 开
@@ -348,7 +348,23 @@
 
 ## 8. 合入记录
 
-_未合入。合入后本节是「018 是否在主干上」的唯一定义处，格式照 [011 §8 合入记录](./011-backend-refactor.md)。_
+~~_未合入。合入后本节是「018 是否在主干上」的唯一定义处，格式照 [011 §8 合入记录](./011-backend-refactor.md)。_~~
+
+### 🟡 合入记录：第一段（WI-1 – WI-3）（本文是这条事实的唯一定义处）
+
+⬛ 2026-10-02 回写。**018 的 WI-1 – WI-3 已于 2026-10-01 合入 `master`；WI-4 – WI-8 不在这次合入里，018 尚未关闭。** 别处提到「018 是否在主干上」一律链回本节。
+
+| 事实 | 值 | 复核命令 |
+|---|---|---|
+| PR | [#33](https://github.com/anzchy/reader3-pro/pull/33)，25 commits；标题「018: 书库路由 WI-1–WI-3——每书写锁（ADR-0015）、设置版本校验（#51）与审计修复三轮」 | `gh pr view 33` |
+| 合并 commit | `c08317b`（2026-10-01 22:43 +0800，`Merge pull request #33 from anzchy/018-library-routes`），第一父 `f621175` | `git log -1 c08317b` |
+| 合并前最后一个 commit | `42c0728`（§7.1 修复轮 2 / 3 记录）；分支领先量 0 | `git rev-list --count master..018-library-routes` |
+| 交付 | WI-1（兑付方改写，`865d068`）；WI-2（每书写锁 `book_lock`，`48bdfa4`，及 §7.1 三轮审计修复）；WI-3（#51 设置写入版本校验，`2d5f96f`） | `git log c08317b^1..c08317b^2 --oneline` |
+| 未交付 | WI-4（#56 列表路由）、WI-5（#58 删书）、WI-6（#53 导出）、WI-7（#31 收尾对账）、WI-8（`--append` 硬拦截）——`src/` 里没有对应路由，`routes.snapshot` 无新增，`scripts/soak_run.py` 无 `GITHUB_ACTIONS` / `is-ancestor` 判据 | `grep -n "@router" src/reader3_app/web/routers/library.py` |
+| 本地 lane（在 `42c0728` 上，PR 正文，协调者独立复跑） | unit ＋ contract 3107 passed / 2 skipped / 1 xfailed；fe 279；e2e 254 passed / 16 skipped；packaging 11 | — |
+| CI（PR 上） | 全绿：tests run `36854855076`、lint run `36854855032` | `gh pr checks 33` |
+| 冻结集 | 8 条路径零改动，`suite_hash` 不变（PR 正文） | — |
+| ADR-0015 | 门槛 7 要求「合入同一 PR 里转 Accepted」——PR #33 合入时仍是 Proposed；2026-10-02 由合入回写转 Accepted（锁契约已在 `master` 上，删书接入随 WI-5） | `sed -n 5p docs/adr/0015-per-book-write-coordination.md` |
 
 ### 红灯记录（门槛 R）
 

@@ -45,11 +45,11 @@
 | **3.5** | `017-audit-followup` | M2 欠账兑付 | 后端 | **✅ 已合入 `master`**（2026-09-23，PR #23，合并 commit `6df5026`；从 `master` 的 `4128221` 开出）。PR #22 合入后全量审计的 44 条 findings，按 `audit-findings-triage` 复核分桶：must 4 ＋ must-pending-repro 2 ＋ should 16 = **22 条进本分支**，could 19 / wont 3 不做且各有理由。退出门槛与硬约束写在任务文件里。**它从 `master` 开、不回 011**——那条分支已经合了。**收尾时 CI 逼出第 16 个工作项**（原计划 15 个）：`lint.yml` 红在 router 体量闸（`chat.py` 583 > 550），而那条上限「只许下调」且有机器断言钉着，所以没动它；改的是 WI-2 留下的真缺陷——请求预算本是队列的事实，路由却各抄一份近似值，且叫停旗翻在 `q.exit()` 放行下一个请求**之后**，那个窗口正是审计 #2 要关的东西，WI-2 只关了一半。合并前三条 lane 在合并头 `83b7ed1` 上重跑全绿：unit **1662 passed / 2 skipped**（TOTAL 83%）、e2e **124 passed / 16 skipped**、packaging **1 passed**；CI 在 `255b63a` 全绿（lint 35827418587、tests 35827429249）。**冻结集 8 条路径零改动**，`suite_hash` 仍是 `1e868c7bf811`、23 个 blob，soak 计数与三道机制闸不受影响。**未兑付的仍记着**：`wont` 里的 **#10（重新着色后空高亮也能过）今天没有替代覆盖**——是写在纸面上的洞，不是已经盖住了，~~等下一次冻结集重置时一并买~~（⬛ 2026-09-30：owner 改为顺位 3.7 冻结集欠账窗口，验收以 tasks/017 为准）；could 19 条留作后续，不表示被否决 | [tasks/017](20260816-tech-stack-migration/tasks/017-audit-followup.md) |
 | **⟂** | `010-design-degradation-states` | Track D | **前端** | **✅ 已合入 `master`**（2026-09-24，PR #24，合并 commit `671f580`；分支尖 `4fb33c9`）。2 个 commit —— `293c68f`（九条出口闸逐条实测：5 过 / 3 不过 / 1 半）、`4fb33c9`（D-2 / D-5 / D-6 / D-8 四条裁定落档，九条出口闸全绿）。纯文档，允许改动集为 `designs/`、`spec-frontend-design.md`、`plan-frontend-ui-refactor.md`。工作项是前端计划的 WI-1 – WI-8 | [前端计划 §4](20260817-frontend-ui-refactor/plan-frontend-ui-refactor.md) |
 | **3.7** | `019-frozen-set-debts`（冻结集欠账窗口；⬛ 2026-09-30 分配） | M1b / M2 欠账兑付 | 后端 | **✅ 已合入 `master`**（2026-10-01，PR #29，合并 commit `eda9694`；分支尖 `d31f53d`）。兑付 009 #49（部分）/ #50 / #62、017 finding #10；新立 009 #65–#68。改了冻结集，`suite_hash` 以 [`soak-log.md`](20260816-tech-stack-migration/tasks/soak-log.md) 为准，由 012 开工核验前的批次覆盖。~~⬜ 2026-09-30 排定，未开。009 #49 / #50、017 finding #10、009 欠账表中 PR #28 遗留那一行；016 式小分支，编号开分支时在迁移计划 §9 分配。~~ 排在 018 之前，理由见 §2 | [tasks/009 欠账表](20260816-tech-stack-migration/tasks/009-e2e-annotations.md#跨波欠账)、[tasks/017](20260816-tech-stack-migration/tasks/017-audit-followup.md) |
-| **3.8** | `018-library-routes` | M4a 欠账兑付（013 延后的后端半边之一部分） | 后端 | **🚧 进行中**（⬛ 2026-10-01：分支已开并有 commit；WI-1 / WI-2 完成，已 rebase 到 `e3dde84`，WI-3 起进行中；~~📝 评审通过、待开工~~。2026-09-26 裁定 D1 分配；任务书同日评审通过，Q1–Q12 全部裁定）。#51 / #56 / #58 / #53 ＋ 每书写协调契约 ＋ #31 收尾对账（job 已于 2026-09-20 建成；CI 运行不进 soak 台账）；012 在它之上开工。**2026-09-28 批次规则取消 soak 等待期后，它是挡在 012 前面的关键路径**（见 §2）。~~合入不得动冻结集 8 条路径~~（⬛ 2026-09-28 随 012 门槛 F 放宽：可以动，但动了须在新 `suite_hash` 上重跑一批）。⬛ 2026-09-30：排在顺位 3.7 之后开；WI-8 规则同日订正（见「现在该做什么」第 0 步） | [tasks/018](20260816-tech-stack-migration/tasks/018-library-routes.md)；裁定见 [tasks/012 §6 D1](20260816-tech-stack-migration/tasks/012-storage-format.md) |
-| **4** | `012-storage-format` | Phase 3 | 后端 | **📝** ~~任务书骨架已写（2026-09-26，待审）~~ 评审进行中：D1、Q1–Q6 已裁定，Q7+ 待裁；分支未开（⬛ 2026-09-30）；~~仍被 soak 挡着开工。~~（~~⬛ 2026-09-29：soak 批次已满足，见 [`soak-log.md`](20260816-tech-stack-migration/tasks/soak-log.md) 批次声明；仍待 018 合入、机制闸第 1 项在最终候选 `commit` 上通过。~~ ⬛ 2026-09-30：仍待 018 合入与 [012 开工核验](20260816-tech-stack-migration/plan-tech-stack-migration.md#012-开工核验2026-09-30-维护者裁定)——开分支的那个 `commit` 上新跑一批 ＋ 机制闸第 1 项。）欠账 #35 / #54 / #55 ＋ 末波 #57 / #52 | [tasks/012](20260816-tech-stack-migration/tasks/012-storage-format.md) |
+| **3.8** | `018-library-routes` | M4a 欠账兑付（013 延后的后端半边之一部分） | 后端 | **🚧 进行中，首段已合入**（⬛ 2026-10-02：WI-1 – WI-3 已合入 `master`，PR #33，合并 commit `c08317b`；**WI-4 – WI-8 未做**；合入记录只在 [tasks/018 §8](20260816-tech-stack-migration/tasks/018-library-routes.md)）。~~**🚧 进行中**~~（⬛ 2026-10-01：分支已开并有 commit；WI-1 / WI-2 完成，已 rebase 到 `e3dde84`，WI-3 起进行中；~~📝 评审通过、待开工~~。2026-09-26 裁定 D1 分配；任务书同日评审通过，Q1–Q12 全部裁定）。#51 / #56 / #58 / #53 ＋ 每书写协调契约 ＋ #31 收尾对账（job 已于 2026-09-20 建成；CI 运行不进 soak 台账）；012 在它之上开工。**2026-09-28 批次规则取消 soak 等待期后，它是挡在 012 前面的关键路径**（见 §2）。~~合入不得动冻结集 8 条路径~~（⬛ 2026-09-28 随 012 门槛 F 放宽：可以动，但动了须在新 `suite_hash` 上重跑一批）。⬛ 2026-09-30：排在顺位 3.7 之后开；WI-8 规则同日订正（见「现在该做什么」第 0 步） | [tasks/018](20260816-tech-stack-migration/tasks/018-library-routes.md)；裁定见 [tasks/012 §6 D1](20260816-tech-stack-migration/tasks/012-storage-format.md) |
+| **4** | `012-storage-format` | Phase 3 | 后端 | **📝** ~~任务书骨架已写（2026-09-26，待审）~~ ~~评审进行中：D1、Q1–Q6 已裁定，Q7+ 待裁~~ ⬛ 2026-10-02：评审完成，D1、Q1–Q13 全部裁定；分支未开（⬛ 2026-09-30）；~~仍被 soak 挡着开工。~~（~~⬛ 2026-09-29：soak 批次已满足，见 [`soak-log.md`](20260816-tech-stack-migration/tasks/soak-log.md) 批次声明；仍待 018 合入、机制闸第 1 项在最终候选 `commit` 上通过。~~ ~~⬛ 2026-09-30：仍待 018 合入与~~ ⬛ 2026-10-02：018 首段已合入（每书锁在 `master` 上）；仍待 [012 开工核验](20260816-tech-stack-migration/plan-tech-stack-migration.md#012-开工核验2026-09-30-维护者裁定)——开分支的那个 `commit` 上新跑一批 ＋ 机制闸第 1 项（`suite_hash` 已变，含第 3 项）；012 能否在 018 WI-4 – WI-8 合入前开分支，未裁定。）欠账 #35 / #54 / #55 ＋ 末波 #57 / #52 | [tasks/012](20260816-tech-stack-migration/tasks/012-storage-format.md) |
 | **5** | `013-ts-frontend-shell` | Phase 4A | **前端** | **✅ 已合入 `master`**（2026-09-26，PR #25，合并 commit `1ec5ff7`）。WI-9 – WI-13 ＋ Track D 实现类；阅读器侧与依赖后端的半边钉给 014（WI-16 / WI-16b）与 012 欠账 #51–#58（其中 #51 / #53 / #56 / #58 于 2026-09-26 改由 018 兑付） | 前端计划 §4 |
 | **6** | `014-ts-frontend-reader` | Phase 4B | **前端** | **⬜** WI-14 – WI-19（含插入项 WI-16b）已定义 | 前端计划 §4 |
-| **7** | `015-launch-experience` | Phase 5 | 后端 ＋ **前端** | **⬛ / ⬜** CLI 侧未写；PWA 侧是 WI-20 | 前端计划 §4 |
+| **7** | `015-launch-experience` | Phase 5 | 后端 ＋ **前端** | ~~**⬛ / ⬜** CLI 侧未写~~ **⬜** ⬛ 2026-10-02：CLI 侧任务书已写、§6 全部裁定（Q16 归 WI-20），分支未开，按依赖图排在 014 之后；数据家规则 [ADR-0017](../adr/0017-data-home-resolution.md)（Proposed）。PWA 侧是 WI-20 | [tasks/015](20260816-tech-stack-migration/tasks/015-launch-experience.md)（CLI）；前端计划 §4（PWA） |
 
 **⟂ = 可随时插入**，不占顺位。
 
@@ -62,8 +62,10 @@
 > ⬛ 2026-09-30 同日修订：当天初稿的顺序是 `018` → 冻结集欠账窗口 → 012 开工核验 → `012` → `014` → `015`，
 > 经 Codex / Fable 复核后改为下文（窗口移到 018 之前、WI-8 规则订正、开工核验一律新跑一批），决策见 [§4](#4-决策记录) 2026-09-30 第二行。
 
-**当前位置**（⬛ 2026-10-01）：顺位 0–3.7、⟂ `010` / `020` / `021` / `022`、顺位 5 / `013` 全部在 `master` 上；批次 `B1` 已通过（判决见 soak-log 表头「批次声明」），
-但**它不单独放行 012**（第 3 步）。**顺位 3.8 / `018` 进行中（关键路径）；`023-frozen-set-prep` 与 `024-q2-commit-prototype` 与之并行，为第 3 步与 012 WI-1 备料。**
+**当前位置**（⬛ 2026-10-02）：顺位 0–3.7、⟂ `010` / `020` / `021` / `022` / `023` / `024`、顺位 5 / `013` 全部在 `master` 上；顺位 3.8 / `018` 的 WI-1 – WI-3 已合入（PR #33），WI-4 – WI-8 未做。012 评审项 Q1–Q13 全部裁定。剩下的是第 2 步的 018 WI-4 – WI-8 与第 3 步 [012 开工核验](20260816-tech-stack-migration/plan-tech-stack-migration.md#012-开工核验2026-09-30-维护者裁定)；二者谁先，见第 2 步末的未裁定项。
+
+~~**当前位置**（⬛ 2026-10-01）：顺位 0–3.7、⟂ `010` / `020` / `021` / `022`、顺位 5 / `013` 全部在 `master` 上；批次 `B1` 已通过（判决见 soak-log 表头「批次声明」），
+但**它不单独放行 012**（第 3 步）。**顺位 3.8 / `018` 进行中（关键路径）；`023-frozen-set-prep` 与 `024-q2-commit-prototype` 与之并行，为第 3 步与 012 WI-1 备料。**~~
 
 **剩余顺序：WI-8 规则订正 ✅ → 冻结集欠账窗口 → `018` → 012 开工核验 → `012` → `014` → `015`**
 
@@ -82,21 +84,23 @@
    WI-1 → WI-8 严格串行，WI-8 按第 0 步订正后的规则做。**不能与 012 并行开分支**（理由见 §2）。
    ⬛ 2026-09-30 并行调度：018 分支可与第 1 步的 `019` **同时开**，但开出后只做不碰 E2E 的前段（WI-1 兑付方改写、WI-2 锁 ＋ ADR-0015 草案）；
    **`019` 合入 `master` 后，018 先 rebase 到 `master`，再做 WI-3 起的各项**——窗口前移的理由（018 的锁 / 删书 / 并发路径要在修好的 harness 上测）不变，只是不再让 018 的文档与单元层空等。
+   ⬛ 2026-10-02：WI-1 – WI-3 已合入（PR #33，`c08317b`，见 [tasks/018 §8](20260816-tech-stack-migration/tasks/018-library-routes.md)）；WI-4 – WI-8 仍在 018 上。上面「不能与 012 并行开分支」写在整条 018 合入的前提下——每书锁已到 `master`，但 012 WI-5 / WI-10 要的 #56 路由还没有；**012 是等 WI-4 – WI-8 合入再开，还是现在就开、让 WI-5 / WI-10 等 #56，未裁定**。
 3. **012 开工核验——在 018 合入后、012 将要开分支的那个确切 `commit` 上一次做完，不提前跑。**
    新批次无条件、机制闸第 1 项同 `commit` 首次通过、第 3 项仅在 `suite_hash` 变了时重跑、门槛 F 对这一批比——
    规则唯一定义处是[迁移计划 §7「012 开工核验」](20260816-tech-stack-migration/plan-tech-stack-migration.md#012-开工核验2026-09-30-维护者裁定)，结果只记在 soak-log。
 4. **`012-storage-format`**：#35（了结 011 的 ⚠️ #7）/ #54 / #55，末波 #57 / #52。范围见 [tasks/012](20260816-tech-stack-migration/tasks/012-storage-format.md)。
 5. **`014-ts-frontend-reader`**：严格排在 012 之后，**不提前开**——依赖图上 Phase 3 在 4B 之前；WI-16b 还要 012 的 #54 / #55 / #57 与 018 的 #56 / #58。
-6. **`015-launch-experience`**：CLI 侧计划未写（⬛），PWA 侧是 WI-20。
+6. **`015-launch-experience`**：~~CLI 侧计划未写（⬛）~~（⬛ 2026-10-02：CLI 侧任务书已写，见 [tasks/015](20260816-tech-stack-migration/tasks/015-launch-experience.md)；分支未开），PWA 侧是 WI-20。
 
 **可随时插入、不占顺位（⟂）**——都不开 012 分支、不写 012 的生产代码：
-- 012 的剩余评审项（[012 §6](20260816-tech-stack-migration/tasks/012-storage-format.md) Q7 起）、`/tdd-guardian:design-tests` 测试矩阵、Q2 提交机制原型。
-- 015 CLI 侧的计划写作与隔离的 CLI 原型（写完顺位 7 由 ⬛ 变 ⬜；验收仍归 015）。
+- ~~012 的剩余评审项（[012 §6](20260816-tech-stack-migration/tasks/012-storage-format.md) Q7 起）~~（⬛ 2026-10-02：Q7–Q13 已全部裁定）、`/tdd-guardian:design-tests` 测试矩阵、Q2 提交机制原型（⬛ 2026-10-02 已出结果并裁定 B，见 [ADR-0016](../adr/0016-generation-directory-publish.md)）。
+- ~~015 CLI 侧的计划写作~~（⬛ 2026-10-02：已写，顺位 7 由 ⬛ 变 ⬜）与隔离的 CLI 原型（验收仍归 015）。
 - 功能台账审计的 Medium 项：Summary 表的 Evidence 列解析了但从不校验（`scripts/build_feature_ledger.py`）——⬛ 2026-10-01 分配为 `022-ledger-evidence`（迁移计划 §9）；**✅ 2026-10-01 已合入**，PR #31，合并 commit `ebf4ad7`，分支尖 `7ce1bed`。`--check` 现按规则 7 校验 Summary 的 Evidence 列（只校形式、不核存在）。
 - `020-debug-state`（⬛ 2026-09-30 分配；**✅ 2026-10-01 已合入**，PR #30，合并 commit `40e807d`，分支尖 `7fc0dbf`）：`Reader3Epub.getDebugState()` 只读观测面，计划见 [`20260928-debug-state-getter.md`](20260928-debug-state-getter.md)。只改 `epub-renderer.js` 与新测试文件，不碰冻结集；宜在 `014` 开工前合入。与 `019` 都改 `lint_e2e_groups.py` 的计数常量，后合入的一方 rebase 时按实测值重数。
 - `021-e2e-lock`（⬛ 2026-10-01 分配；**✅ 2026-10-01 已合入**，PR #32，合并 commit `e3dde84`，分支尖 `f9b3d1f`）：e2e lane 的 `command` 改经 `scripts/e2e_lock.py`（fcntl 锁 `~/.cache/reader3-e2e.flock`，进程退出即由内核释放；占用时 BUSY 退出码 75；`GITHUB_ACTIONS` 下不加锁），取代手工 mkdir 锁。只改该脚本、其单测、`config.json` 里 e2e lane 的 `command` 一个字段与 `CLAUDE.md` 的 e2e 一行；不碰冻结集。`018` rebase 到其后即改用新包装。
-- `023-frozen-set-prep`（⬛ 2026-10-01 分配）：009 欠账 #65–#68，即第 3 步那一批之前必须落到 `master` 的冻结集准备。本轮冻结集唯一 owner（`018` 须保持冻结集零 diff）；**合入排在 `018` 之后**，rebase 时按 `--collect-only` 实测重数 `lint_e2e_groups.py` 常量；改 `suite_hash`，由第 3 步那一批覆盖，本分支不跑批。
-- `024-q2-commit-prototype`（⬛ 2026-10-01 分配）：[012 §6](20260816-tech-stack-migration/tasks/012-storage-format.md) Q2 的提交机制原型（恢复日志 vs generation 目录 ＋ 指针原子换，崩溃注入对比），顺带给 Q8 建议。产物只在 `tasks/evidence/q2-commit-prototype/`，不进 `src/`；裁定与取代 ADR-0007 的新 ADR 由维护者裁后归 012。挡 012 WI-1，随时可合。
+- `023-frozen-set-prep`（⬛ 2026-10-01 分配）：009 欠账 #65–#68，即第 3 步那一批之前必须落到 `master` 的冻结集准备。本轮冻结集唯一 owner（`018` 须保持冻结集零 diff）；**合入排在 `018` 之后**，rebase 时按 `--collect-only` 实测重数 `lint_e2e_groups.py` 常量；改 `suite_hash`，由第 3 步那一批覆盖，本分支不跑批。**✅ 2026-10-02 已合入**，PR #34，合并 commit `cc8ad27`，分支尖 `b75d1a5`（排在 018 之后，符合上句）。
+- `024-q2-commit-prototype`（⬛ 2026-10-01 分配）：[012 §6](20260816-tech-stack-migration/tasks/012-storage-format.md) Q2 的提交机制原型（恢复日志 vs generation 目录 ＋ 指针原子换，崩溃注入对比），顺带给 Q8 建议。产物只在 `tasks/evidence/q2-commit-prototype/`，不进 `src/`；裁定与取代 ADR-0007 的新 ADR 由维护者裁后归 012。挡 012 WI-1，随时可合。⬛ 2026-10-02：维护者裁定 B，新 ADR 为 [ADR-0016](../adr/0016-generation-directory-publish.md)（Proposed，随 012 转 Accepted）。**✅ 2026-10-02 已合入**，PR #35，合并 commit `94dd1e0`，分支尖 `15df015`。
+- `025-verify-control`（⬛ 2026-10-02 分配；🚧 进行中，未合入）：`verify-reader3` 技能的控制 CLI（`.claude/skills/verify-reader3/scripts/control.py`，仅标准库，每条命令一个 JSON 信封）取代三个 shell 脚本，并按 `F-NNN` 建 Feature Map（`references/features/`）。只碰该技能目录、`tests/unit` 下它的单测、`.gitignore` 一行与台账 F-018 的 Confirm 措辞；不进 `src/`，不碰冻结集，不占顺位，随时可合。
 
 **soak 在这段时间怎么用**：不再「每天追一行」。只在第 3 步跑那一批（窗口或 018 分支上的运行只做核验、不进台账）；
 做法（干净 detached worktree ＋ `--ledger` 写回）与命令只在 soak-log 表头，`--append` 的放行条件见第 0 步。

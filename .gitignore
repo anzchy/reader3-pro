@@ -46,6 +46,8 @@ wheels/
 .claude/tdd-guardian/tests-*.md
 .claude/tdd-guardian/attack-*.md
 .claude/tdd-guardian/red-*.txt
+# verify-reader3 live-pass evidence (screenshots, debug-state JSON, read-backs); local only
+.claude/verify-evidence/
 
 # pytest / coverage artifacts
 .pytest_cache/

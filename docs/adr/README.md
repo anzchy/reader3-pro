@@ -13,7 +13,7 @@
 | [0004](0004-chromadb-minilm-vector-search.md) | 嵌入式 ChromaDB + MiniLM | Accepted | Retrospective | Partial | 一书一库；换模型＝全量重建，故不换 |
 | [0005](0005-annotation-anchoring.md) | 标注锚定 | Accepted | Retrospective | Full | 引文 + 50 字前后文，CFI 可选优先；偏移单位按语言分列 |
 | [0006](0006-provider-egress-single-gate.md) | provider 出网单出口 | Accepted | Retrospective | Full | `_http.py` 一个口：只许 http(s)、拒 30x、key 不下发、不发往请求方 base_url |
-| [0007](0007-crash-safe-publish-protocol.md) | 书目录崩溃安全发布协议 | Accepted | Prospective | Partial | staging → 读回校验 → 原子换，marker 最后；读取三态，`corrupt` 大声失败 |
+| [0007](0007-crash-safe-publish-protocol.md) | 书目录崩溃安全发布协议 | Accepted（提交点与崩溃恢复由 [0016](0016-generation-directory-publish.md) 取代；「跨设备退化为拷贝」作废） | Prospective | Partial | staging → 读回校验 → 原子换，marker 最后；读取三态，`corrupt` 大声失败 |
 | [0008](0008-tech-stack-boundary.md) | 技术栈边界 | Accepted | Prospective | Partial | 后端留 Python，前端迁 TS 不引框架，桌面壳不做 |
 | [0009](0009-book-format-manifest-jsonl.md) | 持久化格式去 pickle | Proposed | Prospective | None | `manifest.json` + `chapters.jsonl`，双写后按版本号日落 pkl |
 | [0010](0010-test-and-ci-topology.md) | 测试与 CI 拓扑 | Accepted | Retrospective | Full | 门禁在本地 tdd-guardian，GitHub CI 只在发版触发 |
@@ -21,7 +21,10 @@
 | [0012](0012-security-boundaries.md) | 三条安全边界 | Accepted | Retrospective | Full | 受限 unpickler 无回退；路径只在拼路径前挡一次；凭据文件走 `mkstemp` |
 | [0013](0013-testid-invariant.md) | `data-testid` 是新旧 UI 间唯一不变量 | Accepted（复合选择器适用范围一节由 [0014](0014-bounded-testid-enumeration.md) 取代） | Prospective | Full | 先原型后模板；E2E 只许 testid/ARIA；三条 lint 守它 |
 | [0014](0014-bounded-testid-enumeration.md) | 有界元素集合逐个枚举唯一 testid | Accepted | Prospective | None | 删 `data-modal`/`data-sheet`；复合选择器只留给无界 id |
-| [0015](0015-per-book-write-coordination.md) | 每书写协调（书锁） | Proposed | Prospective | None | `books/.locks/` 下 SH/EX 书锁，书锁 → 资源锁；不复活、身份复核、2 秒预算后 409 |
+| [0015](0015-per-book-write-coordination.md) | 每书写协调（书锁） | Accepted（第 3 条 project-root 对话不取书锁的例外由 [0018](0018-project-root-conversations-take-book-lock.md) 取代） | Prospective | Partial | `books/.locks/` 下 SH/EX 书锁，书锁 → 资源锁；不复活、身份复核、2 秒预算后 409 |
+| [0016](0016-generation-directory-publish.md) | 书目录发布：generation 目录＋单指针 | Proposed | Prospective | None | `gen/{g}/` ＋ 根 `manifest.json` 一次 `os.replace` 提交；GC 延后一代；迁移不删平铺文件 |
+| [0017](0017-data-home-resolution.md) | 数据家：书库与设置文件的统一定位；launch 的 origin 钉死 | Proposed | Prospective | None | 显式路径胜出 → 已有绑定 → 首次运行绑 cwd 现成书库或 `~/Reader3/`；多候选就停，不迁移不合并；origin 钉 `127.0.0.1:{port}`、从不自动换端口 |
+| [0018](0018-project-root-conversations-take-book-lock.md) | project-root 对话写手也持共享书锁 | Proposed | Prospective | None | 项目级对话按书目录名持 SH 书锁并锁内复核；`both` 模式两份一次持锁写完；删书后迟到写入 404、不复活 |
 
 「合规」是 **Current compliance**：Full＝代码今天就这样；Partial＝部分落地，缺口在该文的 Migration Strategy；None＝尚未实现（Proposed 才会出现）。
 

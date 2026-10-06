@@ -1,6 +1,6 @@
 # Feature Ledger
 
-**Synced:** 2026-10-01 at commit `1844f66`
+**Synced:** 2026-10-04 at commit `b60f0d4`
 
 The as-built record of what Reader3 Pro **can do today**: one row per user-visible (or
 operator-visible) capability, where it lives, what tests prove it, and the evidence it was
@@ -135,6 +135,7 @@ Each feature section is headed `#### F-NNN Name — status` and carries bullets 
 | F-039 | Library chat all-books / collection scope | AI | stub | 013 WI-13 · baseline |
 | F-040 | Notes "点评此书" (review this book) | Notes | stub | baseline |
 | F-041 | Interactive API docs | Infra | unknown | 008 snapshot · baseline |
+| F-042 | Per-book write lock | EPUB processing | partial | 018 · PR #33 |
 
 ## Features
 
@@ -173,6 +174,14 @@ Paths are written out in full from the repo root (e.g. `src/reader3_app/reader3.
 - **Tests:** `tests/contract/test_book_store_route_freshness.py`
 - **Confirm:** With `uv run reader3-server` running, open `/read/{book_id}/0`, re-process the same EPUB with `uv run reader3`, then reload the page: the re-processed content is served without restarting the server.
 - **Evidence:** 011 (PR #22)
+
+#### F-042 Per-book write lock — partial
+- **What:** one cross-process lock per book (`books/.locks/{book_id}.lock`): import / reprocess takes it exclusive; notes, reindex, `ai_meta` and conversation writers take it shared. A write that meets a held lock gets 409 with `Retry-After` naming the holder category instead of interleaving with an import.
+- **Code:** `src/reader3_app/book_lock.py`, `src/reader3_app/web/book_lock_http.py` · ADR-0015
+- **Tests:** `tests/unit/test_book_lock.py`, `tests/unit/test_book_lock_cross_process.py`, `tests/unit/test_book_lock_routes.py`
+- **Confirm:** Run `uv run reader3 ./books/dracula.epub`, then `ls books/.locks/`: `dracula_data.lock` exists and stays after the run (the lock file is never unlinked). Contention (409 + `Retry-After`) is only verifiable through the tests named above.
+- **Evidence:** 018 WI-2 · PR #33 (`48bdfa4`)
+- **Limits:** ADR-0015 is Partial: book delete (#58, 018 WI-5) and the 012 writers are not wired yet (see F-035).
 
 ### Library
 
@@ -352,9 +361,9 @@ Paths are written out in full from the repo root (e.g. `src/reader3_app/reader3.
 - **Routes:** `GET /api/notes/{book_id}`, `GET /api/notes/{book_id}/{chapter_index}`, `POST /api/notes/{book_id}/{chapter_index}`, `PUT /api/notes/{book_id}/{chapter_index}/{note_id}`, `DELETE /api/notes/{book_id}/{chapter_index}/{note_id}`
 - **Code:** `src/reader3_app/notes_service.py`, `src/reader3_app/models/annotations.py`, `src/reader3_app/web/static/js/annotations.js` · ADR-0005
 - **Tests:** `tests/e2e/baseline_1b/test_notes_write_failure_is_attributable.py`, `tests/e2e/baseline_1b/test_stored_cfi_must_agree_with_quote.py`
-- **Confirm:** In the reader select a sentence: the toolbar offers color dots, Marker / Wavy / Underline, Add Note, Copy, Delete, Ask AI. Pick Marker, then Add Note → "Write your thoughts..." → Save; the rail's Notes button lists it (「共N条笔记」), it survives a reload, and `books/{book_id}_data/notes.json` holds it.
+- **Confirm:** In the reader select a sentence: the toolbar offers color dots, Marker / Wavy / Underline, Add Note, Copy, Delete, Ask AI. Pick Marker: the sentence is highlighted and the toolbar closes. Select a different sentence, pick Add Note → "Write your thoughts..." → Save; the rail's Notes button lists both (「共N条笔记」), they survive a reload, and `books/{book_id}_data/notes.json` holds them.
 - **Evidence:** 006 · closed selection toolbar stays closed, PR #28 (`26bce1d`, merge `865e7eb`) · create failures (rejected POST and the two pre-request guards) report into the notes diagnostic ring, 019 (`d259f6f`, 009 #50)
-- **Limits:** text-only anchoring, CFI always null (#6–#8); `PUT` accepts only `note_text` (#29). Reader-side split is 014. The notes panel's 点评此书 button is dead (see F-040).
+- **Limits:** text-only anchoring, CFI always null (#6–#8); `PUT` accepts only `note_text` (#29); Add Note from a toolbar reopened by clicking an existing mark saves nothing or a one-character quote (#70). Reader-side split is 014. The notes panel's 点评此书 button is dead (see F-040).
 
 #### F-019 Note write-conflict handling — partial
 - **What:** ETag optimistic concurrency on note writes, with a conflict dialog (DEG-S5).
@@ -374,13 +383,13 @@ Paths are written out in full from the repo root (e.g. `src/reader3_app/reader3.
 ### Settings & UI
 
 #### F-020 Settings page + API — accepted
-- **What:** `/settings`, `GET/PUT /api/settings`, export/import without API keys; keys never returned to the browser; file written `0600`.
+- **What:** `/settings`, `GET/PUT /api/settings`, export/import without API keys; keys never returned to the browser; file written `0600`. Every settings write is conditional on the page's revision (`ETag` / `If-Match`, one global flock), so a stale tab gets 409 and the page shows 「设置已在别处更改，请刷新页面后再试」 instead of overwriting.
 - **Routes:** `GET /settings`, `GET /api/settings`, `PUT /api/settings`, `GET /api/settings/export`, `POST /api/settings/import`
 - **Code:** `src/reader3_app/web/routers/settings.py`, `frontend/src/settings/`
-- **Tests:** `tests/unit/test_settings_file_permissions.py`, `tests/unit/test_ai_settings_no_key_loss.py`
-- **Confirm:** Click Settings in the library top bar → `/settings` shows AI 偏好, 服务商, 外观, 数据, 导出与导入. Change 每次检索的片段数 and press 保存偏好: the value survives a reload. 导出设置（不含密钥） downloads JSON with no API keys, 导入设置 reads one back; `curl http://127.0.0.1:8123/api/settings` contains no key values, and `ls -l config/ai_settings.json` shows `-rw-------` after a save.
-- **Evidence:** 002 · TS port 013 WI-12 (PR #25)
-- **Limits:** a stale tab can silently overwrite provider settings (#51, 018). The page's 重建全部索引 and 导出书库 JSON are stubs (see F-036, F-037).
+- **Tests:** `tests/unit/test_settings_file_permissions.py`, `tests/unit/test_ai_settings_no_key_loss.py`, `tests/unit/test_ai_settings_revision.py`, `tests/unit/test_ai_settings_lock.py`, `tests/contract/test_settings_revision.py`, `frontend/tests/settings/revision.test.ts`
+- **Confirm:** Click Settings in the library top bar → `/settings` shows AI 偏好, 服务商, 外观, 数据, 导出与导入. Change 每次检索的片段数 and press 保存偏好: the value survives a reload. 导出设置（不含密钥） downloads JSON with no API keys, 导入设置 reads one back; `curl http://127.0.0.1:8123/api/settings` contains no key values, and `ls -l config/ai_settings.json` shows `-rw-------` after a save. Open `/settings` in two tabs, save in one, then save in the other: the second shows 「设置已在别处更改，请刷新页面后再试」 and its change is not written.
+- **Evidence:** 002 · TS port 013 WI-12 (PR #25) · revision check 018 WI-3, debt #51 (PR #33, `2d5f96f`)
+- **Limits:** The page's 重建全部索引 and 导出书库 JSON are stubs (see F-036, F-037).
 
 #### F-036 Library JSON export — stub
 - **What:** `/settings` → 导出与导入 has a 导出书库 JSON button; there is no export route, so it only shows a "not supported" line.
@@ -487,6 +496,21 @@ Paths are written out in full from the repo root (e.g. `src/reader3_app/reader3.
 - **Limits:** with `READER3_TOKEN` set these pages need the token, which a browser cannot send (F-023).
 
 ## Audit log
+
+### 2026-10-04 — Live pass of F-013 / F-020 via control.py on branch 025 (`b60f0d4`)
+- **Scope:** the `Confirm` bullets of F-013 (keyword-fallback path only) and F-020, driven by `.claude/skills/verify-reader3/scripts/control.py` (`up --corpus smoke --ai-stub`: sandboxed server, temp books dir, sandbox `READER3_AI_SETTINGS`, Ollama-shaped AI stub; gstack `/browse` for clicks). Book: the synthetic unindexed `smoke_data`, never `book index`ed. Status and Evidence of every row unchanged.
+- **Found:** F-020 PASS: 每次检索的片段数 6 → 7 → 保存偏好 survives reload; the sandbox settings file stays `0600` after the save (mtime moved); `PUT /api/settings` with a stale `If-Match` → 409; a stale page saving after another write shows 「设置已在别处更改，请刷新页面后再试」 and the other write is kept; `GET /api/settings` and `/api/settings/export` carry no key values. F-013 DEVIATES: the keyword-fallback Q&A ("Alpha prose") streams the stub answer, two concurrent asks both answer, and Stop cuts a held stream mid-answer with the queue healthy afterwards — all PASS; but Summary returns HTTP 400 "not indexed", because `api_ai_summary` always retrieves with a fixed query the keyword fallback never matches, whatever the routing mode (within #26). The reader panel shows the raw browser abort text ("Error: BodyStreamBuffer was aborted") after Stop instead of the partial answer. **Product bug, not yet ledgered as debt:** a client that disconnects while *queued* behind another AI request raises `asyncio.CancelledError` in `_PerKeyQueue._wait_turn`, which `except Exception` in `enter` does not catch, so the dead item stays in the queue and later wedges it — every question and summary for that book and provider then gets 504 until the server restarts (reproduced once, Stop pressed while queued). The F-013 feature file's `--concurrency 2 --gate release-after-first-delta` step was wrong (the per-book:provider queue serializes requests) and its Stop recipe led into the wedge; both corrected.
+- **Not audited:** evidence is local and gitignored (`.claude/verify-evidence/20261004-145816-F-013/`, `.claude/verify-evidence/20261004-150515-F-020/`, each with `result.txt`). The RAG and full-book / multi-chapter summary paths were not exercised: the offline sandbox cannot index (`OfflineModeIsEnabled`, 2026-10-03 entry). Highlights / Background buttons were not pressed separately (same retrieval call as Summary). 导出设置 / 导入设置 were not clicked in the browser; export was checked through the API. No real provider was used.
+
+### 2026-10-03 — Live pass of F-009 / F-011 / F-018 via control.py on branch 025 (`22e387a`)
+- **Scope:** the `Confirm` bullets of F-009 and F-018 and the `Tests` of F-011, driven by the new `.claude/skills/verify-reader3/scripts/control.py` (sandboxed `reader3-server` on a free port, temp books dir, sandbox `READER3_AI_SETTINGS`, Ollama-shaped AI stub; gstack `/browse` for clicks). Book: the synthetic `smoke_data` plus one unindexed copy. Status and Evidence of every row unchanged.
+- **Found:** F-009 PASS (card → `/read/{book_id}/0`; `↓` changes section with exactly one `GET /api/notes/{book_id}/1`; `getDebugState()` read through the browse JS hook). F-011 PASS on the pytest runner only (`tests/unit/test_highlight_utf16_offsets.py`, 8 passed). F-018: toolbar, Marker (one `POST … 201`, toolbar closes), Add Note on a fresh selection, 「共2条笔记」, reload, sandbox `notes.json` all PASS, so the `Confirm` text now reads "pick Marker; select a different sentence; Add Note". **Still deviating:** reopening the toolbar by clicking the mark and then Add Note → Save sent no request — the `create-empty-quote` guard fired (2/2; on 2026-10-01 the same path saved a one-character quote). Root cause in `annotations.js` `onAnnotationClick`: `range.selectNodeContents(mark)` gives a range whose containers are the element, not its text nodes, so the offsets collapse — now 009 debt #70. Also seen: at 1280×720 the notes panel (`position: fixed`, z 40) covers the right rail (z 30), so the Notes button cannot be clicked to close the panel (Playwright hit-test lands on `.notes-body`). Environment, not product: with `HF_HUB_OFFLINE=1` transformers 4.57.3 raises `OfflineModeIsEnabled` even for the cached MiniLM model, so `book index` and any semantic search or `ai ask` against an indexed book fail inside the always-offline sandbox; `--allow-download` works around it for indexing only.
+- **Not audited:** evidence is local and gitignored (`.claude/verify-evidence/20261003-04*-F-0{09,11,18}/`, each with `result.txt`). F-011's e2e and vitest runners were not run through `lane` (Playwright Chromium not installed in this venv; `npm test` run separately, 279 passed). A real mouse-drag selection was not exercised; `reader select` uses the DOM Selection API. The TOC filter and back arrow of F-009 were not re-run today (passed 2026-10-01).
+
+### 2026-10-01 — Live pass of F-009 and F-018 Confirm via verify-reader3 (`1844f66`)
+- **Scope:** the `Confirm` bullets of F-009 and F-018 executed in a running app via the project skill `.claude/skills/verify-reader3/` (sandboxed `reader3-server` on a free port, temp books dir, sandbox `READER3_AI_SETTINGS`; driven with gstack `/browse`). Books: the synthetic `smoke_data` (e2e corpus `build_epub2`) and one real 32-section EPUB. No row's Status or Evidence changed.
+- **Found:** F-009 — all sub-steps PASS: book card → `/read/{book_id}/0` paginated; `→`/`PageDown` and `←`/`PageUp` turn pages, `↓`/`↑` change section; pill reads 「当前阅读至 N%」 (N is the per-section `sectionPercent`, not book progress); TOC button opens the list with the "Search chapters..." filter, which filters; back arrow returns to `/`; `getDebugState()` gives `v: 1`, `ready: true`, current `section.index` (read via the browse JS hook, not the DevTools console). The stale first-render `sectionPage.total` (#63) was observed (5, then 7). F-018 — toolbar contents PASS (selection was made with the DOM Selection API inside the iframe, as `select_in_frame` does, because the driver has no mouse drag); Marker PASS; Add Note → "Write your thoughts..." → Save PASS on a fresh selection; Notes panel lists them with 「共3条笔记」 PASS; survives reload PASS; `notes.json` in the sandbox books dir holds them PASS. **Confirm deviates from behaviour** at "Pick Marker, then Add Note": the toolbar closes after Marker (PR #28), so Add Note needs it reopened; reopening by clicking the new mark then Add Note saved a separate `type: note` annotation whose `quote` is only the first character of the mark (2/2 reproductions, two books). Row text left unchanged; reported for triage.
+- **Not audited:** evidence is local and gitignored (`.claude/verify-evidence/20261001-104743-F-009/`, `.claude/verify-evidence/20261001-104909-F-018/`, each with a `result.txt`). No lane or e2e run. A real mouse-drag selection was not exercised. Every other row's `Confirm` remains derived from code, not executed.
 
 ### 2026-09-27 — Format extension + surface pass (`8e1cf48`)
 - **Scope:** every row F-001..F-030 re-read against code, templates and `tests/contract/routes.snapshot` to fill the new `Routes` / `Confirm` / `Tracked` bullets; the `Limits` of every row plus the 009 debt table (#11, #21, #52, #53, #57, #58) and `spec-frontend-design.md` §D1 checked for surfaces with no behaviour. Added the `stub` / `absent` / `unknown` statuses and rows F-031..F-041.

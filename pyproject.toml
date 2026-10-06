@@ -110,6 +110,8 @@ testpaths = ["tests"]
 #   tests/unit + tests/contract -> unit lane       (taskCompleted, commit)  ~2s
 #   tests/integration           -> packaging lane  (push)                   ~17s
 #   tests/e2e                   -> e2e lane        (push)
+#   -m verify_control_live      -> verify-control lane (taskCompleted, commit); the unit
+#                                  lane deselects it with -m "not verify_control_live"
 # The unit lane names its two directories explicitly, so the slow lanes stay out
 # of the tight loop by directory, not by marker. Do not add addopts that widen
 # it, or every commit starts building a wheel and driving a browser.
@@ -139,6 +141,7 @@ markers = [
     "shell_4a: 013 Phase 4A.0 REG-1 baseline (WI-9); activated; does NOT count toward the 1b exit bar",
     "track_d_013: one of the 34 Track-D items hosted by 013 (WI-10 / WI-11 / WI-13); not a group marker, the ledger selects on it",
     "real_loopback_socket: this test really opens a loopback TCP connection; exempt from the lane-wide egress backstop",
+    "verify_control_live: a tests/unit/test_verify_control_* case that spawns a child process (control.py, fake servers, ps/lsof, reader3-server); deselected from the unit lane, run by the verify-control lane",
 ]
 
 [tool.coverage.run]

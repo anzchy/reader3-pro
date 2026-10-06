@@ -1,0 +1,9 @@
+--- BEGIN UNTRUSTED EXTERNAL CONTENT (source: http://127.0.0.1:62429/read/smoke_data/0) ---
+{
+  "type": "button",
+  "class": "rt-btn is-active",
+  "id": "reader-notes-toggle",
+  "data-testid": "rd-rail-notes",
+  "title": "Notes"
+}
+--- END UNTRUSTED EXTERNAL CONTENT ---

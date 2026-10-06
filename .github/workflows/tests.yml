@@ -9,10 +9,11 @@
 #     （同一个脚本另有一份 pytest 包装在 `tests/integration/`，由本地 packaging lane
 #      在 push 时跑。CI 这一遍环境更干净，是第三档节奏，见那个文件的 docstring。）
 #
-# **两个 job**：`unit`（静态检查 ＋ unit lane ＋ 覆盖率门禁）与 `e2e`
+# **三个 job**：`unit`（静态检查 ＋ unit lane ＋ 覆盖率门禁）、`verify-control`（起子进程的
+# verify_control 用例，025 从 unit 拆出，理由写在它自己头上）与 `e2e`
 # （`baseline_1b` 全量首次通过 ＋ 余下各组）。`e2e` 是 2026-09-20 补的，兑付欠账 #31，
 # 同时充当迁移计划 §7「机制挑战闸」第一项的载体 —— 理由与判据写在它自己头上，
-# 不在这里重述。两个 job 并行、互不依赖：e2e 挂了也要看得见 unit 是绿是红。
+# 不在这里重述。三个 job 并行、互不依赖：e2e 挂了也要看得见 unit 是绿是红。
 #
 # **触发时机：发版时跑，向 `master` 开 PR 时也跑；日常 push 到分支仍然不跑。**
 # 发版两条路径都认（只打 tag / 在 GitHub 上 Publish Release），concurrency 按 ref
@@ -26,8 +27,8 @@
 # run 是 2026-09-20 的 `e7c4890`，此后那三个 master commit 上的 run 数都是 0。
 #
 # **仍然不加 `push` 触发。** 那是维护者 2026-08-23 定的口径，本次没动：日常 push 的护栏
-# 由 `.claude/tdd-guardian/config.json` 的三条 lane 承担（unit 在 taskCompleted/commit，
-# packaging 与 e2e 在 push）。
+# 由 `.claude/tdd-guardian/config.json` 的 lane 承担（unit、verify-control 与 fe-unit 在
+# taskCompleted/commit，packaging 与 e2e 在 push）。
 #
 # **本工作流仍不设 required check，但此前那条理由已经不成立了。** 原文是「一个日常不跑的
 # 检查设成 required，只会把每个 PR 卡死在『Expected — Waiting for status』上」——加了
@@ -114,10 +115,13 @@ jobs:
 
       # 与 `.claude/tdd-guardian/config.json` 的 unit lane 同一条命令。
       # 两处必须一致：本地绿 CI 红（或反过来）会让人不再相信任一处。
-      - name: unit lane（tests/unit ＋ tests/contract，含覆盖率）
+      # 025（2026-10-04，评审 M3）起 deselect `verify_control_live`：那些用例都起子进程，
+      # 归下面的 `verify-control` job，与本地同名 lane 一一对应。
+      - name: unit lane（tests/unit ＋ tests/contract，含覆盖率；不含 verify_control_live）
         if: always()
         run: >
           uv run pytest tests/unit tests/contract
+          -m "not verify_control_live"
           --cov=src/reader3_app
           --cov-report=json:coverage-unit.json
           --cov-report=term
@@ -140,6 +144,39 @@ jobs:
           name: coverage-unit
           path: coverage-unit.json
           if-no-files-found: warn
+
+  # ---------------------------------------------------------------------------
+  # 与 `.claude/tdd-guardian/config.json` 的 verify-control lane 同一条命令。
+  # 025（2026-10-04，评审 M3）从 unit job 拆出：`verify_control_live` 的用例每条都起子进程
+  # （control.py、假 reader3 / reader3-server / browse、ps / lsof、node，C66 起真的 reader3-server），
+  # 留在 unit 里会把 unit lane 拖到 9 分钟以上。单独一个 job、单独的 timeout-minutes，
+  # 与 unit 并行、互不依赖。不带 --cov：被测代码在 .claude/skills/ 下，不在 --cov 范围内（评审 M2）。
+  verify-control:
+    name: verify-control lane（verify_control_live：起子进程的 verify_control 用例）
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      # B4 / B5（test_verify_control_browse_real.py）用 node 跑生成的 JS；没有 node 时 skip，
+      # 会悄悄丢掉「不含 await」的运行时证明（评审 §6）。版本读 .nvmrc，与 unit job 同一处定义。
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: ".nvmrc"
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version-file: "pyproject.toml"
+
+      - name: uv sync
+        run: uv sync --frozen --all-groups
+
+      - name: verify-control lane（tests/unit ＋ tests/contract，-m verify_control_live）
+        run: uv run pytest tests/unit tests/contract -m verify_control_live
 
   # ---------------------------------------------------------------------------
   # 欠账 #31 的兑付：§7 承诺过的「发版关门检查里跑一次 baseline-1b 全量」。

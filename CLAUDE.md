@@ -48,7 +48,8 @@ chmod 600 config/ai_settings.json
 
 ### Tests and Checks
 ```bash
-uv run pytest tests/unit tests/contract      # backend unit + API contract (the commit-gated lane)
+uv run pytest tests/unit tests/contract -m "not verify_control_live"   # unit lane (commit-gated)
+uv run pytest tests/unit tests/contract -m verify_control_live         # verify-control lane: spawns subprocesses (commit-gated)
 npm test                                     # frontend Vitest (also commit-gated)
 npm run typecheck                            # frontend tsc
 uv run python scripts/e2e_lock.py -- uv run pytest tests/e2e --browser chromium   # Playwright E2E (push-gated; flock-wrapped, BUSY=75)

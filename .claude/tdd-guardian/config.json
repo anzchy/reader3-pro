@@ -11,16 +11,28 @@
   "lanes": [
     {
       "name": "unit",
-      "description": "pytest over tests/unit and tests/contract. Mostly in-process: contract tests use FastAPI TestClient (httpx, already a transitive dep) against the real router tree, so they need no port. Not strictly in-process, and the description used to claim otherwise: a few cases deliberately spawn bounded child interpreters (test_egress_backstop_unit.py's C14 probes, test_egress_backstop_subprocess.py's C11/C12, test_soak_run.py), each with an explicit subprocess timeout so a hung child fails the gate instead of hanging it. That is allowed here; an unbounded subprocess is not.",
-      "command": "uv run pytest tests/unit tests/contract --cov=src/reader3_app --cov-report=json:coverage-unit.json --cov-report=term",
+      "description": "pytest over tests/unit and tests/contract. Mostly in-process: contract tests use FastAPI TestClient (httpx, already a transitive dep) against the real router tree, so they need no port. Not strictly in-process, and the description used to claim otherwise: a few cases deliberately spawn bounded child interpreters (test_egress_backstop_unit.py's C14 probes, test_egress_backstop_subprocess.py's C11/C12, test_soak_run.py), each with an explicit subprocess timeout so a hung child fails the gate instead of hanging it. That is allowed here; an unbounded subprocess is not. Since 2026-10-04 (025, review M3) it deselects the marker verify_control_live: those cases spawn real child processes and have their own lane, verify-control.",
+      "command": "uv run pytest tests/unit tests/contract -m \"not verify_control_live\" --cov=src/reader3_app --cov-report=json:coverage-unit.json --cov-report=term",
       "gateOn": [
         "taskCompleted",
         "commit"
       ],
       "coverage": "include",
       "coverageSummaryPath": "coverage-unit.json",
-      "probeCommand": "uv run pytest tests/unit tests/contract --collect-only -q",
+      "probeCommand": "uv run pytest tests/unit tests/contract -m \"not verify_control_live\" --collect-only -q",
       "timeoutMs": 600000
+    },
+    {
+      "name": "verify-control",
+      "description": "The tests/unit/test_verify_control_* cases marked verify_control_live: every one spawns a child process (control.py as a subprocess, fake reader3/reader3-server/browse executables, ps/lsof, node, and in C66 the real reader3 and reader3-server). Split out of the unit lane on 2026-10-04 (025, review M3): with them in, the unit lane ran ~9 min idle and 28-33 min under load against its 600 s timeout, and its description (in-process, a few bounded children) no longer matched what it ran. Measured 2026-10-04: 389 passed in 725 s wall at load average 14-40; timeoutMs 2400000 is ~3.3x that. Same commit gate as unit, by user decision; only the timeout and the honesty of the description differ. The marker is assigned mechanically: a case that starts any subprocess.Popen in setup, call or teardown carries it, a case that starts none stays in the unit lane. Wall-clock asserts in these cases (elapsed_s < 6, < 8) can fail on a heavily loaded machine; that is an environment failure, rerun before reading it as a regression. No --cov: the code lives under .claude/skills/, outside --cov=src/reader3_app, and most cases reach it only through a subprocess (review M2).",
+      "command": "uv run pytest tests/unit tests/contract -m verify_control_live",
+      "gateOn": [
+        "taskCompleted",
+        "commit"
+      ],
+      "coverage": "none",
+      "probeCommand": "uv run pytest tests/unit tests/contract -m verify_control_live --collect-only -q",
+      "timeoutMs": 2400000
     },
     {
       "name": "e2e",
