@@ -251,11 +251,9 @@ def cmd_down(ns):
             return success("down", d)
         grace = knob("VERIFY_READER3_KILL_GRACE_S", 10)
         if s["stub_pid"] in live:
-            procs.terminate(s["stub_pid"], grace)
-            d["stub_killed"] = not procs.alive(s["stub_pid"])
+            _, d["stub_killed"] = procs.terminate(s["stub_pid"], grace)
         if s["pid"] in live:
-            d["signal"] = procs.terminate(s["pid"], grace)
-            d["killed"] = not procs.alive(s["pid"])
+            d["signal"], d["killed"] = procs.terminate(s["pid"], grace)
         if present:
             shutil.rmtree(os.path.realpath(sandbox))
             d["removed_sandbox"] = True
