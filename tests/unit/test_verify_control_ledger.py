@@ -89,11 +89,25 @@ F020 = [
     "tests/contract/test_settings_revision.py",
     "frontend/tests/settings/revision.test.ts",
 ]
-F031 = [
+# WI5-C06 note-suffixed e2e entries, synthetic (shaped like the 2026-10-02 F-031 / F-036
+# rows). Real rows flip status and lose or gain Tests bullets as features are accepted, so
+# C06 runs on these in a tmp tree and on whichever real row has the shape (by property).
+NOTED_E2E = [
     "tests/e2e/baseline_1b/test_read_presentation_anchoring.py "
-    "(pins that clicking does not break annotations; cannot assert a theme change)"
+    "(pins that clicking does not break annotations; cannot assert a theme change)",
+    "tests/e2e/shell_4a/test_settings_rows.py (asserts 0 requests)",
 ]
-F036 = ["tests/e2e/shell_4a/test_settings_rows.py (asserts 0 requests)"]
+# A synthetic `absent` row added to tmp-tree copies of the real ledger (C18, C35, C40, C43).
+# The real ledger's absent rows come and go (F-035 flipped to accepted in 018), so no case
+# relies on one being there.
+ABSENT_ID = "F-998"
+ABSENT_SUMMARY = f"| {ABSENT_ID} | Synthetic absent row | Library | absent | tracked #58 |"
+ABSENT_SECTION = [
+    f"#### {ABSENT_ID} Synthetic absent row — absent",
+    "- **What:** a synthetic row no build has; tests add it to a tmp copy of the ledger.",
+    "- **Tracked:** debt #58",
+    "",
+]
 E2E_PREFIX = ["uv", "run", "python", "scripts/e2e_lock.py", "--", "uv", "run", "pytest"]
 
 
@@ -180,6 +194,29 @@ def _write(path, text):
     return path
 
 
+def _ledger_with_absent():
+    """The real ledger plus the synthetic `absent` row `ABSENT_ID` (Summary row and section)."""
+    lines = _real_md().split("\n")
+    assert ABSENT_SUMMARY not in lines, f"fixture: {ABSENT_ID} is already in the real ledger"
+    last = max(i for i, ln in enumerate(lines) if ln.startswith("| F-"))
+    lines.insert(last + 1, ABSENT_SUMMARY)
+    lib = lines.index("### Library")
+    assert lines[lib + 1] == "", "fixture: the Library area heading moved"
+    lines[lib + 2 : lib + 2] = ABSENT_SECTION
+    md = "\n".join(lines)
+    data, errors = _bfl().parse_ledger(md)
+    assert errors == [], f"fixture ledger rejected: {errors}"
+    row = {f["id"]: f for f in data["features"]}[ABSENT_ID]
+    assert row["status"] == "absent" and row["tests"] == [], row
+    return md
+
+
+def _md_rows(md):
+    data, errors = _bfl().parse_ledger(md)
+    assert errors == [], errors
+    return {f["id"]: f for f in data["features"]}
+
+
 def _ledger_without_synced():
     lines = _real_md().split("\n")
     kept = [ln for ln in lines if not ln.startswith("**Synced:**")]
@@ -256,13 +293,35 @@ def test_wi5_c05_acceptance_rows(fid):  # WI5-C05
         assert c["pytest"] == c["vitest"] == c["skipped"] == []
 
 
-@pytest.mark.parametrize("fid", ["F-031", "F-036"])
-def test_wi5_c06_real_note_suffix_kept_for_display_stripped_for_argv(fid):  # WI5-C06
-    entries = _quoted(fid, {"F-031": F031, "F-036": F036}[fid])
-    c = _classify(entries)
+def _real_noted_e2e_row():
+    """A real row whose Tests are all existing e2e paths, at least one with a ` (note)` suffix."""
+    for fid, row in sorted(_rows().items()):
+        tests = row["tests"]
+        if (
+            tests
+            and any(_strip(t) != t for t in tests)
+            and all(_strip(t).startswith("tests/e2e/") and (REPO / _strip(t)).exists() for t in tests)
+        ):
+            return fid, list(tests)
+    pytest.skip("no real ledger row has only e2e Tests with a note suffix; the synthetic case covers C06")
+
+
+@pytest.mark.parametrize("source", ["synthetic", "real_by_property"])
+def test_wi5_c06_real_note_suffix_kept_for_display_stripped_for_argv(tmp_path, source):  # WI5-C06
+    if source == "synthetic":
+        root = tmp_path / "repo"
+        for entry in NOTED_E2E:
+            _write(root / _strip(entry), "")
+        entries = list(NOTED_E2E)
+        c = _classify(entries, root)
+    else:
+        _, entries = _real_noted_e2e_row()
+        c = _classify(entries)
     assert c["e2e"] == entries
+    assert c["pytest"] == c["vitest"] == c["skipped"] == []
     argv = _api(cmd_ledger, "build_argv")("e2e", c["e2e"])
-    assert _strip(entries[0]) in argv
+    for entry in entries:
+        assert _strip(entry) in argv
     assert not any("(" in a for a in argv)
 
 
@@ -483,13 +542,28 @@ def test_wi5_c17_per_run_timeout_kills_runner(tmp_path):  # WI5-C17
     assert wait_dead(pids[0], timeout=2.0)
 
 
+def _real_present_row_without_tests():
+    """A real non-`absent` row with no Tests (a stub, say), chosen by property."""
+    for fid, row in sorted(_rows().items()):
+        if row["tests"] == [] and row["status"].split()[0] != "absent":
+            return fid
+    pytest.skip("no real non-absent ledger row lacks Tests; the synthetic absent case covers C18")
+
+
 @pytest.mark.verify_control_live
-@pytest.mark.parametrize("fid", ["F-035", "F-032"])
-def test_wi5_c18_rows_without_tests_give_no_tests(tmp_path, fid):  # WI5-C18
-    assert _rows()[fid]["tests"] == []
+@pytest.mark.parametrize("kind", ["absent_synthetic", "present_real_by_property"])
+def test_wi5_c18_rows_without_tests_give_no_tests(tmp_path, kind):  # WI5-C18
+    root = tmp_path / "root"
+    if kind == "absent_synthetic":
+        fid = ABSENT_ID
+        _write(root / LEDGER_REL, _ledger_with_absent())
+    else:
+        fid = _real_present_row_without_tests()
+        _write(root / LEDGER_REL, _real_md())
+    assert _md_rows((root / LEDGER_REL).read_text(encoding="utf-8"))[fid]["tests"] == []
     env = lane_env(tmp_path)
     _start(env, fid)
-    code, e, _ = run_cli(["lane", fid], env)
+    code, e, _ = run_cli(["lane", fid, "--root", str(root)], env)
     assert code == 1 and e["error"]["code"] == "no_tests", e
     _assert_try(e)
     assert not runner_log_path(tmp_path).exists()
@@ -1019,7 +1093,7 @@ def _skill(extra_fenced=(), prose=()):
 
 def map_tree(tmp_path, *, ledger=None):
     root = tmp_path / "root"
-    _write(root / LEDGER_REL, _real_md() if ledger is None else ledger)
+    _write(root / LEDGER_REL, _ledger_with_absent() if ledger is None else ledger)
     _write(root / SKILL_REL, _skill())
     _write(root / README_REL, _readme(["F-009.md", "F-032.md"]))
     _write(root / FEAT_REL / "F-009.md", map_md("F-009"))
@@ -1036,8 +1110,8 @@ def _pairs(e):
     return sorted((p["file"].rsplit("/", 1)[1], p["kind"]) for p in e["data"]["problems"])
 
 
-def _absent_ids():
-    return sorted(i for i, f in _rows().items() if f["status"].split()[0] == "absent")
+def _absent_ids(rows):
+    return sorted(i for i, f in rows.items() if f["status"].split()[0] == "absent")
 
 
 def _line_of(text, needle):
@@ -1050,10 +1124,12 @@ def test_wi5_c35_valid_tree(tmp_path):  # WI5-C35
     code, e, _ = _map(root, tmp_path)
     assert code == 0 and e["ok"] is True, e
     d = e["data"]
-    assert d["rows"] == len(_rows())
+    rows = _md_rows((root / LEDGER_REL).read_text(encoding="utf-8"))
+    assert d["rows"] == len(rows) == len(_rows()) + 1
     assert d["mapped"] == ["F-009", "F-032"]
-    assert d["excluded"] == _absent_ids() and "F-035" in d["excluded"]
-    assert d["missing"] == sorted(set(_rows()) - set(_absent_ids()) - {"F-009", "F-032"})
+    assert d["excluded"] == _absent_ids(rows) and ABSENT_ID in d["excluded"]
+    assert d["missing"] == sorted(set(rows) - set(_absent_ids(rows)) - {"F-009", "F-032"})
+    assert ABSENT_ID not in d["missing"]
     assert d["problems"] == [] and d["dead_commands"] == []
 
 
@@ -1103,11 +1179,11 @@ def test_wi5_c39_unknown_id(tmp_path):  # WI5-C39
 @pytest.mark.verify_control_live
 def test_wi5_c40_map_for_absent_row(tmp_path):  # WI5-C40
     root = map_tree(tmp_path)
-    _write(root / FEAT_REL / "F-035.md", map_md("F-035"))
-    _write(root / README_REL, _readme(["F-009.md", "F-032.md", "F-035.md"]))
+    _write(root / FEAT_REL / f"{ABSENT_ID}.md", map_md(ABSENT_ID))
+    _write(root / README_REL, _readme(["F-009.md", "F-032.md", f"{ABSENT_ID}.md"]))
     code, e, _ = _map(root, tmp_path)
-    assert code == 1 and _pairs(e) == [("F-035.md", "absent_row")], e
-    assert "F-035" in e["data"]["excluded"] and "F-035" not in e["data"]["mapped"]
+    assert code == 1 and _pairs(e) == [(f"{ABSENT_ID}.md", "absent_row")], e
+    assert ABSENT_ID in e["data"]["excluded"] and ABSENT_ID not in e["data"]["mapped"]
 
 
 @pytest.mark.verify_control_live
@@ -1143,11 +1219,11 @@ def _c43_tree(tmp_path):
     _write(feat / "F-009.md", map_md("F-009", h2s=[FOUR[3], FOUR[0], FOUR[1], FOUR[2]]))
     _write(feat / "F-011.md", map_md("F-011", h2s=FOUR + ["Notes"]))
     _write(feat / "F-999.md", map_md("F-999"))
-    _write(feat / "F-035.md", map_md("F-035"))
+    _write(feat / f"{ABSENT_ID}.md", map_md(ABSENT_ID))
     _write(feat / "F-013.md", map_md("F-013", link=None))
     _write(feat / "F-018.md", map_md("F-018", link="../docs/feature-ledger.md"))
     _write(feat / "F-020.md", map_md("F-020", link_text="F-011"))
-    _write(root / README_REL, _readme([f"{i}.md" for i in ("F-009", "F-011", "F-013", "F-018", "F-020", "F-035", "F-999")]))
+    _write(root / README_REL, _readme([f"{i}.md" for i in ("F-009", "F-011", "F-013", "F-018", "F-020", ABSENT_ID, "F-999")]))
     return root
 
 
@@ -1161,7 +1237,7 @@ def test_wi5_c43_independence_each_malformation_once(tmp_path):  # WI5-C43
         ("F-009.md", "h2_mismatch"),
         ("F-011.md", "h2_mismatch"),
         ("F-999.md", "unknown_id"),
-        ("F-035.md", "absent_row"),
+        (f"{ABSENT_ID}.md", "absent_row"),
         ("F-013.md", "no_ledger_link"),
         ("F-018.md", "ledger_link_broken"),
         ("F-020.md", "id_mismatch"),
