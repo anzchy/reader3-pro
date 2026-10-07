@@ -14,10 +14,14 @@ Playwright `webServer` 和 `reader3 launch` 都在轮询它。
   答完了。
 * **不断任何挂钟耗时**。CI 上的挂钟阈值是 flake 之源。顺序用一个 list 记，
   `order[0] == "health"` 就是全部的判据。
-* 除了顺序，还额外断一条**更强、且不受响应回程调度影响**的证据：假重活在自己
-  那段阻塞 `sleep` **结束的瞬间**给 `order` 拍一张快照。事件循环没被占住时，
-  health 必然已经落在快照里；被占住时，health 连跑都没跑过，不可能在快照里。
+* 除了顺序，还额外断一条**更强、且不受响应回程调度影响**的证据：假重活置起跑
+  标志后**等 health 一侧记下 "health"**（`health_done`，上界 `START_WAIT_S`），
+  等到之后才给 `order` 拍一张快照。事件循环没被占住时，health 必然能跑完，快照
+  就是 `[["health"]]`；被占住时，health 连跑都跑不了，等待超时，快照是 `[[]]`。
   两条一起断，是为了让「撤掉 threadpool」这条变异必然变红，而不是碰运气红。
+* 快照**不靠挂钟**（FX37-13）：以前假重活 `sleep(0.2)` 后就拍快照，等于给 health
+  藏了一个 200 ms 的截止时刻——CI 上 runner 卡顿 ≥200 ms 就会拍到 `[[]]`（run
+  37592235760，T2h），而事件循环其实没被占住。现在快照只取决于先后顺序。
 
 怎么造并发（本仓的既有路数）：
 
@@ -61,12 +65,9 @@ from reader3_app.web import server
 BOOK_ID = "loopblock_sample_data"
 BOOK_UUID = "44444444-5555-4666-8777-888888888888"
 
-#: 假重活占住 CPU 的时长。只需要远大于一次 `/api/health` 的往返（本地 <2ms），
-#: 不参与任何断言——断言只看顺序。
-BLOCK_S = 0.2
-
-#: 等「重活确实开始阻塞」的上界。到点还没开始就照发 health，让断言而不是超时来
-#: 报告问题。
+#: 两处等待共用的上界：health 一侧等「重活确实开始阻塞」，假重活等「health 已经
+#: 记下」。到点还没等到就照常往下走，让断言而不是超时来报告问题。事件循环被占住
+#: 时第二处必然等满，所以这只是失败路径的耗时，从不是通过的条件。
 START_WAIT_S = 5.0
 
 #: 每个异步用例的硬上界。超过它是「实现挂住」，不是某条断言不成立。
@@ -83,15 +84,18 @@ class Env:
         self.books_dir = books_dir
         self.order: List[str] = []
         self.started = threading.Event()
+        #: health 一侧把 "health" 记进 order 之后置位；假重活等它再拍快照（FX37-13）。
+        self.health_done = threading.Event()
         #: 阻塞结束那一刻的 order 快照（见文件头）。
         self.snapshot_at_unblock: List[List[str]] = []
 
     def blocking(self, result: Any) -> Callable[..., Any]:
-        """造一个同步阻塞的假重活：置起跑标志 → 占住 CPU → 拍快照 → 返回 result。"""
+        """造一个同步阻塞的假重活：置起跑标志 → 阻塞到 health 记下（上界
+        `START_WAIT_S`）→ 拍快照 → 返回 result。"""
 
         def _work(*_args: Any, **_kwargs: Any) -> Any:
             self.started.set()
-            time.sleep(BLOCK_S)
+            self.health_done.wait(START_WAIT_S)
             self.snapshot_at_unblock.append(list(self.order))
             return result
 
@@ -166,6 +170,7 @@ async def _race_health(env: Env, fire) -> tuple[httpx.Response, httpx.Response]:
                 await asyncio.sleep(0.005)
             resp = await client.get("/api/health")
             env.order.append("health")
+            env.health_done.set()
             return resp
 
         return await asyncio.gather(heavy(), health())
@@ -226,7 +231,7 @@ def _install_fake_index(env: Env, monkeypatch: pytest.MonkeyPatch, *, block: str
 
 
 def test_T1_索引进行中_health_仍然应答(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
-    """承重断言：`POST /api/index/{book}` 跑满 200ms 期间，`/api/health` 照样答。"""
+    """承重断言：`POST /api/index/{book}` 阻塞期间，`/api/health` 照样答。"""
     _install_fake_index(env, monkeypatch, block="index_book")
 
     async def fire(client: httpx.AsyncClient) -> httpx.Response:
