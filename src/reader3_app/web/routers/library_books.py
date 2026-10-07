@@ -20,7 +20,7 @@ id 校验与状态码映射，协议本身（意图 → 改名提交 → 终结�
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable, Optional
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.concurrency import run_in_threadpool
@@ -31,27 +31,38 @@ from ...search_service import list_book_ids
 router: APIRouter = APIRouter()
 
 
+def library_entry(
+    book_id: str, books_dir: str, book_uuid_of: Callable[[str], Optional[str]]
+) -> Optional[dict[str, Any]]:
+    """一本书的 WI-4 条目；``None`` 表示它在枚举之后消失了（跳过，不是错误条目）。
+
+    ``GET /api/library`` 与 ``GET /api/library/export``（018 WI-6）共用这一份，保证两边
+    的 ``title`` / ``authors`` / ``cover_url`` 不会分叉。``book_uuid_of`` 只对读得出的书调用：
+    书库视图传 ``_server._book_uuid_or_none``（会取锁、可能铸 uuid），导出传只读的那一个。
+    """
+    try:
+        meta = book_store.load_book_metadata(book_id, books_dir)
+    except FileNotFoundError:
+        # Q-G：枚举之后被删（含 BookGone）——它已经不在书库里了，不是错误条目。
+        return None
+    except Exception:  # noqa: BLE001 - 第 2 档：一本读不出的书转译成 error 条目，其余照常列出
+        return {"book_id": book_id, "error": "unreadable"}
+    cover_image = book_store.pick_cover_image(book_id, books_dir)
+    return {
+        "book_id": book_id,
+        "title": meta.title,
+        "authors": list(meta.authors),
+        "cover_url": f"/read/{book_id}/images/{cover_image}" if cover_image else None,
+        "book_uuid": book_uuid_of(book_id),
+    }
+
+
 def _list_library(books_dir: str) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     for book_id in list_book_ids(books_dir):
-        try:
-            meta = book_store.load_book_metadata(book_id, books_dir)
-        except FileNotFoundError:
-            # Q-G：枚举之后被删（含 BookGone）——它已经不在书库里了，不是错误条目。
-            continue
-        except Exception:  # noqa: BLE001 - 第 2 档：一本读不出的书转译成 error 条目，其余照常列出
-            entries.append({"book_id": book_id, "error": "unreadable"})
-            continue
-        cover_image = book_store.pick_cover_image(book_id, books_dir)
-        entries.append(
-            {
-                "book_id": book_id,
-                "title": meta.title,
-                "authors": list(meta.authors),
-                "cover_url": f"/read/{book_id}/images/{cover_image}" if cover_image else None,
-                "book_uuid": _server._book_uuid_or_none(book_id),
-            }
-        )
+        entry = library_entry(book_id, books_dir, _server._book_uuid_or_none)
+        if entry is not None:
+            entries.append(entry)
     return entries
 
 

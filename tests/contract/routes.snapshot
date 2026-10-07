@@ -28,6 +28,7 @@ GET /api/collections/{collection_id}
 GET /api/health
 GET /api/index/{book_id}/status
 GET /api/library
+GET /api/library/export
 GET /api/library/stats
 GET /api/notes/{book_id}
 GET /api/notes/{book_id}/{chapter_index}

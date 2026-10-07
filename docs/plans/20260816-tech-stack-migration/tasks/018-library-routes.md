@@ -224,6 +224,27 @@
   - ⬛ 2026-10-02 D19：**分部件的失败策略**（每条是 WI-4 的列表条目 ＋ `annotations`，带对话时再加 `conversations`，另有一个 `component_errors` 列表，字段名由 design-tests 定）——书在枚举之后消失 → **整条跳过**（§6 Q-G，与 WI-4 同一条规则）；`book.pkl` 读不出 → 整条是 WI-4 的错误态；`notes.json` 坏 → `annotations` 为 `null` 并记进 `component_errors`；对话文件坏 → 读不出的 `conversation_id` 记进 `component_errors`，**不静默跳过**；只有枚举本身失败才 500。细节见[执行计划 §3 WI-6](../../20261002-018-second-slice-plan.md#3-逐-wi-执行要点)
   - ⬛ 2026-10-02 D9：`tests/e2e/shell_4a/test_settings_rows.py` 的 `test_key_never_echoed_and_exports` 最后几行今天断言「导出书库 JSON 暂不支持、0 个请求」。本 WI **原地反转**它：发出 1 个请求，下载的内容是合法 JSON。这是有意地重新判一条测试，不是放宽；`shell_4a` 条数不变
 - 测试矩阵：待 /tdd-guardian:design-tests
+- **⬛ 2026-10-03 协调者裁定（WI-6 实现期，W6-1 – W6-11、R-1 – R-4；与上文冲突处以本节为准）**。来源与理由的定义处是[执行计划 §6 的 WI-6 表](../../20261002-018-second-slice-plan.md)，本节只记结论；对外行为的说明见 [`docs/export-import.md`](../../../export-import.md#library-export-018-wi-6):
+
+  | # | 问题 | 裁定 |
+  |---|---|---|
+  | W6-1 | 拿 `book_uuid` 走 `_book_uuid_or_none` 会取 EX 锁并铸造 `ai_meta.json` | 导出只读：复用 `book_lock.read_book_uuid`，不取锁、不铸、不新增函数；缺失或不可读 → `null` ＋ WARNING（ADR-0003）。与 `GET /api/library` 可能在这一个字段上不同，记入 F-005 Limits |
+  | W6-2 | `include=conversations` 的对话来源 | 按盘上实际存在，不看当前存储模式：总读 per-book `ai_conversations/`；项目级根可解析且 uuid 合法时再读 `{root}/{uuid}/`（默认根 `conversations/`）；按 `conversation_id` 去重，`last_updated` 严格更大者胜（非字符串按 `""` 比） |
+  | W6-3 | 部件错误字段 | `component_errors`：对象列表（`component` = `annotations` / `conversations`，对话可带 `conversation_id`）；可读条目上恒有（可为空），WI-4 的错误条目上不出现 |
+  | W6-4 | 项目级来源整体失败 | 照导 per-book，追加 `{"component":"conversations"}`，不静默；来源目录不存在不算错 |
+  | W6-5 | 读的途中单个对话文件消失 | 书还在 → 静默略去；书目录没了 → 整条跳过（D19） |
+  | W6-6 | FB-S06 按钮 | 请求默认导出（不含对话）；`include` 的 UI 开关推迟到 014 或之后 |
+  | W6-7 | `include` 语法 | 同 W5-8 的严格度：恰好一个值、大小写不敏感的 `conversations`；逗号列表 / 空值 / 重复 → 400 `include must be "conversations"` |
+  | W6-8 | 外壳 | `{"books":[...]}`，顺序同 `GET /api/library`（`list_book_ids`）；不加 `exported_at` / `schema_version`。一次成型的 `JSONResponse`，不流式、不设上限（上文「边界」一条由此落定） |
+  | W6-9 | 对话的导出形式 | 原样导出已存 JSON 对象（无损，不经 `_parse_thread` 补时间）；`conversation_id` 非法的文件算不可读 |
+  | W6-10 | 文案 | 文件名 `reader3-library.json`；成功「书库已导出。」；失败前缀「导出书库失败：」 |
+  | W6-11 | 同一 `conversation_id` 两份 `last_updated` 相等 | 取项目级那份（与 W5 的 F-15「平手时既有项目级副本胜」一致），确定性输出；E21 钉死这一份 |
+
+  CP1 确认的默认（R-1 – R-4）:
+  - **R-1 畸形 uuid**：`ai_meta.json` 里的值不是合法 UUID → `book_uuid` 为 `null` ＋ WARNING，且该书的项目级来源视为不可解析（不拿它拼路径）。
+  - **R-2 带对话时的 `ai_meta.json`**：存在却读不出合法 uuid → 追加 `{"component":"conversations"}`；文件不存在 → 不记错。
+  - **R-3 文件名与载荷不一致**：载荷里的 `conversation_id` 与文件主名不同的情形推迟处理；身份以文件主名为准。
+  - **R-4 `OSError` 的分档**：来源目录上非 `FileNotFoundError` 的 `OSError`（如无权限）→ 整源错误 `{"component":"conversations"}`；单个文件的 `OSError` → 该文件的 `{"component":"conversations","conversation_id":<主名>}`。
 
 ### WI-7: 欠账 #31 —— CI e2e job 收尾对账（最后做）
 

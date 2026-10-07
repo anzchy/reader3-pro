@@ -14,8 +14,9 @@
 // * API keys are write-only: the key field is a password input, cleared after a save, and
 //   never filled from the server (which never returns keys)
 // * the appearance section is the chrome axis only (data-theme), never data-reading-theme
-// * deferred server halves (ruling D11): bulk reindex and the library JSON export say so on
-//   the page and send nothing
+// * deferred server half (ruling D11): bulk reindex says so on the page and sends nothing. The
+//   library JSON export is live since 018 WI-6: one GET /api/library/export (default body, no
+//   conversations), single-flight, failures shown in the export result line
 import "@shared/theme";
 import "./index.css";
 
@@ -79,6 +80,7 @@ const PROBE_CAP_MS = 3000;
 const IDB_NAME = "reader3_ai_assistant";
 const IDB_VERSION = 1;
 const EXPORT_FILE = "reader3_ai_settings.export.json";
+const LIBRARY_EXPORT_FILE = "reader3-library.json";
 
 // ---------------------------------------------------------------------------
 // API shapes (web/routers/settings.py)
@@ -699,8 +701,21 @@ function download(text: string, filename: string): void {
 
 function wireExport(): void {
   const result = byId<HTMLElement>("set-export-result");
-  byTestId<HTMLButtonElement>("set-export-json").addEventListener("click", () => {
-    setResult(result, "", "导出书库 JSON 暂不支持，服务端还没有这条导出接口。");
+  // 018 WI-6: the default export (no ?include). `disabled` is set before the first await, so a
+  // second click in the same tick is already refused; clicks on a disabled button never fire.
+  const exportLibrary = byTestId<HTMLButtonElement>("set-export-json");
+  exportLibrary.addEventListener("click", async () => {
+    if (exportLibrary.disabled) return;
+    exportLibrary.disabled = true;
+    try {
+      const data = await requestJson<unknown>("/api/library/export");
+      download(JSON.stringify(data, null, 2), LIBRARY_EXPORT_FILE);
+      setResult(result, "ok", "书库已导出。");
+    } catch (err) {
+      setResult(result, "error", `导出书库失败：${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      exportLibrary.disabled = false;
+    }
   });
 
   const exportSettings = byTestId<HTMLButtonElement>("set-export-settings");

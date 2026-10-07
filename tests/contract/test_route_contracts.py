@@ -275,6 +275,13 @@ LIBRARY_CASES = [
     ContractCase("DELETE", "/api/library/notabook", 400),
     ContractCase("DELETE", "/api/library/{book_id}?delete_conversations=maybe", 400),
     ContractCase("DELETE", "/api/library/{book_id}?delete_conversations=1", 400, note="W5-8：只认 true/false（不分大小写）"),
+    # 018 WI-6 (E24): GET /api/library/export. The envelope is exactly {"books"}; the
+    # include grammar is exactly one value, "conversations" (case-insensitive), else 400.
+    ContractCase("GET", "/api/library/export", 200, expected_keys=("books",)),
+    ContractCase("GET", "/api/library/export?include=conversations", 200, expected_keys=("books",)),
+    ContractCase("GET", "/api/library/export?include=bogus", 400),
+    ContractCase("GET", "/api/library/export?include=", 400),
+    ContractCase("GET", "/api/library/export?include=conversations&include=conversations", 400),
 ]
 
 

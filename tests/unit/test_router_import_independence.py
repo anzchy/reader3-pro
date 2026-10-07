@@ -39,6 +39,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 ROUTER_MODULES = [
     "reader3_app.web.routers.library",
     "reader3_app.web.routers.library_books",
+    "reader3_app.web.routers.library_export",
     "reader3_app.web.routers.reader",
     "reader3_app.web.routers.settings",
     "reader3_app.web.routers.health",

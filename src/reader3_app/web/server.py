@@ -1202,6 +1202,7 @@ from .routers.ai import summary as _ai_summary_router  # noqa: E402
 from .routers import notes as _notes_router  # noqa: E402
 from .routers import search as _search_router  # noqa: E402
 from .routers import library_books as _library_books_router  # noqa: E402
+from .routers import library_export as _library_export_router  # noqa: E402
 from .vite_assets import vite_css, vite_js  # noqa: E402
 
 # 013 WI-10: the templates link the built token/theme CSS by page name (hashed names).
@@ -1222,6 +1223,7 @@ app.include_router(_ai_chat_router.router)
 app.include_router(_notes_router.router)
 app.include_router(_search_router.router)
 app.include_router(_library_books_router.router)
+app.include_router(_library_export_router.router)
 
 
 def main() -> int:

@@ -6,7 +6,7 @@ import logging
 import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterator, List, Optional
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 from uuid import UUID
 
 from .. import book_lock
@@ -189,6 +189,55 @@ def _list_conversations_from_dir(root: str, *, provider: Optional[str] = None) -
         )
     out.sort(key=lambda x: str(x.get("last_updated") or ""), reverse=True)
     return out
+
+
+def read_conversation_threads(directory: str) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """导出专用（018 WI-6）：一个会话目录里的原样线程，加上读不懂的文件主名。
+
+    返回 ``(threads, unreadable)``。``threads`` 每项就是文件的 ``json.loads``（未知键照留）；
+    ``unreadable`` 是读不懂的 ``*.json`` 文件主名（stem）。与 ``_list_conversations_from_dir``
+    不同，这里**一个文件都不静默丢**：非 UTF-8、坏 JSON、顶层不是对象、``conversation_id``
+    不是合法 UUID、单个文件的 ``OSError``（如权限）全部进 ``unreadable``。
+
+    只有两种「没有」不算错：路径不存在 / 不是目录 → ``([], [])``；一个文件在列目录之后、
+    打开之前消失（``FileNotFoundError``）→ 不出现在任何一边（W6-5）。目录级的错误
+    （列目录时 ``FileNotFoundError``、``PermissionError``）原样抛出，由调用方判断是书没了
+    还是整个来源读不动。列目录必须走 ``os.listdir``（测试按名字拦截它）。
+    """
+    if not os.path.isdir(directory):
+        return [], []
+    threads: List[Dict[str, Any]] = []
+    unreadable: List[str] = []
+    for name in sorted(os.listdir(directory)):
+        if not name.endswith(".json"):
+            continue
+        path = os.path.join(directory, name)
+        stem = name[: -len(".json")]
+        try:
+            if not os.path.isfile(path):
+                continue
+            with open(path, "rb") as f:
+                raw = f.read()
+        except FileNotFoundError:
+            continue
+        except OSError:
+            unreadable.append(stem)
+            continue
+        try:
+            data = json.loads(raw.decode("utf-8"))
+        except ValueError:  # UnicodeDecodeError 与 JSONDecodeError 都是 ValueError
+            unreadable.append(stem)
+            continue
+        if not isinstance(data, dict):
+            unreadable.append(stem)
+            continue
+        try:
+            _safe_conversation_id(data.get("conversation_id"))
+        except ValueError:
+            unreadable.append(stem)
+            continue
+        threads.append(data)
+    return threads, unreadable
 
 
 def list_conversations(
