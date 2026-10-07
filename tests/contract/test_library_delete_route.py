@@ -46,7 +46,7 @@ from delete_world import (
     conv,
     conv_payload,
     dot_entries,
-    hold_ex_rename_release,
+    hold_ex_rename_on_go,
     intents,
     ld,
     make_book,
@@ -497,29 +497,52 @@ def test_c9a_reindex_holder_makes_delete_409(rw, tmp_path):
     assert tree_bytes(rw.books / "a_data") == before
 
 
-def test_c9b_reindex_waiting_on_a_delete_gets_404_and_creates_nothing(rw, tmp_path):
-    """C-9(b) (D15): a child holds EX, renames ``a_data`` away and releases at 0.5 s; a concurrent
-    ``POST /api/index/a_data`` -> 404 within ``BUDGET_S + 1`` s, no folder, no ``chroma_db``.
+def test_c9b_reindex_waiting_on_a_delete_gets_404_and_creates_nothing(rw, tmp_path, monkeypatch):
+    """C-9(b) (D15): a child holds EX on ``a_data``; a concurrent ``POST /api/index/a_data`` is
+    proven to be *waiting on that lock* (it reached ``book_lock._sleep``) before the child renames
+    the folder away and releases -> 404, no folder, no ``chroma_db``.
 
-    Green at red (existing ``writer_scope`` behaviour); excluded from the WI-5c receipt.
+    Audit 20261007 #16 (FX37-10): the old version renamed on a 0.15 s timer, so on a slow runner
+    the POST could arrive after the rename and get its 404 from the pre-lock check, never
+    exercising the in-lock recheck. Now the order is a handshake, with no timing threshold.
     """
     make_book(rw.books, "a_data", book_uuid=U)
     away = ".a_data.away"
-    ready = spawn_ctx().Event()
+    ctx = spawn_ctx()
+    ready, go = ctx.Event(), ctx.Event()
     result = str(tmp_path / "c9b-child.json")
-    child = Child(hold_ex_rename_release, (str(rw.books), "a_data", away, 0.15, 0.5, ready, result), result).start()
+
+    polled = threading.Event()
+    real_sleep = book_lock._sleep
+
+    def sleep_spy(seconds: float) -> None:
+        polled.set()
+        real_sleep(seconds)
+
+    monkeypatch.setattr(book_lock, "_sleep", sleep_spy)
+    box: Dict[str, Any] = {}
+
+    def post() -> None:
+        box["resp"] = rw.client.post("/api/index/a_data", json={"force_reindex": False})
+
+    worker = threading.Thread(target=post, daemon=True)
+    child = Child(hold_ex_rename_on_go, (str(rw.books), "a_data", away, ready, go, result), result).start()
     try:
         assert ready.wait(WAIT_S), "the EX child never became ready"
-        started = time.monotonic()
-        resp = rw.client.post("/api/index/a_data", json={"force_reindex": False})
-        elapsed = time.monotonic() - started
+        worker.start()
+        assert polled.wait(WAIT_S), "the POST never waited on the book lock"
+        assert "resp" not in box, "the POST returned while the EX holder still had the lock"
+        go.set()
+        worker.join(WAIT_S)
+        assert not worker.is_alive(), "the POST never returned after the EX holder released"
     finally:
+        go.set()
         got = child.wait_result()
         child.reap()
 
     assert got == {"outcome": "released"}, got
+    resp = box["resp"]
     assert resp.status_code == 404, resp.text
-    assert elapsed < book_lock.BUDGET_S + 1, elapsed
     assert not os.path.lexists(rw.books / "a_data")
     assert not os.path.lexists(rw.books / away / "chroma_db")
 

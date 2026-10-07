@@ -1060,8 +1060,30 @@ def synthetic_append_refusal(ledger: Path, allowed: bool) -> Optional[str]:
 
 
 #: 闸门的 git 调用里要剔掉的环境变量：commit 钩子里跑时外层会漏进它们，git 就会无视 cwd、
-#: 去查别的仓库（R1）。
-_GATE_DROPPED_GIT_ENV: Tuple[str, ...] = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE")
+#: 去查别的仓库（R1）。审计 20261007 #12（FX37-10）：只剔三个不够——`GIT_OBJECT_DIRECTORY` /
+#: `GIT_COMMON_DIR` / `GIT_CONFIG_*` 等同样能把 `rev-parse` / `merge-base` 引到别的对象库或配置。
+#: 这里是 `git rev-parse --local-env-vars` 的全集，外加它不列的 `GIT_NAMESPACE` /
+#: `GIT_INTERNAL_SUPER_PREFIX`；`GIT_CONFIG_KEY_<n>` / `GIT_CONFIG_VALUE_<n>` 按前缀另剔。
+_GATE_DROPPED_GIT_ENV: Tuple[str, ...] = (
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_CONFIG",
+    "GIT_CONFIG_COUNT",
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_DIR",
+    "GIT_GRAFT_FILE",
+    "GIT_IMPLICIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_INTERNAL_SUPER_PREFIX",
+    "GIT_NAMESPACE",
+    "GIT_NO_REPLACE_OBJECTS",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_PREFIX",
+    "GIT_REPLACE_REF_BASE",
+    "GIT_SHALLOW_FILE",
+    "GIT_WORK_TREE",
+)
+_GATE_DROPPED_GIT_ENV_PREFIXES: Tuple[str, ...] = ("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_")
 
 
 def _gate_git(args: Sequence[str], repo: Path, env: Dict[str, str]) -> "subprocess.CompletedProcess[str]":
@@ -1093,7 +1115,11 @@ def append_gate_refusal(env: Mapping[str, str], repo: Path) -> Optional[Tuple[in
             "GITHUB_ACTIONS 已设置：CI 里不落 soak 台账——CI 跑的是未合并的合并提交，"
             "且 runner 不是批次声明里的那台机器。",
         )
-    git_env = {k: v for k, v in env.items() if k not in _GATE_DROPPED_GIT_ENV}
+    git_env = {
+        k: v
+        for k, v in env.items()
+        if k not in _GATE_DROPPED_GIT_ENV and not k.startswith(_GATE_DROPPED_GIT_ENV_PREFIXES)
+    }
     timeout = GIT_PRECHECK_TIMEOUT_S
     try:
         resolved = _gate_git(["rev-parse", "--verify", "--quiet", "origin/master^{commit}"], repo, git_env)

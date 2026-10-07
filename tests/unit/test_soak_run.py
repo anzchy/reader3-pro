@@ -1291,6 +1291,53 @@ def test_append_gate_ignores_leaked_git_env(ancestry_repos: AncestryRepos, monke
     assert repos.c2_sha[:7] in msg, f"leg B：消息没点名 diverged 的 HEAD {repos.c2_sha[:7]}：{msg}"
 
 
+def test_append_gate_drops_every_repo_local_git_variable(tmp_path: Path) -> None:
+    """T8-13b（审计 20261007 #12，FX37-10）：剔掉的集合 ⊇ 本机 git 自报的仓库局部变量
+    （`git rev-parse --local-env-vars`），外加 `GIT_NAMESPACE` / `GIT_INTERNAL_SUPER_PREFIX`。"""
+    soak = _soak()
+    listed = subprocess.run(
+        ["git", "rev-parse", "--local-env-vars"],
+        cwd=tmp_path,
+        env=_clean_env(),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert listed.returncode == 0, listed.stderr
+    local = set(listed.stdout.split())
+    assert {"GIT_DIR", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY"} <= local, local
+    missing = (local | {"GIT_NAMESPACE", "GIT_INTERNAL_SUPER_PREFIX"}) - set(soak._GATE_DROPPED_GIT_ENV)
+    assert not missing, f"闸门没剔掉这些仓库局部变量：{sorted(missing)}"
+
+
+@pytest.mark.parametrize("leak", ["object_directory", "common_dir", "config_count"])
+def test_append_gate_ignores_other_leaked_repo_local_env(
+    ancestry_repos: AncestryRepos, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, leak: str
+) -> None:
+    """T8-13c（#12）：`GIT_OBJECT_DIRECTORY` 指向空目录、`GIT_COMMON_DIR` 指向 diverged 仓库、
+    `GIT_CONFIG_COUNT/KEY/VALUE` 注入配置——闸门检查 ancestor 时都必须照常放行。"""
+    soak = _soak()
+    gate = _gate(soak)
+    _drop_git_env(monkeypatch)
+    repos = ancestry_repos
+    empty = tmp_path / "empty-objects"
+    empty.mkdir()
+    keys = {
+        "object_directory": {"GIT_OBJECT_DIRECTORY": str(empty)},
+        "common_dir": {"GIT_COMMON_DIR": str(repos.diverged / ".git")},
+        "config_count": {
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "core.repositoryFormatVersion",
+            "GIT_CONFIG_VALUE_0": "99",
+        },
+    }[leak]
+    for k, v in keys.items():
+        monkeypatch.setenv(k, v)
+    env = _clean_env(**keys)
+    result = gate(env, repos.ancestor)
+    assert result is None, f"{leak}：泄漏的 {sorted(keys)} 让闸门拒绝了 ancestor：{result!r}"
+
+
 def test_append_gate_git_timeout_is_an_environment_refusal(
     ancestry_repos: AncestryRepos, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

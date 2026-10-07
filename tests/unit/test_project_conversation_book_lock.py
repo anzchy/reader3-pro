@@ -435,3 +435,56 @@ def test_b7_conversation_delete_runs_under_the_book_lock(tmp_path, monkeypatch):
         ),
         "busy": ("BookLockBusy", "delete", True, True),
     }
+
+
+# =========================================================================== B-8
+
+
+def _resource_lock_busy(books: Path, folder: str = FOLDER) -> str:
+    """Probe ``books/.locks/conversations/{folder}.lock`` with a non-blocking EX flock on a fresh
+    open file description: ``"busy"`` while any description (this process included) holds it."""
+    import fcntl
+
+    path = books / ".locks" / "conversations" / f"{folder}.lock"
+    try:
+        fd = os.open(path, os.O_RDONLY)
+    except FileNotFoundError:
+        return "absent"
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return "busy"
+    finally:
+        os.close(fd)
+    return "free"
+
+
+def test_b8_project_save_and_delete_hold_the_conversations_resource_lock(tmp_path, monkeypatch):
+    """B-8 (audit 20261007 #21, FX37-10): B-1 / B-7 prove the *book* lock; this proves the second
+    half of the law -- at the project-root ``os.replace`` (save) and at each ``os.remove`` (delete)
+    the ``conversations`` resource lock file is flock-held; after each call it is free again."""
+    w = new_world(tmp_path / "w")
+    make_book(w.books, FOLDER, book_uuid=U)
+    saved: List[str] = []
+    _interpose_project_replace(monkeypatch, w.R / U, lambda: saved.append(_resource_lock_busy(w.books)))
+    err_save = _run(lambda: conversations.save_project_conversation(str(w.R), thread=_thread(), books_dir=str(w.books)))
+    after_save = _resource_lock_busy(w.books)
+    monkeypatch.undo()
+
+    put_file(_per_book_file(w.books), conv(CID_FRESH, D_MID, "per-book copy")[1])
+    removed: List[str] = []
+    _interpose_remove(
+        monkeypatch,
+        [_per_book_file(w.books), _project_file(w.R)],
+        lambda _p: removed.append(_resource_lock_busy(w.books)),
+    )
+    err_delete = _run(lambda: _delete_multi(w))
+    after_delete = _resource_lock_busy(w.books)
+
+    assert {
+        "save": (_name(err_save), saved, after_save),
+        "delete": (_name(err_delete), removed, after_delete),
+    } == {
+        "save": ("None", ["busy"], "free"),
+        "delete": ("None", ["busy", "busy"], "free"),
+    }

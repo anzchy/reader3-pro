@@ -948,3 +948,22 @@ def hold_ex_rename_release(
         ready_evt.set()
         return
     write_result(result_path, {"outcome": "released"})
+
+
+def hold_ex_rename_on_go(books_dir: str, folder: str, away: str, ready_evt, go_evt, result_path: str) -> None:
+    """Take EX (``delete``) on ``folder``, signal ready, wait for ``go`` (bounded), rename it to
+    ``away``, release. No sleeps: the parent decides when the rename happens (audit 20261007 #16).
+    ``outcome`` is ``released``, or ``no-go`` if ``go`` never came (renamed anyway, so the parent
+    is never left blocked on the lock)."""
+    from reader3_app import book_lock
+
+    try:
+        with book_lock.acquire(books_dir, folder, mode=book_lock.EXCLUSIVE, holder="delete"):
+            ready_evt.set()
+            went = go_evt.wait(30.0)
+            os.rename(os.path.join(books_dir, folder), os.path.join(books_dir, away))
+    except BaseException as exc:  # noqa: BLE001 - the outcome is the observation
+        write_result(result_path, {"outcome": f"error:{type(exc).__name__}:{exc}"})
+        ready_evt.set()
+        return
+    write_result(result_path, {"outcome": "released" if went else "no-go"})

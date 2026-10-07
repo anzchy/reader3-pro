@@ -1893,8 +1893,10 @@ def test_t1_git_status_timeout_raises(tmp_path: Path, monkeypatch: pytest.Monkey
 
 
 def _sleepy_precheck_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """只让前置检查的 git（`status` / `ls-files`）挂死，其余子命令转给真 git——WI-8 闸门的
-    `rev-parse` / `merge-base` 得先真跑通，超时才落在前置检查上。"""
+    """只让前置检查的 git（`status` / `ls-files`）挂死；WI-8 闸门的 `rev-parse` / `merge-base`
+    由 shim 自己作答（放行），其余子命令转给真 git。审计 20261007 #24（FX37-10）：以前闸门的
+    两条 git 也走真 git，却同样受 0.3 s 的 `GIT_PRECHECK_TIMEOUT_S` 约束，慢机器上闸门先超时，
+    这条测的「前置检查超时」就落空了。"""
     real_git = shutil.which("git")
     assert real_git is not None, "PATH 上找不到 git"
     shim = tmp_path / "sleepy-precheck-shim"
@@ -1903,7 +1905,11 @@ def _sleepy_precheck_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     git.write_text(
         "#!/bin/sh\n"
         'for a in "$@"; do\n'
-        '  case "$a" in status|ls-files) exec sleep 5 ;; esac\n'
+        '  case "$a" in\n'
+        "    status|ls-files) exec sleep 5 ;;\n"
+        "    rev-parse) echo 0123456789abcdef0123456789abcdef01234567; exit 0 ;;\n"
+        "    merge-base) exit 0 ;;\n"
+        "  esac\n"
         "done\n"
         f'exec "{real_git}" "$@"\n',
         encoding="utf-8",
