@@ -276,10 +276,25 @@ def read_intent(path: PathLike) -> DeleteIntent:
     )
 
 
+class CommitNotDurable(Exception):
+    """The commit rename succeeded but the ``books_dir`` fsync after it failed.
+
+    The delete *has* happened (the book is gone from the listing), so the caller is past
+    the commit point; ``tombstone`` is the path the book now lives at. Audit 20261007 #3.
+    """
+
+    def __init__(self, tombstone: str, cause: BaseException) -> None:
+        self.tombstone = tombstone
+        super().__init__(f"tombstone {os.path.basename(tombstone)!r} committed but not fsynced: {cause}")
+
+
 def commit_tombstone(books_dir: PathLike, intent: DeleteIntent) -> str:
     """The commit point: rename the book folder onto its tombstone, then fsync ``books_dir``.
 
-    A missing source is ``book_lock.BookGone``. Returns the tombstone path.
+    A missing source is ``book_lock.BookGone`` (nothing changed). A failure of the fsync
+    *after* a successful rename is ``CommitNotDurable`` -- never a bare ``OSError``, so a
+    caller cannot mistake a committed delete for one that did not happen. Returns the
+    tombstone path.
     """
     directory = os.fspath(books_dir)
     src = os.path.join(directory, intent.folder)
@@ -290,7 +305,10 @@ def commit_tombstone(books_dir: PathLike, intent: DeleteIntent) -> str:
         os.rename(src, dst)
     except FileNotFoundError as exc:
         raise book_lock.BookGone(f"book folder {intent.folder!r} is gone") from exc
-    _fsync_dir(directory)
+    try:
+        _fsync_dir(directory)
+    except Exception as exc:  # noqa: BLE001 - past the rename every failure is post-commit
+        raise CommitNotDurable(dst, exc) from exc
     return dst
 
 
@@ -685,7 +703,16 @@ def delete_book(
 
         committed = False
         try:
-            tomb = commit_tombstone(directory, intent)
+            try:
+                tomb = commit_tombstone(directory, intent)
+            except CommitNotDurable as exc:
+                # Past the commit point (Q-F): the book is gone, so the caches are
+                # invalidated (finally below) and the request succeeds. The finalizer is
+                # not run on a books dir whose last fsync just failed; the tombstone and
+                # its intent are left for the next sweep, like any finalize failure.
+                committed = True
+                logger.error("delete of %s committed but not durable; left for the sweep: %s", folder, exc)
+                return
             committed = True
             _step("committed")
             try:

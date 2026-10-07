@@ -416,6 +416,68 @@ def test_c8_post_commit_failure_still_204_then_404_and_caches_cleared(rw, monkey
     } == {"R/U": saved, "dot_entries": []}
 
 
+def _fault_books_dir_fsync_after_commit(monkeypatch: pytest.MonkeyPatch, books: Path) -> Dict[str, Any]:
+    """A delegating ``os.fsync`` that raises EIO on a directory fsync of ``books`` once a tombstone
+    is in it: the commit rename went through, only its durability step fails."""
+    import errno
+
+    from delete_world import fd_path
+
+    m = ld()
+    real = os.fsync
+    books_real = os.path.realpath(books)
+    state: Dict[str, Any] = {"armed": True, "hits": 0}
+
+    def fsync(fd: int) -> None:
+        try:
+            path = fd_path(fd)
+        except OSError:
+            path = None
+        if state["armed"] and path == books_real and any(m.parse_tombstone(n) for n in os.listdir(books_real)):
+            state["hits"] += 1
+            raise OSError(errno.EIO, os.strerror(errno.EIO), path)
+        real(fd)
+
+    monkeypatch.setattr(os, "fsync", fsync)
+    return state
+
+
+def test_c8b_dir_fsync_failure_after_commit_rename_still_204_and_caches_cleared(rw, monkeypatch):
+    """C-8b (audit 20261007 #3 / #15, FX37-1): the commit rename succeeds and the ``books_dir`` fsync
+    after it raises EIO -> 204 (Q-F), stats one lower, then 404; an equal-stat re-create is served
+    fresh (the caches were invalidated); after the fault is gone a restart sweep publishes ``R/U``."""
+    make_book(rw.books, "a_data", title="Alpha", body="AAAA alpha", book_uuid=U, convs=[conv(CID_FRESH, D_MID, "kept")])
+    make_book(rw.books, "b_data", title="Beta", body="BBBB beta", book_uuid=V)
+    saved = (rw.books / "a_data" / "ai_conversations" / f"{CID_FRESH}.json").read_bytes()
+    old = os.stat(rw.books / "a_data" / "book.pkl")
+    assert _reader_title(rw, "Alpha")
+    assert _search_matches(rw, "a_data", "alpha") > 0
+    assert _stats_total(rw) == 2
+
+    fault = _fault_books_dir_fsync_after_commit(monkeypatch, rw.books)
+
+    first = rw.client.delete("/api/library/a_data")
+    assert (first.status_code, first.content) == (204, b""), first.text
+    assert fault["hits"], "precondition: the post-rename books_dir fsync was attempted (and failed)"
+    assert _stats_total(rw) == 1
+    again = rw.client.delete("/api/library/a_data")
+    assert (again.status_code, _detail(again)) == (404, "Book not found"), again.text
+
+    _recreate_equal_stat(rw.books, old, book_uuid=U2)
+    assert _reader_title(rw, "Omega")
+    assert _search_matches(rw, "a_data", "bravo") > 0
+    assert _search_matches(rw, "a_data", "alpha") == 0
+
+    fault["armed"] = False
+    with TestClient(app=server.app, base_url=BASE_URL):
+        pass
+
+    assert {
+        "R/U": (rw.R / U / f"{CID_FRESH}.json").read_bytes() if (rw.R / U / f"{CID_FRESH}.json").is_file() else None,
+        "dot_entries": dot_entries(rw.books),
+    } == {"R/U": saved, "dot_entries": []}
+
+
 # =========================================================================== C-9
 
 

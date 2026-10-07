@@ -545,6 +545,85 @@ def test_d4_failure_after_commit_point_is_left_for_sweep(tmp_path, monkeypatch, 
     assert w.state() == expected
 
 
+def _fault_books_dir_fsync_after_commit(monkeypatch, books):
+    """A delegating ``os.fsync`` that raises EIO on a directory fsync of ``books`` once a tombstone
+    is in it -- i.e. the commit rename succeeded and only its durability step fails. The intent's
+    own ``books`` fsync (no tombstone yet) goes through."""
+    import errno
+
+    from delete_world import fd_path
+
+    m = ld()
+    real = os.fsync
+    books_real = os.path.realpath(books)
+    hits = []
+    armed = [True]
+
+    def fsync(fd):
+        try:
+            path = fd_path(fd)
+        except OSError:
+            path = None
+        if armed[0] and path == books_real and any(m.parse_tombstone(n) for n in os.listdir(books_real)):
+            hits.append(path)
+            raise OSError(errno.EIO, os.strerror(errno.EIO), path)
+        return real(fd)
+
+    monkeypatch.setattr(os, "fsync", fsync)
+    return hits, armed
+
+
+def test_d4b_dir_fsync_failure_after_commit_rename_is_past_the_commit_point(tmp_path, monkeypatch, caplog):
+    """D-4b (audit 20261007 #3 / #14, FX37-1): the commit rename succeeds, the ``books_dir`` fsync
+    after it raises EIO -> ``delete_book`` returns (Q-F: past the commit point), logs ERROR, the
+    caches are invalidated (folder-scoped invalidator called, book cache cleared), the book is gone;
+    the tombstone + intent are left for the sweep, which then finishes it to the reference state."""
+    from reader3_app import book_store
+
+    caplog.set_level(logging.DEBUG)
+    ref = f1_world(tmp_path / "ref")
+    ref.delete(mode=False)
+    expected = ref.state()
+
+    w = f1_world(tmp_path / "w")
+    m = isolate_invalidators(monkeypatch)
+    rec = InvalidatorRecorder()
+    m.register_invalidator(rec, folder_scoped=True)
+    _warm_caches(w.books)
+    assert book_store.load_book_cached.cache_info().currsize >= 1
+    hits, armed = _fault_books_dir_fsync_after_commit(monkeypatch, w.books)
+
+    err = None
+    try:
+        w.delete(mode=False)
+    except Exception as exc:  # noqa: BLE001 - the outcome is the observation
+        err = exc
+
+    assert {
+        "error": None if err is None else type(err).__name__,
+        "fault_fired": bool(hits),
+        "logged_error": bool(_reader3_messages(caplog, logging.ERROR)),
+        "listed": "a_data" in listing(w.books),
+        "invalidated": ("a_data", U) in rec.calls,
+        "book_cache": book_store.load_book_cached.cache_info().currsize,
+        "tombstones": len(tombstones(w.books)),
+        "intents": len(intents(w.books)),
+    } == {
+        "error": None,
+        "fault_fired": True,
+        "logged_error": True,
+        "listed": False,
+        "invalidated": True,
+        "book_cache": 0,
+        "tombstones": 1,
+        "intents": 1,
+    }
+
+    armed[0] = False
+    w.sweep()
+    assert w.state() == expected
+
+
 # =========================================================================== D-5
 
 
