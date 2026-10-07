@@ -83,6 +83,7 @@ from export_world import (
     export,
     library,
     notes_json,
+    notes_record,
     project,
     raising_for,
     rehome,
@@ -473,7 +474,27 @@ E8_NOTES = {
     "schema_str": b'{"schema_version":"1","annotations":[]}',
     "annotations_not_list": b'{"schema_version":1,"annotations":{}}',
     "bad_record": b'{"schema_version":1,"annotations":[{"id":1}]}',
+    # 审计 20261007 #4 / #17（FX37-4）：非 UTF-8 是 UnicodeDecodeError，不是 JSONDecodeError；
+    # 下面三条是 json.loads 读得进、JSONResponse 却渲染不出的记录（孤立代理项、非有限数）。
+    "non_utf8": b"\xff\xfe\x00bad",
 }
+
+
+def _notes_with(**fields: str) -> bytes:
+    """One otherwise valid record whose ``fields`` are spliced in as raw JSON text."""
+    record = json.dumps(notes_record("a_data"))
+    for key, raw in fields.items():
+        record = record[:-1] + f', "{key}": {raw}' + "}"
+    return b'{"schema_version":1,"annotations":[' + record.encode("ascii") + b"]}"
+
+
+E8_NOTES.update(
+    {
+        "lone_surrogate": _notes_with(note_text='"\\ud800"'),
+        "nan_position": _notes_with(position="NaN"),
+        "overflow_position": _notes_with(position="1e309"),
+    }
+)
 
 
 @pytest.mark.parametrize("include", MODES, ids=MODE_IDS)

@@ -30,6 +30,7 @@ UUID 的值同样报 ``null``，也不会被拿去拼 project-root 路径（W6-4
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import uuid as _uuid
@@ -84,14 +85,25 @@ def _export_uuid(books_dir: str, book_id: str) -> Optional[str]:
 
 
 def _annotations(books_dir: str, book_id: str) -> Optional[list[dict[str, Any]]]:
-    """笔记列表；``notes.json`` 读不懂时 ``None``。读的途中文件没了，就是没有笔记。"""
+    """笔记列表；``notes.json`` 读不懂时 ``None``。读的途中文件没了，就是没有笔记。
+
+    「读得懂」按 ``JSONResponse`` 的渲染规则判（``allow_nan=False`` 后编码 UTF-8）：
+    孤立代理项（``"\\ud800"``）、``NaN`` / ``Infinity`` / ``1e309`` 能被 ``json.load`` 读进来，
+    却会让整个导出在渲染时 500，所以同样记成 ``null`` ＋ annotations 组件错误（审计 #4 / #17）。
+    """
     try:
-        return [a.to_dict() for a in notes_service.load_annotations(books_dir, book_id)]
+        value = [a.to_dict() for a in notes_service.load_annotations(books_dir, book_id)]
     except notes_service.NotesFileError as exc:
         if isinstance(exc.__cause__, FileNotFoundError):
             return []
         logger.warning("library export: notes.json for %s is unreadable: %s", book_id, exc)
         return None
+    try:
+        json.dumps(value, ensure_ascii=False, allow_nan=False).encode("utf-8")
+    except ValueError as exc:  # UnicodeEncodeError 是 ValueError
+        logger.warning("library export: notes.json for %s cannot be rendered as strict JSON: %s", book_id, exc)
+        return None
+    return value
 
 
 def _read_source(book_dir: str, directory: str) -> tuple[list[dict[str, Any]], list[str]]:

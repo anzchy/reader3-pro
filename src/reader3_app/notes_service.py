@@ -152,6 +152,11 @@ def load_annotations(books_dir: str, book_id: str) -> List[Annotation]:
             f"{path} is not valid JSON ({e}); refusing to treat it as an empty "
             "annotation list — the next saved highlight would overwrite it"
         ) from e
+    except UnicodeDecodeError as e:
+        raise NotesFileError(
+            f"{path} is not valid UTF-8 ({e}); refusing to treat it as an empty "
+            "annotation list — the next saved highlight would overwrite it"
+        ) from e
     except OSError as e:
         raise NotesFileError(
             f"{path} exists but could not be read ({e}); refusing to treat it as "
