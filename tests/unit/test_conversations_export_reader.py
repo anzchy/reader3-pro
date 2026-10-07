@@ -495,3 +495,51 @@ def test_r11c_every_returned_thread_strict_renders_and_stems_partition(tmp_path:
         _strict_render(t)
     assert sorted(t["conversation_id"] for t in threads) == sorted(expected_good)
     assert sorted(unreadable) == sorted(expected_bad)
+
+
+# --------------------------------------------------------------------------- R12 (FX37-6, audit #6 / #20)
+#
+# Only "does not exist" (``FileNotFoundError`` / ``NotADirectoryError``) means an absent source. A
+# permission error on the way to the directory, or on a file inside it, is reported -- never read
+# as "no conversations" (R-4).
+
+
+@EACCES_SKIP
+def test_r12a_untraversable_parent_raises_never_absent(tmp_path: Path) -> None:
+    """R12a: the parent is chmod 0, so the source cannot even be stat-ed -> ``PermissionError``."""
+    fn = cr()
+    parent = tmp_path / "p"
+    d = parent / "convs"
+    name, payload = conv(CID_FRESH, D_MID, "fresh")
+    put_file(d / name, payload)
+    with deny(parent):
+        with pytest.raises(PermissionError):
+            fn(str(d))
+    assert fn(str(d)) == ([json.loads(payload)], [])
+
+
+@EACCES_SKIP
+def test_r12b_listable_but_untraversable_directory_lists_every_stem_unreadable(tmp_path: Path) -> None:
+    """R12b: mode 0o400 lists names but every per-file stat fails -> each stem is unreadable."""
+    fn = cr()
+    d = tmp_path / "convs"
+    for cid in (CID_FRESH, CID_3):
+        name, payload = conv(cid, D_MID, "x")
+        put_file(d / name, payload)
+    put_file(d / "notes.txt", b"not a conversation")
+    mode = os.stat(d).st_mode
+    os.chmod(d, 0o400)
+    try:
+        threads, unreadable = fn(str(d))
+    finally:
+        os.chmod(d, mode)
+    assert threads == []
+    assert sorted(unreadable) == sorted([CID_FRESH, CID_3])
+
+
+def test_r12c_absent_and_not_a_directory_paths_are_empty(tmp_path: Path) -> None:
+    """R12c: a missing path, a regular file, and a path *under* a regular file are all absent."""
+    fn = cr()
+    f = put_file(tmp_path / "f.json", b"{}")
+    for target in (tmp_path / "nope", tmp_path / "nope" / "deeper", f, f / "x"):
+        assert fn(str(target)) == ([], []), target

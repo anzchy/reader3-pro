@@ -4,6 +4,7 @@ import contextlib
 import json
 import logging
 import os
+import stat
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterator, List, Optional, Tuple
@@ -200,12 +201,19 @@ def read_conversation_threads(directory: str) -> Tuple[List[Dict[str, Any]], Lis
     的值（NaN / ±Infinity / 溢出成 inf 的数、孤立代理项，任意嵌套层）、``conversation_id``
     不是合法 UUID、单个文件的 ``OSError``（如权限）全部进 ``unreadable``。
 
-    只有两种「没有」不算错：路径不存在 / 不是目录 → ``([], [])``；一个文件在列目录之后、
-    打开之前消失（``FileNotFoundError``）→ 不出现在任何一边（W6-5）。目录级的错误
-    （列目录时 ``FileNotFoundError``、``PermissionError``）原样抛出，由调用方判断是书没了
-    还是整个来源读不动。列目录必须走 ``os.listdir``（测试按名字拦截它）。
+    只有两种「没有」不算错：路径不存在（``FileNotFoundError`` / ``NotADirectoryError``）或
+    不是目录 → ``([], [])``；一个文件在列目录之后、打开之前消失（``FileNotFoundError``）→
+    不出现在任何一边（W6-5）。目录级的其他错误（``stat`` 或列目录时的 ``PermissionError``
+    等，以及列目录时的 ``FileNotFoundError``）原样抛出，由调用方判断是书没了还是整个来源
+    读不动（R-4）。审计 20261007 #6 / #20：以前用 ``os.path.isdir`` / ``isfile`` 判断，它们把
+    EACCES 吞成 False，权限错误就被读成了「没有会话」。列目录必须走 ``os.listdir``（测试按
+    名字拦截它）。
     """
-    if not os.path.isdir(directory):
+    try:
+        dir_st = os.stat(directory)
+    except (FileNotFoundError, NotADirectoryError):
+        return [], []
+    if not stat.S_ISDIR(dir_st.st_mode):
         return [], []
     threads: List[Dict[str, Any]] = []
     unreadable: List[str] = []
@@ -215,7 +223,7 @@ def read_conversation_threads(directory: str) -> Tuple[List[Dict[str, Any]], Lis
         path = os.path.join(directory, name)
         stem = name[: -len(".json")]
         try:
-            if not os.path.isfile(path):
+            if not stat.S_ISREG(os.stat(path).st_mode):
                 continue
             with open(path, "rb") as f:
                 raw = f.read()

@@ -1295,3 +1295,19 @@ def test_h3_both_routes_honour_the_load_book_metadata_seam(
         assert entry_of(body, "a_data")["title"] == "Alpha"
         assert entry_of(body, "c_data")["title"] == "Gamma"
     assert [project(e) if "error" not in e else e for e in exp["books"]] == lib["books"]
+
+
+
+
+@EACCES_SKIP
+def test_e16c_untraversable_project_root_is_a_source_error_not_absent(ew: ExportWorld) -> None:
+    """E16c (FX37-6, audit #6 / R-4): the project root R itself is chmod 0, so ``R/{uuid}`` cannot
+    be stat-ed. That is a whole-source error; per-book threads are still exported."""
+    make_book(ew.books, "a_data", book_uuid=U, convs=[conv(CID_FRESH, D_MID, "fresh")])
+    put_file(ew.R / U / f"{CID_3}.json", conv(CID_3, D_MID, "root")[1])
+    with deny(ew.R):
+        inc = entry_of(export(ew.client, "conversations").json(), "a_data")
+        dflt = entry_of(export(ew.client).json(), "a_data")
+    assert inc["conversations"] == [conv_payload(CID_FRESH, D_MID, "fresh")]
+    assert inc["component_errors"] == [CONV_ERR]
+    assert dflt["component_errors"] == []
