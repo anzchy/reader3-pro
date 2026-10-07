@@ -627,6 +627,135 @@ def test_d4b_dir_fsync_failure_after_commit_rename_is_past_the_commit_point(tmp_
 # =========================================================================== D-5
 
 
+
+
+def test_d4c_sweep_never_finalizes_a_tombstone_whose_books_dir_fsync_failed(tmp_path, monkeypatch, caplog):
+    """D-4c (audit 20261007 #25, FX37-9): D-4b leaves a tombstone whose commit rename may not be
+    durable. A sweep that cannot fsync ``books_dir`` must not finalize it: tombstone, intent,
+    R and collections stay byte-identical (twice), both names are reported ``failed``, an ERROR
+    is logged. Once the fsync works, the next sweep finishes it to the reference state."""
+    caplog.set_level(logging.DEBUG)
+    ref = f1_world(tmp_path / "ref")
+    ref.delete(mode=False)
+    expected = ref.state()
+
+    w = f1_world(tmp_path / "w")
+    hits, armed = _fault_books_dir_fsync_after_commit(monkeypatch, w.books)
+    w.delete(mode=False)
+    tomb, intent = tombstones(w.books), intents(w.books)
+    assert len(tomb) == 1 and len(intent) == 1
+    before = w.state()
+    books_before = tree_bytes(w.books, exclude=(".locks",))
+    hits.clear()
+    caplog.clear()
+
+    for _ in range(2):
+        report = w.sweep()
+        assert report.failed == tomb + intent
+        assert report.finalized == [] and report.conserved == [] and report.orphan_intents == []
+        assert w.state() == before
+        assert tree_bytes(w.books, exclude=(".locks",)) == books_before
+    assert hits, "the books_dir fsync was never attempted"
+    assert _reader3_messages(caplog, logging.ERROR), "no ERROR was logged"
+
+    armed[0] = False
+    report = w.sweep()
+    assert report.finalized == tomb
+    assert report.failed == []
+    assert w.state() == expected
+
+
+def _books_fsync_spy(monkeypatch, books, folders, *, fail_first: bool):
+    """A delegating ``os.fsync``: for every fsync of ``books`` (matched by inode) record which of
+    ``folders`` hold their book lock right now (cross-description flock probe) and, if
+    ``fail_first``, raise EIO on the first such call only."""
+    import errno
+    import fcntl
+
+    from reader3_app import book_lock
+
+    real = os.fsync
+    books_st = os.stat(books)
+    calls = []
+
+    def held(folder):
+        try:
+            fd = os.open(book_lock.lock_path(str(books), folder), os.O_RDONLY)
+        except FileNotFoundError:
+            return False
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return True
+        finally:
+            os.close(fd)
+        return False
+
+    def fsync(fd):
+        st = os.fstat(fd)
+        if (st.st_dev, st.st_ino) == (books_st.st_dev, books_st.st_ino):
+            calls.append(sorted(f for f in folders if held(f)))
+            if fail_first and len(calls) == 1:
+                raise OSError(errno.EIO, os.strerror(errno.EIO), str(books))
+        return real(fd)
+
+    monkeypatch.setattr(os, "fsync", fsync)
+    return calls
+
+
+def _two_tombstones(root):
+    w = new_world(root)
+    made = {
+        f: paired(w.books, f, mode=True, uuid=None, root=w.R, coll=w.coll, token=t)
+        for f, t in (("a_data", "aaaaaaa1"), ("b_data", "bbbbbbb2"))
+    }
+    return w, made
+
+
+def test_d4e_books_dir_fsync_runs_per_folder_inside_that_folders_lock(tmp_path, monkeypatch):
+    """D-4e (FX37-9): two tombstone folders -> one ``books_dir`` fsync per folder, each made while
+    exactly that folder's EX lock is held; the first fails -> only that folder is left (failed,
+    bytes unchanged), the other is finalized; a clean sweep then reaches the reference state."""
+    ref, _ = _two_tombstones(tmp_path / "ref")
+    ref.sweep()
+    expected = ref.state()
+
+    w, made = _two_tombstones(tmp_path / "w")
+    a_before = tree_bytes(made["a_data"].tomb), made["a_data"].intent.read_bytes()
+    calls = _books_fsync_spy(monkeypatch, w.books, ["a_data", "b_data"], fail_first=True)
+
+    report = w.sweep()
+
+    assert calls == [["a_data"], ["b_data"]]
+    assert report.failed == [made["a_data"].tomb.name, made["a_data"].intent.name]
+    assert report.finalized == [made["b_data"].tomb.name]
+    assert (tree_bytes(made["a_data"].tomb), made["a_data"].intent.read_bytes()) == a_before
+    assert not made["b_data"].tomb.exists() and not made["b_data"].intent.exists()
+
+    report = w.sweep()
+    assert report.finalized == [made["a_data"].tomb.name]
+    assert w.state() == expected
+
+
+def test_d4d_no_tombstone_means_no_books_dir_fsync(tmp_path, monkeypatch):
+    """D-4d (FX37-9): live books only, an orphan intent only, or no books dir at all -> the sweep
+    never fsyncs ``books_dir``."""
+    w = new_world(tmp_path / "w")
+    make_book(w.books, "a_data", title="A", body="a")
+    make_book(w.books, "b_data", title="B", body="b")
+    calls = _books_fsync_spy(monkeypatch, w.books, ["a_data", "b_data"], fail_first=False)
+    assert w.sweep() == ld().SweepReport()
+
+    m = ld()
+    m.write_intent(str(w.books), make_intent("c_data", mode=True, uuid=None, root=w.R, coll=w.coll))
+    calls.clear()
+    report = w.sweep()
+    assert report.orphan_intents == [m.intent_name("c_data", 77, "abcdef12")]
+    assert calls == []
+
+    assert ld().sweep(str(tmp_path / "missing"), budget=1.0) == ld().SweepReport()
+
+
 def test_d5_pre_commit_failure_keeps_book_collections_and_intent_is_swept(tmp_path, monkeypatch):
     """D-5: EIO on the commit rename -> OSError; nothing changed, caches kept; the sweep drops the intent."""
     from reader3_app import book_store

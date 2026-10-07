@@ -584,6 +584,20 @@ def _sweep_folder(books_dir: str, folder: str, report: SweepReport) -> None:
     tombs = {k: v for k, v in tombs.items() if k[0] == folder}
     intents = {k: v for k, v in intents.items() if k[0] == folder}
 
+    if tombs:
+        # Audit 20261007 #25 (FX37-9): the delete's commit rename may have returned while its
+        # ``books_dir`` fsync failed (D-4b: past the commit point). Finalizing would make the
+        # tombstone's removal durable while its creation is not, so after a crash the folder
+        # could reappear with its data already destroyed. fsync ``books_dir`` here, under this
+        # folder's EX lock (a tombstone committed later belongs to a later sweep); if that
+        # fails, leave this folder's entries untouched for the next sweep.
+        try:
+            _fsync_dir(books_dir)
+        except OSError as exc:
+            logger.error("sweep: fsync of %s failed; %s's entries left for the next sweep: %s", books_dir, folder, exc)
+            report.failed.extend(sorted(tombs.values()) + sorted(intents.values()))
+            return
+
     for triple in sorted(tombs, key=lambda t: tombs[t]):
         tomb = tombs[triple]
         try:
