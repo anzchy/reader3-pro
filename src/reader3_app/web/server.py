@@ -375,7 +375,7 @@ async def _startup_scan_books() -> None:
 
 
 def _startup_sweep() -> None:
-    report = library_delete.sweep(BOOKS_DIR, budget=book_lock.SHORT_BUDGET_S)
+    report = library_delete.sweep(BOOKS_DIR)
     if report.busy or report.conserved or report.failed:
         logger.warning(
             "startup sweep left entries in %s: busy=%s conserved=%s failed=%s",

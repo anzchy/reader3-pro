@@ -424,12 +424,10 @@ def _f7_settings_point_at_conv_b(monkeypatch, w):
 
 def test_f7_finalizer_uses_intent_paths_after_settings_change(tmp_path, monkeypatch):
     """F-7 (in process): the sweep publishes to the intent's convA, never to the settings' convB."""
-    from reader3_app import book_lock
-
     w, conv_a = _f7_crash_at_commit(monkeypatch, tmp_path / "w")
     _f7_settings_point_at_conv_b(monkeypatch, w)
 
-    ld().sweep(str(w.books), budget=book_lock.SHORT_BUDGET_S)
+    ld().sweep(str(w.books))
 
     assert (conv_a / U / f"{CID_FRESH}.json").is_file()
     assert not (w.root / "convB").exists()

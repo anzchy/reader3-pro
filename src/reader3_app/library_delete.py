@@ -632,11 +632,14 @@ def _sweep_folder(books_dir: str, folder: str, report: SweepReport) -> None:
         report.orphan_intents.append(name)
 
 
-def sweep(books_dir: PathLike, *, budget: float) -> SweepReport:
+def sweep(books_dir: PathLike) -> SweepReport:
     """Finalize, conserve or drop every tombstone / intent in ``books_dir``.
 
-    One folder at a time under its EX lock (holder ``"delete"``, ``budget`` per
-    folder); a busy folder's entries are reported in ``busy`` and left alone.
+    One folder at a time under its EX lock (holder ``"delete"``); a busy folder's
+    entries are reported in ``busy`` and left alone. The lock runs on the default
+    budget: EX never waits (W5-19), so a held lock is still refused at once, and a
+    short budget would only refuse a FREE lock whose acquisition took longer than
+    it (FX37-11, CI run 37608731905).
     """
     directory = os.fspath(books_dir)
     report = SweepReport()
@@ -647,7 +650,7 @@ def sweep(books_dir: PathLike, *, budget: float) -> SweepReport:
 
     for folder in sorted(by_folder):
         try:
-            with book_lock.acquire(directory, folder, mode=book_lock.EXCLUSIVE, holder="delete", budget=budget):
+            with book_lock.acquire(directory, folder, mode=book_lock.EXCLUSIVE, holder="delete"):
                 _sweep_folder(directory, folder, report)
         except book_lock.BookLockBusy:
             report.busy.extend(sorted(by_folder[folder]))
@@ -703,10 +706,12 @@ def delete_book(
     root = None if conversation_root is None else os.path.abspath(conversation_root)
     coll = os.path.abspath(os.fspath(collections_path))
 
-    sweep(directory, budget=book_lock.SHORT_BUDGET_S)
+    sweep(directory)
     _step("swept")
 
-    with book_lock.acquire(directory, folder, mode=book_lock.EXCLUSIVE, holder="delete", budget=book_lock.SHORT_BUDGET_S):
+    # Default budget, not SHORT_BUDGET_S (FX37-11): EX is refused at once when held
+    # and never waits either way (W5-19).
+    with book_lock.acquire(directory, folder, mode=book_lock.EXCLUSIVE, holder="delete"):
         _step("locked")
         book_dir = os.path.join(directory, folder)
         if not os.path.isdir(book_dir):

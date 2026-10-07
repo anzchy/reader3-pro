@@ -371,9 +371,7 @@ class World:
         )
 
     def sweep(self):
-        from reader3_app import book_lock
-
-        return ld().sweep(str(self.books), budget=book_lock.SHORT_BUDGET_S)
+        return ld().sweep(str(self.books))
 
     def state(self) -> Dict[str, Any]:
         return observable_state(self.books, self.R, self.coll)
@@ -915,10 +913,8 @@ def crash_child_main(books: str, conv_root: str, coll: str, mode: str, kill_poin
 def sweep_child_main(books: str, out_path: str) -> None:
     """Sweep in a fresh interpreter; record the report and any ``reader3_app.web*`` module loaded."""
     os.environ["ANONYMIZED_TELEMETRY"] = "False"
-    from reader3_app import book_lock
-
     m = importlib.import_module(LD_MODULE)
-    report = m.sweep(books, budget=book_lock.SHORT_BUDGET_S)
+    report = m.sweep(books)
     web = sorted(n for n in sys.modules if n == "reader3_app.web" or n.startswith("reader3_app.web."))
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump({"report": report_dict(report), "web": web}, f)

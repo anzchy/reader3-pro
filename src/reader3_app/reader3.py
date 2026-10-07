@@ -757,7 +757,7 @@ def process_epub(epub_path: str, output_dir: str) -> Book:
     # taking the import lock -- the sweep takes each book's EX itself, so it cannot
     # run under ours. The finalizer reads its inputs from the intent files and
     # never reaches into the web layer.
-    library_delete.sweep(books_dir, budget=book_lock.SHORT_BUDGET_S)
+    library_delete.sweep(books_dir)
     # Before the import lock too: a tombstone left busy by another holder would
     # otherwise surface as a bare "book busy" that never names it.
     _refuse_over_pending_tombstone(books_dir, folder)

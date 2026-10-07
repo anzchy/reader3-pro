@@ -753,7 +753,7 @@ def test_d4d_no_tombstone_means_no_books_dir_fsync(tmp_path, monkeypatch):
     assert report.orphan_intents == [m.intent_name("c_data", 77, "abcdef12")]
     assert calls == []
 
-    assert ld().sweep(str(tmp_path / "missing"), budget=1.0) == ld().SweepReport()
+    assert ld().sweep(str(tmp_path / "missing")) == ld().SweepReport()
 
 
 def test_d5_pre_commit_failure_keeps_book_collections_and_intent_is_swept(tmp_path, monkeypatch):
@@ -1281,3 +1281,170 @@ def test_d8a_null_and_empty_last_updated_are_readable(tmp_path, monkeypatch, chr
     assert _files(tree_bytes(w.R)) == {f"{U}/{name}": payload for name, payload in layout.convs}
     assert len(layout.convs) == 3
     assert read_collections(w.coll) == {"c1": []}
+
+
+# --------------------------------------------------------------------------- FX37-11: EX never gets SHORT_BUDGET_S
+
+#: How far the clock jumps inside one lock window: past ``SHORT_BUDGET_S`` (0.05 s,
+#: what a loaded CI runner spent between the deadline and the flock), far below
+#: ``BUDGET_S`` (2 s).
+_SLOW_WINDOW_S = 0.06
+
+
+def _slow_lock_window(monkeypatch) -> list:
+    """Make every non-blocking ``flock`` in ``book_lock`` cost ``_SLOW_WINDOW_S`` of
+    ``book_lock._monotonic``: the lock is FREE, it is just slow to take (CI run
+    37608731905). Returns the list of jumps, one per attempt, so a test can prove
+    the slow window really happened."""
+    import fcntl
+    import time
+    from types import SimpleNamespace
+
+    from reader3_app import book_lock
+
+    offset = [0.0]
+    jumps: list = []
+
+    def flock(fd, op):
+        if op & fcntl.LOCK_NB:
+            offset[0] += _SLOW_WINDOW_S
+            jumps.append(op)
+        return fcntl.flock(fd, op)
+
+    shim = SimpleNamespace(**{k: getattr(fcntl, k) for k in dir(fcntl) if k.startswith("LOCK_")}, flock=flock)
+    monkeypatch.setattr(book_lock, "fcntl", shim)
+    monkeypatch.setattr(book_lock, "_monotonic", lambda: time.monotonic() + offset[0])
+    return jumps
+
+
+def test_fx37_11a_delete_book_takes_a_free_but_slow_lock(tmp_path, monkeypatch):
+    """FX37-11 (W5-19): a FREE book whose EX flock takes 60 ms to land is deleted, not
+    refused as ``BookLockBusy('unknown')`` -- the exclusive acquire must not run on
+    ``SHORT_BUDGET_S``."""
+    w = new_world(tmp_path / "w")
+    make_book(w.books, "a_data", title="A", body="a")
+    write_collections(w.coll, {"c1": ["a_data"]})
+    jumps = _slow_lock_window(monkeypatch)
+
+    w.delete(mode=True)
+
+    assert jumps, "the slow lock window never happened"
+    assert not (w.books / "a_data").exists()
+    assert dot_entries(w.books) == []
+    assert read_collections(w.coll) == {"c1": []}
+
+
+def test_fx37_11b_sweep_finalizes_a_tombstone_behind_a_free_but_slow_lock(tmp_path, monkeypatch):
+    """FX37-11 (W5-19): the sweep's per-folder EX on a FREE folder whose flock takes 60 ms
+    finalizes the tombstone instead of reporting it busy."""
+    w = new_world(tmp_path / "w")
+    made = paired(w.books, "a_data", mode=True, uuid=None, root=w.R, coll=w.coll)
+    jumps = _slow_lock_window(monkeypatch)
+
+    report = w.sweep()
+
+    assert jumps, "the slow lock window never happened"
+    assert report.busy == []
+    assert report.finalized == [made.tomb.name]
+    assert not made.tomb.exists() and not made.intent.exists()
+
+
+def test_fx37_11c_held_lock_is_still_refused_at_once(tmp_path):
+    """FX37-11 sibling (W5-19): with the default budget, a lock another process really
+    holds is still refused immediately -- delete_book (other holder: SH ``reindex``) and
+    sweep (other holder: EX ``import``, separate library) never wait out the budget,
+    and nothing changes."""
+    import time
+
+    from reader3_app import book_lock
+
+    w = new_world(tmp_path / "w")
+    make_book(w.books, "a_data", title="A", body="a")
+    a_before = tree_bytes(w.books / "a_data")
+    s = new_world(tmp_path / "s")
+    made = paired(s.books, "b_data", mode=True, uuid=None, root=s.R, coll=s.coll, token="bbbbbbb2")
+    b_before = tree_bytes(made.tomb), made.intent.read_bytes()
+    limit = book_lock.BUDGET_S / 4
+
+    with Holder(str(w.books), "a_data", book_lock.SHARED, "reindex", str(tmp_path)):
+        t0 = time.monotonic()
+        with pytest.raises(book_lock.BookLockBusy) as exc_info:
+            w.delete("a_data", mode=True)
+        delete_elapsed = time.monotonic() - t0
+
+    with Holder(str(s.books), "b_data", book_lock.EXCLUSIVE, "import", str(tmp_path)):
+        t0 = time.monotonic()
+        report = s.sweep()
+        sweep_elapsed = time.monotonic() - t0
+
+    assert exc_info.value.holder_category == "reindex"
+    assert delete_elapsed < limit, f"delete_book waited {delete_elapsed:.3f}s on a held lock"
+    assert tree_bytes(w.books / "a_data") == a_before
+    assert dot_entries(w.books) == []
+    assert report.busy == sorted([made.tomb.name, made.intent.name])
+    assert report.finalized == []
+    assert sweep_elapsed < limit, f"sweep waited {sweep_elapsed:.3f}s on a held lock"
+    assert (tree_bytes(made.tomb), made.intent.read_bytes()) == b_before
+
+
+def test_fx37_11d_delete_books_own_sweep_finalizes_behind_a_slow_lock(tmp_path, monkeypatch):
+    """FX37-11 (spec adversary gap 1): the sweep ``delete_book`` runs first must not keep the
+    short budget either -- a FREE tombstone of another folder, 60 ms lock window, is finalized
+    by that sweep and the requested book is deleted."""
+    w = new_world(tmp_path / "w")
+    make_book(w.books, "a_data", title="A", body="a")
+    made = paired(w.books, "b_data", mode=True, uuid=None, root=w.R, coll=w.coll, token="bbbbbbb2")
+    jumps = _slow_lock_window(monkeypatch)
+
+    w.delete("a_data", mode=True)
+
+    assert len(jumps) >= 2, "the sweep's lock window and the delete's never both happened"
+    assert not made.tomb.exists() and not made.intent.exists()
+    assert not (w.books / "a_data").exists()
+    assert dot_entries(w.books) == []
+
+
+def test_fx37_11e_window_of_half_the_default_budget_still_succeeds(tmp_path, monkeypatch):
+    """FX37-11 (spec adversary gap 4): a lock window of ``BUDGET_S / 2`` is still accepted by
+    both exclusive paths, so the fix is the default budget, not merely a larger short one."""
+    import sys
+
+    from reader3_app import book_lock
+
+    monkeypatch.setattr(sys.modules[__name__], "_SLOW_WINDOW_S", book_lock.BUDGET_S / 2)
+    w = new_world(tmp_path / "w")
+    make_book(w.books, "a_data", title="A", body="a")
+    made = paired(w.books, "b_data", mode=True, uuid=None, root=w.R, coll=w.coll, token="bbbbbbb2")
+    jumps = _slow_lock_window(monkeypatch)
+
+    report = w.sweep()
+    w.delete("a_data", mode=True)
+
+    assert len(jumps) >= 2
+    assert report.busy == [] and report.finalized == [made.tomb.name]
+    assert not (w.books / "a_data").exists()
+    assert dot_entries(w.books) == []
+
+
+def test_fx37_11f_sweep_takes_no_budget_and_no_caller_passes_short_to_it():
+    """FX37-11 (spec adversary gap 2): ``sweep`` has no ``budget`` parameter (it only ever fed
+    an exclusive acquire), and no ``sweep(...)`` / exclusive ``acquire(...)`` call in ``src/``
+    mentions ``SHORT_BUDGET_S``."""
+    import inspect
+
+    assert "budget" not in inspect.signature(ld().sweep).parameters
+
+    offenders = []
+    for path in sorted(SRC_DIR.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
+            text = ast.unparse(node)
+            if name == "sweep" and "budget" in {k.arg for k in node.keywords}:
+                offenders.append(f"{path.name}:{node.lineno}: {text}")
+            if name == "acquire" and "EXCLUSIVE" in text and "SHORT_BUDGET_S" in text:
+                offenders.append(f"{path.name}:{node.lineno}: {text}")
+    assert offenders == []
