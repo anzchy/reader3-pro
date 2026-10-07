@@ -548,6 +548,27 @@ E10_BODIES = {
 }
 
 
+def _raw_conv_body(**fields: str) -> bytes:
+    """A valid ZERO_UUID thread with ``fields`` spliced in as raw JSON text (FX37-5)."""
+    text = json.dumps(conv_payload(ZERO_UUID, D_MID, "t"))
+    for key, raw in fields.items():
+        text = text[:-1] + f', "{key}": {raw}' + "}"
+    return text.encode("utf-8")
+
+
+#: Audit #5 / #19 (FX37-5): parse fine, but ``JSONResponse`` would refuse to render them.
+E10_BODIES.update(
+    {
+        "nan": _raw_conv_body(x="NaN"),
+        "infinity": _raw_conv_body(x="Infinity"),
+        "neg_infinity": _raw_conv_body(x="-Infinity"),
+        "overflow_1e309": _raw_conv_body(x="1e309"),
+        "lone_surrogate": _raw_conv_body(title='"\\ud800"'),
+        "nested_message_surrogate": _raw_conv_body(messages='[{"role": "user", "content": "\\udfff"}]'),
+    }
+)
+
+
 def _e10_base(ew: ExportWorld) -> Path:
     a_dir = make_book(ew.books, "a_data", book_uuid=U, convs=[conv(CID_FRESH, D_MID, "fresh")])
     put_file(ew.R / U / f"{CID_3}.json", conv(CID_3, D_MID, "root")[1])

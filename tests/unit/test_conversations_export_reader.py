@@ -404,3 +404,94 @@ def test_r10_unreadable_directory_raises_permission_error(tmp_path: Path) -> Non
     with deny(d):
         with pytest.raises(PermissionError):
             fn(str(d))
+
+
+# --------------------------------------------------------------------------- R11 (FX37-5, audit #5 / #19)
+#
+# ``json.loads`` accepts NaN / Infinity / -Infinity / 1e309 (-> inf) and lone-surrogate escapes, but
+# the export renders through ``JSONResponse`` (``allow_nan=False``, then UTF-8 encode), which raises on
+# all of them and would 500 the whole export. Such a file is unreadable, wherever the value sits.
+
+
+def _raw_conv(cid: str = ZERO_UUID, **fields: str) -> bytes:
+    """A valid thread for ``cid`` with ``fields`` spliced in as *raw* JSON text (last key wins)."""
+    text = json.dumps(conv_payload(cid, D_MID, "raw"))
+    for key, raw in fields.items():
+        text = text[:-1] + f', "{key}": {raw}' + "}"
+    return text.encode("utf-8")
+
+
+NON_STRICT_BODIES: Dict[str, bytes] = {
+    "nan": _raw_conv(x="NaN"),
+    "infinity": _raw_conv(x="Infinity"),
+    "neg_infinity": _raw_conv(x="-Infinity"),
+    "overflow_1e309": _raw_conv(x="1e309"),
+    "lone_high_surrogate": _raw_conv(title='"\\ud800"'),
+    "lone_low_surrogate": _raw_conv(title='"\\udfff"'),
+    "nested_message_surrogate": _raw_conv(messages='[{"role": "user", "content": "a\\ud800b"}]'),
+    "nested_meta_nan": _raw_conv(messages='[{"role": "user", "content": "hi", "metadata": {"score": NaN}}]'),
+    "surrogate_key": _raw_conv(x='{"\\ud800": 1}'),
+}
+
+#: Edge values that *are* strict JSON: they must stay readable.
+STRICT_EDGE_BODIES: Dict[str, bytes] = {
+    "surrogate_pair_escaped": _raw_conv(title='"\\ud83d\\ude00"'),
+    "surrogate_pair_literal": _raw_conv(title=json.dumps("\U0001f600", ensure_ascii=False)),
+    "max_finite_float": _raw_conv(x="1.7976931348623157e308"),
+    "min_finite_float": _raw_conv(x="-1.7976931348623157e308"),
+    "subnormal": _raw_conv(x="5e-324"),
+}
+
+
+def _strict_render(value: Any) -> None:
+    json.dumps(value, ensure_ascii=False, allow_nan=False).encode("utf-8")
+
+
+@pytest.mark.parametrize("kind", list(NON_STRICT_BODIES))
+def test_r11_non_strict_json_value_is_unreadable_sibling_still_read(tmp_path: Path, kind: str) -> None:
+    """R11: a file that parses but cannot be strictly rendered is unreadable, never a thread."""
+    fn = cr()
+    d = tmp_path / "convs"
+    name, payload = conv(CID_FRESH, D_MID, "fresh")
+    put_file(d / name, payload)
+    body = NON_STRICT_BODIES[kind]
+    path = put_file(d / f"{ZERO_UUID}.json", body)
+
+    threads, unreadable = fn(str(d))
+
+    assert unreadable == [ZERO_UUID]
+    assert [t["conversation_id"] for t in threads] == [CID_FRESH]
+    assert path.read_bytes() == body
+
+
+@pytest.mark.parametrize("kind", list(STRICT_EDGE_BODIES))
+def test_r11b_strict_edge_values_stay_readable(tmp_path: Path, kind: str) -> None:
+    """R11b: surrogate pairs (escaped or literal) and finite extremes are ordinary threads."""
+    fn = cr()
+    body = STRICT_EDGE_BODIES[kind]
+    put_file(tmp_path / f"{ZERO_UUID}.json", body)
+
+    threads, unreadable = fn(str(tmp_path))
+
+    assert threads == [json.loads(body)]
+    assert unreadable == []
+
+
+def test_r11c_every_returned_thread_strict_renders_and_stems_partition(tmp_path: Path) -> None:
+    """R11c: over both tables in one directory, readable ids + unreadable stems partition the
+    stems, and every returned thread survives the strict render the export uses."""
+    fn = cr()
+    expected_bad: List[str] = []
+    expected_good: List[str] = []
+    for i, (kind, body) in enumerate(sorted({**NON_STRICT_BODIES, **STRICT_EDGE_BODIES}.items())):
+        cid = f"00000000-0000-4000-8000-{i:012d}"
+        text = body.replace(ZERO_UUID.encode(), cid.encode())
+        put_file(tmp_path / f"{cid}.json", text)
+        (expected_bad if kind in NON_STRICT_BODIES else expected_good).append(cid)
+
+    threads, unreadable = fn(str(tmp_path))
+
+    for t in threads:
+        _strict_render(t)
+    assert sorted(t["conversation_id"] for t in threads) == sorted(expected_good)
+    assert sorted(unreadable) == sorted(expected_bad)

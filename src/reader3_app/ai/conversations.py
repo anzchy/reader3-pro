@@ -196,7 +196,8 @@ def read_conversation_threads(directory: str) -> Tuple[List[Dict[str, Any]], Lis
 
     返回 ``(threads, unreadable)``。``threads`` 每项就是文件的 ``json.loads``（未知键照留）；
     ``unreadable`` 是读不懂的 ``*.json`` 文件主名（stem）。与 ``_list_conversations_from_dir``
-    不同，这里**一个文件都不静默丢**：非 UTF-8、坏 JSON、顶层不是对象、``conversation_id``
+    不同，这里**一个文件都不静默丢**：非 UTF-8、坏 JSON、顶层不是对象、含严格 JSON 渲染不了
+    的值（NaN / ±Infinity / 溢出成 inf 的数、孤立代理项，任意嵌套层）、``conversation_id``
     不是合法 UUID、单个文件的 ``OSError``（如权限）全部进 ``unreadable``。
 
     只有两种「没有」不算错：路径不存在 / 不是目录 → ``([], [])``；一个文件在列目录之后、
@@ -229,6 +230,14 @@ def read_conversation_threads(directory: str) -> Tuple[List[Dict[str, Any]], Lis
             unreadable.append(stem)
             continue
         if not isinstance(data, dict):
+            unreadable.append(stem)
+            continue
+        try:
+            # 严格渲染探测（审计 20261007 #5 / #19）：json.loads 收 NaN / Infinity / 1e309（→ inf）
+            # 和孤立代理项 "\ud800"，但导出响应（Starlette JSONResponse：allow_nan=False 再 UTF-8
+            # 编码）渲染不了它们，整份导出会 500。按同一规则先渲染一遍，渲不出就算读不懂。
+            json.dumps(data, ensure_ascii=False, allow_nan=False).encode("utf-8")
+        except ValueError:  # UnicodeEncodeError 也是 ValueError
             unreadable.append(stem)
             continue
         try:
