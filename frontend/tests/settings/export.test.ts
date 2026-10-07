@@ -415,3 +415,55 @@ describe("export status law", () => {
     60_000,
   );
 });
+
+
+// ---------------------------------------------------------------------------
+// F7 / F8 (FX37-8, audit #8 / #18): a 2xx is only a download when its body is the export envelope
+// ---------------------------------------------------------------------------
+describe("export envelope (FX37-8)", () => {
+  const raw = (body: string): (() => Response) => () =>
+    new Response(body, { status: 200, headers: { "Content-Type": "application/json" } });
+
+  it.each([
+    ["empty body", raw("")],
+    ["html body", raw("<html><body>proxy error</body></html>")],
+    ["truncated json", raw('{"books": [')],
+    ["null", () => json(null)],
+    ["array", () => json([])],
+    ["empty object", () => json({})],
+    ["books is an object", () => json({ books: {} })],
+    ["books is a string", () => json({ books: "x" })],
+    ["books is null", () => json({ books: null })],
+  ] as Array<[string, () => Response]>)(
+    "F7 %s: a 200 that is not {books: [...]} is an error, nothing is downloaded, the button is re-enabled",
+    async (_row, reply) => {
+      const router = await bootPage();
+      router.exports.push(reply());
+
+      exportButton().click();
+      await flush3();
+      expect(exportCount(router)).toBe(1);
+      await settled();
+
+      const text = result().textContent ?? "";
+      expect(result().dataset.state).toBe("error");
+      expect(text.startsWith(ERR_PREFIX)).toBe(true);
+      expect(text.length).toBeGreaterThan(ERR_PREFIX.length);
+      expect(downloads.blobs).toHaveLength(0);
+      expect(downloads.anchors).toHaveLength(0);
+      expect(exportButton().disabled).toBe(false);
+    },
+  );
+
+  it("F8: an empty library ({books: []}) is a valid export and downloads", async () => {
+    const router = await bootPage();
+    router.exports.push(json({ books: [] }));
+
+    exportButton().click();
+    await settled();
+
+    expect(result().dataset.state).toBe("ok");
+    expect(downloads.anchors).toEqual([FILENAME]);
+    expect(await blobText(downloads.blobs[0])).toBe(JSON.stringify({ books: [] }, null, 2));
+  });
+});

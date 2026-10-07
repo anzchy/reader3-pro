@@ -699,6 +699,20 @@ function download(text: string, filename: string): void {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/**
+ * 018 audit 20261007 #8 / #18 (FX37-8): a 2xx is only a library export when its body is the
+ * `{books: [...]}` envelope. A proxy page, an empty body or any other JSON shape is an error, so
+ * nothing that is not an export is ever saved as one.
+ */
+function isLibraryExport(data: unknown): data is { books: unknown[] } {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    !Array.isArray(data) &&
+    Array.isArray((data as { books?: unknown }).books)
+  );
+}
+
 function wireExport(): void {
   const result = byId<HTMLElement>("set-export-result");
   // 018 WI-6: the default export (no ?include). `disabled` is set before the first await, so a
@@ -709,6 +723,7 @@ function wireExport(): void {
     exportLibrary.disabled = true;
     try {
       const data = await requestJson<unknown>("/api/library/export");
+      if (!isLibraryExport(data)) throw new Error("响应不是有效的书库导出（缺少 books 列表）");
       download(JSON.stringify(data, null, 2), LIBRARY_EXPORT_FILE);
       setResult(result, "ok", "书库已导出。");
     } catch (err) {
