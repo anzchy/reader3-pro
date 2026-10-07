@@ -1133,8 +1133,16 @@ DEFAULT_PORT = 8123
 DEFAULT_HOST = "127.0.0.1"
 
 
+import functools  # noqa: E402 -- 放在这里而不是文件头：文件头的行号被 test_server_patch_seam_ownership 钉着
+
+
+@functools.lru_cache(maxsize=1)
 def _package_version() -> str:
-    """装出来的版本号；源码树里跑（没装过）时回落到 pyproject 之外的一个标记。"""
+    """装出来的版本号；源码树里跑（没装过）时回落到 pyproject 之外的一个标记。
+
+    缓存（FX37-13）：`/api/health` 每次都在事件循环上调它，元数据查询要读盘；版本号在
+    进程生命期内不会变（重装要重启进程）。
+    """
     from importlib.metadata import PackageNotFoundError, version
 
     try:

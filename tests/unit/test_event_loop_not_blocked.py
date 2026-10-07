@@ -720,3 +720,39 @@ def test_T2l_流式问答路径上的重活不占事件循环(env: Env, monkeypa
 
     _assert_health_won(env, heavy_resp, health_resp)
     assert "answer body" in heavy_resp.text
+
+
+# --------------------------------------------------------------------------
+# FX37-13（可选项）：/api/health 在事件循环上调 `_package_version()`，版本号只查一次
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(("raises", "expected"), [(False, "9.9.9"), (True, "0+unknown")])
+def test_FX37_13_版本号在进程内只查一次(env: Env, monkeypatch: pytest.MonkeyPatch, raises: bool, expected: str) -> None:
+    """`/api/health` 每次都在事件循环上调 `_package_version()`；元数据查询（读盘）只该发生一次，
+    返回值与不缓存时逐字相同（装了 → 版本号；没装 → "0+unknown"）。"""
+    import importlib.metadata
+
+    calls: List[str] = []
+
+    def fake_version(name: str) -> str:
+        calls.append(name)
+        if raises:
+            raise importlib.metadata.PackageNotFoundError(name)
+        return "9.9.9"
+
+    clear = getattr(server._package_version, "cache_clear", lambda: None)
+    clear()
+    monkeypatch.setattr(importlib.metadata, "version", fake_version)
+    try:
+
+        async def twice() -> List[httpx.Response]:
+            async with _client() as client:
+                return [await client.get("/api/health"), await client.get("/api/health")]
+
+        responses = _run(twice)
+    finally:
+        clear()
+
+    assert [r.json() for r in responses] == [{"status": "ok", "version": expected}] * 2
+    assert calls == ["reader3"]
