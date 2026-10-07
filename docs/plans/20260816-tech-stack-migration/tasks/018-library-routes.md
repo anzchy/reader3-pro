@@ -436,3 +436,4 @@
 
 | 时间（UTC） | commit | 失败用例 | 根因类别 | 根因 | 处置 commit |
 |---|---|---|---|---|---|
+| 2026-10-07T06:04:15Z | `82285b3`（CI run 37579313674，`e2e baseline_1b` job，attempt 1） | `tests/e2e/baseline_1b/test_conflict_resolution_single_flight.py::test_保留我的还在飞时两个出口都不可点`（`open_conflict`：`rd-conflict-dialog` 未出现；本批首条用例） | 产品缺陷（时序暴露；非 018 引入） | 点已有 mark 打开笔记编辑器后，`onAnnotationClick` 的程序化选区经 epub.js 250ms 去抖回发 rendition `"selected"` → `handleRenditionSelection` → `handleSelectionRange` 把 `editingNoteId` 置 null（`annotations.js:997`）；保存于是走新建分支（POST 而非 PUT），`pin_if_match` 未被消费、不 409，编辑器关闭、对话框不出现。平时被加载期第二次 `loadAndRender` 重绘塌掉选区而掩盖；CI 冷启动首条用例里重绘不落在点击后 250ms 内、且点击 → 保存 >250ms 时必现。本地加延时 100% 复现（POST 409 → POST 201，pin armed、`sawClientEtag=null`）。PR #37 未触及 `annotations.js` / notes 路由；`2066f29`（与 `82285b3` 仅文档差异）在 CI run 37578140282 同码绿 | 009 欠账 #71 立账，兑付方 014（维护者 2026-10-07 裁定）；冻结集不改 |
