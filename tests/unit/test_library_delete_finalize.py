@@ -491,6 +491,58 @@ def test_f8_publish_is_durable_at_final_size(tmp_path, monkeypatch):
     assert replaced == expected_dsts
 
 
+def _observe_mkdir(monkeypatch, log: SyscallLog) -> None:
+    """Add ``("mkdir", realpath)`` events to ``log`` (``os.makedirs`` reaches ``os.mkdir`` too)."""
+    from delete_world import resolve
+
+    real_mkdir = os.mkdir
+
+    def mkdir(path, *a, **kw):
+        p = resolve(path, kw.get("dir_fd"))
+        out = real_mkdir(path, *a, **kw)
+        log._add(("mkdir", p))
+        return out
+
+    monkeypatch.setattr(os, "mkdir", mkdir)
+
+
+@pytest.mark.parametrize("absent", ["root-and-uuid", "uuid-only"])
+def test_f8b_publish_makes_every_created_directory_durable(tmp_path, monkeypatch, absent):
+    """F-8b (audit 20261007 #2 / #13, FX37-2): when the publish has to create ``R`` and/or ``R/U``,
+    each created directory's parent is fsynced after that directory is made and before the first
+    removal inside the tombstone -- otherwise power loss can drop the new entry, and with it the
+    only copy of the conversations."""
+    w = new_world(tmp_path / "w")
+    if absent == "uuid-only":
+        w.R.mkdir()
+    assert not os.path.lexists(w.R / U)
+    convs = [conv(CID_FRESH, D_MID, "fresh"), conv(CID_3, D_MID, "third")]
+    p = paired(w.books, "a_data", mode=False, uuid=U, root=w.R, coll=w.coll, book_uuid=U, convs=convs)
+    tomb_real = os.path.realpath(p.tomb)
+    log = SyscallLog(monkeypatch)
+    _observe_mkdir(monkeypatch, log)
+
+    report = w.sweep()
+
+    assert report.finalized == [p.tomb.name]
+    assert (w.R / U / f"{CID_FRESH}.json").is_file()
+    first_unlink = log.index(lambda e: e[0] in ("unlink", "rmdir") and e[1].startswith(tomb_real + os.sep))
+    assert first_unlink >= 0, "no removal inside the tombstone was observed"
+
+    r_real = os.path.join(os.path.realpath(w.R.parent), w.R.name)
+    created = [r_real, os.path.join(r_real, U)] if absent == "root-and-uuid" else [os.path.join(r_real, U)]
+    observed = {}
+    for d in created:
+        made = log.index(lambda e, d=d: e[0] == "mkdir" and e[1] == d)
+        synced = (
+            -1
+            if made < 0
+            else log.index(lambda e, parent=os.path.dirname(d): e[0] == "fsync" and e[1] == parent and e[3] is True, made + 1)
+        )
+        observed[d] = {"made": made >= 0, "parent_fsynced_after": synced > made, "before_tomb_removal": 0 <= synced < first_unlink}
+    assert observed == {d: {"made": True, "parent_fsynced_after": True, "before_tomb_removal": True} for d in created}
+
+
 # =========================================================================== F-9
 
 

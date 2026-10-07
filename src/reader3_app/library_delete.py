@@ -447,9 +447,29 @@ def _should_publish(item: PublishItem) -> bool:
     return item.last_updated > lu_key(existing.get("last_updated"))
 
 
+def _makedirs_durably(directory: Path) -> None:
+    """``os.makedirs(directory, exist_ok=True)``, then fsync the parent of every directory
+    that was missing, deepest first (audit 20261007 #2).
+
+    ``_write_durably`` fsyncs only the directory it writes into; a ``{root}`` or
+    ``{root}/{uuid}`` created here would otherwise have a non-durable entry, and the
+    tombstone -- the only other copy -- is removed right after the publish.
+    """
+    missing: List[Path] = []
+    probe = directory
+    while not os.path.isdir(probe):
+        missing.append(probe)
+        if probe.parent == probe:
+            break
+        probe = probe.parent
+    os.makedirs(directory, exist_ok=True)
+    for created in missing:
+        _fsync_dir(created.parent)
+
+
 def _publish(item: PublishItem) -> None:
     parent = item.dst.parent
-    os.makedirs(parent, exist_ok=True)
+    _makedirs_durably(parent)
     payload = item.src.read_bytes()
     mode = stat.S_IMODE(os.stat(item.src).st_mode)
     _write_durably(os.fspath(parent), os.fspath(item.dst), payload, prefix=f".{item.dst.name}.", mode=mode)
