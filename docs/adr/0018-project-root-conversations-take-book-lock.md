@@ -2,15 +2,15 @@
 
 | 字段 | 值 |
 |---|---|
-| Status | Proposed——维护者 2026-10-02 裁定（018 第二段计划评审 H1）；在 `018-library-routes` 第二段（WI-4 – WI-8）合入的同一 PR 里转 Accepted。**只**取代 [ADR-0015](0015-per-book-write-coordination.md) Decision Outcome 第 3 条里「对话只在 per-book 存储模式下取书锁……它不取书锁是刻意的，不是遗漏」这一处例外；ADR-0015 其余条款（含「不保证」里 `both` 模式两次发布之间的一致性）继续有效 |
+| Status | Accepted（2026-10-07，随 `018-library-routes` 第二段 WI-4 – WI-8 的 PR #37 转入，018 §4 出口闸 7；实现在 WI-5b `dc7dd27`）。维护者 2026-10-02 裁定（018 第二段计划评审 H1）。**只**取代 [ADR-0015](0015-per-book-write-coordination.md) Decision Outcome 第 3 条里「对话只在 per-book 存储模式下取书锁……它不取书锁是刻意的，不是遗漏」这一处例外；ADR-0015 其余条款（含「不保证」里 `both` 模式两次发布之间的一致性）继续有效 |
 | Decision date | 2026-10-02 |
 | Recorded date | 2026-10-02 |
 | Record type | Prospective |
 | Original rationale known | Yes |
 | Confidence | High——问题由 Codex 计划评审指出，并在代码上逐条核对（见 Evidence）；机制复用已有的 `writer_scope`，没有新原语 |
-| Current compliance | None——见 Migration Strategy |
+| Current compliance | Full——`save_project_conversation` 在 `writer_scope(..., holder="conversations")` ＋ 资源锁内写；`save_conversation_multi` 的 `both` 分支一次持锁写完两份（018 WI-5b `dc7dd27`） |
 | Evidence | 以符号定位（行号以 `fa9a4fe` 核对，会漂）：`ai.conversations.save_project_conversation`（`ai/conversations.py:289`，不取任何锁，`:296` 直接 `os.makedirs` 项目级 `{root}/{book_uuid}/`）；`ai.conversations.save_conversation_multi`（`:405`，`both` 模式先调 `save_conversation`——它在 `writer_scope` 内写 per-book 那份并在返回时放锁——再在锁外调 `save_project_conversation`，`:435-438`）；`book_lock.writer_scope`（`book_lock.py:538`，锁内复核书目录存在 → `BookGone`、复核 `book_uuid` → `BookChanged`）；`web.server._project_conversations_root`（`server.py:1009`，根 = `dirname(BOOKS_DIR)` 下的 `conversation_project_root_dir`，默认 `conversations`，见 `ai/config.py:42`）；ADR-0015 第 3 条（例外原文）、第 7 条（同一调用栈重复取书锁 → 抛错）、第 8 条（删书步骤）；[018 第二段计划](../plans/20261002-018-second-slice-plan.md) §6 Q-B（删书时把 per-book 对话搬进项目级目录） |
-| Confirmation | none（人工）——目标测试由 018 第二段 WI-5 落地：项目级写手在删书持独占锁时 409 / 删书后 404、`delete_conversations=true` 后迟到的项目级写入不重建 `{root}/{book_uuid}/`、`both` 模式两份写入之间删书拿不到独占锁。测试路径在合入转 Accepted 时补进本格 |
+| Confirmation | `tests/unit/test_project_conversation_book_lock.py`（018 WI-5b，矩阵 B-1 – B-4）：`test_b1_project_save_runs_under_the_book_lock`（项目级写入只在持 SH 书锁 ＋ 资源锁时发生）、`test_b2_project_save_outcomes_gone_changed_busy`（书不在 → `BookGone`、换代 → `BookChanged`、EX 被占 → `BookLockBusy`）、`test_b3_both_mode_is_one_acquisition_and_project_write_is_locked`（`both` 模式只取一次书锁）、`test_b4_delete_vs_project_save_ordering`（删书后迟到的项目级写入 → `BookGone` 且不重建 `{root}/{book_uuid}/`；`both` 写入期间删书持 EX → 两份都不写） |
 
 ## Context and Problem Statement
 
