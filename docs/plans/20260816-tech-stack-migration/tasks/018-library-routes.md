@@ -1,6 +1,6 @@
 # 018-library-routes —— 任务
 
-- **状态**: 🚧 **进行中，首段已合入**（⬛ 2026-10-02 回写：WI-1 – WI-3 随 PR #33 于 2026-10-01 合入 `master`，合并 commit `c08317b`，见 §8；**WI-4 – WI-8 未做**，PR 正文明写「WI-4 – WI-8 不在本 PR」。§4 出口闸按整个分支计，尚未全部满足）。~~🚧 **进行中**~~（⬛ 2026-09-30 分支从 `master` 开出，与 `019` 并行，先做 WI-1 / WI-2，调度见[进度盘「现在该做什么」第 2 步](../../20260824-frontend-backend-plan-progress.md#现在该做什么)）。~~评审通过、待开工~~（任务书 2026-09-26 评审通过，§6 Q1–Q12 全部裁定）。~~分支**未开**，没有一项已实施。~~2026-09-28 批次规则取消 soak 等待期后，本分支是挡在 012 前面的关键路径（顺序见 [进度盘 §2](../../20260824-frontend-backend-plan-progress.md)；⬛ 2026-09-30：排在冻结集欠账窗口之后开工，WI-8 规则同日订正，见 §6 Q10）
+- **状态**: ✅ **已合入**（⬛ 2026-10-07 回写：第二段 WI-4 – WI-8 随 PR #37 于 2026-10-07 合入 `master`，合并 commit `74384b1`，分支尖 `b6025ba`，见 §8；§4 出口闸证据已填，门槛 7 的 ADR-0015 compliance 一项见该行注）。~~🚧 **进行中，首段已合入**~~（⬛ 2026-10-02 回写：WI-1 – WI-3 随 PR #33 于 2026-10-01 合入 `master`，合并 commit `c08317b`，见 §8；~~**WI-4 – WI-8 未做**，PR 正文明写「WI-4 – WI-8 不在本 PR」。§4 出口闸按整个分支计，尚未全部满足~~）。~~🚧 **进行中**~~（⬛ 2026-09-30 分支从 `master` 开出，与 `019` 并行，先做 WI-1 / WI-2，调度见[进度盘「现在该做什么」第 2 步](../../20260824-frontend-backend-plan-progress.md#现在该做什么)）。~~评审通过、待开工~~（任务书 2026-09-26 评审通过，§6 Q1–Q12 全部裁定）。~~分支**未开**，没有一项已实施。~~2026-09-28 批次规则取消 soak 等待期后，本分支是挡在 012 前面的关键路径（顺序见 [进度盘 §2](../../20260824-frontend-backend-plan-progress.md)；⬛ 2026-09-30：排在冻结集欠账窗口之后开工，WI-8 规则同日订正，见 §6 Q10）
 - **2026-10-02 开工**：按[第二段执行计划 §1.3](../../20261002-018-second-slice-plan.md#13-任务书的漂移开工当天改进任务书本文不改) D1–D19 修正任务书（⬛ 本次修正各处以「⬛ 2026-10-02 D*n*」标注；§6 补 Q-A – Q-H 裁定）。第二段怎么做（测试分层、红灯检查、检查点）只在[执行计划](../../20261002-018-second-slice-plan.md)，本文仍是 WI-4 – WI-8 目标 / 涉及文件 / 验收 / 出口闸的定义处
 - **对应阶段**: M4a-债（013 延后到后端的欠账兑付之一部分，[§9 编号表](../plan-tech-stack-migration.md)）。不是新里程碑，与 016 / 017 同类
 - **计划文件夹**: [`20260816-tech-stack-migration/`](../plan-tech-stack-migration.md)（归属 **A**）
@@ -276,23 +276,23 @@
 
 ## 4. 出口闸
 
-全部满足才算完。「证据位置」在核验时填，现在全部是占位。
+全部满足才算完。~~「证据位置」在核验时填，现在全部是占位。~~ ⬛ 2026-10-07 合入回写：证据按合并头填。合并头 = 冻结的 PR 头 `b6025ba`（它已并入 master `09893a9`，与合并 commit `74384b1` 同树 `df20cf4`）；CI 三个运行与本地 push 闸的数字只在 §8「第二段」一处，下表只引用。
 
 | # | 门槛 | 判据 | 证据位置 |
 |---|---|---|---|
-| 1 | 全部 lane 在合并头上绿 | `.claude/tdd-guardian/config.json` 里**每一条** lane（不写死条数），带 `env -u FORCE_COLOR`；`/tdd-guardian:gate push` | _待填_ |
-| 2 | 类型检查 | `uv run mypy src/` 干净 | _待填_ |
-| 3 | lint | `uv run ruff check src/ tests/ scripts/` 干净（不跑 `ruff format`）；`scripts/lint_*.py` 全部 rc=0 | _待填_ |
-| 4 | router 体量 | `python3 scripts/check_router_size.py` rc=0（新路由不许挤爆 500 行） | _待填_ |
-| 5 | 路由快照同 commit | 每个新增 / 改动路由的 commit 里同时改了 `tests/contract/routes.snapshot`，diff 只有新增行（WI-3 若给已有路由加头 / 字段，只许加法）；PR 描述写明破坏性与迁移路径（ADR-0011） | _待填_ |
-| 6 | e2e 分组登记 | 新增的每条 e2e 都登记进 `scripts/lint_e2e_groups.py`（验收目录进 `EXPECTED_ACCEPTANCE_PER_DIR`，或模块进 `UNGROUPED_E2E_MODULES` 并同步 `EXPECTED_UNGROUPED_ITEMS`；新分组还要进 `pyproject.toml` markers 与 `tests/unit/test_e2e_group_guard.py` 的钉死副本）；合入前在分支上跑一次 `soak_run.py`（只核验、不 `--append`）确认 deselected 精确相等 | _待填_ |
-| 7 | 锁契约 | WI-2 验收的跨进程互斥、`SIGKILL` 释放、各写手不复活目录、共享写手 2 秒内 409、ABA 身份复核、交叉获取抛错六类测试齐全；ADR-0015 在本分支合入的同一 PR 里由 Proposed 转 **Accepted**（§6 Q11）。⬛ 2026-10-02 D1：转 Accepted 已由第一段合入回写完成（§8），WI-2 契约段已换成一行链接到 [ADR-0015](../../../adr/0015-per-book-write-coordination.md)；本门槛剩下的是删书部分的测试，以及合入时把 ADR-0015 的 compliance 改成 Full。[ADR-0018](../../../adr/0018-project-root-conversations-take-book-lock.md) 在第二段合入 PR 里由 Proposed 转 Accepted | _待填_ |
-| 8 | 每条欠账一个 commit 结清 | 009 表 #51 / #56 / #58 / #53 / #31 各行状态改为已结清并附 commit | _待填_ |
-| 9 | #31 的 CI 核验 | 合并头上至少一次 `workflow_dispatch` 的 `tests.yml` 运行，`e2e` job 绿、`attempt=1`；PR 的 `pull_request` 运行同样绿。run id 按 WI-7 的记录位置落档。⬛ 2026-10-02 D17：「合并头」= 冻结的 PR 头 SHA，两次运行的 `headSha` 都等于它，合并用 `--match-head-commit`；`soak-log.md` 的记录挪到合入后的回写 commit | _待填_ |
-| 10 | ~~合入后 soak 一次~~（⬛ 2026-09-30 被 [plan §7「012 开工核验」](../plan-tech-stack-migration.md#012-开工核验2026-09-30-维护者裁定) 取代：012 开工要在它开分支的那个 `commit` 上新跑一批，合入头红不红由那一批覆盖；本门槛不再单独要求，原文保留） | 合入后在 `master` 上跑一次 `soak_run.py --append`，green，`suite_hash` 仍是冻结值；这一行记进台账（~~它是正常计数行，commit 变不清零~~ ⬛ 2026-09-29：批次规则下单独一行不计入任何批次，只证明合入头没把 `baseline_1b` 弄红；012 开工要的批次见 [012 §4 门槛 F](./012-storage-format.md)） | _待填_ |
-| F | ~~**冻结区零字节改动**~~（⬛ 2026-09-28 随 [012 门槛 F](./012-storage-format.md) 放宽：冻结区可以改，但改了就须在合并头的新 `suite_hash` 上重跑一批并通过，否则 012 开工时对不上最后一次通过批次；仍应避免无谓改动。下面原判据保留作「没动冻结区」时的核对方式。⬛ 2026-09-30：012 开工一律新跑一批，见 [plan §7「012 开工核验」](../plan-tech-stack-migration.md#012-开工核验2026-09-30-维护者裁定)；本门槛只剩「别无谓动冻结区」的约束） | 下列 8 条路径 `git diff --stat master... -- <paths>` 为空，`suite_hash` 与 [`soak-log.md`](./soak-log.md) 表头冻结值一致：`tests/e2e/baseline_1b/**`、`tests/e2e/conftest.py`、`tests/e2e/helpers.py`、`tests/e2e/test_harness_smoke.py`、`tests/fixtures/epub_corpus.py`、`tests/fixtures/epub_zip.py`、`tests/fixtures/ai_stub.py`、`tests/conftest.py`。路径清单的定义处是 `soak-log.md`「`suite_hash` 的取法」与 `scripts/soak_run.py` 的 `HASH_COVERED_PATHS`，冲突以那里为准 | _待填_ |
-| R | **红灯必查根因** | 分支存续期间，`baseline_1b` 与 e2e lane（含 CI `e2e` job）**每一次**红都在 §8「红灯记录」追一行：时间、commit、失败用例、根因（产品缺陷 / 测试缺陷 / 环境）、处置 commit。**不允许以「重跑变绿」结案**。表为空或每行根因齐全才算过 | _待填_ |
-| 11 | 合入前 CI 全绿 | PR 上 `pull_request` 触发的 `tests.yml`（`unit` ＋ `e2e`）与 `lint.yml` 全绿后才合入（PR 先开，CI 才会跑——不是「CI 绿后开 PR」） | _待填_ |
+| 1 | 全部 lane 在合并头上绿 | `.claude/tdd-guardian/config.json` 里**每一条** lane（不写死条数），带 `env -u FORCE_COLOR`；`/tdd-guardian:gate push` | ✅ 本地 push 闸在 `b6025ba` 上全部 lane 绿（unit / verify-control / fe-unit / packaging / e2e，数字见 §8 第二段）；CI 在同一 SHA 上 `tests.yml` 的 `unit` ＋ `e2e` job 绿（run [37635190616](https://github.com/anzchy/reader3-pro/actions/runs/37635190616)、[37635220594](https://github.com/anzchy/reader3-pro/actions/runs/37635220594)） |
+| 2 | 类型检查 | `uv run mypy src/` 干净 | ✅ CI `tests.yml` unit job 的 `mypy` 步在 `b6025ba` 上绿（run 37635190616）；2026-10-07 回写时在同树 `74384b1` 上复跑 `uv run mypy src/`：no issues，48 个源文件 |
+| 3 | lint | `uv run ruff check src/ tests/ scripts/` 干净（不跑 `ruff format`）；`scripts/lint_*.py` 全部 rc=0 | ✅ CI `tests.yml` 的 `ruff check` 步与 `lint.yml`（run [37635190619](https://github.com/anzchy/reader3-pro/actions/runs/37635190619)）在 `b6025ba` 上绿；回写时在 `74384b1` 上复跑 `lint_e2e_selectors` / `lint_inline_html` / `lint_testid_naming` / `lint_token_refs` rc=0、`lint_e2e_groups`（经 `uv run`）rc=0；`lint_contracts` 回写 worktree 无 `node_modules`（depcruise 起不来）未复跑，以 CI 为准 |
+| 4 | router 体量 | `python3 scripts/check_router_size.py` rc=0（新路由不许挤爆 500 行） | ✅ `lint.yml` run 37635190619 含 `check_router_size.py`，绿；回写时在 `74384b1` 上复跑 rc=0。新 router 是 `library_books.py` 与 `library_export.py`，未挤进 `library.py` |
+| 5 | 路由快照同 commit | 每个新增 / 改动路由的 commit 里同时改了 `tests/contract/routes.snapshot`，diff 只有新增行（WI-3 若给已有路由加头 / 字段，只许加法）；PR 描述写明破坏性与迁移路径（ADR-0011） | ✅ `routes.snapshot` 对第一段合并头 `c08317b` 只增 3 行（`DELETE /api/library/{book_id}`、`GET /api/library`、`GET /api/library/export`），无删改；各随所属路由 commit（WI-4 `95eb94e`、WI-5c `642bbc5`、WI-6 `2066f29`）；PR #37 正文「API（ADR-0011）」节写明加法式、无破坏 |
+| 6 | e2e 分组登记 | 新增的每条 e2e 都登记进 `scripts/lint_e2e_groups.py`（验收目录进 `EXPECTED_ACCEPTANCE_PER_DIR`，或模块进 `UNGROUPED_E2E_MODULES` 并同步 `EXPECTED_UNGROUPED_ITEMS`；新分组还要进 `pyproject.toml` markers 与 `tests/unit/test_e2e_group_guard.py` 的钉死副本）；合入前在分支上跑一次 `soak_run.py`（只核验、不 `--append`）确认 deselected 精确相等 | ✅ 第二段无新增 e2e 模块（`tests/e2e` 对 master 的 diff 只有 `shell_4a/test_settings_rows.py` 一处原地反转，条数不变）；`lint_e2e_groups.py` 在 `74384b1` 上收集 270 条、`baseline_1b` 132/132，rc=0；分支上 `soak_run.py` verify-only（不 `--append`）132 passed / 138 deselected（PR 正文，`2066f29`），CI `e2e` job 在 `b6025ba` 上同数（见 [soak-log「CI 运行记录」](./soak-log.md#ci-运行记录)） |
+| 7 | 锁契约 | WI-2 验收的跨进程互斥、`SIGKILL` 释放、各写手不复活目录、共享写手 2 秒内 409、ABA 身份复核、交叉获取抛错六类测试齐全；ADR-0015 在本分支合入的同一 PR 里由 Proposed 转 **Accepted**（§6 Q11）。⬛ 2026-10-02 D1：转 Accepted 已由第一段合入回写完成（§8），WI-2 契约段已换成一行链接到 [ADR-0015](../../../adr/0015-per-book-write-coordination.md)；本门槛剩下的是删书部分的测试，以及合入时把 ADR-0015 的 compliance 改成 Full。[ADR-0018](../../../adr/0018-project-root-conversations-take-book-lock.md) 在第二段合入 PR 里由 Proposed 转 Accepted | ✅ 删书部分的锁测试齐：`tests/unit/test_library_delete.py`（D2a、FX37-11a–f）、`tests/unit/test_library_delete_sweep.py`（S2 / S3 / S4a / S4b）、`tests/unit/test_project_conversation_book_lock.py`、`tests/contract/test_library_delete_route.py`；ADR-0018 在 PR #37 内转 Accepted（`82285b3`，FX37-3 `d6c6a1c` 同 PR 修订）。⚠️ ADR-0015 compliance：本行原文要「改成 Full」，[执行计划 §7](../../20261002-018-second-slice-plan.md) 的定义是「018 全部写手已接入，012 的写手待接入」——2026-10-07 回写按后者写，标签仍为 Partial（012 写手未接入），见 [ADR-0015](../../../adr/0015-per-book-write-coordination.md) Current compliance |
+| 8 | 每条欠账一个 commit 结清 | 009 表 #51 / #56 / #58 / #53 / #31 各行状态改为已结清并附 commit | ✅ 009 欠账表 #51（第一段 `2d5f96f`）/ #56（`95eb94e`）/ #58（`e2497fc` / `dc7dd27` / `642bbc5` / `31527de`）/ #53（`2066f29`）均已结清并附 commit 与合并 SHA；#31 早于 018 结清（2026-09-20），本次补 CI 记录链接——见 [009 欠账表](./009-e2e-annotations.md#跨波欠账) |
+| 9 | #31 的 CI 核验 | 合并头上至少一次 `workflow_dispatch` 的 `tests.yml` 运行，`e2e` job 绿、`attempt=1`；PR 的 `pull_request` 运行同样绿。run id 按 WI-7 的记录位置落档。⬛ 2026-10-02 D17：「合并头」= 冻结的 PR 头 SHA，两次运行的 `headSha` 都等于它，合并用 `--match-head-commit`；`soak-log.md` 的记录挪到合入后的回写 commit | ✅ 冻结 PR 头 `H` = `b6025ba`：`workflow_dispatch` run [37635220594](https://github.com/anzchy/reader3-pro/actions/runs/37635220594) 与 `pull_request` run [37635190616](https://github.com/anzchy/reader3-pro/actions/runs/37635190616) 的 `headSha` 都是 `b6025ba`，`e2e` job 绿，`attempt=1`；run 细节记在 [soak-log「CI 运行记录」](./soak-log.md#ci-运行记录) |
+| 10 | ~~合入后 soak 一次~~（⬛ 2026-09-30 被 [plan §7「012 开工核验」](../plan-tech-stack-migration.md#012-开工核验2026-09-30-维护者裁定) 取代：012 开工要在它开分支的那个 `commit` 上新跑一批，合入头红不红由那一批覆盖；本门槛不再单独要求，原文保留） | 合入后在 `master` 上跑一次 `soak_run.py --append`，green，`suite_hash` 仍是冻结值；这一行记进台账（~~它是正常计数行，commit 变不清零~~ ⬛ 2026-09-29：批次规则下单独一行不计入任何批次，只证明合入头没把 `baseline_1b` 弄红；012 开工要的批次见 [012 §4 门槛 F](./012-storage-format.md)） | —（已被 012 开工核验取代；合入后**未**跑 `--append`，按本行裁定不需要） |
+| F | ~~**冻结区零字节改动**~~（⬛ 2026-09-28 随 [012 门槛 F](./012-storage-format.md) 放宽：冻结区可以改，但改了就须在合并头的新 `suite_hash` 上重跑一批并通过，否则 012 开工时对不上最后一次通过批次；仍应避免无谓改动。下面原判据保留作「没动冻结区」时的核对方式。⬛ 2026-09-30：012 开工一律新跑一批，见 [plan §7「012 开工核验」](../plan-tech-stack-migration.md#012-开工核验2026-09-30-维护者裁定)；本门槛只剩「别无谓动冻结区」的约束） | 下列 8 条路径 `git diff --stat master... -- <paths>` 为空，`suite_hash` 与 [`soak-log.md`](./soak-log.md) 表头冻结值一致：`tests/e2e/baseline_1b/**`、`tests/e2e/conftest.py`、`tests/e2e/helpers.py`、`tests/e2e/test_harness_smoke.py`、`tests/fixtures/epub_corpus.py`、`tests/fixtures/epub_zip.py`、`tests/fixtures/ai_stub.py`、`tests/conftest.py`。路径清单的定义处是 `soak-log.md`「`suite_hash` 的取法」与 `scripts/soak_run.py` 的 `HASH_COVERED_PATHS`，冲突以那里为准 | ✅ 8 条路径对 master 父 `09893a9` 零 diff（`git diff --stat 09893a9 74384b1 -- <8 条路径>` 为空），`suite_hash` 未变；CI `e2e` job 报 `abfc0cc9c59e`（见 soak-log「CI 运行记录」） |
+| R | **红灯必查根因** | 分支存续期间，`baseline_1b` 与 e2e lane（含 CI `e2e` job）**每一次**红都在 §8「红灯记录」追一行：时间、commit、失败用例、根因（产品缺陷 / 测试缺陷 / 环境）、处置 commit。**不允许以「重跑变绿」结案**。表为空或每行根因齐全才算过 | ✅ 表非空、每行根因齐全：§8「红灯记录」5 行（1 条 e2e `baseline_1b` → 009 #72 / 014；4 条范围外的 unit / verify-control 红 → FX37-11 / 12 / 13 / 14），无一以「重跑变绿」结案 |
+| 11 | 合入前 CI 全绿 | PR 上 `pull_request` 触发的 `tests.yml`（`unit` ＋ `e2e`）与 `lint.yml` 全绿后才合入（PR 先开，CI 才会跑——不是「CI 绿后开 PR」） | ✅ `b6025ba` 上 `pull_request` 触发的 `tests.yml` run [37635190616](https://github.com/anzchy/reader3-pro/actions/runs/37635190616)（`unit` ＋ `e2e`）与 `lint.yml` run [37635190619](https://github.com/anzchy/reader3-pro/actions/runs/37635190619) 全绿，attempt 1；之后于 2026-10-07T14:44:36Z 合入 |
 
 - 不得设 `TDD_GUARD_BYPASS`。
 - `EXPECTED_BASELINE_ITEMS` 不许变——它一变就说明碰了冻结集。
@@ -414,9 +414,9 @@
 
 ~~_未合入。合入后本节是「018 是否在主干上」的唯一定义处，格式照 [011 §8 合入记录](./011-backend-refactor.md)。_~~
 
-### 🟡 合入记录：第一段（WI-1 – WI-3）（本文是这条事实的唯一定义处）
+### ✅ 合入记录：第一段（WI-1 – WI-3）（本文是这条事实的唯一定义处）
 
-⬛ 2026-10-02 回写。**018 的 WI-1 – WI-3 已于 2026-10-01 合入 `master`；WI-4 – WI-8 不在这次合入里，018 尚未关闭。** 别处提到「018 是否在主干上」一律链回本节。
+⬛ 2026-10-02 回写。**018 的 WI-1 – WI-3 已于 2026-10-01 合入 `master`；WI-4 – WI-8 不在这次合入里~~，018 尚未关闭~~。** 别处提到「018 是否在主干上」一律链回本节。⬛ 2026-10-07：WI-4 – WI-8 已随第二段合入，018 关闭，见下方「第二段」。
 
 | 事实 | 值 | 复核命令 |
 |---|---|---|
@@ -424,11 +424,30 @@
 | 合并 commit | `c08317b`（2026-10-01 22:43 +0800，`Merge pull request #33 from anzchy/018-library-routes`），第一父 `f621175` | `git log -1 c08317b` |
 | 合并前最后一个 commit | `42c0728`（§7.1 修复轮 2 / 3 记录）；分支领先量 0 | `git rev-list --count master..018-library-routes` |
 | 交付 | WI-1（兑付方改写，`865d068`）；WI-2（每书写锁 `book_lock`，`48bdfa4`，及 §7.1 三轮审计修复）；WI-3（#51 设置写入版本校验，`2d5f96f`） | `git log c08317b^1..c08317b^2 --oneline` |
-| 未交付 | WI-4（#56 列表路由）、WI-5（#58 删书）、WI-6（#53 导出）、WI-7（#31 收尾对账）、WI-8（`--append` 硬拦截）——`src/` 里没有对应路由，`routes.snapshot` 无新增，`scripts/soak_run.py` 无 `GITHUB_ACTIONS` / `is-ancestor` 判据 | `grep -n "@router" src/reader3_app/web/routers/library.py` |
+| 未交付 | ~~WI-4（#56 列表路由）、WI-5（#58 删书）、WI-6（#53 导出）、WI-7（#31 收尾对账）、WI-8（`--append` 硬拦截）——`src/` 里没有对应路由，`routes.snapshot` 无新增，`scripts/soak_run.py` 无 `GITHUB_ACTIONS` / `is-ancestor` 判据~~ ⬛ 2026-10-07：**已全部交付**，随第二段 PR #37 合入（`74384b1`），见下方「第二段」 | `grep -n "@router" src/reader3_app/web/routers/library_books.py src/reader3_app/web/routers/library_export.py` |
 | 本地 lane（在 `42c0728` 上，PR 正文，协调者独立复跑） | unit ＋ contract 3107 passed / 2 skipped / 1 xfailed；fe 279；e2e 254 passed / 16 skipped；packaging 11 | — |
 | CI（PR 上） | 全绿：tests run `36854855076`、lint run `36854855032` | `gh pr checks 33` |
 | 冻结集 | 8 条路径零改动，`suite_hash` 不变（PR 正文） | — |
 | ADR-0015 | 门槛 7 要求「合入同一 PR 里转 Accepted」——PR #33 合入时仍是 Proposed；2026-10-02 由合入回写转 Accepted（锁契约已在 `master` 上，删书接入随 WI-5） | `sed -n 5p docs/adr/0015-per-book-write-coordination.md` |
+
+### ✅ 合入记录：第二段（WI-4 – WI-8）（本文是这条事实的唯一定义处）
+
+⬛ 2026-10-07 回写。**018 的 WI-4 – WI-8 已于 2026-10-07 合入 `master`，018 关闭。** 执行计划见 [`20261002-018-second-slice-plan.md`](../../20261002-018-second-slice-plan.md)。
+
+| 事实 | 值 | 复核命令 |
+|---|---|---|
+| PR | [#37](https://github.com/anzchy/reader3-pro/pull/37)，30 commits；标题「018: 书库路由第二段 WI-4 – WI-8——列表 / 删书 / 导出 / --append 硬拦截（债 #56 / #58 / #53）」 | `gh pr view 37` |
+| 合并 commit | `74384b1`（2026-10-07T14:44:36Z，`Merge pull request #37 from anzchy/018-library-routes`），第一父 `09893a9`，第二父 `b6025ba`；与 `b6025ba` 同树 `df20cf4` | `git cat-file -p 74384b1` |
+| 合并前最后一个 commit（冻结的 PR 头 `H`） | `b6025ba`——把 master（`02be7c3` / `09893a9`）并入分支，解决 009 欠账撞号：master 的 #71 保留，本分支立的两条改为 #72 / #73；合入用 `--match-head-commit` | `git rev-list --count 74384b1^1..74384b1^2`（30） |
+| 交付 | WI-8（`--append` 硬拦截，`e9cb422`）；WI-4（#56 `GET /api/library`，`95eb94e`）；WI-5（#58 删书：5a 服务层 `e2497fc`、5b 写入方 `dc7dd27`、5c 路由 `642bbc5`、CP2 修订 `31527de`；ADR-0018 转 Accepted `82285b3`）；WI-6（#53 `GET /api/library/export` ＋ 设置页按钮，`2066f29`）；WI-7（#31 CI 收尾核验，本表 CI 行）；审计修复 FX37-1 – FX37-14（`8dcfcda` / `d35b68b` / `d6c6a1c` / `bb57f6b` / `409a6fc` / `f136871` / `62fd299` / `8833ba2` / `ab242c5` / `19faeef` / `58b985f` / `802c026` / `ef05f8e` ＋ `97ce374` / `aeba027`） | `git log 74384b1^1..74384b1^2 --oneline` |
+| 欠账 | 结清 009 #53 / #56 / #58（#31 补 CI 链接）；立 009 #72（程序化选区清空 `editingNoteId`，兑付方 014）、#73（孤儿对话 HTTP 不可达） | [009 欠账表](./009-e2e-annotations.md#跨波欠账) |
+| 本地 push 闸（在 `b6025ba` 上，协调者） | unit 4025 passed / 3 skipped / 1 xfailed，覆盖率 lines 90.1% / branches 79.1%，276s；verify-control 390 passed，144s；fe-unit 298 passed；packaging 11 passed；e2e 254 passed / 16 skipped，160s | — |
+| CI（`H` = `b6025ba`，全部 attempt 1、全绿） | `pull_request` tests run [37635190616](https://github.com/anzchy/reader3-pro/actions/runs/37635190616)（GitHub 合成合并 ref `6c9dcb5`，`headSha` `b6025ba`）；`workflow_dispatch` tests run [37635220594](https://github.com/anzchy/reader3-pro/actions/runs/37635220594)（门槛 9）；lint run [37635190619](https://github.com/anzchy/reader3-pro/actions/runs/37635190619)。浏览器、`suite_hash`、条数与耗时只记在 [soak-log「CI 运行记录」](./soak-log.md#ci-运行记录) | `gh run view 37635220594 --json headSha,attempt,conclusion` |
+| 冻结集 | 8 条路径对 master 零改动，`suite_hash` 不变（`abfc0cc9c59e`） | `git diff --stat 09893a9 74384b1 -- <8 条路径>` |
+| 路由 | `routes.snapshot` 只增 3 行（ADR-0011 加法式） | `git diff c08317b 74384b1 -- tests/contract/routes.snapshot` |
+| 运行中验证 | verify-reader3 沙箱活体 F-035（删书 API）与 F-036（导出）均 PASS：`.claude/verify-evidence/20261007-104216-F-035`、`.claude/verify-evidence/20261007-104034-F-036`（证据目录不入库，本地留存）；台账两行随本回写转 `accepted` | — |
+| ADR | ADR-0018 在 PR 内转 Accepted；ADR-0015 只改 compliance / Confirmation 记账（本回写），compliance 口径见 §4 门槛 7 注 | — |
+| 红灯 | 分支存续期间 5 条，见下方「红灯记录」 | — |
 
 ### 红灯记录（门槛 R）
 

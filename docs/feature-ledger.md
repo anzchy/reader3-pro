@@ -1,6 +1,6 @@
 # Feature Ledger
 
-**Synced:** 2026-10-04 at commit `b60f0d4`
+**Synced:** 2026-10-07 at commit `74384b1`
 
 The as-built record of what Reader3 Pro **can do today**: one row per user-visible (or
 operator-visible) capability, where it lives, what tests prove it, and the evidence it was
@@ -98,7 +98,7 @@ Each feature section is headed `#### F-NNN Name — status` and carries bullets 
 | F-002 | Semantic index CLI | EPUB processing | accepted | 001/002 · baseline |
 | F-003 | Crash-safe book publish | EPUB processing | partial | 007 · PR #26 |
 | F-004 | Stat-keyed book cache | EPUB processing | accepted | 011 · PR #22 |
-| F-005 | 3-pane library | Library | accepted | PR #12/#13/#14/#25 |
+| F-005 | 3-pane library | Library | accepted | PR #12/#13/#14/#25/#37 |
 | F-006 | Collections | Library | accepted | 004 · PR #26 |
 | F-007 | Library stats dashboard | Library | accepted | 004 · baseline |
 | F-008 | Bulk index from selection | Library | accepted | 004 · baseline |
@@ -121,21 +121,21 @@ Each feature section is headed `#### F-NNN Name — status` and carries bullets 
 | F-025 | Safe unpickling + path safety | Security | accepted | ADR-0012 · baseline |
 | F-026 | Book UUID resolution | Security | accepted | PR #26 |
 | F-027 | Server runtime options + health | Infra | accepted | v1.5.0 |
-| F-028 | Test net + CI | Infra | accepted | 008/009 · PR #19/#20 |
+| F-028 | Test net + CI | Infra | accepted | 008/009/018 · PR #19/#20/#37 |
 | F-029 | Repo lints | Infra | accepted | 007/009/011/013 · PR #18/#20/#22/#25 |
 | F-030 | Vite + TS frontend toolchain | Infra | accepted | 013 WI-9 · PR #25 |
 | F-031 | Reader paper themes | Reader | stub | debt #21 · baseline |
 | F-032 | Reader font-family picker | Reader | stub | spec D1 · baseline |
 | F-033 | Page-turn click zones | Reader | stub | debt #11 · baseline |
 | F-034 | In-app book import ("Add books") | Library | stub | debt #57 · baseline |
-| F-035 | Book delete | Library | absent | tracked #58 |
-| F-036 | Library JSON export | Settings & UI | stub | debt #53 · baseline |
+| F-035 | Book delete | Library | accepted | 018 · PR #37 |
+| F-036 | Library JSON export | Settings & UI | accepted | 018 · PR #37 |
 | F-037 | Bulk re-index all books | Settings & UI | stub | debt #52 · baseline |
 | F-038 | PDF format scope | Library | stub | 004 · baseline |
 | F-039 | Library chat all-books / collection scope | AI | stub | 013 WI-13 · baseline |
 | F-040 | Notes "点评此书" (review this book) | Notes | stub | baseline |
 | F-041 | Interactive API docs | Infra | unknown | 008 snapshot · baseline |
-| F-042 | Per-book write lock | EPUB processing | partial | 018 · PR #33 |
+| F-042 | Per-book write lock | EPUB processing | partial | 018 · PR #33/#37 |
 
 ## Features
 
@@ -176,23 +176,23 @@ Paths are written out in full from the repo root (e.g. `src/reader3_app/reader3.
 - **Evidence:** 011 (PR #22)
 
 #### F-042 Per-book write lock — partial
-- **What:** one cross-process lock per book (`books/.locks/{book_id}.lock`): import / reprocess takes it exclusive; notes, reindex, `ai_meta` and conversation writers take it shared. A write that meets a held lock gets 409 with `Retry-After` naming the holder category instead of interleaving with an import.
-- **Code:** `src/reader3_app/book_lock.py`, `src/reader3_app/web/book_lock_http.py` · ADR-0015
-- **Tests:** `tests/unit/test_book_lock.py`, `tests/unit/test_book_lock_cross_process.py`, `tests/unit/test_book_lock_routes.py`
+- **What:** one cross-process lock per book (`books/.locks/{book_id}.lock`): import / reprocess, book delete and the tombstone sweep take it exclusive; notes, reindex, `ai_meta` and conversation writers take it shared — in the project-root conversation mode too, single-conversation deletes included (ADR-0018). A write that meets a held lock gets 409 with `Retry-After` naming the holder category instead of interleaving with an import or a delete. Exclusive takers use the default budget, so a free but slow lock is not reported busy, while a held one is still refused at once.
+- **Code:** `src/reader3_app/book_lock.py`, `src/reader3_app/web/book_lock_http.py`, `src/reader3_app/library_delete.py` · ADR-0015, ADR-0018
+- **Tests:** `tests/unit/test_book_lock.py`, `tests/unit/test_book_lock_cross_process.py`, `tests/unit/test_book_lock_routes.py`, `tests/unit/test_library_delete.py`, `tests/unit/test_library_delete_sweep.py`, `tests/unit/test_project_conversation_book_lock.py`
 - **Confirm:** Run `uv run reader3 ./books/dracula.epub`, then `ls books/.locks/`: `dracula_data.lock` exists and stays after the run (the lock file is never unlinked). Contention (409 + `Retry-After`) is only verifiable through the tests named above.
-- **Evidence:** 018 WI-2 · PR #33 (`48bdfa4`)
-- **Limits:** ADR-0015 is Partial: book delete (#58, 018 WI-5) and the 012 writers are not wired yet (see F-035).
+- **Evidence:** 018 WI-2 · PR #33 (`48bdfa4`) · delete / sweep (EX) and project-root conversation writers (SH) 018 WI-5 · PR #37 (`dc7dd27`, FX37-11 `58b985f`, merge `74384b1`)
+- **Limits:** ADR-0015 is Partial: every 018 writer is wired, including book delete (see F-035); the 012 writers are not wired yet. Lock files stay in `books/.locks/` after the book is deleted.
 
 ### Library
 
 #### F-005 3-pane library — accepted
-- **What:** library page at `GET /` — grid/list view, sort, select mode, format counts, Dedao-style UI.
-- **Routes:** `GET /`, `GET /api/library`, `DELETE /api/library/{book_id}`, `GET /api/library/export`, `MOUNT /static`
-- **Code:** `src/reader3_app/web/routers/library.py`, `src/reader3_app/web/routers/library_books.py`, `src/reader3_app/library_delete.py`, `src/reader3_app/web/routers/library_export.py`, `frontend/src/library/` · ADR-0015, ADR-0018
-- **Tests:** `tests/e2e/shell_4a/`, `tests/e2e/baseline_1b/test_library_nav_and_collections.py`, `tests/unit/test_library_delete.py`, `tests/unit/test_library_delete_names.py`, `tests/unit/test_library_delete_finalize.py`, `tests/unit/test_library_delete_sweep.py`, `tests/unit/test_library_delete_caches.py`, `tests/unit/test_library_delete_crash.py`, `tests/unit/test_library_delete_entry_points.py`, `tests/unit/test_library_delete_layering.py`, `tests/unit/test_project_conversation_book_lock.py`, `tests/contract/test_library_delete_route.py`, `tests/contract/test_collections_delete_race.py` (the delete rows: 018 WI-5, unit + contract lanes only, no e2e), `tests/contract/test_library_export_route.py`, `tests/unit/test_conversations_export_reader.py`, `frontend/tests/settings/export.test.ts` (the export rows: 018 WI-6)
+- **What:** library page at `GET /` — grid/list view, sort, select mode, format counts, Dedao-style UI. The client list route `GET /api/library` returns one entry per book in library order (`book_id`, `title`, `authors`, `cover_url`, `book_uuid`), and `{book_id, error: "unreadable"}` for a book whose `book.pkl` cannot be loaded; cover URLs are percent-encoded the same way on the library page, the list route and the reader.
+- **Routes:** `GET /`, `GET /api/library`, `MOUNT /static`
+- **Code:** `src/reader3_app/web/routers/library.py`, `src/reader3_app/web/routers/library_books.py`, `src/reader3_app/web/urls.py`, `frontend/src/library/`
+- **Tests:** `tests/e2e/shell_4a/`, `tests/e2e/baseline_1b/test_library_nav_and_collections.py`, `tests/contract/test_library_books_route.py`
 - **Confirm:** `uv run reader3-server`, open `http://127.0.0.1:8123/`: a sidebar (Types / Collections), the book grid, and a right panel with Dashboard / Chat / Search tabs. `▦` / `☰` switch grid and list, `A→Z` sorts, `✓` enters select mode and shows the bulk bar (Select all / Clear / Add to collection / Index selected).
-- **Evidence:** 004 (PR #12/#13) · 005 restyle (PR #14) · TS port 013 WI-13 (PR #25)
-- **Limits:** no upload/import (#57) — planned in 012 (see F-034). Library export (#53) is the route `GET /api/library/export` from 018 WI-6 on branch `018-library-routes`, not yet merged: Status / Evidence here do not cover it, and F-036 is re-graded at the merge write-back. Known limit of the export path: it is read-only, so a book whose `ai_meta.json` is absent or unreadable is exported with `book_uuid: null` (and a WARNING), while for an absent file `GET /api/library` would mint one via `ensure_book_uuid` (an unreadable one is `null` there too, ADR-0003); a malformed uuid is likewise `null` and leaves the project-root conversation source unresolvable for that book (details in `docs/export-import.md`). Book delete (#58) is the route `DELETE /api/library/{book_id}` from 018 WI-5 on branch `018-library-routes`, not yet merged: Status / Evidence here do not cover it, and F-035 is re-graded at the merge write-back. No UI calls it yet (FB-L18 is the frontend half). Known limits of the delete path: (a) W5-22: a missing or non-string `last_updated` compares as `""` on the delete path, which differs from the newer-wins key `str(v or "")` in `_dedupe_conversation_list` (`src/reader3_app/ai/conversations.py:377`, cited as `:344` in the W5-22 ruling before 018 WI-5b moved it; an int `7` keys as `""` there vs `"7"` here); (b) a live chromadb collection object held elsewhere keeps stale handles — only the process-wide cached chromadb system for the folder is retired; (c) a conversation published into the project root keeps its source file mode; (d) `library_delete.delete_book` returns `None`: a post-commit finalize failure or a conserved tombstone is only logged and left for the next sweep (the response is still 204); (e) the `/api/library/stats` cache is guarded by a stats generation counter bumped on every delete — an invalidation not in the W5-5 list. The guard is check-then-store (`src/reader3_app/web/routers/library.py`, the `_stats_generation` compare before the cache write), so a delete landing between the compare and the store can still cache a stale result; the window is bounded by the 5 s TTL. A CLI-process sweep (`process_epub`) does not bump the server's generation, so a running server keeps serving cached stats until the TTL lapses.
+- **Evidence:** 004 (PR #12/#13) · 005 restyle (PR #14) · TS port 013 WI-13 (PR #25) · list route 018 WI-4, debt #56 (PR #37, `95eb94e`, cover-URL encoding FX37-7 `62fd299`, merge `74384b1`)
+- **Limits:** no upload/import (#57) — planned in 012 (see F-034). `GET /api/library` has no UI consumer yet: the library page is still server-rendered, and the list-load failure / retry states (`lib-load-failed` / `lib-load-retry`) are 014 WI-16b. Listing mints `ai_meta.json` via `ensure_book_uuid` for a book that has none (ADR-0003). Book delete is F-035 and library export is F-036.
 
 #### F-006 Collections — accepted
 - **What:** create/rename/delete collections; add/remove books (`/api/collections*`).
@@ -228,9 +228,14 @@ Paths are written out in full from the repo root (e.g. `src/reader3_app/reader3.
 - **Evidence:** debt #57 · baseline
 - **Limits:** the upload / import route is debt #57 (012-storage-format); importing today is F-001 only.
 
-#### F-035 Book delete — absent
-- **What:** deleting a book from the app (route + library UI); today the only way is removing `books/{id}_data/` by hand.
-- **Tracked:** debt #58 → 018-library-routes; frontend half FB-L18
+#### F-035 Book delete — accepted
+- **What:** deleting a book through the API: `DELETE /api/library/{book_id}?delete_conversations=true|false` takes the book's exclusive lock, renames the folder to a tombstone behind a delete-intent file (the commit point) and finalizes it: collections, the uuid mapping, the cached chromadb system and the stats cache forget the book, and its per-book conversations are deleted (`true`) or published into the project root (`false`). An interrupted delete is finished by the sweep at import and at server start. The scope is the API route; there is no delete UI (FB-L18 is 014).
+- **Routes:** `DELETE /api/library/{book_id}`
+- **Code:** `src/reader3_app/library_delete.py`, `src/reader3_app/web/routers/library_books.py` · ADR-0015, ADR-0018
+- **Tests:** `tests/unit/test_library_delete.py`, `tests/unit/test_library_delete_names.py`, `tests/unit/test_library_delete_finalize.py`, `tests/unit/test_library_delete_sweep.py`, `tests/unit/test_library_delete_caches.py`, `tests/unit/test_library_delete_crash.py`, `tests/unit/test_library_delete_entry_points.py`, `tests/unit/test_library_delete_layering.py`, `tests/unit/test_project_conversation_book_lock.py`, `tests/contract/test_library_delete_route.py`, `tests/contract/test_collections_delete_race.py` (unit + contract lanes only, no e2e)
+- **Confirm:** `curl -i -X DELETE 'http://127.0.0.1:8123/api/library/{book_id}?delete_conversations=false'` returns 204 with an empty body; `books/{book_id}_data/` is gone with no `.{book_id}_data.deleted-*` tombstone left, the book is missing from `curl http://127.0.0.1:8123/api/library` and from the library page, `/read/{book_id}/0` returns 404, and its conversations sit under `conversations/{book_uuid}/`. Repeating the DELETE returns 404; `delete_conversations=maybe` (or empty, or given twice) returns 400. While another process holds the book's lock the DELETE returns 409 with `Retry-After` and the book stays intact.
+- **Evidence:** 018 WI-5, debt #58 · PR #37 (5a `e2497fc`, 5b `dc7dd27`, 5c `642bbc5`, CP2 `31527de`; FX37-1/2/3/9/11; merge `74384b1`) · live PASS 2026-10-07 via verify-reader3 (`.claude/verify-evidence/20261007-104216-F-035/`, local)
+- **Limits:** no UI (FB-L18, 014). Conversations of a deleted book that stay in the project root have no HTTP entry point (#73). `books/.locks/{book_id}.lock` stays behind after the delete. (a) W5-22: a missing or non-string `last_updated` compares as `""` on the delete path, which differs from the newer-wins key `str(v or "")` in `_dedupe_conversation_list` (`src/reader3_app/ai/conversations.py:377`, cited as `:344` in the W5-22 ruling before 018 WI-5b moved it; an int `7` keys as `""` there vs `"7"` here); (b) a live chromadb collection object held elsewhere keeps stale handles — only the process-wide cached chromadb system for the folder is retired; (c) a conversation published into the project root keeps its source file mode; (d) `library_delete.delete_book` returns `None`: a post-commit finalize failure or a conserved tombstone is only logged and left for the next sweep (the response is still 204); (e) the `/api/library/stats` cache is guarded by a stats generation counter bumped on every delete — an invalidation not in the W5-5 list. The guard is check-then-store (`src/reader3_app/web/routers/library.py`, the `_stats_generation` compare before the cache write), so a delete landing between the compare and the store can still cache a stale result; the window is bounded by the 5 s TTL. A CLI-process sweep (`process_epub`) does not bump the server's generation, so a running server keeps serving cached stats until the TTL lapses.
 
 #### F-038 PDF format scope — stub
 - **What:** the library sidebar lists a PDF type and the stats API accepts `scope=format:pdf`, but no PDF can be ingested; the scope is a placeholder that always counts zero.
@@ -389,15 +394,16 @@ Paths are written out in full from the repo root (e.g. `src/reader3_app/reader3.
 - **Tests:** `tests/unit/test_settings_file_permissions.py`, `tests/unit/test_ai_settings_no_key_loss.py`, `tests/unit/test_ai_settings_revision.py`, `tests/unit/test_ai_settings_lock.py`, `tests/contract/test_settings_revision.py`, `frontend/tests/settings/revision.test.ts`
 - **Confirm:** Click Settings in the library top bar → `/settings` shows AI 偏好, 服务商, 外观, 数据, 导出与导入. Change 每次检索的片段数 and press 保存偏好: the value survives a reload. 导出设置（不含密钥） downloads JSON with no API keys, 导入设置 reads one back; `curl http://127.0.0.1:8123/api/settings` contains no key values, and `ls -l config/ai_settings.json` shows `-rw-------` after a save. Open `/settings` in two tabs, save in one, then save in the other: the second shows 「设置已在别处更改，请刷新页面后再试」 and its change is not written.
 - **Evidence:** 002 · TS port 013 WI-12 (PR #25) · revision check 018 WI-3, debt #51 (PR #33, `2d5f96f`)
-- **Limits:** The page's 重建全部索引 and 导出书库 JSON are stubs (see F-036, F-037).
+- **Limits:** The page's 重建全部索引 is a stub (see F-037); 导出书库 JSON works (see F-036).
 
-#### F-036 Library JSON export — stub
-- **What:** `/settings` → 导出与导入 has a 导出书库 JSON button; there is no export route, so it only shows a "not supported" line.
-- **Code:** `frontend/src/settings/index.ts`, `src/reader3_app/web/templates/settings.html`
-- **Tests:** `tests/e2e/shell_4a/test_settings_rows.py` (asserts 0 requests)
-- **Confirm:** On `/settings` click 导出书库 JSON: the status line reads 「导出书库 JSON 暂不支持，服务端还没有这条导出接口。」, nothing downloads, and DevTools Network shows no request.
-- **Evidence:** debt #53 · ruling D11 · baseline
-- **Limits:** the export route is debt #53 (018-library-routes).
+#### F-036 Library JSON export — accepted
+- **What:** `/settings` → 导出与导入 → 导出书库 JSON downloads the whole library as one JSON attachment `reader3-library.json`: `{"books": [...]}` in library order, each book the `GET /api/library` entry plus its `annotations` and `component_errors`; no chapter text and no keys, conversations only with `?include=conversations`. The export is read-only (no lock taken, no `ai_meta.json` minted), and a book whose notes or conversations cannot be read is reported in `component_errors` instead of failing the export.
+- **Routes:** `GET /api/library/export`
+- **Code:** `src/reader3_app/web/routers/library_export.py`, `frontend/src/settings/index.ts`, `src/reader3_app/web/templates/settings.html`
+- **Tests:** `tests/contract/test_library_export_route.py`, `tests/unit/test_conversations_export_reader.py`, `frontend/tests/settings/export.test.ts`, `tests/e2e/shell_4a/test_settings_rows.py` (one request, a valid JSON download)
+- **Confirm:** On `/settings` click 导出书库 JSON: DevTools Network shows exactly one `GET /api/library/export` (200), `reader3-library.json` downloads, and the status line reads 「书库已导出。」; a failed export shows 「导出书库失败：…」 instead. `curl 'http://127.0.0.1:8123/api/library/export?include=conversations'` adds each book's `conversations`; `?include=bogus` returns 400.
+- **Evidence:** 018 WI-6, debt #53 · PR #37 (`2066f29`; FX37-4/5/6/8; merge `74384b1`) · live PASS 2026-10-07 via verify-reader3 (`.claude/verify-evidence/20261007-104034-F-036/`, local)
+- **Limits:** no size cap and no streaming (W6-8, single-user). Being read-only, a book whose `ai_meta.json` is absent or unreadable is exported with `book_uuid: null` (and a WARNING), while for an absent file `GET /api/library` would mint one (an unreadable one is `null` there too, ADR-0003); a malformed uuid is likewise `null` and leaves the project-root conversation source unresolvable for that book (details in `docs/export-import.md`). The UI never asks for conversations. There is no library import (F-034).
 
 #### F-037 Bulk re-index all books — stub
 - **What:** `/settings` → 数据 has 重建全部索引 with a confirm dialog; the confirm only prints a "not supported" line, because no bulk re-index route exists.
@@ -466,11 +472,11 @@ Paths are written out in full from the repo root (e.g. `src/reader3_app/reader3.
 - **Limits:** `reader3-server` has no argument parser beyond `--port`: `--help` is ignored and starts the server.
 
 #### F-028 Test net + CI — accepted
-- **What:** unit + contract lanes, API route snapshot, coverage gate, e2e baseline, soak runner; mirrored in CI.
+- **What:** unit + contract lanes, API route snapshot, coverage gate, e2e baseline, soak runner; mirrored in CI. The soak runner refuses `--append` (writing a soak-log row) when `GITHUB_ACTIONS` is set or `HEAD` is not an ancestor of `origin/master`, and exits 3 when it cannot tell (no `origin/master`, git error or timeout).
 - **Code:** `.github/workflows/tests.yml`, `scripts/soak_run.py`, `.claude/tdd-guardian/config.json` · ADR-0010, ADR-0011
-- **Tests:** `tests/contract/routes.snapshot`, `tests/contract/test_route_inventory.py`, `tests/e2e/baseline_1b/`
-- **Confirm:** `uv run pytest tests/unit tests/contract` and `npm test` pass on a clean checkout; adding or renaming a route without editing `tests/contract/routes.snapshot` turns `tests/contract/test_route_inventory.py` red.
-- **Evidence:** 008/009 · PR #19/#20
+- **Tests:** `tests/contract/routes.snapshot`, `tests/contract/test_route_inventory.py`, `tests/e2e/baseline_1b/`, `tests/unit/test_soak_run.py`
+- **Confirm:** `uv run pytest tests/unit tests/contract` and `npm test` pass on a clean checkout; adding or renaming a route without editing `tests/contract/routes.snapshot` turns `tests/contract/test_route_inventory.py` red. `GITHUB_ACTIONS=1 uv run python scripts/soak_run.py --append` prints 「[soak] 拒绝落账（退出码 2）」 and exits 2 before running any test.
+- **Evidence:** 008/009 · PR #19/#20 · `--append` hard block 018 WI-8 · PR #37 (`e9cb422`, merge `74384b1`)
 
 #### F-029 Repo lints — accepted
 - **What:** testid naming, e2e selectors, token/hardcode, inline HTML, router-size gates.
@@ -496,6 +502,11 @@ Paths are written out in full from the repo root (e.g. `src/reader3_app/reader3.
 - **Limits:** with `READER3_TOKEN` set these pages need the token, which a browser cannot send (F-023).
 
 ## Audit log
+
+### 2026-10-07 — 018 second-slice write-back: F-035 / F-036 live pass and re-grade (`74384b1`)
+- **Scope:** the `Confirm` of F-035 (book delete) and F-036 (library export) driven by `.claude/skills/verify-reader3/scripts/control.py` on branch `018-library-routes` before the merge (sandboxed server, temp books dir, smoke corpus; gstack `/browse` for clicks), against the 018 WI-5c / WI-6 contracts; then the merge write-back of PR #37 (`74384b1`). F-035 `absent` → `accepted` (scope: the API route), F-036 `stub` → `accepted`; F-005, F-020, F-028, F-042 edited where 018 changed their facts. F-034 unchanged.
+- **Found:** F-035 PASS: `delete_conversations=false` → 204, folder gone with no tombstone or intent file, conversation published to the project root; `=TRUE` → 204 and the conversation is gone; a repeat → 404; a tombstone-shaped id → 400; `maybe` / empty / repeated → 400; `/api/library`, export, stats, `/read/{id}/0` and the library page all reflect the removal; 409 with `Retry-After: 1` and `holder_category: "unknown"` against an emulated concurrent holder (a probe process holding `flock(LOCK_SH)` on the sandbox lock file). Lock files stay in `books/.locks/` after a delete (not covered by the contract; now in F-035 / F-042 Limits). F-036 PASS: one click → exactly one `GET /api/library/export` 200, no writes, 「书库已导出。」; the body (via the API) is `{books: [...]}` in list order with no conversations by default and no chapter text; `include=conversations` adds them, `include=bogus` → 400; a non-UTF-8 `notes.json` gives that book `annotations: null` and a `component_errors` entry, other books intact. F-020's `Limits` still called 导出书库 JSON a stub — corrected. The verify-reader3 recipes F-035 / F-036 carried "write-back pending" gotchas — corrected; F-035's recipe added to the Feature Map.
+- **Not audited:** evidence is local and gitignored (`.claude/verify-evidence/20261007-104216-F-035/`, `.claude/verify-evidence/20261007-104034-F-036/`, each with `result.txt`); the live runs were on a branch commit at or before `3dc7629`, not on `74384b1`, and the commit is not recorded in `result.txt`. The download file itself was not captured (browse has no download capture); its content was proven through the API. The 409 holder was emulated, not a real concurrent writer. The gating lanes and CI on the merged tree are recorded in `docs/plans/20260816-tech-stack-migration/tasks/018-library-routes.md` §8, not re-run for this entry.
 
 ### 2026-10-04 — Live pass of F-013 / F-020 via control.py on branch 025 (`b60f0d4`)
 - **Scope:** the `Confirm` bullets of F-013 (keyword-fallback path only) and F-020, driven by `.claude/skills/verify-reader3/scripts/control.py` (`up --corpus smoke --ai-stub`: sandboxed server, temp books dir, sandbox `READER3_AI_SETTINGS`, Ollama-shaped AI stub; gstack `/browse` for clicks). Book: the synthetic unindexed `smoke_data`, never `book index`ed. Status and Evidence of every row unchanged.

@@ -11,7 +11,8 @@ start; [`../../SKILL.md`](../../SKILL.md) has the stages, helpers and general go
 | [F-013.md](F-013.md) | AI Q&A + summary | accepted |
 | [F-018.md](F-018.md) | Annotations + notes | partial |
 | [F-020.md](F-020.md) | Settings page + API | accepted |
-| [F-036.md](F-036.md) | Library JSON export | stub (ledger write-back pending, PR #37) |
+| [F-035.md](F-035.md) | Book delete | accepted |
+| [F-036.md](F-036.md) | Library JSON export | accepted |
 
 Rows without a file are not mapped yet. Rows whose ledger status is `absent` never get one.
 

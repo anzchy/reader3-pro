@@ -2,15 +2,15 @@
 
 | 字段 | 值 |
 |---|---|
-| Status | Accepted（2026-10-02 合入回写：契约随 `018-library-routes` 第一段 WI-1 – WI-3 合入 `master`，PR #33，合并 commit `c08317b`；原定「合入的同一 PR 里转 Accepted」（018 §4 门槛 7）当时漏转，此处补上）。Decision Outcome 第 3 条里「对话只在 per-book 存储模式下取书锁……不是遗漏」这一处 project-root 例外已由 [ADR-0018](0018-project-root-conversations-take-book-lock.md) 取代（2026-10-02 裁定；0018 在 018 第二段合入前为 Proposed，期间代码仍按本文运行）。本文其余部分继续有效，正文按规则不改。 |
+| Status | Accepted（2026-10-02 合入回写：契约随 `018-library-routes` 第一段 WI-1 – WI-3 合入 `master`，PR #33，合并 commit `c08317b`；原定「合入的同一 PR 里转 Accepted」（018 §4 门槛 7）当时漏转，此处补上）。Decision Outcome 第 3 条里「对话只在 per-book 存储模式下取书锁……不是遗漏」这一处 project-root 例外已由 [ADR-0018](0018-project-root-conversations-take-book-lock.md) 取代（2026-10-02 裁定；0018 在 018 第二段合入前为 Proposed，期间代码仍按本文运行；⬛ 2026-10-07：0018 已随 018 第二段 PR #37 转 Accepted，合并 commit `74384b1`）。本文其余部分继续有效，正文按规则不改。 |
 | Decision date | 2026-09-26 |
 | Recorded date | 2026-09-26 |
 | Record type | Prospective |
 | Original rationale known | Yes |
 | Confidence | High——契约经逻辑原型推演、Codex 与独立 Fable 子代理分别裁定；2026-10-02 起已有实现（`book_lock`）与跨进程测试（见 Confirmation） |
-| Current compliance | Partial——锁已接入 import、notes、reindex（HTTP 与 CLI）、`ai_meta`、对话、向量读路径；删书（018 WI-5）与 012 的写手尚未接入，见 Migration Strategy |
+| Current compliance | Partial——**018 全部写手已接入，012 的写手待接入**（⬛ 2026-10-07 合入回写，018 第二段 PR #37，`74384b1`）：锁已接入 import、notes、reindex（HTTP 与 CLI）、`ai_meta`、对话（project-root 模式与单条删除亦持 SH，[ADR-0018](0018-project-root-conversations-take-book-lock.md)）、向量读路径，以及删书（`library_delete.delete_book` 持 EX）与墓碑清扫（`sweep` 每个文件夹持 EX）——两者取默认预算，被占的锁仍立即拒（018 FX37-11，`58b985f`）；012 的写手尚未接入，见 Migration Strategy。~~删书（018 WI-5）与 012 的写手尚未接入~~ |
 | Evidence | 以符号定位（行号会漂）：`notes_service._book_write_lock`（018 前：进程内 `threading.Lock` ＋ `flock` 阻塞锁，锁文件在书目录内，且与 `notes_service.save_annotations` 一样在持锁路径上 `os.makedirs` 书目录）；`vector_search.BookVectorIndex._client_and_collection`（在**读**路径上 `makedirs`）；`ai.books._write_meta_to_scratch`（`ai_meta.json` 写入前 `makedirs`）、`ai.books.ensure_book_uuid`、`ai.books.BookUuidResolver`；`ai.conversations.save_conversation`；`search_service` 与 `web/routers/library.py` 的书库枚举（只收 `_data` 后缀）；`reader3.main` 的 `--index` 分支（CLI，不经 HTTP）；`web.server._stats_cache`、`web.server._validate_book_id`；`docs/plans/20260816-tech-stack-migration/tasks/018-library-routes.md` §6（Q2 / Q3a / Q3b / Q8 / Q12 裁定）；原型 `018-lock-protocol.PROTOTYPE.html`（分支 `prototype/018-book-lock`） |
-| Confirmation | `tests/unit/test_book_lock_cross_process.py`（跨进程互斥、SH 兼容、持有者被 SIGKILL 即释放、拒绝带类别；018 WI-2） |
+| Confirmation | `tests/unit/test_book_lock_cross_process.py`（跨进程互斥、SH 兼容、持有者被 SIGKILL 即释放、拒绝带类别；018 WI-2）；⬛ 2026-10-07 补删书（018 WI-5）：`tests/unit/test_library_delete.py`（`test_d2a_lock_busy_leaves_everything_untouched`；`test_fx37_11a` – `test_fx37_11f`：EX 取默认预算、被占即拒、`sweep` 无预算参数）、`tests/unit/test_library_delete_sweep.py`（`test_s2_sweep_with_held_lock_is_busy_not_partial`、`test_s3_the_lock_is_held_for_the_whole_finalization`、`test_s4a` / `test_s4b` 孤儿意图在 EX 下处理）、`tests/unit/test_project_conversation_book_lock.py`（ADR-0018 的 SH 写手）、`tests/contract/test_library_delete_route.py`（锁被占 → 409 ＋ `Retry-After`） |
 
 ## Context and Problem Statement
 

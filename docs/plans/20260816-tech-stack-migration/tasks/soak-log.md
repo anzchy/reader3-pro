@@ -121,6 +121,19 @@
 
 ---
 
+## CI 运行记录
+
+⬛ 2026-10-07 新开（[018 WI-7](./018-library-routes.md) / §6 Q9）。这里记 CI `tests.yml` 的 `e2e` job 在某个**合并头**上的核验运行：run id、`headSha`、浏览器、`suite_hash` 与条数。**这些不是 soak 台账行**——`os` 是 `linux-*`，混进上方台账即不成批（迁移计划 §7 批次规则 3）；job 本身也不传 `--append`，本节由人工回写，**没有**经 `soak_run.py --append` 写入。
+
+| 记录日 | 用途 | run | 事件 | `headSha` | attempt | 结论 | browser | `suite_hash` | `baseline_1b` | 其余 e2e | `os` |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 2026-10-07 | 018 门槛 9 / 11（PR #37 冻结头 `H`） | [37635190616](https://github.com/anzchy/reader3-pro/actions/runs/37635190616) | `pull_request` | `b6025ba`（跑的是 GitHub 合成合并 ref `6c9dcb5`） | 1 | success | chromium-1234（Chrome for Testing 151.0.7922.34） | `abfc0cc9c59e` | 132 passed / 138 deselected，154.44s，green | 122 passed / 16 skipped | linux-6.17.0-1022-azure |
+| 2026-10-07 | 018 门槛 9（合并头上的 dispatch） | [37635220594](https://github.com/anzchy/reader3-pro/actions/runs/37635220594) | `workflow_dispatch` | `b6025ba` | 1 | success | chromium-1234（Chrome for Testing 151.0.7922.34） | `abfc0cc9c59e` | 132 passed / 138 deselected，147.43s，green | 122 passed / 16 skipped | linux-6.17.0-1022-azure |
+
+同一 `H` 上的 `lint.yml` 为 run [37635190619](https://github.com/anzchy/reader3-pro/actions/runs/37635190619)（success，attempt 1）。`b6025ba` 于 2026-10-07T14:44:36Z 经 `--match-head-commit` 合入 `master`，合并 commit `74384b1`（与 `b6025ba` 同树）；合入记录只在 [018 §8](./018-library-routes.md)。
+
+---
+
 ## 红灯归因记录
 
 每次 red 一条：失败签名、证据、根因（产品缺陷 / 测试缺陷 / 环境）、修复、确认。判据见迁移计划 §7 批次规则 2。
