@@ -340,6 +340,26 @@ def test_N1d_文件存在但读不出来OSError也抛错(books_dir: Path, notes_
     assert str(notes_path) in str(excinfo.value)
 
 
+def test_N1e_非UTF8的notes文件也是NotesFileError且新增标注不改动文件(
+    books_dir: Path, notes_path: Path, three_saved_annotations: List[Annotation]
+) -> None:
+    """L2 / S2. Audit 20261007 #4 (FX37-4): bytes that are not UTF-8 raise ``UnicodeDecodeError``,
+    which is neither ``JSONDecodeError`` nor ``OSError`` -- it used to escape the loader raw, so
+    every caller that maps ``NotesFileError`` (the export's ``annotations: null``, the server's
+    500 handler that names the file) was bypassed. The file must stay byte-identical."""
+    with notes_path.open("ab") as f:
+        f.write(b"\xff\xfe\x00")
+    before = notes_path.read_bytes()
+
+    with pytest.raises(NotesFileError) as excinfo:
+        load_annotations(str(books_dir), BOOK_ID)
+    assert str(notes_path) in str(excinfo.value)
+
+    with pytest.raises(NotesFileError):
+        add_annotation(str(books_dir), _annotation(3))
+    assert notes_path.read_bytes() == before
+
+
 def test_N5c_文件内容是json的null时返回空列表(books_dir: Path, notes_path: Path) -> None:
     """L2 / S1. ``null`` carries no annotations and therefore loses none.
 

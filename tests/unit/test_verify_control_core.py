@@ -20,6 +20,7 @@ import json
 import os
 import pathlib
 import re
+import signal
 import socket
 import stat
 import string
@@ -55,6 +56,7 @@ from verify_control_support import (  # noqa: F401 (autouse fixtures are importe
     spawn,
     wait_dead,
     wait_until,
+    write_instance,
 )
 from verify_control import cli, envelope, http_client, paths, procs, state
 
@@ -774,6 +776,58 @@ def test_c21_read_identity_and_pid_is_ours_on_real_processes(tmp_path):  # WI1-C
     assert procs.pid_is_ours(p3.pid, "x", "sleep") is False
     assert hasattr(procs, "identity_matches") is False
     assert alive(p1.pid) and alive(p2.pid) and alive(p4.pid)
+
+
+@pytest.mark.verify_control_live
+def test_fx37_14_alive_false_when_zombie_is_reaped_before_ps(tmp_path, monkeypatch):  # FX37-14 (a)
+    # CI run 37621396898: the zombie passed `os.kill(pid, 0)`, was reaped, then `ps` found
+    # no pid and `alive()` read the empty stat as "not a zombie", i.e. alive.
+    proc = spawn(["sleep", "0"], tmp_path)
+    assert wait_until(lambda: (procs._ps_field("stat", proc.pid) or "").startswith("Z"), timeout=10)
+    real_ps_field = procs._ps_field
+
+    def reap_then_ps(field, pid):
+        proc.wait(10)
+        return real_ps_field(field, pid)
+
+    monkeypatch.setattr(procs, "_ps_field", reap_then_ps)
+    assert procs.alive(proc.pid) is False
+
+
+def test_fx37_14_down_killed_comes_from_terminate_observation(tmp_path, monkeypatch):  # FX37-14 (b)
+    # Death observed inside `terminate` must stay observed: a later probe that lies
+    # (pid reported alive again) cannot flip `killed` / `stub_killed` back to False.
+    env = base_env(tmp_path)
+    for k in [k for k in os.environ if k.startswith(("READER3_", "VERIFY_READER3_"))]:
+        monkeypatch.delenv(k)
+    for k in ("TMPDIR", "VERIFY_READER3_EVIDENCE_ROOT"):
+        monkeypatch.setenv(k, env[k])
+    server, stub = 2_000_001, 2_000_002
+    write_instance(env, pid=server, port=51234, pid_start=EPOCH, stub_pid=stub, stub_pid_start=EPOCH)
+    termed = set()
+    observed_dead = set()
+
+    def fake_alive(pid):
+        if pid in termed and pid not in observed_dead:
+            observed_dead.add(pid)
+            return False
+        return True  # before TERM, and the lying re-probe after death was seen
+
+    def fake_kill_group(pid, sig):
+        if sig == signal.SIGTERM:
+            termed.add(pid)
+
+    monkeypatch.setattr(procs, "alive", fake_alive)
+    monkeypatch.setattr(procs, "pid_is_ours", lambda *a, **k: True)
+    monkeypatch.setattr(procs, "_kill_group", fake_kill_group)
+    rc, out, _ = _main_captured(["down"])
+    e = json.loads(out)
+    assert rc == 0 and e["ok"] is True, e
+    g = e["data"]
+    assert observed_dead == {server, stub}
+    assert g["signal"] == "TERM"
+    assert g["killed"] is True
+    assert g["stub_killed"] is True
 
 
 # ---------------------------------------------------------------------------

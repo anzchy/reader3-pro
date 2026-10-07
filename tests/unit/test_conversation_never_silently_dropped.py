@@ -99,6 +99,18 @@ def _seed_book(books_dir: Path) -> Path:
     return meta
 
 
+def _seeded_books_dir_outside(factory: pytest.TempPathFactory) -> Path:
+    """018 WI-5b B-4p (ADR-0018): a books dir holding the thread's book, outside ``tmp_path``.
+
+    Once the project-root writer holds the book lock it needs the book dir with the
+    thread's ``book_uuid`` (else ``BookGone``). It lives outside ``tmp_path`` so its
+    ``ai_meta.json`` is not one of the ``.json`` files the assertions enumerate.
+    """
+    books_dir = factory.mktemp("b4p_books")
+    _seed_book(books_dir)
+    return books_dir
+
+
 def _json_files(root: Path) -> List[str]:
     """Every ``.json`` anywhere under ``root``, as sorted relative paths."""
     return sorted(p.relative_to(root).as_posix() for p in root.rglob("*.json"))
@@ -177,12 +189,15 @@ def test_a_turn_is_never_both_unwritten_and_unreported(books_dir: Path, tmp_path
     assert _outcome(err, tmp_path) == {"json_files_on_disk": [], "caller_told": "ValueError"}
 
 
-def test_the_same_turn_lands_on_disk_once_the_root_is_supplied(books_dir: Path, tmp_path: Path) -> None:
+def test_the_same_turn_lands_on_disk_once_the_root_is_supplied(
+    books_dir: Path, tmp_path: Path, tmp_path_factory: pytest.TempPathFactory
+) -> None:
     """L3 (**core**, other half): with a real root the turn is readable back.
 
     Without this, "raise on everything" would pass the case above. The assertion
     is on parsed file content at the expected path, never on a return value.
     """
+    books_dir = _seeded_books_dir_outside(tmp_path_factory)  # 018 WI-5b B-4p (ADR-0018)
     project_root = tmp_path / "conversations"
 
     err = _save(books_dir, storage_mode="project_root", project_conversations_root=str(project_root))

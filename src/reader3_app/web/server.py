@@ -290,6 +290,27 @@ app.add_middleware(RequestGuardMiddleware)
 
 _stats_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 
+#: 018 WI-5a: bumped by every delete. A stats computation that started before a
+#: delete finished must not be cached (it may still count the deleted book), so
+#: ``api_library_stats`` stores its result only if this did not move meanwhile.
+_stats_generation: int = 0
+
+
+def _bump_stats_generation() -> None:
+    global _stats_generation
+    _stats_generation += 1
+    _stats_cache.clear()
+
+
+from .. import library_delete  # noqa: E402 - kept below line 107 (seam registry pins server.py:51 / :107)
+
+# Call-time lambdas: tests (and nothing else) re-seat ``book_uuid_resolver``; the
+# registration must reach whichever resolver is installed when the delete runs.
+library_delete.register_invalidator(lambda folder, book_uuid: _bump_stats_generation(), folder_scoped=False)
+library_delete.register_invalidator(
+    lambda folder, book_uuid: book_uuid_resolver.forget_folder(folder), folder_scoped=True
+)
+
 
 def _project_root_dir_from_books_dir() -> str:
     return os.path.dirname(os.path.abspath(BOOKS_DIR))
@@ -346,7 +367,23 @@ async def _startup_scan_books() -> None:
     # Ensure stable UUID mapping exists for all processed books.
     # 018 WI-2 (#23)：扫描会取书锁（缺 uuid 的书要铸一个），放进线程池，不占事件循环；
     # 每本书只等一个短预算（见 BookUuidResolver.scan）。
+    # 018 WI-5b (Q6): finish crashed deletes first, so the scan never mints a uuid
+    # for a folder whose tombstone still owes it a finalize. ``BOOKS_DIR`` is read
+    # at call time (tests rebind it); the finalizer's invalidators drop the caches.
+    await run_in_threadpool(_startup_sweep)
     await run_in_threadpool(book_uuid_resolver.scan)
+
+
+def _startup_sweep() -> None:
+    report = library_delete.sweep(BOOKS_DIR)
+    if report.busy or report.conserved or report.failed:
+        logger.warning(
+            "startup sweep left entries in %s: busy=%s conserved=%s failed=%s",
+            BOOKS_DIR,
+            report.busy,
+            report.conserved,
+            report.failed,
+        )
 
 def _share_loader_cache_surface(
     wrapper: Callable[[str], Optional[Book]]
@@ -1096,8 +1133,16 @@ DEFAULT_PORT = 8123
 DEFAULT_HOST = "127.0.0.1"
 
 
+import functools  # noqa: E402 -- 放在这里而不是文件头：文件头的行号被 test_server_patch_seam_ownership 钉着
+
+
+@functools.lru_cache(maxsize=1)
 def _package_version() -> str:
-    """装出来的版本号；源码树里跑（没装过）时回落到 pyproject 之外的一个标记。"""
+    """装出来的版本号；源码树里跑（没装过）时回落到 pyproject 之外的一个标记。
+
+    缓存（FX37-13）：`/api/health` 每次都在事件循环上调它，元数据查询要读盘；版本号在
+    进程生命期内不会变（重装要重启进程）。
+    """
     from importlib.metadata import PackageNotFoundError, version
 
     try:
@@ -1164,6 +1209,8 @@ from .routers.ai import rag as _ai_rag_router  # noqa: E402
 from .routers.ai import summary as _ai_summary_router  # noqa: E402
 from .routers import notes as _notes_router  # noqa: E402
 from .routers import search as _search_router  # noqa: E402
+from .routers import library_books as _library_books_router  # noqa: E402
+from .routers import library_export as _library_export_router  # noqa: E402
 from .vite_assets import vite_css, vite_js  # noqa: E402
 
 # 013 WI-10: the templates link the built token/theme CSS by page name (hashed names).
@@ -1183,6 +1230,8 @@ app.include_router(_ai_summary_router.router)
 app.include_router(_ai_chat_router.router)
 app.include_router(_notes_router.router)
 app.include_router(_search_router.router)
+app.include_router(_library_books_router.router)
+app.include_router(_library_export_router.router)
 
 
 def main() -> int:

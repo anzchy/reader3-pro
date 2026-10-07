@@ -20,7 +20,7 @@ import ebooklib
 from ebooklib import epub
 from bs4 import BeautifulSoup, Comment
 
-from . import book_lock
+from . import book_lock, library_delete
 
 # --- Data structures ---
 
@@ -719,6 +719,22 @@ def _discard_own_staging(staging: str) -> None:
 
 # --- Main Conversion Logic ---
 
+def _refuse_over_pending_tombstone(books_dir: str, folder: str) -> None:
+    """Raise ``ImportRefused`` naming every same-name tombstone still in ``books_dir``.
+
+    One the sweep could not clear (busy, conserved, failed) still owes this name a
+    finalize; importing over it would hand that finalizer a live book (W5-18).
+    """
+    pending = library_delete.pending_tombstones(books_dir, folder)
+    if pending:
+        raise library_delete.ImportRefused(
+            f"refusing to import {folder!r}: a deleted copy is still pending at "
+            f"{', '.join(os.path.join(books_dir, name) for name in pending)}; "
+            "it could not be finalized (busy, conserved or failed -- see the log). "
+            "Resolve it, then run the import again."
+        )
+
+
 def process_epub(epub_path: str, output_dir: str) -> Book:
 
     # 1. Load Book
@@ -736,13 +752,24 @@ def process_epub(epub_path: str, output_dir: str) -> Book:
     normalized_output = os.path.normpath(output_dir)
     books_dir = os.path.dirname(normalized_output) or "."
     os.makedirs(books_dir, exist_ok=True)
+    folder = os.path.basename(normalized_output)
+    # 018 WI-5b (Q6, W5-18): finish whatever earlier deletes left behind before
+    # taking the import lock -- the sweep takes each book's EX itself, so it cannot
+    # run under ours. The finalizer reads its inputs from the intent files and
+    # never reaches into the web layer.
+    library_delete.sweep(books_dir)
+    # Before the import lock too: a tombstone left busy by another holder would
+    # otherwise surface as a bare "book busy" that never names it.
+    _refuse_over_pending_tombstone(books_dir, folder)
     # 018 WI-2 (ADR-0015): at most one import per book, and no reindex / notes /
     # delete while it runs. EX is taken before any staging or output dir is
     # touched and held until the staging tree is gone, so a refused import
     # changes nothing -- fresh book or existing. EX never waits: BookLockBusy.
     with book_lock.acquire(
-        books_dir, os.path.basename(normalized_output), mode="exclusive", holder="import"
+        books_dir, folder, mode="exclusive", holder="import"
     ):
+        # Again under EX: a delete may have committed since the check above.
+        _refuse_over_pending_tombstone(books_dir, folder)
         _clear_staging_dirs(output_dir)
         staging = _staging_dir(output_dir)
         # exist_ok=False: if a leftover survived the cleanup above, its stale images
@@ -961,7 +988,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     # commit. Calling save_to_pickle here too would flip the marker twice.
     try:
         book_obj = process_epub(epub_file, out_dir)
-    except book_lock.BookLockBusy as e:
+    except (book_lock.BookLockBusy, library_delete.ImportRefused) as e:
         # 018 FU2 WI-3 (#18): same exit shape as the --index branch -- non-zero,
         # one readable line naming the holder, no traceback. Busy only (018 FU3,
         # coordinator ruling 2026-10-01): BookLockMisuse is a programmer error and

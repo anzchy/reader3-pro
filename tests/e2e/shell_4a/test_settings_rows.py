@@ -13,8 +13,9 @@ ok row fulfils the page's `/test` request with the route's documented success sh
 under test is that the page renders the two outcomes as distinct states.
 
 **Deferred (user rulings).** FB-S09 (D8): only "a failed save shows a visible error and keeps
-the input" is asserted, not stale-write detection. `set-export-json` (D11): a visible
-「暂不支持」 line and 0 requests; its server half is backend debt "library export route".
+the input" is asserted, not stale-write detection. `set-export-json` (D11) was paid by 018 WI-6
+(debt #53): one `GET /api/library/export`, a parseable `reader3-library.json` download without the
+saved key, and the 「书库已导出。」 result line.
 Stale-write detection was paid later by 018 WI-3 (debt #51): `test_provider_save_conflict_is_visible`.
 """
 
@@ -269,10 +270,18 @@ def test_key_never_echoed_and_exports(ctx: Any, live_server: str, sandbox: Path)
             continue
         assert secret not in body, f"{r.url} echoed the key"
 
+    # 018 WI-6 (X1): the library export is live -- one GET, a parseable download, no secret.
     log = ss.RequestLog(page).start()
-    page.get_by_test_id("set-export-json").click()
-    expect(page.get_by_text("暂不支持")).to_be_visible()
-    assert log.items == [], f"set-export-json sent requests: {log.items}"
+    with page.expect_download() as dl:
+        page.get_by_test_id("set-export-json").click()
+    expect(page.get_by_text("书库已导出。")).to_be_visible()
+    assert len(log.matching("GET", "/api/library/export")) == 1, log.items
+    api = [i for i in log.items if i[1].startswith("/api/")]
+    assert api == [("GET", "/api/library/export")], f"set-export-json sent other requests: {api}"
+    assert dl.value.suggested_filename == "reader3-library.json"
+    text = Path(dl.value.path()).read_text(encoding="utf-8")
+    assert isinstance(json.loads(text)["books"], list)
+    assert secret not in text, "the library export contains the key"
 
 
 # ---------------------------------------------------------------------------

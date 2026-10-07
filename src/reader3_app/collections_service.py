@@ -12,7 +12,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, Iterator, Optional
+from typing import Callable, Iterable, Iterator, Optional
 
 logger = logging.getLogger("reader3.collections")
 
@@ -200,6 +200,10 @@ def save_collections(path: Path, collections: list[Collection]) -> None:
     _atomic_write_json(path, payload)
 
 
+class BookMissing(Exception):
+    """An id to add names no live book (the in-lock recheck of ``update_collection_books``)."""
+
+
 def _normalize_book_id(book_id: str) -> str:
     safe = os.path.basename(str(book_id or ""))
     if safe != book_id:
@@ -257,8 +261,23 @@ def update_collection_books(
     *,
     add: Iterable[str] = (),
     remove: Iterable[str] = (),
+    book_exists: Optional[Callable[[str], bool]] = None,
 ) -> Collection:
+    """Add / remove book ids in one collection under the collections lock.
+
+    ``book_exists`` (018 WI-5b, ruled Q5) is re-checked for every added id *inside*
+    the lock: a delete commits (renames the folder away) before its finalizer takes
+    this lock to drop the book, so a check made only before the lock could re-add a
+    book the finalizer has already removed. A failed recheck raises ``BookMissing``
+    and leaves the file untouched.
+    """
+    add = list(add)
     with _collections_write_lock(path):
+        if book_exists is not None:
+            for bid in add:
+                safe = _normalize_book_id(str(bid))
+                if not book_exists(safe):
+                    raise BookMissing(safe)
         collections = load_collections(path)
         updated: Optional[Collection] = None
         for i, c in enumerate(collections):
@@ -284,3 +303,28 @@ def update_collection_books(
         save_collections(path, collections)
         return updated
 
+
+
+def remove_book_everywhere(path: Path, book_id: str) -> None:
+    """Drop ``book_id`` from every collection (018 WI-5a, the delete finalizer's step).
+
+    Order and empty collections are kept. A missing file is tolerated and never
+    created; when no collection names the book the file is not rewritten, so a
+    repeated call (a re-run finalize) leaves the bytes and the mtime alone.
+    """
+    path = Path(path)
+    if not path.exists():
+        return
+    with _collections_write_lock(path):
+        if not path.exists():
+            return
+        collections = load_collections(path)
+        changed = False
+        next_collections: list[Collection] = []
+        for c in collections:
+            kept = [x for x in c.book_ids if x != book_id]
+            if len(kept) != len(c.book_ids):
+                changed = True
+            next_collections.append(Collection(id=c.id, name=c.name, created_at=c.created_at, book_ids=kept))
+        if changed:
+            save_collections(path, next_collections)

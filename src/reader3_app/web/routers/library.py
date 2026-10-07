@@ -26,8 +26,9 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
-from ... import collections_service
+from ... import book_store, collections_service
 from ...search_service import list_book_ids
+from ..urls import cover_url as build_cover_url
 
 router: APIRouter = APIRouter()
 
@@ -44,23 +45,8 @@ async def library_view(request: Request):
                 # Try to load it to get the title
                 book = _server.load_book_cached(item)
                 if book:
-                    cover_image = None
-                    try:
-                        images_dir = os.path.join(_server.BOOKS_DIR, item, "images")
-                        if os.path.isdir(images_dir):
-                            candidates = [
-                                f
-                                for f in os.listdir(images_dir)
-                                if os.path.isfile(os.path.join(images_dir, f)) and not f.startswith(".")
-                            ]
-                            preferred = [f for f in candidates if "cover" in f.lower() or "title" in f.lower()]
-                            pick_from = preferred or candidates
-                            if pick_from:
-                                cover_image = sorted(pick_from, key=lambda x: (len(x), x.lower()))[0]
-                    except Exception:  # noqa: BLE001 - 第 3 档：封面挑选失败只影响一张缩略图，书本身照常打开
-                        cover_image = None
-
-                    cover_url = f"/read/{item}/images/{cover_image}" if cover_image else None
+                    cover_image = book_store.pick_cover_image(item, _server.BOOKS_DIR)
+                    cover_url = build_cover_url(item, cover_image)
                     books.append({
                         "id": item,
                         "title": book.metadata.title,
@@ -193,8 +179,13 @@ async def api_collections_update_books(collection_id: str, body: CollectionBooks
             cid,
             add=add_ids,
             remove=remove_ids,
+            # 018 WI-5b (Q5): re-checked under the collections lock, so a delete that
+            # committed after ``_validate_book_id`` above cannot be re-added.
+            book_exists=lambda b: b in set(list_book_ids(_server.BOOKS_DIR)),
         )
         return updated.to_dict()
+    except collections_service.BookMissing:
+        raise HTTPException(status_code=404, detail="Book not found")
     except KeyError:
         raise HTTPException(status_code=404, detail="Collection not found")
     except ValueError as e:
@@ -325,6 +316,7 @@ async def api_library_stats(scope: str = "all", fresh: bool = False):
             if now - ts <= 5.0:
                 return payload
 
+    generation = _server._stats_generation
     try:
         stats = _compute_stats_for_scope(validated_scope).to_dict()
     except HTTPException:
@@ -332,7 +324,10 @@ async def api_library_stats(scope: str = "all", fresh: bool = False):
     except Exception as e:  # noqa: BLE001 - 第 2 档：HTTP 边界，转译成 500 且 detail 带上原因
         raise HTTPException(status_code=500, detail=str(e))
 
-    _server._stats_cache[cache_key] = (now, stats)
+    # 018 WI-5a: a delete during the computation bumps the generation; its result
+    # may still count the deleted book, so it is returned but not cached.
+    if _server._stats_generation == generation:
+        _server._stats_cache[cache_key] = (now, stats)
     return stats
 
 # 017 WI-1（审计 #7）：必须留在文件末尾。理由见 `routers/__init__.py` 的 docstring。

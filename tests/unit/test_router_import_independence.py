@@ -27,6 +27,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -38,6 +39,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 #: `server.py` 末尾 include 的全部 router 模块。少一个，这条守卫就漏一个。
 ROUTER_MODULES = [
     "reader3_app.web.routers.library",
+    "reader3_app.web.routers.library_books",
+    "reader3_app.web.routers.library_export",
     "reader3_app.web.routers.reader",
     "reader3_app.web.routers.settings",
     "reader3_app.web.routers.health",
@@ -102,24 +105,50 @@ def test_a_router_can_be_the_first_module_imported(module: str):
     assert CIRCULAR not in proc.stderr, f"{module} 仍有循环导入：\n{proc.stderr}"
 
 
+_SNAPSHOT_PATH = REPO_ROOT / "tests" / "contract" / "routes.snapshot"
+
+#: Same normalisation as ``tests/contract/test_route_inventory.current_inventory`` (HEAD /
+#: OPTIONS are synthesised by Starlette and carry no contract), printed as JSON by the child.
+_INVENTORY_PROG = (
+    "import json\n"
+    "from starlette.routing import Mount\n"
+    "from reader3_app.web import server\n"
+    "lines = set()\n"
+    "for route in server.app.routes:\n"
+    "    if isinstance(route, Mount):\n"
+    "        lines.add(f'MOUNT {route.path}')\n"
+    "        continue\n"
+    "    for method in getattr(route, 'methods', None) or []:\n"
+    "        if method not in ('HEAD', 'OPTIONS'):\n"
+    "            lines.add(f'{method} {route.path}')\n"
+    "print(json.dumps(sorted(lines)))\n"
+)
+
+
+def _snapshot_lines() -> list[str]:
+    return sorted(
+        line.strip()
+        for line in _SNAPSHOT_PATH.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    )
+
+
 @pytest.mark.parametrize("module", ROUTER_MODULES)
 def test_importing_a_router_first_still_assembles_the_whole_app(module: str):
     """不只是「不报错」——先导 router 之后，`server.app` 的路由必须照样装齐。
 
     只断言 rc=0 会被一个偷懒的修法满足：把 `include_router` 整段用 try/except
-    包起来，导入不炸了，应用也空了。这条用路由条数把那条路堵死。
+    包起来，导入不炸了，应用也空了。审计 20261007 #23（FX37-10）：以前用「路由数 > 40」
+    兜底，少装一整个小 router 仍然过；现在子进程打印完整清单，与 `routes.snapshot` 逐行比。
     """
-    prog = (
-        f"import {module}\n"
-        "from reader3_app.web import server\n"
-        "paths = {r.path for r in server.app.routes}\n"
-        "assert '/api/health' in paths, paths\n"
-        "print(len(server.app.routes))\n"
-    )
-    proc = _run([sys.executable, "-c", prog])
+    proc = _run([sys.executable, "-c", f"import {module}\n{_INVENTORY_PROG}"])
     assert proc.returncode == 0, f"{module} 先导入后应用装配失败：\n{proc.stderr}"
-    assert int(proc.stdout.strip()) > 40, (
-        f"先导入 {module} 之后路由数只有 {proc.stdout.strip()}，应用没装齐"
+    live = json.loads(proc.stdout.strip().splitlines()[-1])
+    frozen = _snapshot_lines()
+    assert live == frozen, (
+        f"先导入 {module} 之后路由清单与 routes.snapshot 不一致：\n"
+        f"  多了：{sorted(set(live) - set(frozen)) or '无'}\n"
+        f"  少了：{sorted(set(frozen) - set(live)) or '无'}"
     )
 
 

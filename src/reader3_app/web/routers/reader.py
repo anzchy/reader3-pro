@@ -17,6 +17,8 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, HTMLResponse
 
+from ..urls import cover_url as build_cover_url
+
 
 router: APIRouter = APIRouter()
 
@@ -86,7 +88,7 @@ async def read_chapter(request: Request, book_id: str, chapter_index: int):
                 cover_image = sorted(pick_from, key=lambda x: (len(x), x.lower()))[0]
     except Exception:  # noqa: BLE001 - 第 3 档：同 187，封面挑选失败只影响一张缩略图
         cover_image = None
-    cover_url = f"/read/{safe_book_id}/images/{cover_image}" if cover_image else None
+    cover_url = build_cover_url(safe_book_id, cover_image)
     epub_available = os.path.exists(os.path.join(_server.BOOKS_DIR, safe_book_id, "book.epub"))
     return _server.templates.TemplateResponse(request, "reader.html", {
         "book": book,

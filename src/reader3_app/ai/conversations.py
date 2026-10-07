@@ -4,9 +4,10 @@ import contextlib
 import json
 import logging
 import os
+import stat
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 from uuid import UUID
 
 from .. import book_lock
@@ -191,6 +192,71 @@ def _list_conversations_from_dir(root: str, *, provider: Optional[str] = None) -
     return out
 
 
+def read_conversation_threads(directory: str) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """导出专用（018 WI-6）：一个会话目录里的原样线程，加上读不懂的文件主名。
+
+    返回 ``(threads, unreadable)``。``threads`` 每项就是文件的 ``json.loads``（未知键照留）；
+    ``unreadable`` 是读不懂的 ``*.json`` 文件主名（stem）。与 ``_list_conversations_from_dir``
+    不同，这里**一个文件都不静默丢**：非 UTF-8、坏 JSON、顶层不是对象、含严格 JSON 渲染不了
+    的值（NaN / ±Infinity / 溢出成 inf 的数、孤立代理项，任意嵌套层）、``conversation_id``
+    不是合法 UUID、单个文件的 ``OSError``（如权限）全部进 ``unreadable``。
+
+    只有两种「没有」不算错：路径不存在（``FileNotFoundError`` / ``NotADirectoryError``）或
+    不是目录 → ``([], [])``；一个文件在列目录之后、打开之前消失（``FileNotFoundError``）→
+    不出现在任何一边（W6-5）。目录级的其他错误（``stat`` 或列目录时的 ``PermissionError``
+    等，以及列目录时的 ``FileNotFoundError``）原样抛出，由调用方判断是书没了还是整个来源
+    读不动（R-4）。审计 20261007 #6 / #20：以前用 ``os.path.isdir`` / ``isfile`` 判断，它们把
+    EACCES 吞成 False，权限错误就被读成了「没有会话」。列目录必须走 ``os.listdir``（测试按
+    名字拦截它）。
+    """
+    try:
+        dir_st = os.stat(directory)
+    except (FileNotFoundError, NotADirectoryError):
+        return [], []
+    if not stat.S_ISDIR(dir_st.st_mode):
+        return [], []
+    threads: List[Dict[str, Any]] = []
+    unreadable: List[str] = []
+    for name in sorted(os.listdir(directory)):
+        if not name.endswith(".json"):
+            continue
+        path = os.path.join(directory, name)
+        stem = name[: -len(".json")]
+        try:
+            if not stat.S_ISREG(os.stat(path).st_mode):
+                continue
+            with open(path, "rb") as f:
+                raw = f.read()
+        except FileNotFoundError:
+            continue
+        except OSError:
+            unreadable.append(stem)
+            continue
+        try:
+            data = json.loads(raw.decode("utf-8"))
+        except ValueError:  # UnicodeDecodeError 与 JSONDecodeError 都是 ValueError
+            unreadable.append(stem)
+            continue
+        if not isinstance(data, dict):
+            unreadable.append(stem)
+            continue
+        try:
+            # 严格渲染探测（审计 20261007 #5 / #19）：json.loads 收 NaN / Infinity / 1e309（→ inf）
+            # 和孤立代理项 "\ud800"，但导出响应（Starlette JSONResponse：allow_nan=False 再 UTF-8
+            # 编码）渲染不了它们，整份导出会 500。按同一规则先渲染一遍，渲不出就算读不懂。
+            json.dumps(data, ensure_ascii=False, allow_nan=False).encode("utf-8")
+        except ValueError:  # UnicodeEncodeError 也是 ValueError
+            unreadable.append(stem)
+            continue
+        try:
+            _safe_conversation_id(data.get("conversation_id"))
+        except ValueError:
+            unreadable.append(stem)
+            continue
+        threads.append(data)
+    return threads, unreadable
+
+
 def list_conversations(
     books_dir: str,
     *,
@@ -256,6 +322,55 @@ def _publish_json(path: str, payload: Dict[str, Any]) -> None:
         raise
 
 
+@contextlib.contextmanager
+def _conversation_writer(books_dir: str, thread: ConversationThread) -> Iterator[str]:
+    """SH ``conversations`` on the thread's book plus the conversations resource lock.
+
+    In-lock: the book dir must exist (``BookGone``, never recreated) and must still
+    hold the identity the thread is filed under (``BookChanged``). Yields the safe
+    book folder. One acquisition per save (ADR-0015 rule 7, ADR-0018).
+    """
+    book_folder = _safe_folder_name(thread.book_folder)
+    with book_lock.writer_scope(
+        books_dir, book_folder, holder="conversations", expected_book_uuid=thread.book_uuid
+    ), book_lock.resource_lock(books_dir, book_folder, category="conversations"):
+        # 018 WI-1 (#3): SH alone lets two saves of this book run at once; the
+        # resource lock serialises them, under the same deadline as the book lock.
+        yield book_folder
+
+
+def _write_per_book(books_dir: str, book_folder: str, thread: ConversationThread) -> None:
+    """The per-book publish; the caller holds ``_conversation_writer``."""
+    conv_dir = _conversations_dir(books_dir, book_folder)
+    with contextlib.suppress(FileExistsError):
+        os.mkdir(conv_dir)
+    path = _conversation_path(books_dir, book_folder, thread.conversation_id)
+    payload = thread.to_dict()
+    payload["schema_version"] = SCHEMA_VERSION
+    payload["last_updated"] = _utc_now_iso()
+    if not payload.get("created_at"):
+        payload["created_at"] = payload["last_updated"]
+    _publish_json(path, payload)
+
+
+def _write_project(project_conversations_root: str, book_folder: str, thread: ConversationThread) -> None:
+    """The project-root publish; the caller holds ``_conversation_writer``.
+
+    ``{root}/{book_uuid}/`` is created only here, i.e. after the in-lock rechecks.
+    """
+    book_uuid = _safe_book_uuid(thread.book_uuid)
+    os.makedirs(_project_conversations_dir(project_conversations_root, book_uuid), exist_ok=True)
+    path = _project_conversation_path(project_conversations_root, book_uuid, thread.conversation_id)
+    payload = thread.to_dict()
+    payload["schema_version"] = SCHEMA_VERSION
+    payload["book_uuid"] = book_uuid
+    payload["book_folder"] = book_folder
+    payload["last_updated"] = _utc_now_iso()
+    if not payload.get("created_at"):
+        payload["created_at"] = payload["last_updated"]
+    _publish_json(path, payload)
+
+
 def save_conversation(
     books_dir: str,
     *,
@@ -268,41 +383,50 @@ def save_conversation(
     (``BookChanged`` -- a same-name reimport is a different book). Only the
     ``ai_conversations`` dir inside the existing book dir is ever created.
     """
-    book_folder = _safe_folder_name(thread.book_folder)
-    with book_lock.writer_scope(
-        books_dir, book_folder, holder="conversations", expected_book_uuid=thread.book_uuid
-    ), book_lock.resource_lock(books_dir, book_folder, category="conversations"):
-        # 018 WI-1 (#3): SH alone lets two saves of this book run at once; the
-        # resource lock serialises them, under the same deadline as the book lock.
-        conv_dir = _conversations_dir(books_dir, book_folder)
-        with contextlib.suppress(FileExistsError):
-            os.mkdir(conv_dir)
-        path = _conversation_path(books_dir, book_folder, thread.conversation_id)
-        payload = thread.to_dict()
-        payload["schema_version"] = SCHEMA_VERSION
-        payload["last_updated"] = _utc_now_iso()
-        if not payload.get("created_at"):
-            payload["created_at"] = payload["last_updated"]
-        _publish_json(path, payload)
+    with _conversation_writer(books_dir, thread) as book_folder:
+        _write_per_book(books_dir, book_folder, thread)
 
 
 def save_project_conversation(
     project_conversations_root: str,
     *,
     thread: ConversationThread,
+    books_dir: str,
 ) -> None:
-    book_uuid = _safe_book_uuid(thread.book_uuid)
-    book_folder = _safe_folder_name(thread.book_folder)
-    os.makedirs(_project_conversations_dir(project_conversations_root, book_uuid), exist_ok=True)
-    path = _project_conversation_path(project_conversations_root, book_uuid, thread.conversation_id)
-    payload = thread.to_dict()
-    payload["schema_version"] = SCHEMA_VERSION
-    payload["book_uuid"] = book_uuid
-    payload["book_folder"] = book_folder
-    payload["last_updated"] = _utc_now_iso()
-    if not payload.get("created_at"):
-        payload["created_at"] = payload["last_updated"]
-    _publish_json(path, payload)
+    """Write one project-root conversation under the book's lock (018 WI-5b, ADR-0018).
+
+    Same shape as ``save_conversation``: SH ``conversations`` on ``thread.book_folder``
+    in ``books_dir`` plus the resource lock, so a deleted book is ``BookGone`` and a
+    late write never recreates ``{root}/{book_uuid}/``.
+    """
+    _safe_book_uuid(thread.book_uuid)
+    with _conversation_writer(books_dir, thread) as book_folder:
+        _write_project(project_conversations_root, book_folder, thread)
+
+@contextlib.contextmanager
+def _conversation_deleter(books_dir: str, book_folder: str) -> Iterator[str]:
+    """SH ``conversations`` on ``book_folder`` plus the conversations resource lock, for a delete.
+
+    ADR-0018 (amended 2026-10-07, audit 20261007 #1): a delete must not interleave with
+    a book delete's EX section -- between the commit rename and the finalizer's publish
+    into the project root it would remove the project copy and the finalizer would
+    republish it. Plain ``acquire``, *not* ``writer_scope``: no existence or identity
+    recheck, so an orphan (book folder gone, conversations kept) stays deletable, and a
+    delete never creates anything but the lock files under ``books/.locks``.
+    """
+    folder = _safe_folder_name(book_folder)
+    with book_lock.acquire(books_dir, folder, mode=book_lock.SHARED, holder="conversations"), book_lock.resource_lock(
+        books_dir, folder, category="conversations"
+    ):
+        yield folder
+
+
+def _remove_if_present(path: str) -> None:
+    try:
+        os.remove(path)
+    except FileNotFoundError:
+        return
+
 
 def delete_conversation(
     books_dir: str,
@@ -310,12 +434,10 @@ def delete_conversation(
     book_folder: str,
     conversation_id: str,
 ) -> None:
-    book_folder = _safe_folder_name(book_folder)
+    """Remove one per-book conversation under the book lock (ADR-0018 amendment 2026-10-07)."""
     path = _conversation_path(books_dir, book_folder, conversation_id)
-    try:
-        os.remove(path)
-    except FileNotFoundError:
-        return
+    with _conversation_deleter(books_dir, book_folder):
+        _remove_if_present(path)
 
 
 def delete_project_conversation(
@@ -323,12 +445,13 @@ def delete_project_conversation(
     *,
     book_uuid: str,
     conversation_id: str,
+    books_dir: str,
+    book_folder: str,
 ) -> None:
+    """Remove one project-root conversation under ``book_folder``'s lock (ADR-0018 amendment 2026-10-07)."""
     path = _project_conversation_path(project_conversations_root, book_uuid, conversation_id)
-    try:
-        os.remove(path)
-    except FileNotFoundError:
-        return
+    with _conversation_deleter(books_dir, book_folder):
+        _remove_if_present(path)
 
 
 def _dedupe_conversation_list(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -432,10 +555,16 @@ def save_conversation_multi(
             f"but conversation_project_root_dir resolved to {project_conversations_root!r}. "
             "Set conversation_project_root_dir, or set conversation_disk_storage to 'per_book'."
         )
-    if mode in ("per_book", "both"):
+    if mode == "per_book":
         save_conversation(books_dir, thread=thread)
-    if mode in ("project_root", "both"):
-        save_project_conversation(root, thread=thread)
+    elif mode == "project_root":
+        save_project_conversation(root, thread=thread, books_dir=books_dir)
+    else:
+        # ADR-0018: ``both`` is one acquisition; both halves are written inside it.
+        _safe_book_uuid(thread.book_uuid)
+        with _conversation_writer(books_dir, thread) as book_folder:
+            _write_per_book(books_dir, book_folder, thread)
+            _write_project(root, book_folder, thread)
 
 
 def delete_conversation_multi(
@@ -446,6 +575,14 @@ def delete_conversation_multi(
     conversation_id: str,
     project_conversations_root: Optional[str] = None,
 ) -> None:
-    delete_conversation(books_dir, book_folder=book_folder, conversation_id=conversation_id)
-    if project_conversations_root:
-        delete_project_conversation(project_conversations_root, book_uuid=book_uuid, conversation_id=conversation_id)
+    """Remove both copies in one book-lock acquisition (ADR-0015 rule 7, ADR-0018 amendment 2026-10-07)."""
+    per_book = _conversation_path(books_dir, book_folder, conversation_id)
+    project = (
+        _project_conversation_path(project_conversations_root, book_uuid, conversation_id)
+        if project_conversations_root
+        else None
+    )
+    with _conversation_deleter(books_dir, book_folder):
+        _remove_if_present(per_book)
+        if project is not None:
+            _remove_if_present(project)

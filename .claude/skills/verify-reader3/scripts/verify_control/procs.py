@@ -188,6 +188,14 @@ def alive(pid):
     except PermissionError:
         return True
     stat_field = _ps_field("stat", pid)
+    if stat_field is None:
+        # `ps` found nothing: the pid may have been reaped since the probe above.
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
     return not (stat_field or "").startswith("Z")
 
 
@@ -201,13 +209,16 @@ def wait_gone(pid, timeout):
 
 
 def terminate(pid, grace):
-    """TERM the group, wait `grace`, then KILL. Return the last signal sent."""
+    """TERM the group, wait `grace`, then KILL. Return (last signal sent, death observed).
+
+    The second item is what `wait_gone` saw; callers use it instead of probing again, so a
+    death once observed is never reported as a survivor.
+    """
     _kill_group(pid, signal.SIGTERM)
     if wait_gone(pid, grace):
-        return "TERM"
+        return "TERM", True
     _kill_group(pid, signal.SIGKILL)
-    wait_gone(pid, 2.0)
-    return "KILL"
+    return "KILL", wait_gone(pid, 2.0)
 
 
 def stop_child(proc, grace):

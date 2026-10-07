@@ -447,7 +447,7 @@ def test_the_metadata_view_is_a_dataclass_with_explicit_annotations(books_dir: P
 
 
 # ==========================================================================
-# W4-C7 — nothing consumes the seam yet
+# W4-C7 — the seam's callers are an explicit allowlist (018 WI-4, Q-A)
 # ==========================================================================
 
 
@@ -487,12 +487,33 @@ def _defines_function(source: str, name: str) -> bool:
     )
 
 
-def test_no_production_call_site_uses_the_new_seam_yet(repo_root: Path):
-    """L1 / S3 (W4-C7) - exhaustive AST walk over every module under src/reader3_app/.
+#: Every module allowed to mention ``load_book_metadata``: its definition site,
+#: and ``GET /api/library`` — the first sanctioned caller (018 second slice §6
+#: Q-A). A third caller is a decision, not a drive-by: it edits this set with a
+#: stated reason.
+SEAM_CALLER_ALLOWLIST = frozenset(
+    {
+        "src/reader3_app/book_store.py",
+        "src/reader3_app/web/routers/library_books.py",
+    }
+)
 
-    C5 — migrating `library_view` onto the metadata view — is deferred to 012 by
-    §7. This branch adds the seam and its tests and nothing else, so the only
-    file that may mention `load_book_metadata` is the one that defines it.
+LIBRARY_BOOKS_ROUTER = "src/reader3_app/web/routers/library_books.py"
+
+
+def test_seam_callers_are_the_allowlist(repo_root: Path):
+    """L1 / S3 (W4-C7, 018 WI-4 T4-U8) - exhaustive AST walk over every module under src/reader3_app/.
+
+    Renamed from ``test_no_production_call_site_uses_the_new_seam_yet``. Stated
+    spec change: Q-A makes the ``GET /api/library`` router the first sanctioned
+    caller of the seam, so "only the definition site mentions it" no longer
+    holds. What replaced it: the mentioning set is a subset of
+    ``SEAM_CALLER_ALLOWLIST`` **and** the router is actually in it — a router
+    that reads ``book.pkl`` / ``load_book_cached`` directly, bypassing the seam,
+    is not a mentioner and turns this red.
+
+    C5 — migrating `library_view` onto the metadata view — is still deferred to
+    012 by §7; the (b) half below is unchanged.
     """
     src = repo_root / "src" / "reader3_app"
     mentioning = {}
@@ -523,11 +544,94 @@ def test_no_production_call_site_uses_the_new_seam_yet(repo_root: Path):
         "这条闸就量不到东西了——量不到判红，不判跳过。"
     )
 
-    assert set(mentioning) == {"src/reader3_app/book_store.py"}, (
-        f"load_book_metadata is mentioned outside its definition site: {mentioning}. "
+    assert set(mentioning) <= SEAM_CALLER_ALLOWLIST, (
+        f"load_book_metadata is mentioned outside the allowlist: "
+        f"{sorted(set(mentioning) - SEAM_CALLER_ALLOWLIST)} (all mentions: {mentioning}). "
         "C5 belongs to 012; if you are doing it now, update this test and the plan."
+    )
+    assert LIBRARY_BOOKS_ROUTER in mentioning, (
+        f"{LIBRARY_BOOKS_ROUTER} does not call load_book_metadata "
+        f"(exists: {(repo_root / LIBRARY_BOOKS_ROUTER).is_file()}; mentions: {mentioning}). "
+        "GET /api/library must read titles through the 012 seam, not book.pkl / "
+        "load_book_cached directly (018 WI-4, Q-A)."
     )
     assert library_view_still_calls_the_full_loader, (
         f"{library_view_defined_in} 里的 library_view 不再调用 load_book_cached(item)。"
         "C5 belongs to 012; if you are doing it now, update this test and the plan."
+    )
+
+
+#: Names that belong to the pickle layer. The router answers "what is this book
+#: called" through the seam; reaching any of these means it would keep working
+#: unchanged after 012 swaps the storage format, i.e. it bypassed the seam.
+PICKLE_LAYER_NAMES = frozenset(
+    {
+        "load_book_cached",
+        "load_book_file",
+        "load_book",
+        "_load_book_for_stat",
+        "pickle",
+        "Reader3Unpickler",
+    }
+)
+
+
+def _docstring_nodes(tree: ast.AST) -> set[int]:
+    """ids of the Constant nodes that are module/class/function docstrings.
+
+    Prose is not a node that reads anything: a docstring saying "never opens
+    book.pkl" is documentation, not a read path.
+    """
+    ids: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            body = node.body
+            if (
+                body
+                and isinstance(body[0], ast.Expr)
+                and isinstance(body[0].value, ast.Constant)
+                and isinstance(body[0].value.value, str)
+            ):
+                ids.add(id(body[0].value))
+    return ids
+
+
+def test_library_books_router_never_touches_pickle_layer(repo_root: Path):
+    """L1 / S2 (018 WI-4 T4-U9) - AST scan of the GET /api/library router.
+
+    The allowlist guard above proves the router *does* call the seam; this one
+    proves it calls *nothing else* underneath it — no ``_server.load_book_cached``
+    fallback, no ``book_store.load_book(...)`` for the title, no hand-built
+    ``book.pkl`` path.
+    """
+    path = repo_root / LIBRARY_BOOKS_ROUTER
+    assert path.is_file(), (
+        f"{LIBRARY_BOOKS_ROUTER} does not exist. 018 WI-4 adds GET /api/library there."
+    )
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    docstrings = _docstring_nodes(tree)
+
+    touched: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id in PICKLE_LAYER_NAMES:
+            touched.append(f"name {node.id} (line {node.lineno})")
+        elif isinstance(node, ast.Attribute) and node.attr in PICKLE_LAYER_NAMES:
+            touched.append(f"attribute .{node.attr} (line {node.lineno})")
+        elif isinstance(node, ast.alias) and (
+            node.name.split(".")[-1] in PICKLE_LAYER_NAMES
+            or node.name.split(".")[0] in PICKLE_LAYER_NAMES
+            or (node.asname or "") in PICKLE_LAYER_NAMES
+        ):
+            touched.append(f"import {node.name}")
+        elif (
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and "book.pkl" in node.value
+            and id(node) not in docstrings
+        ):
+            touched.append(f"string constant {node.value!r} (line {node.lineno})")
+
+    assert not touched, (
+        f"{LIBRARY_BOOKS_ROUTER} reaches the pickle layer directly: {touched}. "
+        "It must go through book_store.load_book_metadata only."
     )

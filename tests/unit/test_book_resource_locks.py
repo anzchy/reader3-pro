@@ -554,7 +554,7 @@ def test_fx_1_12_a_save_failing_mid_write_leaves_the_old_file_and_no_tmp(
         target = Path(conversations._project_conversation_path(str(root), U, C1))
 
         def call() -> None:
-            conversations.save_project_conversation(str(root), thread=thread)
+            conversations.save_project_conversation(str(root), thread=thread, books_dir=str(books_dir))  # 018 WI-5b B-4e
 
     target.parent.mkdir(parents=True, exist_ok=True)
     old_bytes = json.dumps({"conversation_id": C1, "messages": []}).encode("utf-8")
@@ -577,8 +577,10 @@ def test_fx_1_12_a_save_failing_mid_write_leaves_the_old_file_and_no_tmp(
 
 
 def test_fx_1_13_project_root_saves_of_one_id_concurrently_no_torn_file_no_tmp(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    books_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    (books_dir / BOOK).mkdir()  # 018 WI-5b B-4e: the project writer needs the book (ADR-0018)
+    _write_meta(books_dir / BOOK, {"book_uuid": U})  # 018 WI-5b B-4e: with the thread's uuid
     root = tmp_path / "project_root"
     thread_a = _thread(U, C1, "payload-a")
     thread_b = _thread(U, C1, "payload-b")
@@ -594,9 +596,14 @@ def test_fx_1_13_project_root_saves_of_one_id_concurrently_no_torn_file_no_tmp(
     shim = JsonShim(dump)
     monkeypatch.setattr(conversations, "json", shim)
 
-    ta, a = _start(lambda: conversations.save_project_conversation(str(root), thread=thread_a))
+    ta, a = _start(
+        lambda: conversations.save_project_conversation(str(root), thread=thread_a, books_dir=str(books_dir))  # 018 WI-5b B-4e
+    )
     assert a_in_dump.wait(JOIN_TIMEOUT_S), _describe(a.get("error"))
-    tb, b = _start(lambda: conversations.save_project_conversation(str(root), thread=thread_b), after=b_done.set)
+    tb, b = _start(
+        lambda: conversations.save_project_conversation(str(root), thread=thread_b, books_dir=str(books_dir)),  # 018 WI-5b B-4e
+        after=b_done.set,
+    )
     ta.join(JOIN_TIMEOUT_S)
     tb.join(JOIN_TIMEOUT_S)
 

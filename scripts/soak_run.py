@@ -104,7 +104,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Iterator, List, Optional, Sequence, Tuple
+from typing import Dict, Iterator, List, Mapping, Optional, Sequence, Tuple
 
 try:  # POSIX only；本仓库的 lane 全在 macOS / Linux 上跑。
     import fcntl
@@ -1026,6 +1026,8 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument("--verdict", default=None, metavar="BATCH_ID", help="只读：判台账里这一批是否通过，打印一行 PASS / FAIL")
+    # 仅供单测：`--append` 闸门查这个仓库而不是 REPO_ROOT。准入见 ancestry_repo_refusal()。
+    p.add_argument("--ancestry-repo", type=Path, default=None, help=argparse.SUPPRESS)
     p.add_argument("--expected", type=int, default=EXPECTED_BASELINE_ITEMS, help=argparse.SUPPRESS)
     # 默认值故意是 None 而不是常量：deselected 该是多少，是 LANE_ARGS 这次调用形态的性质。
     # --parse-summary 模式下这份 summary 不是本脚本跑出来的，脚本无从知道对面用了什么 -m，
@@ -1055,6 +1057,123 @@ def synthetic_append_refusal(ledger: Path, allowed: bool) -> Optional[str]:
     if resolved == REPO_ROOT.resolve() or REPO_ROOT.resolve() in resolved.parents:
         return f"--allow-synthetic-append 只接受仓库之外的临时台账，这个在仓库里：{resolved}"
     return None
+
+
+#: 闸门的 git 调用里要剔掉的环境变量：commit 钩子里跑时外层会漏进它们，git 就会无视 cwd、
+#: 去查别的仓库（R1）。审计 20261007 #12（FX37-10）：只剔三个不够——`GIT_OBJECT_DIRECTORY` /
+#: `GIT_COMMON_DIR` / `GIT_CONFIG_*` 等同样能把 `rev-parse` / `merge-base` 引到别的对象库或配置。
+#: 这里是 `git rev-parse --local-env-vars` 的全集，外加它不列的 `GIT_NAMESPACE` /
+#: `GIT_INTERNAL_SUPER_PREFIX`；`GIT_CONFIG_KEY_<n>` / `GIT_CONFIG_VALUE_<n>` 按前缀另剔。
+_GATE_DROPPED_GIT_ENV: Tuple[str, ...] = (
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_CONFIG",
+    "GIT_CONFIG_COUNT",
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_DIR",
+    "GIT_GRAFT_FILE",
+    "GIT_IMPLICIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_INTERNAL_SUPER_PREFIX",
+    "GIT_NAMESPACE",
+    "GIT_NO_REPLACE_OBJECTS",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_PREFIX",
+    "GIT_REPLACE_REF_BASE",
+    "GIT_SHALLOW_FILE",
+    "GIT_WORK_TREE",
+)
+_GATE_DROPPED_GIT_ENV_PREFIXES: Tuple[str, ...] = ("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_")
+
+
+def _gate_git(args: Sequence[str], repo: Path, env: Dict[str, str]) -> "subprocess.CompletedProcess[str]":
+    """闸门专用的 git 调用：参数列表、无 shell、`cwd=repo`、不 check。超时在**调用期**读
+    `GIT_PRECHECK_TIMEOUT_S`（单测会把它调小）。`TimeoutExpired` / `OSError` 交给调用方。"""
+    return subprocess.run(  # noqa: S603
+        ["git", *args],
+        cwd=str(repo),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=GIT_PRECHECK_TIMEOUT_S,
+    )
+
+
+def append_gate_refusal(env: Mapping[str, str], repo: Path) -> Optional[Tuple[int, str]]:
+    """`--append` 的硬性闸门（018 第二段 WI-8）。返回 None ＝ 放行，否则 (退出码, 拒绝理由)。
+
+    律：落账 ⇒ 不在 CI 里 ∧ HEAD 是 `origin/master` 的祖先。依次判：
+    1. `GITHUB_ACTIONS` **存在**于 env（空串也算）→ 2。
+    2. `origin/master` 解析不成提交 → 3，提示 `git fetch origin master`。
+    3. `git merge-base --is-ancestor HEAD origin/master`：0 放行；1 → 2 并点名 HEAD 短 SHA；
+       其余退出码（≥128：unborn HEAD 等）、超时、`OSError`（路径不存在、找不到 git）→ 3。
+    任何一条都不抛——闸门失败不能开门，也不能让调用方以 traceback 收场。
+    """
+    if "GITHUB_ACTIONS" in env:
+        return (
+            EXIT_UNRECORDABLE,
+            "GITHUB_ACTIONS 已设置：CI 里不落 soak 台账——CI 跑的是未合并的合并提交，"
+            "且 runner 不是批次声明里的那台机器。",
+        )
+    git_env = {
+        k: v
+        for k, v in env.items()
+        if k not in _GATE_DROPPED_GIT_ENV and not k.startswith(_GATE_DROPPED_GIT_ENV_PREFIXES)
+    }
+    timeout = GIT_PRECHECK_TIMEOUT_S
+    try:
+        resolved = _gate_git(["rev-parse", "--verify", "--quiet", "origin/master^{commit}"], repo, git_env)
+    except subprocess.TimeoutExpired:
+        return (EXIT_ENVIRONMENT, f"git rev-parse origin/master 超时（>{timeout:g}s，{repo}），无法确认 HEAD 已合入，拒绝落账")
+    except OSError as exc:
+        return (EXIT_ENVIRONMENT, f"无法在 {repo} 里执行 git：{exc}；无法确认 HEAD 已合入，拒绝落账")
+    if resolved.returncode != 0:
+        return (
+            EXIT_ENVIRONMENT,
+            f"{repo} 里解析不出 origin/master（没有 remote 或从没 fetch 过）：先 `git fetch origin master` 再落账",
+        )
+    try:
+        ancestry = _gate_git(["merge-base", "--is-ancestor", "HEAD", "origin/master"], repo, git_env)
+    except subprocess.TimeoutExpired:
+        return (EXIT_ENVIRONMENT, f"git merge-base 超时（>{timeout:g}s，{repo}），无法确认 HEAD 已合入，拒绝落账")
+    except OSError as exc:
+        return (EXIT_ENVIRONMENT, f"无法在 {repo} 里执行 git merge-base：{exc}")
+    if ancestry.returncode == 0:
+        return None
+    if ancestry.returncode != 1:
+        detail = (ancestry.stderr or "").strip()
+        return (
+            EXIT_ENVIRONMENT,
+            f"git merge-base --is-ancestor HEAD origin/master 失败（退出码 {ancestry.returncode}，{repo}）：{detail}",
+        )
+    try:
+        short = _gate_git(["rev-parse", "--short", "HEAD"], repo, git_env)
+        head = short.stdout.strip() if short.returncode == 0 and short.stdout.strip() else "HEAD"
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        LOGGER.debug("取 HEAD 短 SHA 失败：%r", exc)
+        head = "HEAD"
+    return (
+        EXIT_UNRECORDABLE,
+        f"HEAD {head} 不是 origin/master 的祖先：未合并的提交不许写 soak 行——"
+        "合入 master 后在 origin/master 上的 detached worktree 里再跑。",
+    )
+
+
+def ancestry_repo_refusal(args: argparse.Namespace) -> Optional[str]:
+    """隐藏测试开关 `--ancestry-repo` 的准入：只在 `--parse-summary` ＋ `--append` ＋
+    `--allow-synthetic-append` ＋ 仓库外临时台账时生效，其余一律拒绝（给真跑或 canonical
+    落账指一个「友好」仓库，等于把闸门绕开）。"""
+    honoured = (
+        args.parse_summary is not None
+        and args.append
+        and synthetic_append_refusal(args.ledger, args.allow_synthetic_append) is None
+    )
+    if honoured:
+        return None
+    return (
+        "--ancestry-repo 只在 --parse-summary ＋ --append ＋ --allow-synthetic-append ＋ 仓库外临时台账时有效"
+        "（仅供单测）；其余形态一律拒绝"
+    )
 
 
 def effective_log_dir(args: argparse.Namespace, real_append: bool) -> Path:
@@ -1112,12 +1231,28 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return EXIT_VERDICT_FAIL
         return run_verdict(args.verdict, ledger)
 
+    # ---- 隐藏测试开关的准入：先于合成拒绝（否则 canonical / 仓库内台账会以 3 而不是 2 收场） ----
+    if args.ancestry_repo is not None:
+        flag_refusal = ancestry_repo_refusal(args)
+        if flag_refusal is not None:
+            print(f"[soak] 拒绝：{flag_refusal}")
+            return EXIT_UNRECORDABLE
+
     # ---- 最先做的判定：合成 summary 不许落进 canonical 台账（见 synthetic_append_refusal） ----
     if args.parse_summary is not None and args.append:
         refusal = synthetic_append_refusal(ledger, args.allow_synthetic_append)
         if refusal is not None:
             print(f"[soak] 拒绝：{refusal}")
             return EXIT_ENVIRONMENT
+
+    # ---- `--append` 闸门：CI 里不落账，HEAD 不在 origin/master 上不落账（与 --no-precheck 无关） ----
+    if args.append:
+        gate_repo = args.ancestry_repo if args.ancestry_repo is not None else REPO_ROOT
+        gate = append_gate_refusal(os.environ, gate_repo)
+        if gate is not None:
+            gate_code, gate_msg = gate
+            print(f"[soak] 拒绝落账（退出码 {gate_code}）：{gate_msg}")
+            return gate_code
 
     if not ledger.is_file():
         print(f"台账不存在：{ledger}")

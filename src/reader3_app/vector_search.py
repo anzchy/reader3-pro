@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -462,3 +463,37 @@ class BookVectorIndex:
                 )
             )
         return out
+
+
+_retire_logger = logging.getLogger("reader3.vector_search")
+
+
+def retire_chroma_system(chroma_realpath: str) -> None:
+    """Drop chromadb's process-wide cached system for one ``chroma_db`` directory (018 WI-5a).
+
+    chromadb keeps one ``System`` per ``persist_directory`` in the private class
+    dict ``SharedSystemClient._identifier_to_system``. After a book is deleted and
+    re-imported under the same name, a stale entry would keep serving the deleted
+    directory's handles. Only the entry for this path is popped and stopped; when the
+    private registry is gone (a chromadb upgrade), the whole cache is cleared instead.
+    chromadb not being installed means there is nothing cached to retire.
+    """
+    try:
+        from chromadb.api.shared_system_client import SharedSystemClient
+    except ImportError:
+        return
+    registry = getattr(SharedSystemClient, "_identifier_to_system", None)
+    if not isinstance(registry, dict):
+        SharedSystemClient.clear_system_cache()
+        return
+    target = os.path.realpath(chroma_realpath)
+    for key in list(registry):
+        if key != target and os.path.realpath(str(key)) != target:
+            continue
+        system = registry.pop(key, None)
+        if system is None:
+            continue
+        try:
+            system.stop()
+        except Exception as exc:  # noqa: BLE001 - the entry is already dropped; a failed stop only leaks handles
+            _retire_logger.warning("chroma system for %s did not stop cleanly: %s", target, exc)

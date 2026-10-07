@@ -2,15 +2,15 @@
 
 | 字段 | 值 |
 |---|---|
-| Status | Proposed——维护者 2026-10-02 裁定（018 第二段计划评审 H1）；在 `018-library-routes` 第二段（WI-4 – WI-8）合入的同一 PR 里转 Accepted。**只**取代 [ADR-0015](0015-per-book-write-coordination.md) Decision Outcome 第 3 条里「对话只在 per-book 存储模式下取书锁……它不取书锁是刻意的，不是遗漏」这一处例外；ADR-0015 其余条款（含「不保证」里 `both` 模式两次发布之间的一致性）继续有效 |
+| Status | Accepted（2026-10-07，随 `018-library-routes` 第二段 WI-4 – WI-8 的 PR #37 转入，018 §4 出口闸 7；实现在 WI-5b `dc7dd27`）。维护者 2026-10-02 裁定（018 第二段计划评审 H1）。**只**取代 [ADR-0015](0015-per-book-write-coordination.md) Decision Outcome 第 3 条里「对话只在 per-book 存储模式下取书锁……它不取书锁是刻意的，不是遗漏」这一处例外；ADR-0015 其余条款（含「不保证」里 `both` 模式两次发布之间的一致性）继续有效。**2026-10-07 修订**（PR #37 全量审计 `audit-20261007-143200` #1，FX37-3）：单条对话的删除路径也持该书的共享书锁 ＋ `conversations` 资源锁——原「明确不做」里「删除单条对话的路径不加锁」一句收回。理由：删书的提交改名与终结器把墓碑里的对话发布进项目级目录（Q-B）之间，一次不持锁的项目级删除会先删掉项目级那份、再被终结器重新发布出来，被删的对话复活 |
 | Decision date | 2026-10-02 |
 | Recorded date | 2026-10-02 |
 | Record type | Prospective |
 | Original rationale known | Yes |
 | Confidence | High——问题由 Codex 计划评审指出，并在代码上逐条核对（见 Evidence）；机制复用已有的 `writer_scope`，没有新原语 |
-| Current compliance | None——见 Migration Strategy |
+| Current compliance | Full——`save_project_conversation` 在 `writer_scope(..., holder="conversations")` ＋ 资源锁内写；`save_conversation_multi` 的 `both` 分支一次持锁写完两份（018 WI-5b `dc7dd27`）；`delete_conversation` / `delete_project_conversation` / `delete_conversation_multi` 在 `acquire(..., SHARED, holder="conversations")` ＋ 资源锁内删（2026-10-07 修订，FX37-3） |
 | Evidence | 以符号定位（行号以 `fa9a4fe` 核对，会漂）：`ai.conversations.save_project_conversation`（`ai/conversations.py:289`，不取任何锁，`:296` 直接 `os.makedirs` 项目级 `{root}/{book_uuid}/`）；`ai.conversations.save_conversation_multi`（`:405`，`both` 模式先调 `save_conversation`——它在 `writer_scope` 内写 per-book 那份并在返回时放锁——再在锁外调 `save_project_conversation`，`:435-438`）；`book_lock.writer_scope`（`book_lock.py:538`，锁内复核书目录存在 → `BookGone`、复核 `book_uuid` → `BookChanged`）；`web.server._project_conversations_root`（`server.py:1009`，根 = `dirname(BOOKS_DIR)` 下的 `conversation_project_root_dir`，默认 `conversations`，见 `ai/config.py:42`）；ADR-0015 第 3 条（例外原文）、第 7 条（同一调用栈重复取书锁 → 抛错）、第 8 条（删书步骤）；[018 第二段计划](../plans/20261002-018-second-slice-plan.md) §6 Q-B（删书时把 per-book 对话搬进项目级目录） |
-| Confirmation | none（人工）——目标测试由 018 第二段 WI-5 落地：项目级写手在删书持独占锁时 409 / 删书后 404、`delete_conversations=true` 后迟到的项目级写入不重建 `{root}/{book_uuid}/`、`both` 模式两份写入之间删书拿不到独占锁。测试路径在合入转 Accepted 时补进本格 |
+| Confirmation | `tests/unit/test_project_conversation_book_lock.py`（018 WI-5b，矩阵 B-1 – B-4）：`test_b1_project_save_runs_under_the_book_lock`（项目级写入只在持 SH 书锁 ＋ 资源锁时发生）、`test_b2_project_save_outcomes_gone_changed_busy`（书不在 → `BookGone`、换代 → `BookChanged`、EX 被占 → `BookLockBusy`）、`test_b3_both_mode_is_one_acquisition_and_project_write_is_locked`（`both` 模式只取一次书锁）、`test_b4_delete_vs_project_save_ordering`（删书后迟到的项目级写入 → `BookGone` 且不重建 `{root}/{book_uuid}/`；`both` 写入期间删书持 EX → 两份都不写）；2026-10-07 修订补 B-5 – B-7 与路由层 C-15：`test_b5_conversation_delete_waits_for_an_in_flight_book_delete`（提交改名与终结器发布之间到来的单条删除等删书做完，对话不复活）、`test_b6_orphan_conversation_stays_deletable`（书目录已不在的孤儿对话仍可删，不重建书目录）、`test_b7_conversation_delete_runs_under_the_book_lock`（两次 `os.remove` 时 EX 探针都是 busy("conversations")；EX "delete" 被占 → `BookLockBusy`，什么都不删）、`tests/contract/test_library_delete_route.py::test_c15_conversation_delete_during_a_book_delete_is_409_and_removes_nothing`（`DELETE /api/ai/conversations/...` 遇删书持锁 → 409 ＋ `Retry-After`） |
 
 ## Context and Problem Statement
 
@@ -40,7 +40,8 @@ ADR-0015 第 3 条让 project-root 模式的对话**不**取书锁，理由是�
 - `both` 模式：取**一次**书锁 ＋ 资源锁，在锁内先写 per-book、再写项目级，然后放锁。不在锁外写任何一份。
 - 因此书目录不在（已删）→ `BookGone`（404），书换代（同名重导入）→ `BookChanged`（409），删书持独占锁期间 → 2 秒预算后 409。项目级写手**永远不**建书目录；它仍可以建 `{root}/{book_uuid}/`，但只在复核通过之后。
 - 删书带 `delete_conversations=true` 之后，该书的任何迟到项目级写入都拿到 404，不会重建 `{root}/{book_uuid}/`。
-- **明确不做**：`both` 模式两份之间的崩溃一致性（锁内写完第一份后进程被杀）仍按 ADR-0015「不保证」处理；项目级的**读**路径与删除单条对话的路径不加锁（与 ADR-0015「读者不取锁」一致）。
+- **单条对话的删除**（2026-10-07 修订，FX37-3）：`delete_conversation`、`delete_project_conversation`、`delete_conversation_multi` 都在 `acquire(books_dir, book_folder, mode=SHARED, holder="conversations")` 之内、再取 `resource_lock(..., category="conversations")` 后删；`delete_conversation_multi` 两份一次持锁删完（ADR-0015 第 7 条）。用的是 `acquire` 而**不是** `writer_scope`：不复核书目录存在、不复核 `book_uuid`——删除不会重建任何东西，孤儿对话（删书后保留在项目级目录里的那些）必须仍然删得掉。因此删书持独占锁期间（含墓碑清扫与 `process_epub` 前的清扫，它们同样持该目录名的 EX）单条删除等待，2 秒预算后 `BookLockBusy` → 409 ＋ `Retry-After`；`delete_project_conversation` 为此增必填的 `books_dir`、`book_folder`。
+- **明确不做**：`both` 模式两份之间的崩溃一致性（锁内写完第一份后进程被杀）仍按 ADR-0015「不保证」处理；项目级的**读**路径不加锁（与 ADR-0015「读者不取锁」一致）。~~删除单条对话的路径不加锁~~（2026-10-07 收回，见上一条）。
 
 ## Consequences
 
@@ -57,7 +58,7 @@ ADR-0015 第 3 条让 project-root 模式的对话**不**取书锁，理由是�
 
 ### Neutral
 
-- 孤儿对话（删书后保留的那些）只能按 `book_uuid` 在磁盘上找到；对它们的任何写入都会因书目录不在而 404，孤儿事实上只读
+- 孤儿对话（删书后保留的那些）只能按 `book_uuid` 在磁盘上找到；对它们的任何写入都会因书目录不在而 404。删除不复核书目录（2026-10-07 修订），所以库函数层面孤儿仍可删；`DELETE /api/ai/conversations/{book_uuid}/...` 先经 `book_uuid` 解析书目录，解析不到即 404——这是修订前就有的路由行为，本修订不改
 
 ## Migration Strategy
 

@@ -141,13 +141,18 @@ async def api_ai_delete_conversation(book_uuid: str, conversation_id: str):
         raise HTTPException(status_code=404, detail="Book not found")
     try:
         settings = _server.load_ai_settings()
-        delete_disk_conversation_multi(
+        # ADR-0018 修订（2026-10-07，FX37-3）：删除也等书锁，放进线程池，不占事件循环。
+        await run_in_threadpool(
+            delete_disk_conversation_multi,
             _server.BOOKS_DIR,
             book_folder=book_folder,
             book_uuid=str(book_uuid),
             conversation_id=conversation_id,
             project_conversations_root=_server._project_conversations_root(settings),
         )
+    except book_lock.BookLockError:
+        # 必须在下面的宽 except 之前：Busy 交给 book_lock_http 的全局处理器 → 409 ＋ Retry-After。
+        raise
     except Exception as e:  # noqa: BLE001 - 第 2 档：HTTP 边界，转译成 400 且 detail 带上原因
         raise HTTPException(status_code=400, detail=str(e))
     return None

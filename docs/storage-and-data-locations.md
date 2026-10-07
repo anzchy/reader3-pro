@@ -154,6 +154,29 @@ HTTP responses when a write meets the lock (one handler for every route, `src/re
 
 The CLI (`uv run reader3 ...`) reports the same refusals as a one-line error with a non-zero exit code.
 
+## Book delete (018 WI-5, `DELETE /api/library/{book_id}`)
+
+`DELETE /api/library/{book_id}?delete_conversations=false` removes one book. The route is in `src/reader3_app/web/routers/library_books.py`; the protocol is in `src/reader3_app/library_delete.py`.
+
+- **`delete_conversations`:** absent means `false`. Only `true` or `false` are accepted, in any letter case. Anything else, including an empty value, `1` or `yes`, is a 400.
+  - `false` (default): the book's `ai_conversations/*.json` are moved into the **configured** project-root store `{conversation_project_root_dir}/{book_uuid}/`, whatever `conversation_disk_storage` is set to. On a name collision the newer `last_updated` wins. A missing or non-string `last_updated` counts as the oldest value, and a tie keeps the copy already there.
+  - `true`: the per-book conversations go with the book, and `{root}/{book_uuid}/` is removed too.
+- **Responses:**
+
+  | Status | When |
+  |---|---|
+  | 204, empty body | Deleted. This includes the case where a step after the commit point failed: that failure is logged and the next sweep finishes the job. |
+  | 400 | `book_id` is not a `*_data` folder name (tombstone names included), or the query value is bad. |
+  | 404 `{"detail": "Book not found"}` | The book is not in the library, or it vanished before the lock was taken. |
+  | 409 + `Retry-After` | The book lock is held (`book busy: <category>`, same body as the lock table above). The delete takes the lock exclusive and never waits. |
+  | 409, no `Retry-After` | Refused, book untouched (`false` mode with per-book conversations only): the conversation root setting is absolute or escapes the project (`invalid conversation root…`), `ai_meta.json` has no valid `book_uuid` (`invalid book_uuid…`), or a conversation file cannot be placed (`unreadable conversation file: <basename>`). Retrying cannot help; fix the file or use `delete_conversations=true`. |
+
+- **Files under `books/` while a delete runs** (both are dot-names, so the library listing never shows them):
+  - Intent: `books/.{book_id}.deleted-{pid}-{token}.intent.json`. It records the resolved conversation root, the collections file, the `book_uuid` and the mode, and it is fsynced before anything else changes.
+  - Tombstone: `books/.{book_id}.deleted-{pid}-{token}/`. This is the commit point: the book folder is renamed here, and from then on it is gone from the library.
+  - The finalizer then removes the book from every collection, drops caches (book, search index, library stats, uuid mapping, cached chromadb system), moves or removes the conversations, deletes the tombstone and finally the intent.
+- **Sweeps:** leftover intents and tombstones are cleaned up by one sweep function. It runs at server startup, at the start of every delete, and before every `uv run reader3 <file.epub>` import. A tombstone with a readable intent is finalized. An intent with no tombstone (a crash before the commit) is removed, and the book is intact. A tombstone with no readable intent, or whose conversations cannot all be placed, is **kept as it is** and logged, so nothing is lost. An import refuses to publish over a same-name tombstone that the sweep could not clear.
+
 ## Reader rendering sources
 
 - Frontend reader renders content from `book.epub` via epub.js (iframe).

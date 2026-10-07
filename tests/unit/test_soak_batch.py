@@ -18,6 +18,7 @@ import dataclasses
 import hashlib
 import importlib.util
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -1216,9 +1217,44 @@ def test_p4_filter_law(records, inserted, data) -> None:  # type: ignore[no-unty
 _GIT_ID = ["-c", "user.email=soak@test.invalid", "-c", "user.name=soak-test", "-c", "commit.gpgsign=false"]
 
 
+def _child_env() -> Dict[str, str]:
+    """`os.environ` 的副本，去掉 `GITHUB_ACTIONS` 与一切 `GIT_*`（同 `test_soak_run._clean_env`）。
+
+    WI-8：`--append` 闸门在 CI（`GITHUB_ACTIONS` 存在）里一律拒绝落账，子进程不能继承外层的值；
+    `GIT_*` 则是 commit 钩子里会漏进来的 `GIT_DIR` / `GIT_INDEX_FILE`，会把夹具的 git 指到别的仓库。
+    """
+    return {k: v for k, v in os.environ.items() if k != "GITHUB_ACTIONS" and not k.startswith("GIT_")}
+
+
 def _g(repo: Path, *args: str) -> None:
-    proc = _run(["git", *_GIT_ID, *args], cwd=str(repo))
+    proc = _run(["git", *_GIT_ID, *args], cwd=str(repo), env=_child_env())
     assert proc.returncode == 0, f"git {args} 失败：{proc.stderr}"
+
+
+def _publish(repo: Path) -> None:
+    """把 HEAD 推到 `origin` 的 master 再 fetch：WI-8 的 `--append` 闸门要求 HEAD 是 origin/master 的祖先。"""
+    _g(repo, "push", "-q", "origin", "HEAD:refs/heads/master")
+    _g(repo, "fetch", "-q", "origin")
+
+
+def _add_origin(repo: Path, bare: Path) -> None:
+    """给 `repo` 配一个本地裸仓库 `origin` 并发布 HEAD，使 origin/master == HEAD（WI-8 闸门放行）。
+    不依赖 init.defaultBranch：推送目标显式写成 refs/heads/master。"""
+    _g(bare.parent, "init", "-q", "--bare", str(bare))
+    _g(repo, "remote", "add", "origin", str(bare))
+    _publish(repo)
+
+
+def _merged_repo(tmp_path: Path) -> Path:
+    """一个 origin/master == HEAD 的临时仓库，交给隐藏开关 `--ancestry-repo` 让 WI-8 闸门放行。"""
+    repo = (tmp_path / "ancestry-repo").resolve()
+    repo.mkdir()
+    _g(repo, "init", "-q")
+    (repo / "README.md").write_text("# ancestry\n", encoding="utf-8")
+    _g(repo, "add", "-A")
+    _g(repo, "commit", "-q", "-m", "init")
+    _add_origin(repo, (tmp_path / "ancestry-origin.git").resolve())
+    return repo
 
 
 @pytest.fixture
@@ -1465,7 +1501,8 @@ class _ScriptRepo:
         ]
 
     def run(self, argv: List[str]) -> "_Proc":
-        return _Proc(_run(argv, cwd=str(self.repo)))
+        # WI-8：去掉 GITHUB_ACTIONS / GIT_*，CI 上跑本文件时 `--append` 闸门才不会一律拒绝。
+        return _Proc(_run(argv, cwd=str(self.repo), env=_child_env()))
 
     def rows(self) -> List[str]:
         return first_table(self.ledger.read_text(encoding="utf-8"))[1]
@@ -1482,6 +1519,8 @@ def tmp_script_repo(tmp_path: Path) -> _ScriptRepo:
     (repo / ".gitignore").write_text("__pycache__/\n", encoding="utf-8")
     _g(repo, "add", "-A")
     _g(repo, "commit", "-q", "-m", "init")
+    # WI-8：`--append` 闸门以脚本所在仓库（这里即 repo）为准，要求 HEAD 是 origin/master 的祖先。
+    _add_origin(repo, (tmp_path / "origin.git").resolve())
     outside = (tmp_path / "outside").resolve()
     outside.mkdir()
     ledger = _synthetic_ledger(outside)
@@ -1641,8 +1680,12 @@ def test_a6_precheck_that_cannot_run_is_environment_error(tmp_path: Path) -> Non
         "--allow-synthetic-append",
         "--ledger",
         str(ledger),
+        # WI-8：脚本所在目录不是仓库，闸门会先以「解析不出 origin/master」拒绝；指一个已合入的仓库
+        # 让闸门放行，前置检查（仍对 not_repo 跑）才是这里要测的那一步。
+        "--ancestry-repo",
+        str(_merged_repo(tmp_path)),
     ]
-    proc = _Proc(_run(argv, cwd=str(not_repo)))
+    proc = _Proc(_run(argv, cwd=str(not_repo), env=_child_env()))
     assert proc.returncode == soak.EXIT_ENVIRONMENT, _combined(proc)
     assert "前置检查" in proc.stdout, proc.stdout
     assert "Traceback" not in _combined(proc)
@@ -1750,6 +1793,7 @@ def test_a7_log_dir_on_suite_does_not_hide_stray_conftest(tmp_script_repo: _Scri
     if suite_tracked:
         _write(r.repo / "tests" / "e2e" / "test_harness_smoke.py", "def test_ok():\n    assert True\n")
         _commit_all(r.repo)
+        _publish(r.repo)  # WI-8：新提交也得在 origin/master 上，闸门才放行
     _write(r.repo / "tests" / "e2e" / "conftest.py", "import os\n")
     before = r.ledger.read_bytes()
     proc = r.run(r.base() + ["--log-dir", "tests/e2e"])
@@ -1763,6 +1807,7 @@ def test_a7b_default_log_dir_with_earlier_logs_still_appends(tmp_script_repo: _S
     rel = ".claude/tdd-guardian/soak-logs"
     _write(r.repo / rel / "tracked-earlier.log", "run 0\n")
     _commit_all(r.repo)
+    _publish(r.repo)  # WI-8：新提交也得在 origin/master 上，闸门才放行
     _write(r.repo / rel / "untracked-earlier.log", "run 1\n")
     proc = r.run(r.base() + ["--log-dir", rel])
     assert proc.returncode == 0, _combined(proc)
@@ -1775,6 +1820,7 @@ def test_a7c_modified_tracked_log_blocks_append(tmp_script_repo: _ScriptRepo) ->
     rel = ".claude/tdd-guardian/soak-logs"
     _write(r.repo / rel / "tracked-earlier.log", "run 0\n")
     _commit_all(r.repo)
+    _publish(r.repo)  # WI-8：新提交也得在 origin/master 上，闸门才放行
     _append(r.repo / rel / "tracked-earlier.log", "rewritten\n")
     before = r.ledger.read_bytes()
     proc = r.run(r.base() + ["--log-dir", rel])
@@ -1846,6 +1892,32 @@ def test_t1_git_status_timeout_raises(tmp_path: Path, monkeypatch: pytest.Monkey
     assert time.monotonic() - t0 < 3.0
 
 
+def _sleepy_precheck_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """只让前置检查的 git（`status` / `ls-files`）挂死；WI-8 闸门的 `rev-parse` / `merge-base`
+    由 shim 自己作答（放行），其余子命令转给真 git。审计 20261007 #24（FX37-10）：以前闸门的
+    两条 git 也走真 git，却同样受 0.3 s 的 `GIT_PRECHECK_TIMEOUT_S` 约束，慢机器上闸门先超时，
+    这条测的「前置检查超时」就落空了。"""
+    real_git = shutil.which("git")
+    assert real_git is not None, "PATH 上找不到 git"
+    shim = tmp_path / "sleepy-precheck-shim"
+    shim.mkdir()
+    git = shim / "git"
+    git.write_text(
+        "#!/bin/sh\n"
+        'for a in "$@"; do\n'
+        '  case "$a" in\n'
+        "    status|ls-files) exec sleep 5 ;;\n"
+        "    rev-parse) echo 0123456789abcdef0123456789abcdef01234567; exit 0 ;;\n"
+        "    merge-base) exit 0 ;;\n"
+        "  esac\n"
+        "done\n"
+        f'exec "{real_git}" "$@"\n',
+        encoding="utf-8",
+    )
+    git.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{shim}{os.pathsep}{os.environ.get('PATH', '')}")
+
+
 def test_t2_main_maps_git_timeout_to_environment_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -1858,10 +1930,14 @@ def test_t2_main_maps_git_timeout_to_environment_error(
     green = outside / "green.txt"
     green.write_text(f"{mod.EXPECTED_BASELINE_ITEMS} passed in 12.5s\n", encoding="utf-8")
     before = ledger.read_bytes()
-    _sleepy_git(tmp_path, monkeypatch)
+    # WI-8：闸门在 CI 里拒绝、且要 HEAD 在 origin/master 上——去掉 GITHUB_ACTIONS，并用隐藏开关
+    # `--ancestry-repo` 指一个已合入的临时仓库（夹具要在装 shim 之前建好）。
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    ancestry = _merged_repo(tmp_path)
+    _sleepy_precheck_git(tmp_path, monkeypatch)
     rc = mod.main(
         ["--parse-summary", str(green), "--append", "--allow-synthetic-append", "--ledger", str(ledger),
-         "--log-dir", str(tmp_path / "logs")]
+         "--log-dir", str(tmp_path / "logs"), "--ancestry-repo", str(ancestry)]
     )
     out = capsys.readouterr().out
     assert rc == mod.EXIT_ENVIRONMENT, out

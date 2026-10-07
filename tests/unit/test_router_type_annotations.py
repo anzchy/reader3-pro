@@ -45,11 +45,13 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ROUTERS_DIR = REPO_ROOT / "src" / "reader3_app" / "web" / "routers"
 
-# 写死这十个名字是故意的：发现逻辑自己坏掉时（走错目录、AST 形状变了），
+# 写死这十二个名字是故意的：发现逻辑自己坏掉时（走错目录、AST 形状变了），
 # 一个「零个文件全部通过」的空闸和一个真通过的闸在输出上完全同形。
 EXPECTED_ROUTER_MODULES = {
     "health.py",
     "library.py",
+    "library_books.py",
+    "library_export.py",
     "notes.py",
     "reader.py",
     "search.py",
