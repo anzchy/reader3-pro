@@ -27,6 +27,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from ... import book_store, library_delete
 from ...search_service import list_book_ids
+from ..urls import cover_url
 
 router: APIRouter = APIRouter()
 
@@ -52,7 +53,7 @@ def library_entry(
         "book_id": book_id,
         "title": meta.title,
         "authors": list(meta.authors),
-        "cover_url": f"/read/{book_id}/images/{cover_image}" if cover_image else None,
+        "cover_url": cover_url(book_id, cover_image),
         "book_uuid": book_uuid_of(book_id),
     }
 

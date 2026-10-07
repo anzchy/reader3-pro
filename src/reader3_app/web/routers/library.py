@@ -28,6 +28,7 @@ from pydantic import BaseModel, Field
 
 from ... import book_store, collections_service
 from ...search_service import list_book_ids
+from ..urls import cover_url as build_cover_url
 
 router: APIRouter = APIRouter()
 
@@ -45,7 +46,7 @@ async def library_view(request: Request):
                 book = _server.load_book_cached(item)
                 if book:
                     cover_image = book_store.pick_cover_image(item, _server.BOOKS_DIR)
-                    cover_url = f"/read/{item}/images/{cover_image}" if cover_image else None
+                    cover_url = build_cover_url(item, cover_image)
                     books.append({
                         "id": item,
                         "title": book.metadata.title,

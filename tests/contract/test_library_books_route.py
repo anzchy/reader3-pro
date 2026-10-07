@@ -557,3 +557,56 @@ def test_cover_url_matches_library_page(world: World) -> None:
                 assert rendered[book_id] == cover_url, (book_id, rendered[book_id], cover_url)
 
     check()
+
+
+
+
+# --------------------------------------------------------------------------
+# FX37-7 (audit #7): cover_url percent-encodes both path segments
+# --------------------------------------------------------------------------
+
+
+def _cover_world(world: World) -> Dict[str, bytes]:
+    """``A#B_data`` (a full copy of the sample book: cover.jpg) and ``img_data`` whose only
+    image is ``c#1 封面.jpg``. Returns the expected cover URL -> image bytes."""
+    hashed = world.books_dir / "A#B_data"
+    shutil.copytree(world.book_dir, hashed)
+    odd = _write_book(world.books_dir, "img_data", title="Odd", authors=["O"])
+    (odd / "images").mkdir()
+    (odd / "images" / "c#1 封面.jpg").write_bytes(b"odd-cover-bytes")
+    _clear_caches()
+    return {
+        "/read/A%23B_data/images/cover.jpg": (hashed / "images" / "cover.jpg").read_bytes(),
+        "/read/img_data/images/c%231%20%E5%B0%81%E9%9D%A2.jpg": b"odd-cover-bytes",
+    }
+
+
+def test_fx37_7_cover_url_is_percent_encoded_and_fetchable(world: World) -> None:
+    """FX37-7 (#7): a ``#`` / space / non-ASCII in the folder or image name is percent-encoded,
+    the URL fetches the image (200, same bytes), and plain names are unchanged."""
+    expected = _cover_world(world)
+    api = {e["book_id"]: e["cover_url"] for e in _get_books(world.client)}
+    assert api["A#B_data"] == "/read/A%23B_data/images/cover.jpg"
+    assert api["img_data"] == "/read/img_data/images/c%231%20%E5%B0%81%E9%9D%A2.jpg"
+    assert api[BOOK_ID] == f"/read/{BOOK_ID}/images/cover.jpg"
+    for url, body in expected.items():
+        response = world.client.get(url)
+        assert response.status_code == 200, (url, response.status_code)
+        assert response.content == body
+
+
+def test_fx37_7_library_page_and_reader_page_emit_the_same_encoded_url(world: World) -> None:
+    """FX37-7 (#7, Q-C parity): GET / renders exactly the API's URL; the reader page for the
+    ``#`` book carries the same URL."""
+    _cover_world(world)
+    api = {e["book_id"]: e["cover_url"] for e in _get_books(world.client)}
+    page = world.client.get("/")
+    assert page.status_code == 200
+    rendered = _page_covers(page.text)
+    for book_id in ("A#B_data", "img_data", BOOK_ID):
+        assert rendered[book_id] == api[book_id], book_id
+
+    reader = world.client.get("/read/A%23B_data/0")
+    assert reader.status_code == 200, reader.text[:300]
+    assert 'src="/read/A%23B_data/images/cover.jpg"' in reader.text
+    assert "/read/A#B_data/images/" not in reader.text
