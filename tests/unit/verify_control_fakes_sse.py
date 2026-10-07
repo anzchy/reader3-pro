@@ -158,7 +158,12 @@ class H(BaseHTTPRequestHandler):
                 rec["t_first_chunk"] = time.monotonic()
                 flush_reqs()
 
-    def end(self):
+    def end(self, rec):
+        # FX37-12: publish t_end BEFORE the terminator. Once the client sees EOF it may
+        # read requests.jsonl at once; a t_end still None there was CI run 37610056856.
+        with LOCK:
+            rec["t_end"] = time.monotonic()
+            flush_reqs()
         self.wfile.write(b"0\r\n\r\n")
         self.wfile.flush()
 
@@ -199,7 +204,8 @@ class H(BaseHTTPRequestHandler):
             pass
         finally:
             with LOCK:
-                rec["t_end"] = time.monotonic()
+                if rec["t_end"] is None:  # end() already set it on a clean finish
+                    rec["t_end"] = time.monotonic()
                 INFLIGHT.discard(rec["index"])
                 flush_reqs(); flush_summary()
 
@@ -257,7 +263,7 @@ class H(BaseHTTPRequestHandler):
             while True:
                 self.raw(b": ka\n\n")
                 time.sleep(CFG["trickle_interval_s"])
-        self.end()
+        self.end(rec)
 
 
 srv = ThreadingHTTPServer.__new__(ThreadingHTTPServer)
