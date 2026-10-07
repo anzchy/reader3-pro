@@ -386,18 +386,41 @@ def save_project_conversation(
     with _conversation_writer(books_dir, thread) as book_folder:
         _write_project(project_conversations_root, book_folder, thread)
 
+@contextlib.contextmanager
+def _conversation_deleter(books_dir: str, book_folder: str) -> Iterator[str]:
+    """SH ``conversations`` on ``book_folder`` plus the conversations resource lock, for a delete.
+
+    ADR-0018 (amended 2026-10-07, audit 20261007 #1): a delete must not interleave with
+    a book delete's EX section -- between the commit rename and the finalizer's publish
+    into the project root it would remove the project copy and the finalizer would
+    republish it. Plain ``acquire``, *not* ``writer_scope``: no existence or identity
+    recheck, so an orphan (book folder gone, conversations kept) stays deletable, and a
+    delete never creates anything but the lock files under ``books/.locks``.
+    """
+    folder = _safe_folder_name(book_folder)
+    with book_lock.acquire(books_dir, folder, mode=book_lock.SHARED, holder="conversations"), book_lock.resource_lock(
+        books_dir, folder, category="conversations"
+    ):
+        yield folder
+
+
+def _remove_if_present(path: str) -> None:
+    try:
+        os.remove(path)
+    except FileNotFoundError:
+        return
+
+
 def delete_conversation(
     books_dir: str,
     *,
     book_folder: str,
     conversation_id: str,
 ) -> None:
-    book_folder = _safe_folder_name(book_folder)
+    """Remove one per-book conversation under the book lock (ADR-0018 amendment 2026-10-07)."""
     path = _conversation_path(books_dir, book_folder, conversation_id)
-    try:
-        os.remove(path)
-    except FileNotFoundError:
-        return
+    with _conversation_deleter(books_dir, book_folder):
+        _remove_if_present(path)
 
 
 def delete_project_conversation(
@@ -405,12 +428,13 @@ def delete_project_conversation(
     *,
     book_uuid: str,
     conversation_id: str,
+    books_dir: str,
+    book_folder: str,
 ) -> None:
+    """Remove one project-root conversation under ``book_folder``'s lock (ADR-0018 amendment 2026-10-07)."""
     path = _project_conversation_path(project_conversations_root, book_uuid, conversation_id)
-    try:
-        os.remove(path)
-    except FileNotFoundError:
-        return
+    with _conversation_deleter(books_dir, book_folder):
+        _remove_if_present(path)
 
 
 def _dedupe_conversation_list(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -534,6 +558,14 @@ def delete_conversation_multi(
     conversation_id: str,
     project_conversations_root: Optional[str] = None,
 ) -> None:
-    delete_conversation(books_dir, book_folder=book_folder, conversation_id=conversation_id)
-    if project_conversations_root:
-        delete_project_conversation(project_conversations_root, book_uuid=book_uuid, conversation_id=conversation_id)
+    """Remove both copies in one book-lock acquisition (ADR-0015 rule 7, ADR-0018 amendment 2026-10-07)."""
+    per_book = _conversation_path(books_dir, book_folder, conversation_id)
+    project = (
+        _project_conversation_path(project_conversations_root, book_uuid, conversation_id)
+        if project_conversations_root
+        else None
+    )
+    with _conversation_deleter(books_dir, book_folder):
+        _remove_if_present(per_book)
+        if project is not None:
+            _remove_if_present(project)

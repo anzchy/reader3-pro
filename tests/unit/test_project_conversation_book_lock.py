@@ -21,13 +21,18 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from delete_world import (
     CID_FRESH,
+    D_MID,
+    D_OLD,
     U,
     U2,
     Holder,
+    conv,
+    install_hook,
     ld,
     make_book,
     new_world,
     probe_lock,
+    put_file,
 )
 from reader3_app import book_lock
 from reader3_app.ai import conversations
@@ -277,4 +282,156 @@ def test_b4_delete_vs_project_save_ordering(tmp_path):
     assert observed == {
         "delete_then_save": ("BookGone", False),
         "held_during_both": ("BookLockBusy", False, False),
+    }
+
+
+# =========================================================================== B-5 .. B-7 (audit 20261007 #1, FX37-3)
+#
+# Law: a single-conversation delete runs under SH ``conversations`` on the book folder
+# (plain ``acquire``, no existence recheck) plus the conversations resource lock, so it
+# cannot interleave with a book delete's EX section (commit rename .. finalizer publish),
+# yet still works on an orphan whose book folder is gone.
+
+
+def _delete_multi(w, cid: str = CID_FRESH) -> None:
+    conversations.delete_conversation_multi(
+        str(w.books), book_folder=FOLDER, book_uuid=U, conversation_id=cid, project_conversations_root=str(w.R)
+    )
+
+
+def test_b5_conversation_delete_waits_for_an_in_flight_book_delete(tmp_path, monkeypatch):
+    """B-5: a project-root conversation DELETE landing between the commit rename and the finalizer's
+    publish waits for the book delete instead of running inside that window; afterwards the
+    conversation is gone from the project root -- the finalizer's republish does not resurrect it."""
+    w = new_world(tmp_path / "w")
+    make_book(w.books, FOLDER, book_uuid=U, convs=[conv(CID_FRESH, D_MID, "per-book copy")])
+    put_file(_project_file(w.R), conv(CID_FRESH, D_OLD, "project copy")[1])
+
+    paused, go = threading.Event(), threading.Event()
+
+    def hook(name: str) -> None:
+        if name == "committed":
+            paused.set()
+            go.wait(JOIN_TIMEOUT_S)
+
+    install_hook(monkeypatch, hook)
+    box: Dict[str, Any] = {}
+
+    def deleter() -> None:
+        box["delete"] = _run(lambda: w.delete(FOLDER, mode=False))
+
+    def conv_deleter() -> None:
+        box["conv"] = _run(lambda: _delete_multi(w))
+
+    td = threading.Thread(target=deleter, daemon=True)
+    td.start()
+    assert paused.wait(JOIN_TIMEOUT_S), "the book delete never reached its commit point"
+    tc = threading.Thread(target=conv_deleter, daemon=True)
+    tc.start()
+    tc.join(0.3)
+    finished_inside_window = not tc.is_alive()
+    go.set()
+    td.join(JOIN_TIMEOUT_S)
+    tc.join(JOIN_TIMEOUT_S)
+
+    assert {
+        "delete": _name(box.get("delete")),
+        "conv": _name(box.get("conv")),
+        "alive": (td.is_alive(), tc.is_alive()),
+        "conv_delete_ran_inside_the_window": finished_inside_window,
+        "project": _project_file(w.R).exists(),
+        "a_data": (w.books / FOLDER).exists(),
+    } == {
+        "delete": "None",
+        "conv": "None",
+        "alive": (False, False),
+        "conv_delete_ran_inside_the_window": False,
+        "project": False,
+        "a_data": False,
+    }
+
+
+def test_b6_orphan_conversation_stays_deletable(tmp_path):
+    """B-6: after a ``delete_conversations=false`` book delete the conversation is an orphan under
+    ``R/U``; deleting it succeeds (no ``BookGone``), removes it, and never recreates the book folder."""
+    w = new_world(tmp_path / "w")
+    make_book(w.books, FOLDER, book_uuid=U, convs=[conv(CID_FRESH, D_MID, "kept")])
+    w.delete(FOLDER, mode=False)
+    assert _project_file(w.R).is_file(), "precondition: the delete published the orphan"
+
+    err = _run(lambda: _delete_multi(w))
+
+    assert {
+        "error": _name(err),
+        "project": _project_file(w.R).exists(),
+        "a_data": os.path.lexists(w.books / FOLDER),
+    } == {"error": "None", "project": False, "a_data": False}
+
+
+def _interpose_remove(monkeypatch, targets: List[Path], action: Callable[[Path], None]) -> List[str]:
+    """A delegating ``os.remove``: each removal of a path in ``targets`` runs ``action(path)`` first."""
+    real = os.remove
+    wanted = {os.path.realpath(str(t)) for t in targets}
+    seen: List[str] = []
+
+    def remove(path, *a, **kw):
+        p = os.path.realpath(os.fsdecode(os.fspath(path)))
+        if p in wanted:
+            seen.append(os.path.basename(os.path.dirname(p)))
+            action(Path(p))
+        return real(path, *a, **kw)
+
+    monkeypatch.setattr(os, "remove", remove)
+    return seen
+
+
+def test_b7_conversation_delete_runs_under_the_book_lock(tmp_path, monkeypatch):
+    """B-7: at each ``os.remove`` (per-book copy, then project copy) a cross-process EX probe is
+    busy("conversations"); an EX "delete" holder makes the delete ``BookLockBusy`` and removes nothing."""
+    observed: Dict[str, Any] = {}
+
+    wa = new_world(tmp_path / "a")
+    make_book(wa.books, FOLDER, book_uuid=U, convs=[conv(CID_FRESH, D_MID, "per-book copy")])
+    put_file(_project_file(wa.R), conv(CID_FRESH, D_MID, "project copy")[1])
+    probes: List[Tuple[str, Optional[str]]] = []
+    seen = _interpose_remove(
+        monkeypatch,
+        [_per_book_file(wa.books), _project_file(wa.R)],
+        lambda _p: probes.append(probe_lock(wa.books, FOLDER, book_lock.EXCLUSIVE)),
+    )
+    err = _run(lambda: _delete_multi(wa))
+    observed["locked"] = (
+        _name(err),
+        seen,
+        probes,
+        _per_book_file(wa.books).exists(),
+        _project_file(wa.R).exists(),
+    )
+    monkeypatch.undo()
+
+    wb = new_world(tmp_path / "b")
+    make_book(wb.books, FOLDER, book_uuid=U, convs=[conv(CID_FRESH, D_MID, "per-book copy")])
+    put_file(_project_file(wb.R), conv(CID_FRESH, D_MID, "project copy")[1])
+    holder = Holder(str(wb.books), FOLDER, book_lock.EXCLUSIVE, "delete", str(tmp_path))
+    holder.start()
+    try:
+        err = _run(lambda: _delete_multi(wb))
+    finally:
+        holder.release()
+    observed["busy"] = (
+        _name(err),
+        getattr(err, "holder_category", None),
+        _per_book_file(wb.books).exists(),
+        _project_file(wb.R).exists(),
+    )
+
+    assert observed == {
+        "locked": (
+            "None",
+            ["ai_conversations", U],
+            [("busy", "conversations"), ("busy", "conversations")],
+            False,
+            False,
+        ),
+        "busy": ("BookLockBusy", "delete", True, True),
     }

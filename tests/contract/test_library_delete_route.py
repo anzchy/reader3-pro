@@ -722,3 +722,41 @@ def test_c14_bad_target_array_refuses_409_and_book_stays_listed(rw):
     assert tree_bytes(rw.books / "a_data") == book_before
     assert tree_bytes(rw.R) == r_before
     assert (intents(rw.books), tombstones(rw.books)) == ([], [])
+
+
+# =========================================================================== C-15 (audit 20261007 #1, FX37-3)
+
+
+def test_c15_conversation_delete_during_a_book_delete_is_409_and_removes_nothing(rw, tmp_path):
+    """C-15 (FX37-3, ADR-0018 amendment 2026-10-07): while a book delete holds EX on ``a_data``, a
+    ``DELETE /api/ai/conversations/{U}/{cid}`` is refused like a save -- 409 ``book busy: delete``
+    with ``Retry-After`` -- and the project-root copy is untouched; once the holder is gone it is 204."""
+    rw.prefs["conversation_disk_storage"] = "project_root"
+    make_book(rw.books, "a_data", book_uuid=U)
+    _put_conversation(rw, U, CID_FRESH, "first turn")
+    target = rw.R / U / f"{CID_FRESH}.json"
+    assert target.is_file(), "precondition: the PUT wrote the project-root copy"
+    before = target.read_bytes()
+
+    holder = Holder(str(rw.books), "a_data", book_lock.EXCLUSIVE, "delete", str(tmp_path))
+    holder.start()
+    try:
+        busy = rw.client.delete(f"/api/ai/conversations/{U}/{CID_FRESH}")
+    finally:
+        holder.release()
+    header = busy.headers.get("Retry-After")
+
+    after_busy = target.read_bytes() if target.is_file() else None
+    done = rw.client.delete(f"/api/ai/conversations/{U}/{CID_FRESH}")
+
+    assert {
+        "busy": (busy.status_code, _detail(busy), header is not None and header.isdigit() and int(header) > 0),
+        "kept": after_busy == before,
+        "done": done.status_code,
+        "gone": target.exists(),
+    } == {
+        "busy": (409, "book busy: delete", True),
+        "kept": True,
+        "done": 204,
+        "gone": False,
+    }
