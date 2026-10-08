@@ -20,7 +20,7 @@ import ebooklib
 from ebooklib import epub
 from bs4 import BeautifulSoup, Comment
 
-from . import book_lock, library_delete
+from . import book_format, book_lock, library_delete
 
 # --- Data structures ---
 
@@ -936,6 +936,53 @@ def save_to_pickle(book: Book, output_dir: str):
     p_path = os.path.join(output_dir, 'book.pkl')
     _write_pickle_atomically(book, p_path)
     print(f"Saved structured data to {p_path}")
+
+
+# --- Book fingerprint (012 WI-2a.3) ---
+
+# Q13 (2): bump EXTRACTOR_VERSION on a reviewed change to annotation-relevant output -- each spine item's
+# text, plus the spine's (href, order) list. Anything else the extractor emits (HTML cleanup, TOC, images,
+# metadata) does not anchor annotations and does not bump it. 0 is reserved for "unknown"
+# (book_format.EXTRACTOR_VERSION_UNKNOWN, WI-6 migration); never assign it here.
+EXTRACTOR_VERSION = 1
+
+
+@dataclass(frozen=True)
+class FingerprintComponents:
+    """The inputs of :func:`book_format.compute_book_fingerprint`, read from the raw EPUB.
+
+    ``spine`` is ``(href, order, raw_sha256)`` per chapter, selected exactly as the chapter loop in
+    ``_build_into_staging`` selects them, so ``(href, order)`` matches ``ChapterContent.(href, order)``.
+    ``raw_sha256`` hashes the zip member's bytes; it is not ``ChapterIndexEntry.sha256`` (a JSONL record hash).
+    """
+
+    epub_sha256: str
+    spine: Tuple[Tuple[str, int, str], ...]
+
+
+def fingerprint_components(epub_path: str | os.PathLike[str], book: epub.EpubBook) -> FingerprintComponents:
+    """Fingerprint components of ``book``, the ``EpubBook`` that ``epub.read_epub(epub_path)`` returned."""
+    epub_sha256, _size = _digest(os.fspath(epub_path))
+    spine: List[Tuple[str, int, str]] = []
+    # Mirrors the chapter loop (R6): same skips, order = spine index (gaps are kept, never renumbered).
+    for i, spine_item in enumerate(book.spine):
+        item_id, linear = spine_item
+        item = book.get_item_with_id(item_id)
+
+        if not item:
+            continue
+
+        if item.get_type() == ebooklib.ITEM_DOCUMENT:
+            # item.content is the member's bytes as read from the zip. get_content() is NOT: for EpubHtml it
+            # re-serializes through lxml, so an HTML-only change could collapse or drift with ebooklib versions.
+            spine.append((item.get_name(), i, hashlib.sha256(item.content).hexdigest()))
+    return FingerprintComponents(epub_sha256=epub_sha256, spine=tuple(spine))
+
+
+def compute_fingerprint(epub_path: str | os.PathLike[str], book: epub.EpubBook) -> Tuple[str, int]:
+    """``(book_fingerprint, EXTRACTOR_VERSION)`` for ``book``; see :func:`fingerprint_components`."""
+    comps = fingerprint_components(epub_path, book)
+    return book_format.compute_book_fingerprint(comps.epub_sha256, comps.spine, EXTRACTOR_VERSION), EXTRACTOR_VERSION
 
 
 def main(argv: Optional[List[str]] = None) -> int:

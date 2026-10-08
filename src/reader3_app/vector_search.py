@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-from . import book_lock
+from . import book_lock, book_store
 from .safe_paths import safe_book_folder
 from .safe_pickle import load_book_file
 
@@ -21,6 +21,13 @@ COLLECTION_NAME = "reader3_book"
 SPACE = "cosine"
 #: cosine 距离的上界。similarity = 1 - dist / DISTANCE_CEILING。
 DISTANCE_CEILING = 2.0
+
+#: index_meta.json 里记录「建索引时那本书的指纹」的键（012 WI-2a.7）。与 notes.json 顶层
+#: 同名（``notes_service.NOTES_FINGERPRINT_KEY``，也等于 ``tests/fixtures/deg_assertions`` 的键）。
+INDEX_FINGERPRINT_KEY = "book_fingerprint"
+#: 软失效：只是指纹不符。索引仍能查（结果可能不全，DEG-S2），``status`` 保持 meta 原值（R4）。
+#: 其余理由都是硬失效：查询拒绝、``status`` 降级成 ``not_indexed``。
+SOFT_STALE_REASONS = frozenset({"fingerprint"})
 
 
 def _utc_now_iso() -> str:
@@ -243,12 +250,17 @@ class BookVectorIndex:
         return set(ids)
 
     @staticmethod
-    def _stale_reason(meta: Dict[str, Any]) -> Optional[str]:
-        """meta 描述的索引为什么不能用；``None`` 表示可用。
+    def _stale_reason(meta: Dict[str, Any], current_fingerprint: Optional[str]) -> Optional[str]:
+        """meta 描述的索引为什么失效；``None`` 表示新鲜。
 
         `is_indexed()` 和 `status()` 都只走这一个判据。两处各判各的，就会出现
         界面报「已索引 N chunks」而 `semantic_search` 同时抛「not indexed」的
         矛盾——那正是这个函数存在的理由。
+
+        硬理由（status / space / model_name / empty）先判，优先级与取值不变；指纹最后判，
+        且只在两边都有值、而且不相等时才算 ``"fingerprint"``（``SOFT_STALE_REASONS``）。
+        ``current_fingerprint is None``（pkl-only 或 manifest 坏了，R2）和 meta 里没有这个键
+        （012 之前建的索引，R3）都是「判断不了」，不算失效。
         """
         if meta.get("status") != "indexed":
             return "status"
@@ -262,7 +274,15 @@ class BookVectorIndex:
         chunk_count = meta.get("chunk_count")
         if chunk_count is not None and int(chunk_count) <= 0:
             return "empty"
+        indexed_fingerprint = meta.get(INDEX_FINGERPRINT_KEY)
+        if indexed_fingerprint is None or current_fingerprint is None:
+            return None
+        if indexed_fingerprint != current_fingerprint:
+            return "fingerprint"
         return None
+
+    def _current_fingerprint(self) -> Optional[str]:
+        return book_store.book_fingerprint(self.book_id, self.books_dir)
 
     def _read_meta(self) -> Optional[Dict[str, Any]]:
         """磁盘上的 meta；文件不存在或读不出来都返回 ``None``。"""
@@ -280,12 +300,15 @@ class BookVectorIndex:
         Fast check that does not require semantic dependencies.
 
         We treat a book as indexed if `index_meta.json` exists, is readable, and
-        describes an index the *current* code and model can actually query.
+        describes an index the *current* code and model can actually query. This is
+        the query gate, so only a hard reason makes it False: a fingerprint-only
+        (soft) stale index still answers (R4). The book's fingerprint is therefore
+        not read here -- it could only turn a None into the soft "fingerprint".
         """
         meta = self._read_meta()
         if meta is None:
             return False
-        return self._stale_reason(meta) is None
+        return self._stale_reason(meta, None) is None
 
     def _chunk_text(self, text: str, *, chunk_size: int = 1000, overlap: int = 120) -> List[Tuple[int, int, str]]:
         if not text:
@@ -332,6 +355,8 @@ class BookVectorIndex:
         # 那个可用的索引必须原封不动——否则用户既没有新索引也没有旧索引。
         self._prepare_deps()
         book = self._load_book()
+        # 与 book.pkl 在同一个 SH reindex 作用域里读：发布要 EX，读到的就是被索引的那一代。
+        fingerprint = self._current_fingerprint()
 
         if force_reindex:
             self._drop_index_for_rebuild()
@@ -386,6 +411,9 @@ class BookVectorIndex:
             "space": SPACE,
             "indexed_at": _utc_now_iso(),
         }
+        # pkl-only（判断不了）就不写这个键，而不是写 null：与 012 之前的 meta 形状完全一致。
+        if fingerprint is not None:
+            meta[INDEX_FINGERPRINT_KEY] = fingerprint
         self._ensure_chroma_dir()
         with open(self.meta_path, "w", encoding="utf-8") as f:
             json.dump(meta, f, ensure_ascii=False, indent=2)
@@ -408,11 +436,15 @@ class BookVectorIndex:
                 "model_name": _current_model_name(),
             }
 
-        reason = self._stale_reason(meta)
+        reason = self._stale_reason(meta, self._current_fingerprint())
         if reason is None or reason == "status":
             # 合格的当前索引原样透传；meta 自己说 status != "indexed"（indexing /
             # error / 半路中断）时也原样透传——那是索引流程自己的状态，不是失效。
             return meta
+        if reason in SOFT_STALE_REASONS:
+            # 软失效（R4，规格 C9）：status / chunk_count / model_name 保持 meta 原值，
+            # 查询照常服务；只多两个键，前端据此提示「结果可能不全」。
+            return {**meta, "stale": True, "stale_reason": reason}
 
         # 失效索引：报 "not_indexed"。前端（`frontend/src/shared/status-meta.ts` 的归一化与
         # `frontend/src/library/search.ts` 的 index 徽标）

@@ -36,6 +36,7 @@ import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
+from book_format_helpers import EXTRACTOR_VERSION, FINGERPRINT
 from reader3_app.book_format import (
     CHAPTERS,
     EPUB,
@@ -140,6 +141,8 @@ def write_gen(gen_dir: Path, g: int, *, tag: str = "v1", images: bool = True, pk
         chapters_size_bytes=size,
         chapters_sha256=sha,
         artifacts=tuple(sorted(artifacts, key=lambda a: a.path)),
+        book_fingerprint=FINGERPRINT,
+        extractor_version=EXTRACTOR_VERSION,
     )
 
 
@@ -186,6 +189,8 @@ def build_by_hand(book_dir: Path) -> None:
             {"path": CHAPTERS, "size_bytes": len(body), "sha256": _sha(body)},
             {"path": EPUB, "size_bytes": 9, "sha256": _sha(b"hand-epub")},
         ],
+        "book_fingerprint": FINGERPRINT,
+        "extractor_version": EXTRACTOR_VERSION,
     }
     (book_dir / MANIFEST).write_text(json.dumps(doc), encoding="utf-8")
 

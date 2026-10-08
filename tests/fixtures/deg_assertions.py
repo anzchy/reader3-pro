@@ -30,13 +30,14 @@ unit lane 直接测正反两面）；`run_deg_sN(page, ...)` 是 Playwright 驱�
 **制造降级条件的四个抓手，各自是哪一层的事实**（解 skip 的人先核这一段）：
 
 * **S1**：`notes.json` 顶层的书指纹键。ADR-0009 §Context 写明「`book_fingerprint()` 是
-  notes/chroma 判定 stale 的唯一依据」，但**今天 `notes.json` 里还没有这个键**（012 定 schema）。
-  本模块以 `NOTES_FINGERPRINT_KEY = "book_fingerprint"` 写入一个必然不匹配的值；012 若选了
-  别的键名，改这一个常量，四条用例同时跟着走。
-* **S2**：`chroma_db/index_meta.json`。`vector_search.BookVectorIndex._stale_reason` 今天按
-  `status` / `space` / `model_name` / `chunk_count` 判 stale，**还不看指纹**。本模块写一份
-  除指纹外全部「看起来已索引」的 meta ＋ 一个错的 `book_fingerprint`——Phase 3 把指纹纳入
-  `_stale_reason` 之后，这份 meta 才会被判成第五态 `stale`。
+  notes/chroma 判定 stale 的唯一依据」。012 WI-2a 起 `notes_service.NOTES_FINGERPRINT_KEY` 定下
+  这个键（每次保存原样保留）。本模块以同名的 `NOTES_FINGERPRINT_KEY = "book_fingerprint"`
+  写入一个必然不匹配的值；两个常量的相等由单元测试 N6-01 钉住，改名要两处一起改。
+* **S2**：`chroma_db/index_meta.json`。`vector_search.BookVectorIndex._stale_reason` 按
+  `status` / `space` / `model_name` / `chunk_count` 判硬失效，012 WI-2a.7 起最后再比
+  `book_fingerprint`。本模块写一份除指纹外全部「看起来已索引」的 meta ＋ 一个错的
+  `book_fingerprint`：书有 `manifest.json` 时，这就是真实的软失效（`stale_reason == "fingerprint"`，
+  `status` 保持 `indexed`，查询照常服务）；pkl-only 的书指纹判断不了，这份 meta 仍不算失效。
 * **S3**：`READER3_ALLOW_PICKLE=1` **在模块导入时读**（ADR-0007 的 A2 条款），session 级
   `live_server` 复用不了，必须另起一个服务进程（`pickle_fallback_server`）。**它不用
   `pytest.skip` 表达失败**——起不来就抛 `RuntimeError`，那是红，不是跳过。

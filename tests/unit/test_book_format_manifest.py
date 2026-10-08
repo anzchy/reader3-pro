@@ -30,6 +30,8 @@ import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
+from book_format_helpers import setup_scenario
+from deg_assertions import STALE_FINGERPRINT  # type: ignore[import-not-found]
 from reader3_app import book_format as bf
 from reader3_app.book_format import (
     FORMAT_VERSION,
@@ -39,6 +41,7 @@ from reader3_app.book_format import (
     ManifestError,
     ManifestMetadata,
     ManifestTocEntry,
+    classify,
     manifest_from_bytes,
     manifest_to_bytes,
 )
@@ -60,6 +63,8 @@ Q7_RULE = (
 HEX = "0123456789abcdef"
 LEGAL_FIXED = ("chapters.jsonl", "book.epub", "book.pkl")
 MAX_GENERATION = 2**53
+EXAMPLE_FINGERPRINT = "5f" * 32
+NEW_FIELDS = ("book_fingerprint", "extractor_version")
 
 
 
@@ -161,6 +166,8 @@ def st_manifest(draw: Any, min_toc: int = 0, min_chapters: int = 0, min_images: 
         chapters_size_bytes=size,
         chapters_sha256=chapters_sha,
         artifacts=tuple(artifacts),
+        book_fingerprint=draw(_hex64),
+        extractor_version=draw(st.integers(0, 2**31)),
     )
 
 
@@ -222,6 +229,8 @@ def example_manifest() -> BookManifest:
         chapters_size_bytes=len(whole),
         chapters_sha256=_sha(whole),
         artifacts=artifacts,
+        book_fingerprint=EXAMPLE_FINGERPRINT,
+        extractor_version=1,
     )
 
 
@@ -353,7 +362,7 @@ def _required_key_paths() -> list[tuple[Any, ...]]:
 def test_m04_required_key_list_is_not_empty() -> None:
     paths = _required_key_paths()
     assert ("format_version",) in paths and ("artifacts", 0, "sha256") in paths
-    assert len(paths) == 12 + 8 + 5 + 6 + 3
+    assert len(paths) == 14 + 8 + 5 + 6 + 3
 
 
 @props(150)
@@ -806,7 +815,7 @@ def test_m14_snapshot_version_and_excluded_fields() -> None:
     assert snap["format_version"] == FORMAT_VERSION == 1, Q7_RULE
     names = [f["name"] for fields in snap["classes"].values() for f in fields]
     assert "book_uuid" not in names
-    assert not [n for n in names if "fingerprint" in n]
+    assert {"book_fingerprint", "extractor_version"} <= set(names)
     assert set(snap["classes"]) == set(SCHEMA_CLASS_NAMES)
 
 
@@ -933,3 +942,95 @@ def test_wi110_b7_deep_toc_is_manifest_error_never_recursion_error() -> None:
     for depth, o in outcomes.items():
         assert o == "ok" or o == "manifest nesting too deep" or o.startswith("not JSON"), (depth, o)
     assert manifest_from_bytes(_deep_toc_manifest(1)) == manifest_from_bytes(_deep_toc_manifest(1))
+
+
+# ---------------------------------------------------------------------- WI-2a.2: book_fingerprint / extractor_version
+#
+# Matrix: ``.claude/tdd-guardian/tests-20261008-234253.md`` section "WI-2a.2" (M2-01 .. M2-04, M2-09).
+
+
+@props(200)
+@given(st_manifest())
+def test_m2_01_round_trip_preserves_fingerprint_fields(m: BookManifest) -> None:
+    """M2-01 (property, S4, Level 1): both new fields survive the round trip; a failure names the field."""
+    obj = json.loads(manifest_to_bytes(m))
+    assert obj["book_fingerprint"] == m.book_fingerprint
+    assert obj["extractor_version"] == m.extractor_version
+    back = manifest_from_bytes(manifest_to_bytes(m))
+    assert back.book_fingerprint == m.book_fingerprint
+    assert back.extractor_version == m.extractor_version
+    assert back == m
+
+
+def _corrupt_published_book(tmp_path: Path, edit: Callable[[dict[str, Any]], None]) -> Path:
+    """A valid published book whose root manifest is then rewritten with ``edit`` applied."""
+    book = setup_scenario("S1", tmp_path)
+    assert classify(book, full=True) == "valid"
+    obj = json.loads((book / bf.MANIFEST).read_bytes())
+    edit(obj)
+    (book / bf.MANIFEST).write_bytes(_dump(obj))
+    return book
+
+
+@pytest.mark.parametrize("key", NEW_FIELDS)
+def test_m2_02_deleting_a_new_key_is_corrupt(tmp_path: Path, key: str) -> None:
+    """M2-02 (guard, S2, Level 2 + 1): each new key is required; its absence is a named ManifestError / corrupt."""
+    obj = example_json()
+    assert key in obj, f"serialiser does not emit {key!r}"
+    del obj[key]
+    with pytest.raises(ManifestError, match="required key missing") as ei:
+        manifest_from_bytes(_dump(obj))
+    assert key in str(ei.value)
+    assert (key,) in _required_key_paths()
+    book = _corrupt_published_book(tmp_path, lambda o: o.pop(key))
+    assert classify(book, full=False) == "corrupt"
+
+
+_BAD_NEW_FIELD_VALUES: list[tuple[str, Any]] = [
+    ("book_fingerprint", "A" * 64),
+    ("book_fingerprint", "a" * 63),
+    ("book_fingerprint", "a" * 65),
+    ("book_fingerprint", 123),
+    ("book_fingerprint", None),
+    ("book_fingerprint", STALE_FINGERPRINT),
+    ("extractor_version", -1),
+    ("extractor_version", True),
+    ("extractor_version", "1"),
+    ("extractor_version", 1.5),
+    ("extractor_version", None),
+]
+
+
+@pytest.mark.parametrize("key,value", _BAD_NEW_FIELD_VALUES, ids=lambda v: repr(v))
+def test_m2_03_invalid_new_field_values_are_corrupt(tmp_path: Path, key: str, value: Any) -> None:
+    """M2-03 (guard, S2, Level 2): a malformed fingerprint or extractor version is a ManifestError naming it."""
+    obj = example_json()
+    obj[key] = value
+    with pytest.raises(ManifestError) as ei:
+        manifest_from_bytes(_dump(obj))
+    assert key in str(ei.value)
+    book = _corrupt_published_book(tmp_path, lambda o: o.__setitem__(key, value))
+    assert classify(book, full=False) == "corrupt"
+
+
+def test_m2_04_extractor_version_zero_is_accepted() -> None:
+    """M2-04 (boundary, S3, Level 1): 0 is the reserved "unknown" extractor version and parses."""
+    obj = example_json()
+    obj["extractor_version"] = 0
+    parsed = manifest_from_bytes(_dump(obj))
+    assert type(parsed.extractor_version) is int
+    assert parsed.extractor_version == 0
+    assert parsed.book_fingerprint == EXAMPLE_FINGERPRINT
+
+
+def test_m2_09_snapshot_records_new_fields_as_required() -> None:
+    """M2-09 (success, S1, Level 1): both new fields are required in the snapshot; the version stays 1."""
+    fields = {f["name"]: f for f in _snapshot()["classes"]["BookManifest"]}
+    assert fields["book_fingerprint"] == {"has_default": False, "name": "book_fingerprint", "type": "str"}
+    assert fields["extractor_version"] == {"has_default": False, "name": "extractor_version", "type": "int"}
+    assert _snapshot()["format_version"] == FORMAT_VERSION == 1
+    assert "book_uuid" not in fields
+    live = {f.name: f for f in dataclasses.fields(BookManifest)}
+    for name in NEW_FIELDS:
+        assert name in live, f"BookManifest has no field {name!r}"
+        assert live[name].default is dataclasses.MISSING and live[name].default_factory is dataclasses.MISSING

@@ -181,6 +181,10 @@ class BookManifest:
     chapters_size_bytes: int
     chapters_sha256: str
     artifacts: tuple[ArtifactEntry, ...]
+    # Added as required without bumping FORMAT_VERSION: format not yet released —
+    # no v1 manifest exists outside this branch.
+    book_fingerprint: str
+    extractor_version: int
 
 
 # --------------------------------------------------------------------------- serialisation
@@ -289,6 +293,7 @@ def _check_manifest(m: BookManifest) -> None:
     if not 1 <= m.generation <= MAX_GENERATION:
         _fail("generation", f"must be in 1..2**53, got {m.generation}")
     _check_sha(m.chapters_sha256, "chapters_sha256")
+    _check_sha(m.book_fingerprint, "book_fingerprint")
 
     artifacts: dict[str, ArtifactEntry] = {}
     for i, art in enumerate(m.artifacts):
@@ -348,6 +353,39 @@ def manifest_from_bytes(data: bytes) -> BookManifest:
         raise ManifestError("manifest nesting too deep") from None
     _check_manifest(manifest)
     return typing.cast(BookManifest, manifest)
+
+
+# --------------------------------------------------------------------------- book fingerprint
+
+EXTRACTOR_VERSION_UNKNOWN = 0
+"""Reserved ``extractor_version`` for books whose extractor is not known (WI-6 migration). ``EXTRACTOR_VERSION``
+itself lives in ``reader3``: this module takes the version as a parameter and never imports the extractor."""
+
+
+def _fingerprint_payload(epub_sha256: str, spine: Sequence[tuple[str, int, str]], extractor_version: int) -> bytes:
+    """The canonical bytes the fingerprint hashes. JSON quoting makes them decodable, hence injective."""
+    _check_sha(_parse_str(epub_sha256, "epub_sha256"), "epub_sha256")
+    items: list[list[Any]] = []
+    for i, item in enumerate(spine):  # positional: the spine is never sorted
+        where = f"spine[{i}]"
+        if not isinstance(item, (tuple, list)) or len(item) != 3:
+            _fail(where, "expected (href, order, sha256)")
+        href, order, sha = item
+        _parse_str(href, f"{where}.href")
+        _parse_int(order, f"{where}.order")
+        _check_sha(_parse_str(sha, f"{where}.sha256"), f"{where}.sha256")
+        items.append([href, order, sha])
+    _parse_int(extractor_version, "extractor_version")
+    payload = {"epub_sha256": epub_sha256, "spine": items, "extractor_version": extractor_version}
+    return json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
+
+def compute_book_fingerprint(epub_sha256: str, spine: Sequence[tuple[str, int, str]], extractor_version: int) -> str:
+    """sha256 hex of ``(epub_sha256, spine, extractor_version)``; ``spine`` is ``(href, order, raw_xhtml_sha256)``.
+
+    Pure: no clock, filesystem or environment. Malformed input raises :class:`ManifestError` rather than hashing.
+    """
+    return hashlib.sha256(_fingerprint_payload(epub_sha256, spine, extractor_version)).hexdigest()
 
 
 # --------------------------------------------------------------------------- chapters.jsonl
@@ -972,6 +1010,10 @@ class PublishInputs:
     source_file: str
     processed_at: str
     book_version: str
+    # Added as required without bumping FORMAT_VERSION: format not yet released —
+    # no v1 manifest exists outside this branch.
+    book_fingerprint: str
+    extractor_version: int
     epub: Source | None = None
     images: typing.Mapping[str, Source] = dataclasses.field(default_factory=dict)
     image_origins: typing.Mapping[str, tuple[str, ...]] = dataclasses.field(default_factory=dict)
@@ -1029,6 +1071,8 @@ def _build_manifest(
         artifacts=tuple(
             ArtifactEntry(path=path, size_bytes=size, sha256=sha) for path, (size, sha) in sorted(written.items())
         ),
+        book_fingerprint=inputs.book_fingerprint,
+        extractor_version=inputs.extractor_version,
     )
 
 

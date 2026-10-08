@@ -65,6 +65,10 @@ METADATA = ManifestMetadata(
 )
 TOC = (ManifestTocEntry(title="One", href="Text/c0.xhtml", file_href="Text/c0.xhtml", anchor="", children=()),)
 IMAGE_ORIGINS: dict[str, tuple[str, ...]] = {"cover.png": ("OEBPS/cover.png",), "图.jpg": ("OEBPS/图.jpg",)}
+FINGERPRINT = hashlib.sha256(b"book_format_helpers book_fingerprint").hexdigest()
+"""The default ``book_fingerprint`` every test-built manifest / input carries (012 WI-2a.2)."""
+EXTRACTOR_VERSION = 1
+"""The default ``extractor_version`` every test-built manifest / input carries (012 WI-2a.2)."""
 
 
 def make_chapters(tag: str, n: int = 3) -> tuple[ChapterRecord, ...]:
@@ -79,7 +83,8 @@ def make_chapters(tag: str, n: int = 3) -> tuple[ChapterRecord, ...]:
 
 def make_inputs(
     tag: str, *, images: bool = True, pkl: bool = True, n_chapters: int = 3,
-    image_bytes: Optional[dict[str, bytes]] = None,
+    image_bytes: Optional[dict[str, bytes]] = None, book_fingerprint: str = FINGERPRINT,
+    extractor_version: int = EXTRACTOR_VERSION,
 ) -> PublishInputs:
     """The tagged inputs: ``EPUB-<tag>``, ``PKL-<tag>``, ``cover.png``=``PNG-<tag>``, ``图.jpg``=``JPG-<tag>``."""
     t = tag.encode()
@@ -92,6 +97,8 @@ def make_inputs(
         source_file="dracula.epub",
         processed_at="2026-10-08T00:00:00+00:00",
         book_version="1",
+        book_fingerprint=book_fingerprint,
+        extractor_version=extractor_version,
         epub=b"EPUB-" + t,
         images=dict(image_bytes) if images else {},
         image_origins={n: IMAGE_ORIGINS.get(n, ()) for n in image_bytes} if images else {},

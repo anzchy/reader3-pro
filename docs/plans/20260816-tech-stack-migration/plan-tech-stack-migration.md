@@ -926,7 +926,9 @@ Phase 1b 从 Phase 1 中拆出并降级为「仅阻塞 Phase 4」，使 Phase 2/
 - **A3 `static/dist/` 提交进 git**，Node/Vite 仅作构建期工具。须配 lockfile、固定 Node/Vite 版本、可重复构建 CI 检查，以及 wheel 内容测试（见 P0-2）。
 - **A4 PWA 缓存策略写死**：HTML 与 `/api/*` 一律 network-first 不缓存；只缓存内容哈希过的 `dist/` 资源与 vendor bundle；SW 内嵌 build version。**`skipWaiting()` + `clients.claim()` + activate 立即清旧缓存三者同用会撕裂版本**——仍打开的旧页面加载旧 hash chunk 会失败；改为保留前一代缓存（清 N-2），或强制提示并刷新全部 client。
 - **A5 `book_store.py` 先定接口契约再写实现**：
-  `load_book(book_id) -> Book`、`load_book_metadata(book_id)`、`load_chapter(book_id, order)`、`iter_chapters(book_id)`、`chapter_count(book_id)`、`book_fingerprint(book_id) -> str`、`storage_format(book_id) -> Literal["missing","corrupt","valid"]`。
+  `load_book(book_id) -> Book`、`load_book_metadata(book_id)`、`load_chapter(book_id, order)`、`iter_chapters(book_id)`、`chapter_count(book_id)`、`book_fingerprint(book_id) -> ~~str~~ str | None`、`storage_format(book_id) -> Literal["missing","corrupt","valid"]`。
+
+  （⬛ 2026-10-08，012 §6 Q15 / WI-2a R2）`book_fingerprint` 返回 `str | None`：`None` = manifest 缺失（只有 pkl 的旧书）或损坏；损坏时每本书只记**一条** WARNING（不是每次调用一条）。`None` 的含义是「无法判断」——不算 stale，绝不阻断 `load_book()`。「corrupt 大声失败」归 WI-3 的三态读取（`storage_format`），不归指纹这一层。
 
   > ⚠️ **2026-09-23 订正：此处此前写的是 `Literal["json","pkl"]`，与上面 A2 那条（「三态判定见 ADR-0007」）自相矛盾，两行只隔四行。** [ADR-0007](../../adr/0007-crash-safe-publish-protocol.md)（**Accepted**）的「读取状态机」小节粗体裁定 `missing` / `corrupt` / `valid` **三态、禁止二态**，并点名否掉「只回答新格式还是旧格式」——理由是二态把「没迁移」和「迁移坏了」归成同一件事，而后者必须大声失败、不许静默回退 pkl。二态签名正是它点名的那个 bug，故按 ADR-0007 订正。
   >

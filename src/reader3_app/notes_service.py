@@ -6,7 +6,7 @@ import json
 import os
 import tempfile
 import threading
-from typing import Callable, Iterator, List, Optional, Tuple
+from typing import Callable, Iterator, List, Optional, Tuple, Union
 
 from . import book_lock
 from .models.annotations import Annotation
@@ -43,6 +43,22 @@ class NotesVersionConflict(RuntimeError):
 NOTES_FILENAME = "notes.json"
 NOTES_LOCK_FILENAME = "notes.json.lock"
 NOTES_SCHEMA_VERSION = 1
+#: Top-level key in notes.json naming the book content the annotations were made against
+#: (012 WI-2a.6). Additive, so NOTES_SCHEMA_VERSION stays 1: older readers ignore it.
+#: Must equal tests/fixtures/deg_assertions.NOTES_FINGERPRINT_KEY.
+NOTES_FINGERPRINT_KEY = "book_fingerprint"
+
+
+class _Keep:
+    """Type of :data:`KEEP`: ``save_annotations`` carries the file's existing fingerprint."""
+
+    def __repr__(self) -> str:
+        return "KEEP"
+
+
+#: ``save_annotations(..., book_fingerprint=KEEP)``: carry whatever the current file holds.
+#: The only value production passes in 2a; 2b stamps with an explicit str (or drops with None).
+KEEP = _Keep()
 #: The holder category notes writers report, for both the book lock and the resource lock.
 RESOURCE_CATEGORY = "notes"
 
@@ -231,7 +247,31 @@ def load_annotations(books_dir: str, book_id: str) -> List[Annotation]:
     return out
 
 
-def save_annotations(books_dir: str, book_id: str, annotations: List[Annotation]) -> None:
+def _existing_fingerprint(path: str) -> object:
+    """The current file's top-level fingerprint, or ``None`` when there is nothing to carry.
+
+    Best-effort on purpose: a missing, unreadable, corrupt or non-object file carries
+    nothing, and the save goes ahead exactly as it did before 2a.6. Refusing here would
+    turn a lost *marker* into a lost *annotation* -- ``load_annotations`` is the gate
+    that refuses to overwrite a file it cannot read, not this.
+    """
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    return data.get(NOTES_FINGERPRINT_KEY)
+
+
+def save_annotations(
+    books_dir: str,
+    book_id: str,
+    annotations: List[Annotation],
+    *,
+    book_fingerprint: Union[str, None, _Keep] = KEEP,
+) -> None:
     """Write the whole annotation list, atomically.
 
     Callers that read-modify-write must hold ``_book_write_lock``; this function
@@ -239,7 +279,11 @@ def save_annotations(books_dir: str, book_id: str, annotations: List[Annotation]
     question (``flock`` is per open-file-description — taking it twice in one
     call stack would deadlock).
 
-    Payload shape is deliberately unchanged here: 012 owns the schema.
+    Payload is ``{schema_version, book_id, annotations}`` plus, when known, the
+    top-level ``NOTES_FINGERPRINT_KEY``. With the default ``KEEP`` the current
+    file's value is carried verbatim (read under the caller's lock); a file
+    without the key stays without it (no stamping in 2a), and ``null`` is never
+    written. A ``str`` stamps that value; ``None`` drops the key.
     """
     path = _notes_path(books_dir, book_id)
     # No makedirs (018 WI-2, ADR-0015 contract item 5): a missing book dir means the
@@ -247,11 +291,15 @@ def save_annotations(books_dir: str, book_id: str, annotations: List[Annotation]
     # below raises FileNotFoundError instead.
     directory = os.path.dirname(path)
 
-    payload = {
+    fingerprint = _existing_fingerprint(path) if isinstance(book_fingerprint, _Keep) else book_fingerprint
+
+    payload: dict[str, object] = {
         "schema_version": NOTES_SCHEMA_VERSION,
         "book_id": book_id,
         "annotations": [a.to_dict() for a in annotations],
     }
+    if fingerprint is not None:
+        payload[NOTES_FINGERPRINT_KEY] = fingerprint
 
     # tmp name from tempfile.mkstemp(dir=...), not a fixed f"{path}.tmp" — same
     # reasoning as ai/config.py:save_ai_settings, and the same one-line cost. A

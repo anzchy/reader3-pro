@@ -31,7 +31,9 @@ Three decisions worth knowing before editing this file:
   ``open()``. It does not swallow and never returns ``None``: a loader that
   answers ``None`` for "corrupt" and for "absent" alike forces every caller to
   re-derive which one happened. Deciding what the *user* sees is the web
-  layer's job, at the boundary that has a status code to spend.
+  layer's job, at the boundary that has a status code to spend. (The loaders
+  only: ``book_fingerprint`` answers ``None`` for "cannot judge" by ruling —
+  see its docstring.)
 * **It imports nothing from ``reader3_app.web``.** Reaching for
   ``server.BOOKS_DIR`` from here would be both an import cycle and a violation
   of the namespace rule in ``tests/unit/test_server_patch_seam_ownership.py``.
@@ -46,12 +48,17 @@ pinned by a test rather than left to be rediscovered.
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any, Optional
 
+from . import book_format
+from .safe_paths import safe_book_folder
 from .safe_pickle import load_book_file
+
+logger = logging.getLogger(__name__)
 
 
 def _book_pkl_path(book_id: str, books_dir: str) -> str:
@@ -208,3 +215,43 @@ def pick_cover_image(book_id: str, books_dir: str) -> Optional[str]:
     except Exception:  # noqa: BLE001 - 第 3 档：封面挑选失败只影响一张缩略图，书本身照常打开
         cover_image = None
     return cover_image
+
+
+# --- the stored book fingerprint (012 WI-2a.5, ruling R2) -------------------
+
+#: ``(books_dir, book_id)`` pairs already warned about. It gates the log line
+#: only, never the read: a repaired manifest is read again on the next call.
+_FINGERPRINT_WARNED: set[tuple[str, str]] = set()
+
+
+def book_fingerprint(book_id: str, books_dir: str) -> Optional[str]:
+    """The current generation's stored ``manifest.book_fingerprint``, or ``None``.
+
+    Read, never recomputed: the value comes from ``book_format.validate_stat``
+    (a stat-level check of the generation plus a parse of ``manifest.json``).
+
+    ``None`` means "cannot judge" — not stale — and covers two states:
+
+    * **missing**: no ``manifest.json`` (a pkl-only book, an empty or absent
+      directory). Silent, or every pre-012 book would log on every call.
+    * **corrupt**: any ``BookFormatError`` or other ``OSError``. Logs ONE
+      WARNING per ``(books_dir, book_id)``, not one per call. Failing loudly on
+      corrupt is ``storage_format``'s job (WI-3), not this layer's.
+
+    The id goes through ``safe_book_folder`` before any path is built, so a
+    traversal id raises ``ValueError`` instead of reading outside
+    ``books_dir``. ``load_book`` / ``load_book_cached`` / ``load_book_metadata``
+    never call this: a fingerprint cannot block a book from opening.
+    """
+    book_dir = os.path.join(books_dir, safe_book_folder(book_id))
+    try:
+        manifest = book_format.validate_stat(book_dir)
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    except (book_format.BookFormatError, OSError) as exc:
+        key = (books_dir, book_id)
+        if key not in _FINGERPRINT_WARNED:
+            _FINGERPRINT_WARNED.add(key)
+            logger.warning("book %r: manifest unreadable, fingerprint unknown: %s", book_id, exc)
+        return None
+    return manifest.book_fingerprint

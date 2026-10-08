@@ -1071,8 +1071,8 @@ def _assert_seed(meta, vs):
     assert meta["model_name"] == "verify-reader3/foreign-model"
     assert meta["space"] == vs.SPACE == "cosine"
     assert datetime.fromisoformat(meta["indexed_at"]).tzinfo is not None
-    assert vs.BookVectorIndex._stale_reason(meta) == "model_name"
-    assert vs.BookVectorIndex._stale_reason({**meta, "model_name": vs.MODEL_NAME}) is None
+    assert vs.BookVectorIndex._stale_reason(meta, None) == "model_name"
+    assert vs.BookVectorIndex._stale_reason({**meta, "model_name": vs.MODEL_NAME}, None) is None
 
 
 def test_wi2_c40_seed_is_exactly_model_name_stale(tmp_path, no_semantic):  # WI2-C40

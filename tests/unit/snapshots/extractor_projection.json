@@ -1,0 +1,43 @@
+{
+  "books": {
+    "build_bad_encoding": [
+      ["text/c1.xhtml", 0, "36d299e59744af610da22aa846524d68d1d9a3fcef88909391fe79f6496eedcb"]
+    ],
+    "build_cjk": [
+      ["text/c1.xhtml", 0, "4b1bc7462a5088de104bbf0df3955286b944e220d425a901250af0e0282918db"],
+      ["text/c2.xhtml", 1, "fb905d14921353a19b20ea3aaca9b65ff185f2c5805e98163abb30ccee61dde1"],
+      ["text/c3.xhtml", 2, "04b24d2fee8cc3343ef2c8b3c0b7459b9ae1b0f61d43ea8e40f4f17b0a485d29"]
+    ],
+    "build_diacritics": [
+      ["text/c1.xhtml", 0, "f4b5db0ea6e77825bf3617d1e6694f3a0d81a5bc848ebc993e19b2437ef492e1"]
+    ],
+    "build_empty_chapters": [
+      ["text/c1.xhtml", 0, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"],
+      ["text/c2.xhtml", 1, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"]
+    ],
+    "build_epub2": [
+      ["text/one.xhtml", 0, "85fbc3c5583c13ca5209ee18240d300dfed4d9f10ffc640d787425962735b42d"],
+      ["text/two.xhtml", 1, "398c4c65d047caa4b1ff978eb106a660728cdee8a0fecab8c052c4a0eb0ab9cc"]
+    ],
+    "build_epub3": [
+      ["text/one.xhtml", 0, "85fbc3c5583c13ca5209ee18240d300dfed4d9f10ffc640d787425962735b42d"],
+      ["text/two.xhtml", 1, "398c4c65d047caa4b1ff978eb106a660728cdee8a0fecab8c052c4a0eb0ab9cc"]
+    ],
+    "build_illustrated": [
+      ["text/c1.xhtml", 0, "99cc6b681e195aa65c462517f6b33073889569928c5ea3b85c2f225ba8e4152c"]
+    ],
+    "build_malformed_toc": [
+      ["text/c1.xhtml", 0, "5d349c0c2555ee0939ad5b99707e8368de3064a51b690ba538e49af7e80d38c2"]
+    ],
+    "build_missing_toc_epub3": [
+      ["text/c1.xhtml", 0, "788d02d17623faae13435b725beba8f32785403576117167cece9d834435ac12"]
+    ],
+    "build_spine_toc_maze": [
+      ["text/chap1.xhtml", 0, "cf7447bd142f0aa35c7241ce2d03dc9686f535b04885fd6162ac1e4870bcb18c"],
+      ["text/chap2.xhtml", 1, "466cd49343a3ae100cf2a650a3f05118aa922ded1c174e994eeb126d6918ba1d"],
+      ["text/chap3.xhtml", 2, "03ab856d049575d5a42aff122925c51b0272a762e9a2f3b564795dc200f6ec35"],
+      ["text/back.xhtml", 3, "f58089d93b335e8b8897b636f27a868472bfb07ea3c82632c87b802a3d66817f"]
+    ]
+  },
+  "extractor_version": 1
+}

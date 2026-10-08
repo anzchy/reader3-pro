@@ -17,7 +17,9 @@
       {"has_default": false, "name": "chapters", "type": "tuple[ChapterIndexEntry, ...]"},
       {"has_default": false, "name": "chapters_size_bytes", "type": "int"},
       {"has_default": false, "name": "chapters_sha256", "type": "str"},
-      {"has_default": false, "name": "artifacts", "type": "tuple[ArtifactEntry, ...]"}
+      {"has_default": false, "name": "artifacts", "type": "tuple[ArtifactEntry, ...]"},
+      {"has_default": false, "name": "book_fingerprint", "type": "str"},
+      {"has_default": false, "name": "extractor_version", "type": "int"}
     ],
     "ChapterIndexEntry": [
       {"has_default": false, "name": "id", "type": "str"},

@@ -1561,3 +1561,85 @@ def test_wi110_b9_gen_root_that_cannot_be_removed_logs_and_propagates(
     assert (book / GEN_DIR / "stray.bin").read_bytes() == b"stray"
     assert not os.path.lexists(book / MANIFEST_TMP)
     assert any(str(book / GEN_DIR) in m for m in _errors(caplog)), _errors(caplog)
+
+
+# ======================================================== WI-2a.2: book_fingerprint / extractor_version
+#
+# Matrix: ``.claude/tdd-guardian/tests-20261008-234253.md`` section "WI-2a.2" (M2-05 .. M2-08).
+
+from book_format_helpers import (  # noqa: E402
+    EXTRACTOR_VERSION,
+    FINGERPRINT,
+    METADATA,
+    TOC,
+    make_chapters,
+)
+
+FP_X = "0123456789abcdef" * 4
+FP_Y = "fedcba9876543210" * 4
+
+
+def _required_input_kwargs() -> dict[str, Any]:
+    return {
+        "metadata": METADATA,
+        "toc": TOC,
+        "chapters": make_chapters("v1"),
+        "source_file": "dracula.epub",
+        "processed_at": "2026-10-08T00:00:00+00:00",
+        "book_version": "1",
+        "book_fingerprint": FINGERPRINT,
+        "extractor_version": EXTRACTOR_VERSION,
+    }
+
+
+@pytest.mark.parametrize("missing", ["book_fingerprint", "extractor_version"])
+def test_m2_05_publish_inputs_require_both_fields(missing: str) -> None:
+    """M2-05 (guard, S2, Level 2): neither new field has a default; omitting one is a TypeError naming it."""
+    kwargs = {k: v for k, v in _required_input_kwargs().items() if k != missing}
+    with pytest.raises(TypeError, match=rf"missing 1 required .*'{missing}'"):
+        PublishInputs(**kwargs)
+    full = PublishInputs(**_required_input_kwargs())
+    assert (full.book_fingerprint, full.extractor_version) == (FINGERPRINT, EXTRACTOR_VERSION)
+
+
+def test_m2_06_publish_writes_fields_and_validate_stat_returns_them(tmp_path: Path) -> None:
+    """M2-06 (success, S3, Level 1): the provided values land in the root manifest, raw and parsed."""
+    book = setup_scenario("S0", tmp_path)
+    g = publish(book, make_inputs("v1", book_fingerprint=FP_X, extractor_version=7), create=True)
+    m = validate_stat(book)
+    assert m.generation == g
+    assert (m.book_fingerprint, m.extractor_version) == (FP_X, 7)
+    assert classify(book, full=True) == "valid"
+    raw = json.loads((book / MANIFEST).read_bytes())
+    assert raw["book_fingerprint"] == FP_X
+    assert raw["extractor_version"] == 7
+
+
+def test_m2_07_republish_current_generation_values_win(tmp_path: Path) -> None:
+    """M2-07 (state, S3, Level 1): a second publish replaces both values; the older generation's do not leak."""
+    book = setup_scenario("S0", tmp_path)
+    g1 = publish(book, make_inputs("v1", book_fingerprint=FP_X, extractor_version=1), create=True)
+    g2 = publish(book, make_inputs("v2", book_fingerprint=FP_Y, extractor_version=2))
+    assert g2 == g1 + 1
+    m = validate_stat(book)
+    assert m.generation == g2
+    assert (m.book_fingerprint, m.extractor_version) == (FP_Y, 2)
+
+
+@pytest.mark.parametrize(
+    "field,overrides",
+    [("book_fingerprint", {"book_fingerprint": "A" * 64}), ("extractor_version", {"extractor_version": -1})],
+    ids=["fingerprint-upper", "extractor-negative"],
+)
+def test_m2_08_invalid_field_is_refused_before_any_write(
+    tmp_path: Path, field: str, overrides: dict[str, Any]
+) -> None:
+    """M2-08 (failure, S2, Level 2 + 3): a malformed field raises PublishInputError naming it; tree unchanged."""
+    book = setup_scenario("S1", tmp_path)
+    inputs = make_inputs("v2", **overrides)
+    before = snapshot(tmp_path)
+    with pytest.raises(PublishInputError) as ei:
+        publish(book, inputs, create=False)
+    assert isinstance(ei.value, ValueError) and isinstance(ei.value, BookFormatError)
+    assert field in str(ei.value)
+    assert snapshot(tmp_path) == before

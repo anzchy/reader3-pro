@@ -41,6 +41,7 @@ import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
+from book_format_helpers import EXTRACTOR_VERSION, FINGERPRINT
 from reader3_app.book_format import (
     CHAPTERS,
     EPUB,
@@ -138,6 +139,8 @@ def write_gen(gen_dir: Path, g: int, *, tag: str = "v1") -> BookManifest:
         chapters_size_bytes=size,
         chapters_sha256=sha,
         artifacts=tuple(sorted(artifacts, key=lambda a: a.path)),
+        book_fingerprint=FINGERPRINT,
+        extractor_version=EXTRACTOR_VERSION,
     )
 
 
