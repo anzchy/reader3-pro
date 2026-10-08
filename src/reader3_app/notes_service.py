@@ -42,6 +42,18 @@ class NotesVersionConflict(RuntimeError):
         self.current_annotation = current_annotation
 
 
+class AnnotationNotFound(LookupError):
+    """The named annotation is not in this book's ``notes.json`` (disposition, ADR-0019 section 七)."""
+
+
+class BookFingerprintUnavailable(RuntimeError):
+    """The book has no readable current generation, so there is no fingerprint to dispose against."""
+
+
+class AnnotationOrphaned(RuntimeError):
+    """``accept_binding`` on an orphaned annotation: an orphan is never revived by a disposition."""
+
+
 NOTES_FILENAME = "notes.json"
 NOTES_LOCK_FILENAME = "notes.json.lock"
 NOTES_SCHEMA_VERSION = 1
@@ -625,6 +637,95 @@ def rebind_annotations(
     return RebindResult(
         fingerprint=cast(Optional[str], outcome["fingerprint"]),
         counts=cast(Dict[str, int], outcome["counts"]),
+        advanced=bool(outcome["advanced"]),
+        version=version,
+    )
+
+
+@dataclass(frozen=True)
+class DispositionResult:
+    """What one :func:`dispose_annotation_and_version` call did.
+
+    ``resolution`` is the annotation's resolution after the call (``None`` for ``delete``). ``advanced`` is True
+    iff this call moved the notes-level fingerprint. ``version`` is the resulting ETag value.
+    """
+
+    id: str
+    action: str
+    resolution: Optional[str]
+    advanced: bool
+    version: str
+
+
+def dispose_annotation_and_version(
+    books_dir: str,
+    book_id: str,
+    note_id: str,
+    action: str,
+    if_match: Optional[str],
+    *,
+    expected_book_uuid: object = book_lock.NO_UUID_CHECK,
+    deadline: Optional[float] = None,
+) -> DispositionResult:
+    """The user's explicit disposition of one annotation (012 WI-2b.5, ADR-0019 section 七).
+
+    ``action`` is ``"accept_binding"`` or ``"delete"``; the route's ``Literal`` is the only guard on it (an
+    unknown action at service level is deferred, matrix "Deferred"). Runs as a ``refresh`` closure through
+    :func:`refresh_annotations_and_version` (D-6: no new save site), so every check below is made inside the SH
+    book lock and the notes lock, in this order (D-7 -- 404 before 409, the opposite of
+    :func:`delete_annotation_and_version`; do not "unify" them):
+
+    1. the note is looked up by id -- :class:`AnnotationNotFound`;
+    2. the current generation's fingerprint -- ``None`` (pkl-only) raises :class:`BookFingerprintUnavailable`
+       for both actions (the old DELETE route remains the way out);
+    3. ``accept_binding`` on an orphaned note -- :class:`AnnotationOrphaned` (never revived);
+    4. ``_require_version`` -- :class:`NotesVersionConflict` carrying the current annotation.
+
+    Every error writes nothing. Only then: ``accept_binding`` on ``resolved`` / ``accepted`` is a no-op that writes
+    nothing (D-8); on ``ambiguous`` / ``unmatched`` it sets ``accepted`` and bound = evaluated = current, binding
+    fields untouched. ``delete`` removes exactly that record (orphans included). ``advanced`` is computed in the
+    lock with ``_advance_target`` on the post-mutation list: True iff the target is a str that differs from the
+    stored value, which is what the save then writes. ``BookLockBusy`` / ``BookChanged`` propagate; ``deadline``
+    bounds the lock wait.
+    """
+    path = _notes_path(books_dir, book_id)
+    outcome: Dict[str, object] = {"resolution": None, "advanced": False}
+
+    def dispose(annotations: List[Annotation]) -> bool:
+        index = next((i for i, a in enumerate(annotations) if a.id == note_id), None)
+        if index is None:
+            raise AnnotationNotFound(note_id)
+        current = book_store.book_fingerprint(book_id, books_dir)
+        if current is None:
+            raise BookFingerprintUnavailable(book_id)
+        target = annotations[index]
+        deleting = action == "delete"
+        if not deleting and target.orphaned:
+            raise AnnotationOrphaned(note_id)
+        _require_version(annotations, if_match, note_id)
+
+        if deleting:
+            del annotations[index]
+        elif target.resolution in _SETTLED:
+            outcome["resolution"] = target.resolution
+            return False
+        else:
+            target.resolution = "accepted"
+            target.bound_fingerprint = current
+            target.evaluated_fingerprint = current
+            outcome["resolution"] = target.resolution
+        existing = _existing_fingerprint(path)
+        advance = _advance_target(annotations, current, existing)
+        outcome["advanced"] = isinstance(advance, str) and advance != existing
+        return True
+
+    _, version = refresh_annotations_and_version(
+        books_dir, book_id, dispose, expected_book_uuid=expected_book_uuid, deadline=deadline
+    )
+    return DispositionResult(
+        id=note_id,
+        action=action,
+        resolution=cast(Optional[str], outcome["resolution"]),
         advanced=bool(outcome["advanced"]),
         version=version,
     )
