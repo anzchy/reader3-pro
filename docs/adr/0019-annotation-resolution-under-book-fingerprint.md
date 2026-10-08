@@ -92,7 +92,7 @@ rebind 与处置都经由已有的 `refresh_annotations_and_version` 闭包保�
 - **错误顺序**（逐级，前一级成立即返回）：422（请求体、路径整数、多余键，FastAPI 在处理器之前）→ 428 → 400 非法 book_id → 404 书不存在 → 400 `chapter_index` 越界（`>= len(spine)`）→ 404 标注不存在 → 409 `Book fingerprint unavailable`（只有 pkl、无 generation 的书，两种 action 都拒）→ 409 `Annotation orphaned`（仅 accept）→ 409 版本冲突（与 PUT 同形的 `_conflict` 载荷）。标注按 `id` 查找，路径里的 `chapter_index` 只做范围检查。**404 标注先于 409 版本**（WI-2b 协调者裁定 7），与旧 DELETE 相反（`notes_service.py:488-492` 先 409 后 404，理由见那里的 docstring）；两条路由的顺序各自以本文与那段 docstring 为准，不要「统一」其中一条。任何错误都不写盘。
 - **accept_binding**：对 `ambiguous`／`unmatched` → `accepted`，两个指纹都写成当前指纹，绑定字段不动。对 `resolved`／`accepted` 是 **no-op**：不写盘，`book_fingerprint_advanced: false`，ETag 等于送来的 `If-Match`。no-op 只在整条错误阶梯之后判定，不会抢在任何守卫之前短路。
 - **对 `unmatched` 执行 accept_binding 的后果**：这条标注随之可能让书级指纹前移；指纹一致后跳过规则结束，**下一次 GET 会按 ADR-0005 的旧匹配重新判孤儿，可能把它判为孤儿并从列表消失**。路由 docstring 与前端处置 UI（014）都必须把这一点告诉用户。
-- **delete**：删除该条，孤儿也可删；其余记录逐字节不变；响应 `resolution: null`。
+- **delete**：删除该条，孤儿也可删；其余记录逐字节不变；响应 `resolution: null`。在 pkl-only 的书上（当前指纹为 `None`），处置路由的 delete 同样返回 409 `{"detail": "Book fingerprint unavailable"}`——删除的出口仍在：原有的 `DELETE /api/notes/{book_id}/{chapter_index}/{note_id}` 不受本 ADR 影响，照旧可删（2026-10-09 协调者确认）。
 - 成功：200 ＋ ETag，响应体 `{"id", "action", "resolution", "book_fingerprint_advanced", "message"}`。`book_fingerprint_advanced` 为真当且仅当推进目标不是 `KEEP` **且**与现存值不同。新路由按 [ADR-0011](0011-api-v1-freeze.md) 加法新增，`tests/contract/routes.snapshot` 同一 commit 更新。
 
 **明确不做**：Q4 的「指纹相等即跳过重匹配」快路径；按 `chapter_href` 跟随标注到别的章；rebind 回填旧记录的 `chapter_href`；书级 `GET /api/notes/{book_id}` 摘要加 `resolution`；`ambiguous`／`unmatched` 的前端呈现与处置 UI（014）；改动 `_annotation_matches_chapter_text` 或前端 `findRange`。

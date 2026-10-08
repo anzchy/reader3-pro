@@ -8,7 +8,7 @@ import tempfile
 import threading
 from typing import Callable, Iterator, List, Optional, Tuple, Union
 
-from . import book_lock
+from . import book_lock, book_store
 from .models.annotations import Annotation
 from .safe_paths import safe_book_folder
 
@@ -57,7 +57,7 @@ class _Keep:
 
 
 #: ``save_annotations(..., book_fingerprint=KEEP)``: carry whatever the current file holds.
-#: The only value production passes in 2a; 2b stamps with an explicit str (or drops with None).
+#: 2b.2: every mutator passes ``_advance_target``'s result -- KEEP or an explicit str, never None.
 KEEP = _Keep()
 #: The holder category notes writers report, for both the book lock and the resource lock.
 RESOURCE_CATEGORY = "notes"
@@ -265,6 +265,48 @@ def _existing_fingerprint(path: str) -> object:
     return data.get(NOTES_FINGERPRINT_KEY)
 
 
+#: The resolutions under which an annotation does not block the notes fingerprint from advancing.
+_SETTLED = frozenset({"resolved", "accepted"})
+
+
+def _advance_target(annotations: List[Annotation], current_fp: object, existing: object) -> Union[str, _Keep]:
+    """What the notes-level ``book_fingerprint`` should be after a save: ``current_fp`` or ``KEEP``.
+
+    012 WI-2b.2, ADR-0019 section 四 (D-4 plus ruling 4). Advances to ``current_fp`` only when
+    all of these hold, and otherwise carries the existing value (``KEEP``):
+
+    - ``current_fp`` is a str (``None`` means "cannot judge", never "drop");
+    - ``existing`` is absent/``None`` or a str -- a non-str value on disk is never overwritten;
+    - every non-orphaned annotation is ``resolved`` or ``accepted`` **and** bound to
+      ``current_fp``. The bound check stops a delete between an import and its rebind from
+      advancing on stale ``resolved`` flags. The empty set qualifies, so deleting the last
+      blocking annotation advances.
+
+    Pure. Never returns ``None``, so a save driven by it never writes a null.
+    """
+    if not isinstance(current_fp, str):
+        return KEEP
+    if existing is not None and not isinstance(existing, str):
+        return KEEP
+    for ann in annotations:
+        if ann.orphaned:
+            continue
+        if ann.resolution not in _SETTLED or ann.bound_fingerprint != current_fp:
+            return KEEP
+    return current_fp
+
+
+def _recomputed_fingerprint(books_dir: str, book_id: str, annotations: List[Annotation]) -> Union[str, _Keep]:
+    """The ``book_fingerprint=`` argument for a save. **Callers must hold ``_notes_write``.**
+
+    Reads the current generation's fingerprint and the file's existing value inside the
+    caller's lock, on the post-mutation list. ``book_store.book_fingerprint`` is called through
+    the module attribute so test seams on it bind.
+    """
+    current = book_store.book_fingerprint(book_id, books_dir)
+    return _advance_target(annotations, current, _existing_fingerprint(_notes_path(books_dir, book_id)))
+
+
 def save_annotations(
     books_dir: str,
     book_id: str,
@@ -282,8 +324,9 @@ def save_annotations(
     Payload is ``{schema_version, book_id, annotations}`` plus, when known, the
     top-level ``NOTES_FINGERPRINT_KEY``. With the default ``KEEP`` the current
     file's value is carried verbatim (read under the caller's lock); a file
-    without the key stays without it (no stamping in 2a), and ``null`` is never
-    written. A ``str`` stamps that value; ``None`` drops the key.
+    without the key stays without it, and ``null`` is never written. A ``str``
+    stamps that value; ``None`` drops the key. Since 012 WI-2b.2 every mutator
+    passes ``_advance_target``'s result (a str or ``KEEP``), never ``None``.
     """
     path = _notes_path(books_dir, book_id)
     # No makedirs (018 WI-2, ADR-0015 contract item 5): a missing book dir means the
@@ -447,7 +490,8 @@ def refresh_annotations_and_version(
     with _notes_write(books_dir, book_id, expected_book_uuid, deadline):
         annotations = load_annotations(books_dir, book_id)
         if refresh(annotations):
-            save_annotations(books_dir, book_id, annotations)
+            target = _recomputed_fingerprint(books_dir, book_id, annotations)
+            save_annotations(books_dir, book_id, annotations, book_fingerprint=target)
         return annotations, annotations_version(annotations)
 
 
@@ -466,12 +510,23 @@ def add_annotation_and_version(
     being created does not exist on the server. The conflict still fires — a
     client that chose to send ``If-Match`` said its create was based on a list
     it had seen — but it carries only the current version.
+
+    012 WI-2b.2 (ADR-0019 section 五, D-3): the new annotation is stamped in the lock --
+    ``resolution="resolved"`` and ``bound_fingerprint = evaluated_fingerprint`` = the current
+    generation's fingerprint read *here*, not from the request-time ``Book`` (both ``None``
+    for a book with no generation). ``chapter_href`` is the caller's (the route sets it).
     """
-    with _notes_write(books_dir, annotation.book_id, expected_book_uuid, deadline):
-        annotations = load_annotations(books_dir, annotation.book_id)
+    book_id = annotation.book_id
+    with _notes_write(books_dir, book_id, expected_book_uuid, deadline):
+        annotations = load_annotations(books_dir, book_id)
         _require_version(annotations, if_match, None)
+        current = book_store.book_fingerprint(book_id, books_dir)
+        annotation.resolution = "resolved"
+        annotation.bound_fingerprint = current
+        annotation.evaluated_fingerprint = current
         annotations.append(annotation)
-        save_annotations(books_dir, annotation.book_id, annotations)
+        target = _advance_target(annotations, current, _existing_fingerprint(_notes_path(books_dir, book_id)))
+        save_annotations(books_dir, book_id, annotations, book_fingerprint=target)
         return annotation, annotations_version(annotations)
 
 
@@ -498,7 +553,8 @@ def delete_annotation_and_version(
         annotations = [a for a in annotations if a.id != note_id]
         if len(annotations) == before:
             return False, annotations_version(annotations)
-        save_annotations(books_dir, book_id, annotations)
+        target = _recomputed_fingerprint(books_dir, book_id, annotations)
+        save_annotations(books_dir, book_id, annotations, book_fingerprint=target)
         return True, annotations_version(annotations)
 
 
@@ -519,7 +575,8 @@ def update_annotation_and_version(
         for ann in annotations:
             if ann.id == note_id:
                 ann.note_text = note_text
-                save_annotations(books_dir, book_id, annotations)
+                target = _recomputed_fingerprint(books_dir, book_id, annotations)
+                save_annotations(books_dir, book_id, annotations, book_fingerprint=target)
                 return ann, annotations_version(annotations)
         return None, annotations_version(annotations)
 

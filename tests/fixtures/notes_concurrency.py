@@ -41,12 +41,12 @@ def add_annotation_at_barrier(
 
     real_save = notes_service.save_annotations
 
-    def save_at_barrier(bd, bid, anns):
+    def save_at_barrier(bd, bid, anns, **kw):
         try:
             barrier.wait(timeout_s)
         except BrokenBarrierError:
             pass
-        return real_save(bd, bid, anns)
+        return real_save(bd, bid, anns, **kw)
 
     notes_service.save_annotations = save_at_barrier
     try:
@@ -197,13 +197,13 @@ def stage_two_writers(
         first_in_save = threading.Lock()
         observed = threading.Event()
 
-        def save_waiting_for_contention(bd, bid, anns):
+        def save_waiting_for_contention(bd, bid, anns, **kw):
             # 只有**第一个**到这里的写者等。坏实现下两个都会到，第二个不能再等——
             # 它要等的那个人就是它自己。
             if first_in_save.acquire(False):
                 if lock.someone_is_waiting.wait(CHILD_WAIT_BOUND_S):
                     observed.set()
-            return real_save(bd, bid, anns)
+            return real_save(bd, bid, anns, **kw)
 
         notes_service.save_annotations = save_waiting_for_contention
 

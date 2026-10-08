@@ -570,11 +570,11 @@ def test_w2_13d_one_deadline_across_book_flock_and_resource_layer(
     w_release = threading.Event()
     real_save = notes_service.save_annotations
 
-    def parked_save(books: str, book_id: str, annotations: List[Annotation]) -> None:
+    def parked_save(books: str, book_id: str, annotations: List[Annotation], **kw: Any) -> None:
         if any(a.quote == "W" for a in annotations):
             w_parked.set()
             w_release.wait(10.0)
-        return real_save(books, book_id, annotations)
+        return real_save(books, book_id, annotations, **kw)
 
     monkeypatch.setattr(notes_service, "save_annotations", parked_save)
     w_box: Dict[str, Any] = {}
@@ -652,11 +652,11 @@ def test_w2_14a_resource_thread_layer_waiter_refused_at_the_shared_deadline(
     release_evt = threading.Event()
     real_save = notes_service.save_annotations
 
-    def parked_save(books: str, book_id: str, annotations: List[Annotation]) -> None:
+    def parked_save(books: str, book_id: str, annotations: List[Annotation], **kw: Any) -> None:
         if any(a.quote == "Q1" for a in annotations):
             parked.set()
             release_evt.wait(PARK_GUARD_S)
-        return real_save(books, book_id, annotations)
+        return real_save(books, book_id, annotations, **kw)
 
     monkeypatch.setattr(notes_service, "save_annotations", parked_save)
     w1: Dict[str, Any] = {}

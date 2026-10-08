@@ -2,12 +2,14 @@
 
 Not a test file and not frozen. It is built up one work item at a time:
 
-- WI-2b.1 (this revision): the record builders, the raw ``notes.json`` seeder and the
-  readers the A1 / M1 cases need -- ``rec``, ``legacy_rec``, ``seed_notes``, ``disk``,
+- WI-2b.1: the record builders, the raw ``notes.json`` seeder and the readers the
+  A1 / M1 cases need -- ``rec``, ``legacy_rec``, ``seed_notes``, ``disk``,
   ``version_on_disk``, the fingerprints and the Q13 standard texts.
-- Later WIs add, per the matrix's "Shared fixture module" section: ``publish_gen``,
-  ``write_book_pkl``, ``gen_book``, ``pkl_book``, ``flip_chapter_byte``, ``post_counts``,
-  ``FakeClock`` and ``run_in_worker``, each with the self-check the matrix names.
+- WI-2b.2: the book builders ``publish_gen``, ``write_book_pkl``, ``gen_book`` and
+  ``pkl_book`` (self-checks in ``test_notes_fingerprint_advance.py``).
+- Later WIs add, per the matrix's "Shared fixture module" section: ``flip_chapter_byte``,
+  ``post_counts``, ``FakeClock`` and ``run_in_worker``, each with the self-check the
+  matrix names.
 
 ``seed_notes`` writes raw JSON and never goes through ``save_annotations``, so a test
 can put on disk exactly the bytes it means to (the ``_write_raw`` pattern in
@@ -16,15 +18,19 @@ can put on disk exactly the bytes it means to (the ``_write_raw`` pattern in
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import os
+import pickle
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from book_format_helpers import FINGERPRINT
+from book_format_helpers import FINGERPRINT, make_inputs
 
-from reader3_app import notes_service
+from reader3_app import book_format, book_lock, notes_service
+from reader3_app.book_format import ChapterRecord
+from reader3_app.reader3 import Book, BookMetadata, ChapterContent
 
 #: Generation A's fingerprint: the one ``book_format_helpers.make_inputs`` publishes with.
 FP_A: str = FINGERPRINT
@@ -151,3 +157,58 @@ def disk(book_dir: Path) -> Tuple[bytes, int, Optional[Dict[str, Any]]]:
 
 def version_on_disk(books_dir: str, folder: str) -> str:
     return notes_service.annotations_version(notes_service.load_annotations(str(books_dir), folder))
+
+
+# --------------------------------------------------------------------------- book builders (WI-2b.2)
+
+
+def _chapter_href(i: int) -> str:
+    return f"Text/c{i}.xhtml"
+
+
+def publish_gen(books_dir: Any, folder: str, texts: List[str], fp: str, tag: str) -> int:
+    """Publish one real generation of ``texts`` under the EX book lock; return its number."""
+    inputs = dataclasses.replace(
+        make_inputs(tag, book_fingerprint=fp, images=False, pkl=False),
+        chapters=tuple(
+            ChapterRecord(id=f"c{i}", href=_chapter_href(i), title=f"T{i}", content=f"<p>{t}</p>", text=t, order=i)
+            for i, t in enumerate(texts)
+        ),
+    )
+    book_dir = Path(books_dir) / folder
+    book_dir.mkdir(parents=True, exist_ok=True)
+    with book_lock.acquire(str(books_dir), folder, mode=book_lock.EXCLUSIVE, holder="import"):
+        return book_format.publish(book_dir, inputs)
+
+
+def write_book_pkl(books_dir: Any, folder: str, texts: List[str], fp: Optional[str]) -> Path:
+    """Pickle a real ``Book`` whose spine carries ``texts``; ``book.book_fingerprint = fp``."""
+    book = Book(
+        metadata=BookMetadata(title=folder, language="en"),
+        spine=[
+            ChapterContent(id=f"c{i}", href=_chapter_href(i), title=f"T{i}", content=f"<p>{t}</p>", text=t, order=i)
+            for i, t in enumerate(texts)
+        ],
+        toc=[],
+        images={},
+        source_file=f"{folder}.epub",
+        processed_at="2026-10-09T00:00:00+00:00",
+    )
+    # Set after construction so this works before WI-2b.3 adds the field to Book.
+    setattr(book, "book_fingerprint", fp)
+    path = Path(books_dir) / folder / "book.pkl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(pickle.dumps(book))
+    return path
+
+
+def gen_book(books_dir: Any, folder: str, texts: List[str], fp: str, tag: str = "A") -> int:
+    """A generation book: ``publish_gen`` then a matching ``book.pkl`` (same texts, same fp)."""
+    g = publish_gen(books_dir, folder, texts, fp, tag)
+    write_book_pkl(books_dir, folder, texts, fp)
+    return g
+
+
+def pkl_book(books_dir: Any, folder: str, texts: List[str]) -> Path:
+    """A pkl-only book: no generation, so ``book_store.book_fingerprint`` is ``None``."""
+    return write_book_pkl(books_dir, folder, texts, None)

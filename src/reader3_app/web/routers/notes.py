@@ -309,6 +309,7 @@ async def api_create_annotation(
         cfi=cfi,
         note_text=note_text,
         orphaned=False,
+        chapter_href=book.spine[chapter_index].href,  # 012 WI-2b.2 (ADR-0019 五); fingerprints are stamped in-lock
     )
 
     try:

@@ -211,11 +211,11 @@ def test_w2_14c_http_writer_refused_while_another_writer_holds_the_resource_lock
     release_evt = threading.Event()
     real_save = notes_service.save_annotations
 
-    def parked_save(books: str, book_id: str, annotations: List[Annotation]) -> None:
+    def parked_save(books: str, book_id: str, annotations: List[Annotation], **kw: Any) -> None:
         if any(a.quote == "Q1" for a in annotations):
             parked.set()
             release_evt.wait(PARK_GUARD_S)
-        return real_save(books, book_id, annotations)
+        return real_save(books, book_id, annotations, **kw)
 
     monkeypatch.setattr(notes_service, "save_annotations", parked_save)
     w1: Dict[str, Any] = {}

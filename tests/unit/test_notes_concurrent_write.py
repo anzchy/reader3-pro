@@ -158,12 +158,12 @@ def _park_save_at(barrier: threading.Barrier, monkeypatch: pytest.MonkeyPatch) -
     """Make every save wait for the other writer between its load and its write."""
     real_save = notes_service.save_annotations
 
-    def save_at_barrier(books_dir, book_id, annotations):
+    def save_at_barrier(books_dir, book_id, annotations, **kw):
         try:
             barrier.wait(RENDEZVOUS_TIMEOUT_S)
         except threading.BrokenBarrierError:
             pass
-        return real_save(books_dir, book_id, annotations)
+        return real_save(books_dir, book_id, annotations, **kw)
 
     monkeypatch.setattr(notes_service, "save_annotations", save_at_barrier)
 
@@ -349,11 +349,11 @@ def test_writing_one_book_does_not_block_another(books_root: Path, monkeypatch) 
     release_a = threading.Event()
     real_save = notes_service.save_annotations
 
-    def save_but_stall_book_a(books_dir, book_id, annotations):
+    def save_but_stall_book_a(books_dir, book_id, annotations, **kw):
         if book_id == BOOK_A:
             a_is_holding.set()
             release_a.wait(JOIN_TIMEOUT_S)
-        return real_save(books_dir, book_id, annotations)
+        return real_save(books_dir, book_id, annotations, **kw)
 
     monkeypatch.setattr(notes_service, "save_annotations", save_but_stall_book_a)
 
