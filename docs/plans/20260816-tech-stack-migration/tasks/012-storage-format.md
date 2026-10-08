@@ -122,6 +122,16 @@
   - （同上）quote 在新章里出现两次的标注保留旧绑定、警告可见，书级指纹**不**前移；用户显式处置后前移
   - （同上）rebind 在 import 释放 EX 之后运行，按 SH 书锁 → notes 锁取锁，锁内重读当前 generation（并发测试）
   - 测试矩阵：待 /tdd-guardian:design-tests（含「无歧义匹配」的操作定义，Q13 留给矩阵）
+- **WI-2a 遗留**（⬛ 2026-10-09，`ab48d54` 评审的 Low 项；不改代码，只记录）：
+  - 指纹输入非法时抛 `ManifestError`（该类原义是「manifest 字节不是 manifest」），spine 为 `None` 时抛 `TypeError`；今天无此调用方
+  - WI-4 / WI-7 之前，被索引的文本取自平铺的 `book.pkl`，索引记下的指纹取自 manifest 当前 generation，两者可能不同代
+  - `GET /api/index/{id}/status` 透传 meta，因此多出 `book_fingerprint` 键（ADR-0011 加法）——012 合入 PR 正文的 API 一节注明
+  - `book_store._FINGERPRINT_WARNED` 无上界、无重置钩子（实际以书数为界）
+  - `reader3.fingerprint_components` 复制了章节循环的选取逻辑，由 R3-02 锁步测试钉住；WI-3 合并为同一迭代器
+  - `tests/unit/test_extractor_projection_golden.py:292` 的字符串里有一个字面零宽空格，宜改写成转义
+  - V7-06 按 logger 名（`reader3_app.book_store`）过滤日志，改 logger 名会无谓变红
+  - `book_store.book_fingerprint` 的 `NotADirectoryError` 分支、`notes_service._existing_fingerprint` 的 `OSError` 分支无专门用例（行覆盖靠共用的 `except`）
+  - `tests/e2e/acceptance_p3/test_deg_states_plain.py:27` 的注释仍说 `_stale_reason` 不看指纹——归 WI-8
 - 本 WI 是否算 Phase 3 清单的隐含项：~~待裁，§6 Q9。~~ ⬛ 2026-10-02：是（§6 Q9 裁定），已补进 [Phase 3 任务清单](../plan-tech-stack-migration.md)。
 
 ### WI-3: 摄取双写 + 三态读取
@@ -154,6 +164,7 @@
   - 只有新格式、没有 `book.pkl` 的书出现在 `list_book_ids` 里
   - `src/` 下除 `book_store.py`、`reader3.py`（写入端与 legacy loader）外 grep 不到 `_book_pkl_path` / `"book.pkl"` 的读路径
   - `book_store` 仍不 import `reader3_app.web`
+  - （⬛ 2026-10-09，§6 Q15 / WI-2b R-5）凡产出 `Book` 的加载路径都给 `Book.book_fingerprint` 赋值：新格式读到的书取 manifest 里的值，pkl-only 的取 `None`——否则 notes 被 rebind 盖上指纹后，ADR-0019 的跳过规则会让该书永久不判孤儿
   - 测试矩阵：待 /tdd-guardian:design-tests
 
 ### WI-5: 欠账 #35 —— `load_book_metadata()` 改读 manifest
@@ -175,7 +186,7 @@
 
 - **目标**: 原地读写、不复用摄取路径、专用 legacy loader、不改指纹（ADR-0009 Migration Strategy）
 - **涉及文件**: `reader3.py`（`main` 的 argparse）、`book_store.py`
-- **依赖**: WI-1、WI-2、WI-3；**018 的每书写协调契约**（迁移持该书的锁，与 import / delete / reindex 互斥）；（⬛ 2026-10-08，§6 Q15 / WI-2a R1）迁移的书计算指纹所需的逐项 XHTML 原始字节从该书 `book.epub` 的 zip 里取（不是从 pkl 的清洗后 HTML），`extractor_version` 按 Q13 ③ 带 0
+- **依赖**: WI-1、WI-2、WI-3；**018 的每书写协调契约**（迁移持该书的锁，与 import / delete / reindex 互斥）；（⬛ 2026-10-08，§6 Q15 / WI-2a R1）迁移的书计算指纹所需的逐项 XHTML 原始字节从该书 `book.epub` 的 zip 里取（不是从 pkl 的清洗后 HTML），`extractor_version` 按 Q13 ③ 带 0；（⬛ 2026-10-09，WI-2b R-5）迁移后的书首次加载时经 WI-4 的加载路径取得 `Book.book_fingerprint`
 - **验收（种子）**:
   - 迁移后 `notes.json` / `ai_meta.json` / `chroma_db/` 三者**字节不变**，且 `book_fingerprint(book_id)` 前后相等
   - **崩溃注入**：八步第 7 步之后、第 8 步之前中断 → 重启后该书能打开（判 `missing`，走 pkl），下一次迁移干净重跑

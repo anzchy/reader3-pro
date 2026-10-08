@@ -2,7 +2,7 @@
 
 | 字段 | 值 |
 |---|---|
-| Status | Accepted |
+| Status | Accepted（2026-10-09：由 [ADR-0019](0019-annotation-resolution-under-book-fingerprint.md) 扩展——书指纹换代时的逐条解析状态、严格无歧义匹配与指纹不符时跳过孤儿判定；本文正文不变） |
 | Decision date | 2025-12-19（commit `f57986c`，quote/prefix/suffix/position 首次落地）；2025-12-27（commit `2fc439c`，`cfi` 字段加入） |
 | Recorded date | 2026-08-25 |
 | Record type | Retrospective |

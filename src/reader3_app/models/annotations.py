@@ -3,12 +3,17 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Literal, Optional
+from typing import Literal, Optional, cast
 from uuid import UUID, uuid4, uuid5
 
 
 AnnotationType = Literal["marker", "wavy", "underline", "note"]
 MarkerColor = Literal["yellow", "green", "pink", "blue"]
+#: 一条标注在「当前书指纹」下的解析状态（012 WI-2b.1，ADR-0019）。
+#: resolved / ambiguous / unmatched 由 :func:`match_resolution` 判出；accepted 只能由
+#: 用户处置（accept_binding）写入，匹配器永远不会给出它。
+Resolution = Literal["resolved", "ambiguous", "unmatched", "accepted"]
+RESOLUTIONS: frozenset[str] = frozenset({"resolved", "ambiguous", "unmatched", "accepted"})
 
 #: 给「盘上那条记录没有 id」合成 id 用的命名空间（017 WI-3，审计 #6）。
 #: 它必须是一个**写死的常量**：换一个值就等于把所有无 id 旧记录的身份换一遍，
@@ -53,6 +58,13 @@ class Annotation:
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     orphaned: bool = False
 
+    # 012 WI-2b.1 (ADR-0019): additive, every default a constant -- annotations_version()
+    # hashes to_dict(), so a synthesized default would move the ETag on every load.
+    resolution: Resolution = "resolved"
+    bound_fingerprint: Optional[str] = None
+    evaluated_fingerprint: Optional[str] = None
+    chapter_href: str = ""
+
     def __post_init__(self) -> None:
         if not self.book_id:
             raise ValueError("book_id is required")
@@ -89,6 +101,10 @@ class Annotation:
             "note_text": self.note_text,
             "created_at": self.created_at,
             "orphaned": self.orphaned,
+            "resolution": self.resolution,
+            "bound_fingerprint": self.bound_fingerprint,
+            "evaluated_fingerprint": self.evaluated_fingerprint,
+            "chapter_href": self.chapter_href,
         }
 
     @classmethod
@@ -111,6 +127,15 @@ class Annotation:
           身份，这对单条还原够用，对整份文件不够。
 
         已有的值原样保留——规范化只填空，不重写。
+
+        012 WI-2b.1 的四个新字段（D-5，ADR-0019）：坏值一律**确定地**降级，绝不抛、
+        绝不丢记录。
+
+        - `resolution` 缺失或为 `null` → `"resolved"`（旧记录都是在当时那份正文上
+          建的）；不在四值集合里的任何值（含大小写不同、非 str）→ `"unmatched"`——
+          坏值必须挡住指纹推进，而不是放行。
+        - `bound_fingerprint` / `evaluated_fingerprint` 非 str → `None`。
+        - `chapter_href` 非 str → `""`。
         """
         return cls(
             id=str(data.get("id") or _synthesized_legacy_id(data, index)),
@@ -126,4 +151,63 @@ class Annotation:
             note_text=data.get("note_text"),
             created_at=str(data.get("created_at") or ""),
             orphaned=bool(data.get("orphaned") or False),
+            resolution=_coerce_resolution(data.get("resolution")),
+            bound_fingerprint=_str_or_none(data.get("bound_fingerprint")),
+            evaluated_fingerprint=_str_or_none(data.get("evaluated_fingerprint")),
+            chapter_href=_str_or_empty(data.get("chapter_href")),
         )
+
+
+def _coerce_resolution(value: object) -> Resolution:
+    if value is None:
+        return "resolved"
+    if isinstance(value, str) and value in RESOLUTIONS:
+        return cast(Resolution, value)
+    return "unmatched"
+
+
+def _str_or_none(value: object) -> Optional[str]:
+    return value if isinstance(value, str) else None
+
+
+def _str_or_empty(value: object) -> str:
+    return value if isinstance(value, str) else ""
+
+
+def _strip_ws(text: str) -> str:
+    """去掉全部 ``str.isspace`` 字符（M-1）。不是 ``_collapse_ws``：那个折成一个空格。"""
+    return "".join(text.split())
+
+
+def match_resolution(chapter_text: str, prefix: str, quote: str, suffix: str) -> Resolution:
+    """在一章正文里严格判定一条标注的位置（012 WI-2b.1，Q15 M-1 … M-7，ADR-0019）。
+
+    - M-1 两侧都去掉全部空白（``"".join(s.split())``），DOM 文本与抽取文本的空白差异
+      因此不影响判定；零宽空格不是空白，照原样参与比较。
+    - M-2 needle = prefix + quote + suffix，**先拼接再去空白**。
+    - M-3 去空白后 quote 为空 → ``"unmatched"``。
+    - M-4 用逐位前进的 ``find`` 数**可重叠**的出现次数（不是 ``str.count``），数到 2 即停。
+    - M-5 0 → ``"unmatched"``，1 → ``"resolved"``，≥2 → ``"ambiguous"``。
+    - M-6 prefix 与 suffix 都空时 needle 就是 quote，同样要求恰好一次。
+    - M-7 严格：needle 一次都没有时**不**退回只找 quote。
+
+    纯函数：无副作用、无缓存。永远不会返回 ``"accepted"``。
+    """
+    if not _strip_ws(quote):
+        return "unmatched"
+    haystack = _strip_ws(chapter_text)
+    needle = _strip_ws(prefix + quote + suffix)
+    count = 0
+    start = 0
+    while count < 2:
+        found = haystack.find(needle, start)
+        if found < 0:
+            break
+        count += 1
+        start = found + 1
+    if count == 0:
+        return "unmatched"
+    if count == 1:
+        return "resolved"
+    return "ambiguous"
+

@@ -1,6 +1,8 @@
 """REG-1 part 4 (013 WI-9, C9.29-C9.30): `Annotation` serialisation round-trip.
 
-Law: `Annotation.from_dict(a.to_dict()) == a`, and `to_dict` covers all 13 fields.
+Law: `Annotation.from_dict(a.to_dict()) == a`, and `to_dict` covers every model field --
+the 13 original ones plus the 4 additive keys of 012 WI-2b.1 (ADR-0019; ADR-0011 allows
+additive keys). Their own round-trip and D-5 coercion are in test_annotation_resolution_fields.py.
 """
 
 from __future__ import annotations
@@ -20,10 +22,13 @@ THIRTEEN_FIELDS = frozenset(
         "position", "cfi", "note_text", "created_at", "orphaned",
     }
 )
+#: 012 WI-2b.1 additive fields (ADR-0019).
+WI2B_FIELDS = frozenset({"resolution", "bound_fingerprint", "evaluated_fingerprint", "chapter_href"})
+MODEL_FIELDS = THIRTEEN_FIELDS | WI2B_FIELDS
 
 
 def test_the_model_has_exactly_the_thirteen_fields() -> None:
-    assert {f.name for f in dataclasses.fields(Annotation)} == THIRTEEN_FIELDS
+    assert {f.name for f in dataclasses.fields(Annotation)} == MODEL_FIELDS
 
 
 @settings(max_examples=300, deadline=None)
@@ -32,7 +37,7 @@ def test_the_model_has_exactly_the_thirteen_fields() -> None:
 @example(Annotation(book_id="b", quote="q", color=None, type="note", note_text=""))
 def test_c9_29_from_dict_of_to_dict_is_identity_over_generated(a: Annotation) -> None:
     d = a.to_dict()
-    assert set(d) == THIRTEEN_FIELDS
+    assert set(d) == MODEL_FIELDS
     assert Annotation.from_dict(d) == a
 
 
@@ -44,7 +49,7 @@ def test_c9_29_from_dict_of_to_dict_is_identity_over_generated(a: Annotation) ->
 def test_c9_29_from_dict_of_to_dict_is_identity_over_the_corpus(raw: dict) -> None:
     a = Annotation(**raw)
     d = a.to_dict()
-    assert set(d) == THIRTEEN_FIELDS
+    assert set(d) == MODEL_FIELDS
     assert Annotation.from_dict(d) == a
 
 

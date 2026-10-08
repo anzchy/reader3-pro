@@ -11,7 +11,7 @@
 | [0002](0002-epubjs-iframe-rendering.md) | epub.js 在 iframe 里渲染 | Accepted | Retrospective | Full | 永不触碰 iframe 内部 DOM；CSS 分栏分页退役 |
 | [0003](0003-dual-book-identity.md) | 一本书两个身份 | Accepted | Retrospective | Full | 目录名走路径，`book_uuid` 走会话；`ai_meta.json` 坏了降级为 None，不覆盖 |
 | [0004](0004-chromadb-minilm-vector-search.md) | 嵌入式 ChromaDB + MiniLM | Accepted | Retrospective | Partial | 一书一库；换模型＝全量重建，故不换 |
-| [0005](0005-annotation-anchoring.md) | 标注锚定 | Accepted | Retrospective | Full | 引文 + 50 字前后文，CFI 可选优先；偏移单位按语言分列 |
+| [0005](0005-annotation-anchoring.md) | 标注锚定 | Accepted（由 [0019](0019-annotation-resolution-under-book-fingerprint.md) 扩展） | Retrospective | Full | 引文 + 50 字前后文，CFI 可选优先；偏移单位按语言分列 |
 | [0006](0006-provider-egress-single-gate.md) | provider 出网单出口 | Accepted | Retrospective | Full | `_http.py` 一个口：只许 http(s)、拒 30x、key 不下发、不发往请求方 base_url |
 | [0007](0007-crash-safe-publish-protocol.md) | 书目录崩溃安全发布协议 | Accepted（提交点与崩溃恢复由 [0016](0016-generation-directory-publish.md) 取代；「跨设备退化为拷贝」作废） | Prospective | Partial | staging → 读回校验 → 原子换，marker 最后；读取三态，`corrupt` 大声失败 |
 | [0008](0008-tech-stack-boundary.md) | 技术栈边界 | Accepted | Prospective | Partial | 后端留 Python，前端迁 TS 不引框架，桌面壳不做 |
@@ -25,6 +25,7 @@
 | [0016](0016-generation-directory-publish.md) | 书目录发布：generation 目录＋单指针 | Proposed | Prospective | None | `gen/{g}/` ＋ 根 `manifest.json` 一次 `os.replace` 提交；GC 延后一代；迁移不删平铺文件 |
 | [0017](0017-data-home-resolution.md) | 数据家：书库与设置文件的统一定位；launch 的 origin 钉死 | Proposed | Prospective | None | 显式路径胜出 → 已有绑定 → 首次运行绑 cwd 现成书库或 `~/Reader3/`；多候选就停，不迁移不合并；origin 钉 `127.0.0.1:{port}`、从不自动换端口 |
 | [0018](0018-project-root-conversations-take-book-lock.md) | project-root 对话写手也持共享书锁 | Accepted | Prospective | Full | 项目级对话按书目录名持 SH 书锁并锁内复核；`both` 模式两份一次持锁写完；删书后迟到写入 404、不复活 |
+| [0019](0019-annotation-resolution-under-book-fingerprint.md) | 标注重解析与指纹跳过规则 | Proposed | Prospective | Partial | 逐条 `resolution` ＋ 绑定／评估指纹；去全部空白后 prefix＋quote＋suffix 恰一次才 resolved；notes 与书指纹不符时 GET 不判孤儿；全部 resolved/accepted 才推进书级指纹；处置路由 `If-Match` 必填（428） |
 
 「合规」是 **Current compliance**：Full＝代码今天就这样；Partial＝部分落地，缺口在该文的 Migration Strategy；None＝尚未实现（Proposed 才会出现）。
 
