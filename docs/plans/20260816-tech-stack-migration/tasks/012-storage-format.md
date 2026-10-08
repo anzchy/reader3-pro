@@ -221,6 +221,9 @@
   - `-m acceptance_p3` 四条解 skip 并首次即绿，条数不变
   - 横幅由**主动制造**的降级条件触发（009 §0 第三条纪律），testid 与 `DEG_TESTIDS` 映射表逐个核对
   - `corrupt` 态在阅读页可见（ADR-0007 Negative）
+  - ⬛ 2026-10-09（WI-2b.3 R-6 回写）：WI-2b.3 让 GET 在指纹不一致时跳过孤儿判定（ADR-0019 第三节），
+    当时经 `scripts/e2e_lock.py` 跑 `test_deg_states_plain.py` 为 4 skipped（P3 激活门），**未实际覆盖**。
+    本 WI 解 skip 后须重跑该文件并确认 DEG-S1 标注路径在跳过规则下仍绿
   - 测试矩阵：待 /tdd-guardian:design-tests
 
 ### WI-9: 欠账 #54 —— DEG-S3 数据面
