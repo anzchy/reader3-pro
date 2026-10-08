@@ -59,6 +59,18 @@ class _Keep:
 #: ``save_annotations(..., book_fingerprint=KEEP)``: carry whatever the current file holds.
 #: 2b.2: every mutator passes ``_advance_target``'s result -- KEEP or an explicit str, never None.
 KEEP = _Keep()
+
+
+class _NoFingerprintCheck:
+    """Type of :data:`NO_FINGERPRINT_CHECK`."""
+
+    def __repr__(self) -> str:
+        return "NO_FINGERPRINT_CHECK"
+
+
+#: ``refresh_annotations_and_version(..., book_fingerprint=NO_FINGERPRINT_CHECK)``: run ``refresh``
+#: unconditionally. A distinct sentinel because ``None`` is a real Book fingerprint ("pkl-only").
+NO_FINGERPRINT_CHECK = _NoFingerprintCheck()
 #: The holder category notes writers report, for both the book lock and the resource lock.
 RESOURCE_CATEGORY = "notes"
 
@@ -265,6 +277,18 @@ def _existing_fingerprint(path: str) -> object:
     return data.get(NOTES_FINGERPRINT_KEY)
 
 
+def fingerprints_agree(notes_fp: object, book_fp: object) -> bool:
+    """ADR-0019 section 三 (D-1): may a GET make orphan judgements for this pair?
+
+    True only when both are missing (notes key absent or null, Book ``None`` -- the legacy row)
+    or both are equal strs. Everything else -- str vs ``None`` either way, two different strs,
+    or a non-str notes value -- is False: skip. Pure.
+    """
+    if notes_fp is None and book_fp is None:
+        return True
+    return isinstance(notes_fp, str) and isinstance(book_fp, str) and notes_fp == book_fp
+
+
 #: The resolutions under which an annotation does not block the notes fingerprint from advancing.
 _SETTLED = frozenset({"resolved", "accepted"})
 
@@ -469,6 +493,7 @@ def refresh_annotations_and_version(
     *,
     expected_book_uuid: object = book_lock.NO_UUID_CHECK,
     deadline: Optional[float] = None,
+    book_fingerprint: object = NO_FINGERPRINT_CHECK,
 ) -> Tuple[List[Annotation], str]:
     """load → 让调用者改 → 改动了就 save，**全程握着同一把书级锁**。
 
@@ -486,9 +511,18 @@ def refresh_annotations_and_version(
 
     ``refresh`` 必须是纯粹的「改这份列表，返回改没改」：它在锁里跑，做的任何 I/O 都在
     加长别人的等待。返回的是**整份**标注（含 orphaned 的那些），因为 ETag 算的是整本书。
+
+    012 WI-2b.3（ADR-0019 第三节）：传了 ``book_fingerprint``（请求那份 ``Book`` 的指纹，
+    ``None`` 也是一个真值）时，先在**锁内**读 notes 顶层指纹，``fingerprints_agree`` 不成立就
+    不调 ``refresh``、不写盘，原样返回读到的列表——锁外读会漏掉「锁前刚完成的导入 ＋ rebind」。
+    默认 ``NO_FINGERPRINT_CHECK`` 不做比对，其余调用者行为不变。
     """
     with _notes_write(books_dir, book_id, expected_book_uuid, deadline):
         annotations = load_annotations(books_dir, book_id)
+        if book_fingerprint is not NO_FINGERPRINT_CHECK and not fingerprints_agree(
+            _existing_fingerprint(_notes_path(books_dir, book_id)), book_fingerprint
+        ):
+            return annotations, annotations_version(annotations)
         if refresh(annotations):
             target = _recomputed_fingerprint(books_dir, book_id, annotations)
             save_annotations(books_dir, book_id, annotations, book_fingerprint=target)

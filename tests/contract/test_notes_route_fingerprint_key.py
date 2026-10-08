@@ -3,7 +3,8 @@
 The unit lane proves every notes_service mutator carries the key. This proves no
 route-level write path rebuilds the payload on its own: a raw seed holding
 ``STALE_FINGERPRINT`` goes through the real router (POST, PUT, DELETE, and the
-orphan-refresh GET, which also writes) and the raw file is re-read after each request.
+orphan-refresh GET, which since 012 WI-2b.3 skips and writes nothing on this stale-stamped
+pkl-only book) and the raw file is re-read after each request.
 """
 
 from __future__ import annotations
@@ -26,16 +27,19 @@ def _read_raw(world: World) -> Dict[str, Any]:
 
 def test_n6_11_notes_routes_keep_the_key_end_to_end(world: World) -> None:
     client = world.client
-    # DEG_S1's quote is not in the fixture book's chapter 0, so the GET refresh orphans it and saves.
+    # 012 WI-2b.3 (ADR-0019 section 三, D-1): STALE notes vs this pkl-only Book (fingerprint None) disagree,
+    # so the GET skips orphan marking and writes nothing -- DEG_S1's unmatched quote is not orphaned.
     seed = dict(DEG_S1_ANNOTATION)
     seed["book_id"] = BOOK_ID
     payload = {"schema_version": 1, "book_id": BOOK_ID, "annotations": [seed], KEY: STALE_FINGERPRINT}
     (world.book_dir / "notes.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    seeded = (world.book_dir / "notes.json").read_bytes()
 
     listed = client.get(f"/api/notes/{BOOK_ID}")
     assert listed.status_code == 200, listed.text
     data = _read_raw(world)
-    assert [a.get("orphaned") for a in data["annotations"]] == [True]
+    assert (world.book_dir / "notes.json").read_bytes() == seeded
+    assert [a.get("orphaned", False) for a in data["annotations"]] == [False]
     assert data.get(KEY) == STALE_FINGERPRINT
 
     created = client.post(

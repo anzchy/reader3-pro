@@ -112,12 +112,16 @@ def _refresh_orphaned_annotations(
     load 也搬进了锁里，这是关键：只把 save 包起来，GET 依旧会拿着一份锁外读到的陈旧
     快照覆盖别人在这期间提交成功的写。返回 `(全部, 活着的, 版本)` —— ETag 算的是整本书
     的全部标注，读结果里只出现活着的那些。
+
+    012 WI-2b.3：把这份 `Book` 的指纹交给服务层，在锁内与 notes 指纹比对（ADR-0019 第三节）；
+    不一致就跳过孤儿判定、不写盘。已落盘为孤儿的记录照样被下面的过滤藏起来（D-2）。
     """
     annotations, version = refresh_annotations_and_version(
         _server.BOOKS_DIR,
         book_id,
         lambda anns: _mark_orphans(book, anns),
         expected_book_uuid=expected_book_uuid,
+        book_fingerprint=getattr(book, "book_fingerprint", None),
     )
     return annotations, [a for a in annotations if not a.orphaned], version
 

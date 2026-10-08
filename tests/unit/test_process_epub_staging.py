@@ -261,6 +261,7 @@ def test_book_dataclass_fields_and_pickle_protocol_are_unchanged(
         "source_file",
         "processed_at",
         "version",
+        "book_fingerprint",  # 012 WI-2b.3 (ADR-0019 section 三, D-11): additive, default None
     ]
     assert [f.name for f in dataclasses.fields(ChapterContent)] == [
         "id",

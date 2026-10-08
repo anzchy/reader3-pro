@@ -73,6 +73,9 @@ class Book:
     source_file: str
     processed_at: str
     version: str = "3.0"
+    # 012 WI-2b.3 (ADR-0019 section 三): the generation fingerprint this Book was built from; None for
+    # pkl-only books. A plain class-level default, so old pickles without the attribute read None.
+    book_fingerprint: Optional[str] = None
 
 
 # --- Utilities ---
