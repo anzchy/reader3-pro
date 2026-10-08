@@ -1,0 +1,57 @@
+{
+  "classes": {
+    "ArtifactEntry": [
+      {"has_default": false, "name": "path", "type": "str"},
+      {"has_default": false, "name": "size_bytes", "type": "int"},
+      {"has_default": false, "name": "sha256", "type": "str"}
+    ],
+    "BookManifest": [
+      {"has_default": false, "name": "format_version", "type": "int"},
+      {"has_default": false, "name": "generation", "type": "int"},
+      {"has_default": false, "name": "metadata", "type": "ManifestMetadata"},
+      {"has_default": false, "name": "toc", "type": "tuple[ManifestTocEntry, ...]"},
+      {"has_default": false, "name": "images", "type": "dict[str, tuple[str, ...]]"},
+      {"has_default": false, "name": "source_file", "type": "str"},
+      {"has_default": false, "name": "processed_at", "type": "str"},
+      {"has_default": false, "name": "book_version", "type": "str"},
+      {"has_default": false, "name": "chapters", "type": "tuple[ChapterIndexEntry, ...]"},
+      {"has_default": false, "name": "chapters_size_bytes", "type": "int"},
+      {"has_default": false, "name": "chapters_sha256", "type": "str"},
+      {"has_default": false, "name": "artifacts", "type": "tuple[ArtifactEntry, ...]"}
+    ],
+    "ChapterIndexEntry": [
+      {"has_default": false, "name": "id", "type": "str"},
+      {"has_default": false, "name": "href", "type": "str"},
+      {"has_default": false, "name": "order", "type": "int"},
+      {"has_default": false, "name": "offset_bytes", "type": "int"},
+      {"has_default": false, "name": "length_bytes", "type": "int"},
+      {"has_default": false, "name": "sha256", "type": "str"}
+    ],
+    "ChapterRecord": [
+      {"has_default": false, "name": "id", "type": "str"},
+      {"has_default": false, "name": "href", "type": "str"},
+      {"has_default": false, "name": "title", "type": "str"},
+      {"has_default": false, "name": "content", "type": "str"},
+      {"has_default": false, "name": "text", "type": "str"},
+      {"has_default": false, "name": "order", "type": "int"}
+    ],
+    "ManifestMetadata": [
+      {"has_default": false, "name": "title", "type": "str"},
+      {"has_default": false, "name": "language", "type": "str"},
+      {"has_default": false, "name": "authors", "type": "tuple[str, ...]"},
+      {"has_default": false, "name": "description", "type": "str | None"},
+      {"has_default": false, "name": "publisher", "type": "str | None"},
+      {"has_default": false, "name": "date", "type": "str | None"},
+      {"has_default": false, "name": "identifiers", "type": "tuple[str, ...]"},
+      {"has_default": false, "name": "subjects", "type": "tuple[str, ...]"}
+    ],
+    "ManifestTocEntry": [
+      {"has_default": false, "name": "title", "type": "str"},
+      {"has_default": false, "name": "href", "type": "str"},
+      {"has_default": false, "name": "file_href", "type": "str"},
+      {"has_default": false, "name": "anchor", "type": "str"},
+      {"has_default": false, "name": "children", "type": "tuple[ManifestTocEntry, ...]"}
+    ]
+  },
+  "format_version": 1
+}
