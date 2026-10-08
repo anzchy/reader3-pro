@@ -6,10 +6,12 @@ import json
 import os
 import tempfile
 import threading
-from typing import Callable, Iterator, List, Optional, Tuple, Union
+from collections import Counter
+from dataclasses import dataclass, field
+from typing import Callable, Dict, Iterator, List, Optional, Tuple, Union, cast
 
-from . import book_lock, book_store
-from .models.annotations import Annotation
+from . import book_format, book_lock, book_store
+from .models.annotations import Annotation, match_resolution
 from .safe_paths import safe_book_folder
 
 
@@ -527,6 +529,105 @@ def refresh_annotations_and_version(
             target = _recomputed_fingerprint(books_dir, book_id, annotations)
             save_annotations(books_dir, book_id, annotations, book_fingerprint=target)
         return annotations, annotations_version(annotations)
+
+
+@dataclass(frozen=True)
+class RebindResult:
+    """What one :func:`rebind_annotations` call found and did.
+
+    ``fingerprint`` is the current generation's, or ``None`` when rebind could not judge (no
+    generation, corrupt manifest, a chapter read failure) -- in which case nothing was written.
+    ``counts`` tallies the post-rebind ``resolution`` of every non-orphaned annotation (skipped
+    accepted ones count as ``"accepted"``; zero entries are absent). ``advanced`` is True iff the
+    notes-level fingerprint was moved by this call. ``version`` is the resulting ETag value.
+    """
+
+    fingerprint: Optional[str]
+    counts: Dict[str, int] = field(default_factory=dict)
+    advanced: bool = False
+    version: str = ""
+
+
+def _rebind_skips(ann: Annotation, current_fp: str) -> bool:
+    """D-9: orphans are never revived; an ``accepted`` already bound to ``current_fp`` is the user's call."""
+    return ann.orphaned or (ann.resolution == "accepted" and ann.bound_fingerprint == current_fp)
+
+
+def rebind_annotations(
+    books_dir: str,
+    book_id: str,
+    *,
+    expected_book_uuid: object = book_lock.NO_UUID_CHECK,
+    deadline: Optional[float] = None,
+) -> RebindResult:
+    """Re-resolve every annotation against the current generation (012 WI-2b.4, ADR-0019).
+
+    Runs as a ``refresh`` closure through :func:`refresh_annotations_and_version` (D-6: no new save
+    site), so it holds the SH book lock and then the notes lock, and re-reads the generation *inside*
+    them -- an import needs EX, so the generation cannot change under us. Per annotation (D-9):
+
+    - orphaned, or ``accepted`` with ``bound == current``: untouched;
+    - otherwise ``match_resolution`` on the text at its own ``chapter_index`` (by position; at or past
+      the chapter count is ``unmatched``, never orphaned). ``resolved`` sets resolution, bound and
+      evaluated to current; ``ambiguous`` / ``unmatched`` set only resolution and evaluated.
+
+    Binding fields (quote, prefix, suffix, position, cfi, chapter_index, chapter_href, orphaned, ...)
+    are never written. Saves iff a record changed or the advance target is a str that differs from the
+    stored notes value (ruling 1/3). Cannot judge -- no generation, corrupt manifest, any chapter read
+    failure -- changes nothing and returns ``fingerprint=None``. A missing ``notes.json`` is never
+    created (ruling 6). ``BookLockBusy`` / ``BookChanged`` propagate; ``deadline`` bounds the lock wait.
+    """
+    path = _notes_path(books_dir, book_id)
+    outcome: Dict[str, object] = {"fingerprint": None, "counts": {}, "advanced": False}
+
+    def rebind(annotations: List[Annotation]) -> bool:
+        gen = book_store.current_generation(book_id, books_dir)
+        if gen is None:
+            return False
+        current = gen.fingerprint
+        if not os.path.exists(path):
+            outcome["fingerprint"] = current
+            return False
+        texts: Dict[int, Optional[str]] = {}
+        try:
+            for ann in annotations:
+                index = ann.chapter_index
+                if _rebind_skips(ann, current) or index in texts:
+                    continue
+                texts[index] = gen.chapter_text(index) if 0 <= index < gen.chapter_count else None
+        except (book_format.BookFormatError, OSError):
+            return False
+
+        changed = False
+        for ann in annotations:
+            if _rebind_skips(ann, current):
+                continue
+            text = texts[ann.chapter_index]
+            resolution = "unmatched" if text is None else match_resolution(text, ann.prefix, ann.quote, ann.suffix)
+            bound = current if resolution == "resolved" else ann.bound_fingerprint
+            if (ann.resolution, ann.bound_fingerprint, ann.evaluated_fingerprint) != (resolution, bound, current):
+                changed = True
+                ann.resolution = resolution
+                ann.bound_fingerprint = bound
+                ann.evaluated_fingerprint = current
+
+        existing = _existing_fingerprint(path)
+        target = _advance_target(annotations, current, existing)
+        advanced = isinstance(target, str) and target != existing
+        outcome["fingerprint"] = current
+        outcome["advanced"] = advanced
+        outcome["counts"] = dict(Counter(a.resolution for a in annotations if not a.orphaned))
+        return changed or advanced
+
+    _, version = refresh_annotations_and_version(
+        books_dir, book_id, rebind, expected_book_uuid=expected_book_uuid, deadline=deadline
+    )
+    return RebindResult(
+        fingerprint=cast(Optional[str], outcome["fingerprint"]),
+        counts=cast(Dict[str, int], outcome["counts"]),
+        advanced=bool(outcome["advanced"]),
+        version=version,
+    )
 
 
 def add_annotation_and_version(

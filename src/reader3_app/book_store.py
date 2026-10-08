@@ -255,3 +255,42 @@ def book_fingerprint(book_id: str, books_dir: str) -> Optional[str]:
             logger.warning("book %r: manifest unreadable, fingerprint unknown: %s", book_id, exc)
         return None
     return manifest.book_fingerprint
+
+
+# --- the current generation, for rebind (012 WI-2b.4) ------------------------
+
+
+@dataclass(frozen=True)
+class CurrentGeneration:
+    """One published generation, as rebind reads it: fingerprint, chapter count, lazy chapter texts.
+
+    ``chapter_text(i)`` reads ``manifest.chapters[i]`` **by position**, never by its ``order`` field
+    (plan R-3; WI-3 must keep position aligned with ``Book.spine[i]``). Each call is one seek-read
+    through ``book_format.read_chapter`` and raises what it raises (``ChapterReadError`` / ``OSError``):
+    a chapter that cannot be read is "cannot judge", which only the caller can turn into a no-op.
+    """
+
+    fingerprint: str
+    chapter_count: int
+    gen_dir: str
+    entries: tuple[book_format.ChapterIndexEntry, ...]
+
+    def chapter_text(self, index: int) -> str:
+        return book_format.read_chapter(self.gen_dir, self.entries[index]).text
+
+
+def current_generation(book_id: str, books_dir: str) -> Optional[CurrentGeneration]:
+    """The current generation, or ``None`` exactly where :func:`book_fingerprint` is ``None``.
+
+    Missing (no manifest, no directory) and corrupt (any ``BookFormatError`` / ``OSError`` from
+    ``validate_stat``) are both "cannot judge". Silent here: :func:`book_fingerprint` already owns the
+    one-per-book warning for a corrupt manifest. Read-only; nothing is read beyond the stat check until
+    a chapter's text is asked for. The id goes through ``safe_book_folder`` first (ADR-0012).
+    """
+    book_dir = os.path.join(books_dir, safe_book_folder(book_id))
+    try:
+        manifest = book_format.validate_stat(book_dir)
+    except (book_format.BookFormatError, OSError):
+        return None
+    gen_dir = os.path.join(book_dir, book_format.GEN_DIR, str(manifest.generation))
+    return CurrentGeneration(manifest.book_fingerprint, len(manifest.chapters), gen_dir, manifest.chapters)
