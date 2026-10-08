@@ -77,6 +77,30 @@
 >   只满足次数；机制挑战闸第 1 项须在最终候选 `commit` 上通过，第 3 项因 `suite_hash` 变了须重跑——都按
 >   [迁移计划 §7「012 开工核验」](../plan-tech-stack-migration.md)办，本文件不复述。
 >   这 10 行的 `log` 列指向跑批会话的临时目录，不随仓库保存；可复核的是行本身与上面的判决输出。
+> - `B3`｜`2026-10-07T15:44:51Z`｜`7a705a2`｜`abfc0cc9c59e`｜`chromium-1234`｜`darwin-25.3.0`
+>   ——012 开工核验第 1 条（[迁移计划 §7「012 开工核验」](../plan-tech-stack-migration.md)）：最终候选 `7a705a2`（018 回写合入后的 master）。
+>   在 `7a705a2` 的干净 detached worktree 里跑，每次经 `scripts/e2e_lock.py`；行用 `--ledger` 写进结果分支 `soak-012-start` 的台账，10 次跑完前不提交。
+>   **终止（不完整运行，0 行落账）**：第 1 次于 2026-10-07T15:45:10Z 起跑后，跑批会话的后台任务被人工停止（Claude Code 会话中断回收了
+>   `e2e_lock.py → soak_run.py → pytest` 整条进程链），`soak_run.py` 没走到 `--append`，台账无行、log 目录为空。
+>   原因是运行器被外部终止，不是套件结果；按批次规则 2 不计数、本批终止，下一批另起 ID。
+> - `B4`｜`2026-10-08T02:31:49Z`｜`7a705a2`｜`abfc0cc9c59e`｜`chromium-1234`｜`darwin-25.3.0`
+>   ——接替 `B3` 的 012 开工核验第 1 条，同一 `commit` / worktree / 台账 / 锁；每次跑前后记 `uptime` 以备归因。
+>   **终止（不完整运行，0 行落账）**：第 1 次 pytest 本身全绿（`132 passed, 138 deselected in 112.35s`，退出码 0），
+>   但 `soak_run.py` 以 rc=3 退出——「输出里找不到 pytest 的 summary 行」。根因：跑批会话从终端继承了 `FORCE_COLOR=3`，
+>   pytest 照它输出 ANSI 着色，`_SUMMARY_LINE_RE` 不剥 ANSI 转义所以匹配不上。是运行器环境问题，不是套件结果；
+>   按批次规则 2 不计数、本批终止。`soak_run.py` 不剥 ANSI 是潜在缺陷，记此待排，核验期间不改 `master`。
+> - `B5`｜`2026-10-08T02:34:39Z`｜`7a705a2`｜`abfc0cc9c59e`｜`chromium-1234`｜`darwin-25.3.0`
+>   ——接替 `B4`，同一 `commit` / worktree / 台账 / 锁；唯一差别是跑批命令前加 `env -u FORCE_COLOR`（只影响输出着色）。
+>   **判定：通过**（⬛ 2026-10-08）——`uv run python scripts/soak_run.py --verdict B5` 输出
+>   `PASS B5 10/10（2026-10-08T02:34:44Z – 2026-10-08T02:51:36Z）`（每次 132 passed、138 deselected，109.65–114.61s）。
+>   这是 [迁移计划 §7「012 开工核验」](../plan-tech-stack-migration.md) 在 `7a705a2` 上的批次项；同一 `commit` 上的机制闸第 1 / 3 项见下方
+>   「⬛ 012 开工核验」一节与「CI 运行记录」。跑批期间另一会话的 `cargo test`（约 5 核）把 load 一度推到 19.78（第 5 次起跑时），
+>   该次仍绿（111.59s）；每次前后的 `uptime` 留在跑批会话的输出里。`log` 列同 `B2`，指向不随仓库保存的目录。
+>   ⚠️ **判决脚本的已知缺陷**：`--verdict B3` 与 `--verdict B4` 也输出 `PASS … 10/10`，窗口落在的正是这 10 行。
+>   `batch_verdict()` 取「`ts_utc >=` 声明起始的前 10 行」，不认「批次已终止」，也不在下一条声明处截止，
+>   所以 0 行就终止的批次会吞掉后一批的行。`B3` / `B4` 以本文件的终止记录为准，它们的 `--verdict` 输出无效。
+>   `B5` 不受影响：它的声明（02:34:39Z）早于这 10 行，行与声明逐列相符。修脚本要改 `scripts/soak_run.py`，
+>   核验期间不进 `master`，留待排期。
 >
 > ⚠️ **次数数满 ≠ Phase 3 解锁。** §7 里另有**机制挑战闸**三项（干净 Linux / CI 环境、CPU 压力、
 > 随机化 pytest 收集顺序），原定三项都是阻塞性的——**2026-09-24 起第 2 项经维护者裁定降为不阻塞的记录项**，
@@ -118,6 +142,16 @@
 | 2026-10-01T17:10:28Z | 94dd1e0 | green | 108.13 | abfc0cc9c59e | chromium-1234 | darwin-25.3.0 | /private/tmp/claude-501/-Users-jackcheng-Documents-01-Coding-Front-end-projects-reader3-pro/bc5b24e0-7ce5-4a9a-a73d-be20a60170f4/scratchpad/soak-b2-logs/2026-10-01T171028Z-94dd1e0-775074375-8c60c0.log |
 | 2026-10-01T17:12:16Z | 94dd1e0 | green | 111.18 | abfc0cc9c59e | chromium-1234 | darwin-25.3.0 | /private/tmp/claude-501/-Users-jackcheng-Documents-01-Coding-Front-end-projects-reader3-pro/bc5b24e0-7ce5-4a9a-a73d-be20a60170f4/scratchpad/soak-b2-logs/2026-10-01T171216Z-94dd1e0-622938041-d50f57.log |
 | 2026-10-01T17:14:08Z | 94dd1e0 | green | 109.97 | abfc0cc9c59e | chromium-1234 | darwin-25.3.0 | /private/tmp/claude-501/-Users-jackcheng-Documents-01-Coding-Front-end-projects-reader3-pro/bc5b24e0-7ce5-4a9a-a73d-be20a60170f4/scratchpad/soak-b2-logs/2026-10-01T171408Z-94dd1e0-236542125-6f3e09.log |
+| 2026-10-08T02:34:44Z | 7a705a2 | green | 113.56 | abfc0cc9c59e | chromium-1234 | darwin-25.3.0 | /Users/jackcheng/Documents/01_Coding/Front-end-projects/reader3-pro/.claude/tdd-guardian/soak-logs/B5/2026-10-08T023444Z-7a705a2-002717541-215887.log |
+| 2026-10-08T02:36:39Z | 7a705a2 | green | 110.74 | abfc0cc9c59e | chromium-1234 | darwin-25.3.0 | /Users/jackcheng/Documents/01_Coding/Front-end-projects/reader3-pro/.claude/tdd-guardian/soak-logs/B5/2026-10-08T023639Z-7a705a2-156589125-d26107.log |
+| 2026-10-08T02:38:31Z | 7a705a2 | green | 114.59 | abfc0cc9c59e | chromium-1234 | darwin-25.3.0 | /Users/jackcheng/Documents/01_Coding/Front-end-projects/reader3-pro/.claude/tdd-guardian/soak-logs/B5/2026-10-08T023831Z-7a705a2-736476833-547d56.log |
+| 2026-10-08T02:40:26Z | 7a705a2 | green | 114.61 | abfc0cc9c59e | chromium-1234 | darwin-25.3.0 | /Users/jackcheng/Documents/01_Coding/Front-end-projects/reader3-pro/.claude/tdd-guardian/soak-logs/B5/2026-10-08T024026Z-7a705a2-956585666-1c05d4.log |
+| 2026-10-08T02:42:22Z | 7a705a2 | green | 111.59 | abfc0cc9c59e | chromium-1234 | darwin-25.3.0 | /Users/jackcheng/Documents/01_Coding/Front-end-projects/reader3-pro/.claude/tdd-guardian/soak-logs/B5/2026-10-08T024222Z-7a705a2-515836750-10082f.log |
+| 2026-10-08T02:44:14Z | 7a705a2 | green | 110.53 | abfc0cc9c59e | chromium-1234 | darwin-25.3.0 | /Users/jackcheng/Documents/01_Coding/Front-end-projects/reader3-pro/.claude/tdd-guardian/soak-logs/B5/2026-10-08T024414Z-7a705a2-629268708-889aaa.log |
+| 2026-10-08T02:46:05Z | 7a705a2 | green | 110.05 | abfc0cc9c59e | chromium-1234 | darwin-25.3.0 | /Users/jackcheng/Documents/01_Coding/Front-end-projects/reader3-pro/.claude/tdd-guardian/soak-logs/B5/2026-10-08T024605Z-7a705a2-250569916-e7e631.log |
+| 2026-10-08T02:47:56Z | 7a705a2 | green | 109.65 | abfc0cc9c59e | chromium-1234 | darwin-25.3.0 | /Users/jackcheng/Documents/01_Coding/Front-end-projects/reader3-pro/.claude/tdd-guardian/soak-logs/B5/2026-10-08T024756Z-7a705a2-461445041-a5f82d.log |
+| 2026-10-08T02:49:46Z | 7a705a2 | green | 109.73 | abfc0cc9c59e | chromium-1234 | darwin-25.3.0 | /Users/jackcheng/Documents/01_Coding/Front-end-projects/reader3-pro/.claude/tdd-guardian/soak-logs/B5/2026-10-08T024946Z-7a705a2-751447583-34f786.log |
+| 2026-10-08T02:51:36Z | 7a705a2 | green | 111.04 | abfc0cc9c59e | chromium-1234 | darwin-25.3.0 | /Users/jackcheng/Documents/01_Coding/Front-end-projects/reader3-pro/.claude/tdd-guardian/soak-logs/B5/2026-10-08T025136Z-7a705a2-357309458-4030d9.log |
 
 ---
 
@@ -129,6 +163,7 @@
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | 2026-10-07 | 018 门槛 9 / 11（PR #37 冻结头 `H`） | [37635190616](https://github.com/anzchy/reader3-pro/actions/runs/37635190616) | `pull_request` | `b6025ba`（跑的是 GitHub 合成合并 ref `6c9dcb5`） | 1 | success | chromium-1234（Chrome for Testing 151.0.7922.34） | `abfc0cc9c59e` | 132 passed / 138 deselected，154.44s，green | 122 passed / 16 skipped | linux-6.17.0-1022-azure |
 | 2026-10-07 | 018 门槛 9（合并头上的 dispatch） | [37635220594](https://github.com/anzchy/reader3-pro/actions/runs/37635220594) | `workflow_dispatch` | `b6025ba` | 1 | success | chromium-1234（Chrome for Testing 151.0.7922.34） | `abfc0cc9c59e` | 132 passed / 138 deselected，147.43s，green | 122 passed / 16 skipped | linux-6.17.0-1022-azure |
+| 2026-10-07 | 012 开工核验 · 机制闸第 1 项（最终候选 `7a705a2`） | [37646375142](https://github.com/anzchy/reader3-pro/actions/runs/37646375142) | `workflow_dispatch` | `7a705a2` | 1 | success | chromium-1234（Chrome for Testing 151.0.7922.34） | `abfc0cc9c59e` | 132 passed / 138 deselected，148.78s，green | 122 passed / 16 skipped | linux-6.17.0-1022-azure |
 
 同一 `H` 上的 `lint.yml` 为 run [37635190619](https://github.com/anzchy/reader3-pro/actions/runs/37635190619)（success，attempt 1）。`b6025ba` 于 2026-10-07T14:44:36Z 经 `--match-head-commit` 合入 `master`，合并 commit `74384b1`（与 `b6025ba` 同树）；合入记录只在 [018 §8](./018-library-routes.md)。
 
@@ -1153,6 +1188,33 @@ Playwright 调用直接进 `wait_for_notes`。对**旧** sleep 体，它在无�
 压前 load **1.90**，lane 结束时（burn 仍在）**11.38**，`76 passed, 189 deselected in 68.98s`，
 `verdict: green`，`suite_hash 6dcbb1110288`，`[soak] dry run：未写台账`。跑前跑后
 `git diff --quiet -- soak-log.md` 都是 0。
+
+### ⬛ 012 开工核验：第 1 项 **PASS**、第 3 项 **PASS**（2026-10-07 / 08，`7a705a2` @ `abfc0cc9c59e`）
+
+判据在 [迁移计划 §7「012 开工核验」](../plan-tech-stack-migration.md)，这里只记结果。批次项是上方的 `B5`（通过）。
+
+**第 1 项（干净 Linux，首次通过）**：`tests.yml` run [37646375142](https://github.com/anzchy/reader3-pro/actions/runs/37646375142)，
+`workflow_dispatch`，`headSha` `7a705a2eca9e41bc04077c3a5fb06dfaead0310b`，attempt 1，success——三个 job（静态检查＋unit＋fe-unit、
+verify-control、e2e baseline_1b）都绿；e2e 那行见「CI 运行记录」。
+
+**第 2 项**：照 2026-09-24 裁定只记录，本次未单独跑压力臂。
+
+**第 3 项（随机收集顺序，对 `abfc0cc9c59e` 重跑）**：插件 `pytest-random-order` 1.2.0，在 `7a705a2` 的干净 detached worktree 里，
+每次经 `scripts/e2e_lock.py`：
+
+```
+uv run pytest tests/e2e -m baseline_1b --browser chromium -q -p no:cacheprovider \
+  --random-order --random-order-bucket=global --random-order-seed=<SEED>
+```
+
+| seed | 首次结果 | 耗时 | 起跑时 load（1 分钟） |
+|---|---|---|---|
+| 1001 | ✅ 132 passed, 138 deselected | 111.41s | 2.56 |
+| 2002 | ✅ 132 passed, 138 deselected | 111.17s | 3.45 |
+| 3003 | ✅ 132 passed, 138 deselected | 110.81s | 2.95 |
+
+三个 seed 首次全绿。019 / 023 新加进 `baseline_1b` 的冲突与写失败用例（`test_conflict_*`、`test_notes_write_failure_is_attributable.py` 等）
+这是第一次在打乱顺序下跑。
 
 ### 第 1 项 —— 干净 Linux / CI：**FAIL**（2026-09-20 真跑三次，三次都红）
 
