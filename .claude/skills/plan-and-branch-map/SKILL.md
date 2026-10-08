@@ -124,8 +124,9 @@ re-passed; item 2 (CPU pressure) measured FAIL on 2026-09-23, was attributed to 
 fault in frozen `helpers.py` (not a product defect), and on **2026-09-24 was downgraded by
 maintainer ruling to non-blocking / record-only** — downgraded, not passed (its fix is 009 debt
 #49). Under the 2026-09-28 rule, item 1 must re-pass on the final candidate `commit` and item 3
-must hold for the current `suite_hash`; item 2 stays record-only.
-The ruling lives in §7 of `plan-tech-stack-migration.md` (below discipline 3); results, the
+must hold for the current `suite_hash`. On **2026-10-08 a further maintainer ruling retired item 2**:
+it is no longer run or recorded (items 1 and 3 still block; restoring it needs a new ruling).
+Both rulings live in §7 of `plan-tech-stack-migration.md` (below discipline 3); results, the
 attribution evidence ("第 2 项归因"), batch declarations and verdicts live only in `soak-log.md` —
 do not restate them. Verdicts are scripted: `uv run python scripts/soak_run.py --verdict <batch ID>`
 (exit 0 = PASS). `--append` requires the whole working tree clean, so batches run in a clean
