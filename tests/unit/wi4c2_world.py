@@ -13,6 +13,8 @@ Not a test file and not frozen. Order-addressed books, the route client and the 
   ``reader3_app.web.server.BOOKS_DIR`` at ``books``.
 - ``books_dir_patched(books)`` -- the context-managed ``BOOKS_DIR`` patch the Hypothesis cases use inside
   ``@given`` (no ``tmp_path`` / ``monkeypatch`` there; adversary round 2 item 3).
+- ``assert_locks_under(root)`` -- the uuid-mint lock dir (``server.book_uuid_resolver`` + ``.locks``) resolves
+  under ``root``: proof that a minting route cannot leak locks into the cwd's real ``books/``.
 - ``nav_state(html, spine_len)`` -- ``(active, prev, next, disabled, indicator)`` read with the real
   ``data-testid`` selectors of ``reader.html`` (FR-A), with the TOC-count vacuity guard.
 """
@@ -30,7 +32,7 @@ from bs4 import BeautifulSoup
 from fastapi.testclient import TestClient
 from wi2b_world import write_book_pkl
 
-from reader3_app import book_store, search_service
+from reader3_app import book_lock, book_store, search_service
 from reader3_app.web import server
 
 BASE_URL = "http://127.0.0.1"
@@ -66,6 +68,12 @@ def make_client(books: Path) -> TestClient:
     return TestClient(server.app, base_url=BASE_URL)
 
 
+def assert_locks_under(root: Path) -> None:
+    """The resolver's ``.locks`` dir, resolved against the current cwd, lies under ``root`` (realpath both sides)."""
+    lock_dir = Path(os.path.realpath(os.path.join(server.book_uuid_resolver.books_dir, book_lock.LOCKS_DIRNAME)))
+    assert lock_dir.is_relative_to(Path(os.path.realpath(root))), lock_dir
+
+
 @contextlib.contextmanager
 def books_dir_patched(books: Path) -> Iterator[TestClient]:
     """Inside ``@given``: patch ``BOOKS_DIR`` (literal target) and the env, clear both caches, yield a client.
@@ -79,6 +87,7 @@ def books_dir_patched(books: Path) -> Iterator[TestClient]:
     cwd = os.getcwd()
     os.chdir(Path(books).parent)
     try:
+        assert_locks_under(Path(books).parent)
         with mock.patch("reader3_app.web.server.BOOKS_DIR", str(books)), mock.patch.dict(
             os.environ, env, clear=True
         ):

@@ -26,6 +26,7 @@ from wi2b_world import ABSENT, disk, rec, seed_notes
 from wi4c2_world import (
     GAP_DASH,
     H,
+    assert_locks_under,
     books_dir_patched,
     chapter_index_in_script,
     make_client,
@@ -46,6 +47,7 @@ def books(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.delenv("READER3_TOKEN", raising=False)
     monkeypatch.delenv("READER3_ALLOWED_HOSTS", raising=False)
     monkeypatch.chdir(tmp_path)
+    assert_locks_under(tmp_path)
     order_book(b, G02, [0, 2])
     order_book(b, G13, [1, 3])
     order_book(b, GL3, [0, 1, 2])
@@ -249,6 +251,7 @@ def test_ge_01_gapless_books_match_the_positional_model(data: st.DataObject, k: 
                     assert r.status_code == 404
                     return
                 assert r.status_code == 200
+                assert (books / ".locks" / f"{folder}.lock").exists()  # the uuid mint locked in tmp, not cwd
                 state = nav_state(r.text, k)
                 assert (state[0], state[1], state[2], state[4]) == _positional_read(folder, k, n)
             elif route == "notes_get":
