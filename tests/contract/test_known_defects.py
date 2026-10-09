@@ -58,7 +58,7 @@ def test_同一个越界章节号在两条读路由上都是200(world: World) ->
     `read_chapter` 返回 404 "Chapter not found"，`api_get_chapter_notes` 返回 400
     "Invalid chapter_index"，前端要为同一件事写两套分支。
 
-    **已兑付：012 WI-4c.2（`<SHA>`）。** 章节号改按 spine 的 `order` 寻址（ADR-0016 D-b）后，
+    **已兑付：012 WI-4c.2（`b0583da`）。** 章节号改按 spine 的 `order` 寻址（ADR-0016 D-b）后，
     协调者裁定 2026-10-09 WI-4c R-1：`/read/{id}/{n}` 对 n >= 0 是全函数，越界照常渲染
     （没有高亮的目录项，上一章指向最后一个 order）；R-3 follow-up 2：notes 章级 GET 对越界
     返回 200 与盘上该章的标注。按本文件的约定原地改写，不删：留下的记录是「这两条路由曾经
