@@ -58,6 +58,7 @@ POST /api/collections/{collection_id}/books
 POST /api/highlight/{book_id}/{chapter_order}
 POST /api/index/{book_id}
 POST /api/notes/{book_id}/{chapter_index}
+POST /api/notes/{book_id}/{chapter_index}/{note_id}/disposition
 POST /api/settings/import
 POST /api/settings/providers/{provider_name}/test
 PUT /api/ai/conversations/{book_uuid}/{conversation_id}

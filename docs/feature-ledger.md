@@ -363,12 +363,12 @@ Paths are written out in full from the repo root (e.g. `src/reader3_app/reader3.
 
 #### F-018 Annotations + notes — partial
 - **What:** highlight / underline / wavy in colors, with attached notes; notes panel.
-- **Routes:** `GET /api/notes/{book_id}`, `GET /api/notes/{book_id}/{chapter_index}`, `POST /api/notes/{book_id}/{chapter_index}`, `PUT /api/notes/{book_id}/{chapter_index}/{note_id}`, `DELETE /api/notes/{book_id}/{chapter_index}/{note_id}`
+- **Routes:** `GET /api/notes/{book_id}`, `GET /api/notes/{book_id}/{chapter_index}`, `POST /api/notes/{book_id}/{chapter_index}`, `PUT /api/notes/{book_id}/{chapter_index}/{note_id}`, `DELETE /api/notes/{book_id}/{chapter_index}/{note_id}`, `POST /api/notes/{book_id}/{chapter_index}/{note_id}/disposition`
 - **Code:** `src/reader3_app/notes_service.py`, `src/reader3_app/models/annotations.py`, `src/reader3_app/web/static/js/annotations.js` · ADR-0005
 - **Tests:** `tests/e2e/baseline_1b/test_notes_write_failure_is_attributable.py`, `tests/e2e/baseline_1b/test_stored_cfi_must_agree_with_quote.py`
 - **Confirm:** In the reader select a sentence: the toolbar offers color dots, Marker / Wavy / Underline, Add Note, Copy, Delete, Ask AI. Pick Marker: the sentence is highlighted and the toolbar closes. Select a different sentence, pick Add Note → "Write your thoughts..." → Save; the rail's Notes button lists both (「共N条笔记」), they survive a reload, and `books/{book_id}_data/notes.json` holds them.
 - **Evidence:** 006 · closed selection toolbar stays closed, PR #28 (`26bce1d`, merge `865e7eb`) · create failures (rejected POST and the two pre-request guards) report into the notes diagnostic ring, 019 (`d259f6f`, 009 #50)
-- **Limits:** text-only anchoring, CFI always null (#6–#8); `PUT` accepts only `note_text` (#29); Add Note from a toolbar reopened by clicking an existing mark saves nothing or a one-character quote (#70). Reader-side split is 014. The notes panel's 点评此书 button is dead (see F-040).
+- **Limits:** text-only anchoring, CFI always null (#6–#8); `PUT` accepts only `note_text` (#29); Add Note from a toolbar reopened by clicking an existing mark saves nothing or a one-character quote (#70). Reader-side split is 014. The notes panel's 点评此书 button is dead (see F-040). The disposition route `POST /api/notes/{book_id}/{chapter_index}/{note_id}/disposition` (ADR-0019 七, `If-Match` required → 428) is from 012 WI-2b.6 on branch `012-storage-format`, not yet merged: Status / Evidence here do not cover it, and the row is re-graded at the 012 merge write-back. No UI calls it yet (014).
 
 #### F-019 Note write-conflict handling — partial
 - **What:** ETag optimistic concurrency on note writes, with a conflict dialog (DEG-S5).

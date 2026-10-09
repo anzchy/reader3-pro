@@ -642,6 +642,10 @@ def rebind_annotations(
     )
 
 
+#: The two dispositions ADR-0019 section 七 defines; :func:`dispose_annotation_and_version` refuses any other.
+DISPOSITION_ACTIONS = frozenset({"accept_binding", "delete"})
+
+
 @dataclass(frozen=True)
 class DispositionResult:
     """What one :func:`dispose_annotation_and_version` call did.
@@ -669,8 +673,9 @@ def dispose_annotation_and_version(
 ) -> DispositionResult:
     """The user's explicit disposition of one annotation (012 WI-2b.5, ADR-0019 section 七).
 
-    ``action`` is ``"accept_binding"`` or ``"delete"``; the route's ``Literal`` is the only guard on it (an
-    unknown action at service level is deferred, matrix "Deferred"). Runs as a ``refresh`` closure through
+    ``action`` must be ``"accept_binding"`` or ``"delete"``: anything else raises ``ValueError`` at entry, before
+    any lock is taken, and writes nothing (the service is public -- rebind or a CLI may call it without the
+    route's ``Literal``; an unchecked value would fall into the accept branch). Runs as a ``refresh`` closure through
     :func:`refresh_annotations_and_version` (D-6: no new save site), so every check below is made inside the SH
     book lock and the notes lock, in this order (D-7 -- 404 before 409, the opposite of
     :func:`delete_annotation_and_version`; do not "unify" them):
@@ -688,6 +693,8 @@ def dispose_annotation_and_version(
     stored value, which is what the save then writes. ``BookLockBusy`` / ``BookChanged`` propagate; ``deadline``
     bounds the lock wait.
     """
+    if action not in DISPOSITION_ACTIONS:
+        raise ValueError(f"unknown disposition action {action!r}; expected one of {sorted(DISPOSITION_ACTIONS)}")
     path = _notes_path(books_dir, book_id)
     outcome: Dict[str, object] = {"resolution": None, "advanced": False}
 

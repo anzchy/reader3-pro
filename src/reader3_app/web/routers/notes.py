@@ -17,20 +17,24 @@
 from __future__ import annotations
 
 import html
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Header, HTTPException, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from ... import book_lock
 from ...models.annotations import Annotation
 from ...notes_service import (
     NOTES_SCHEMA_VERSION,
+    AnnotationNotFound,
+    AnnotationOrphaned,
+    BookFingerprintUnavailable,
     NotesVersionConflict,
     add_annotation_and_version as add_note_annotation,
     delete_annotation_and_version as delete_note_annotation,
+    dispose_annotation_and_version,
     refresh_annotations_and_version,
     update_annotation_and_version as update_note_annotation,
 )
@@ -404,6 +408,65 @@ async def api_update_annotation(
 
     response.headers["ETag"] = _etag(version)
     return {"id": updated.id, "note_text": updated.note_text, "message": "Annotation updated successfully"}
+
+
+class DispositionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action: Literal["accept_binding", "delete"]
+
+
+@router.post("/api/notes/{book_id}/{chapter_index}/{note_id}/disposition")
+async def api_dispose_annotation(
+    book_id: str,
+    chapter_index: int,
+    note_id: str,
+    payload: DispositionRequest,
+    response: Response,
+    if_match: Optional[str] = Header(default=None, alias="If-Match"),
+):
+    """012 WI-2b.6 (ADR-0019 七): the user's explicit disposition of one annotation.
+
+    Order: 422 (FastAPI) → 428 → 400 book_id → 404 book → 400 chapter_index → 404 note → 409 fingerprint
+    unavailable → 409 orphaned → 409 version; a no-op accept is decided only after all of them. The note is
+    found by id; the path chapter is only range-checked (D-7). If-Match is required here (only here): a
+    disposition must name the state it judged. Consequence: accept_binding on an ``unmatched`` note may
+    advance the notes fingerprint, and the next agreeing GET may then orphan it.
+    """
+    if not (if_match or "").strip():
+        raise HTTPException(status_code=428, detail="If-Match required")
+    safe_book_id = _server._validate_book_id(book_id)
+    expected_book_uuid = _book_uuid_snapshot(safe_book_id)
+    book = _server.load_book_cached(safe_book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+    if chapter_index < 0 or chapter_index >= len(book.spine):
+        raise HTTPException(status_code=400, detail="Invalid chapter_index")
+    try:
+        result = await run_in_threadpool(
+            dispose_annotation_and_version,
+            _server.BOOKS_DIR,
+            safe_book_id,
+            note_id,
+            payload.action,
+            if_match,
+            expected_book_uuid=expected_book_uuid,
+        )
+    except NotesVersionConflict as e:
+        return _conflict(e)
+    except AnnotationNotFound:
+        raise HTTPException(status_code=404, detail="Annotation not found")
+    except BookFingerprintUnavailable:
+        raise HTTPException(status_code=409, detail="Book fingerprint unavailable")
+    except AnnotationOrphaned:
+        raise HTTPException(status_code=409, detail="Annotation orphaned")
+    response.headers["ETag"] = _etag(result.version)
+    return {
+        "id": result.id,
+        "action": result.action,
+        "resolution": result.resolution,
+        "book_fingerprint_advanced": result.advanced,
+        "message": "Annotation disposition applied",
+    }
 
 # 017 WI-1（审计 #7）：必须留在文件末尾。理由见 `routers/__init__.py` 的 docstring。
 from .. import server as _server  # noqa: E402
