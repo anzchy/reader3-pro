@@ -171,6 +171,7 @@
   - （⬛ 2026-10-09，D-1 补充裁定）018 消费方回归矩阵（§8 第 13 项）：列表（`library_books.py`）、删书预检、导出（`library_export.py`）、删书终结的同名 / ABA 判定（`library_delete.py`）各跑 4 种目录形态——只有 gen 的合法书可见；只有平铺的书可见；只有 `gen/` 无 `manifest.json` 跳过（ADR-0016：`gen/` 本身永远不是书的证据）；manifest 损坏大声失败，不得静默消失
   - （⬛ 2026-10-09，WI-3.2 adversary 缺口 1）4a：缓存键是 manifest stat，但 storage 状态不能跟着它缓存；gen 损坏而 manifest stat 不变时，下一次加载必须抛 `BookCorrupt`
   - （⬛ 2026-10-09，协调者裁定，兑付 [009 欠账 #75](./009-e2e-annotations.md)）**WI-4c**（排在 4a 之后、4b 枚举切换之前）：服务端把 `chapter_index` 解释为 `order`（原始 spine 下标），不再是列表位置；前端与既有 `notes.json` 不动、不迁移。站点：`reader.py` 的 `/read/{id}/{n}`（404 判定与取章）、notes 的 400 范围检查、`_mark_orphans`、rebind、`chapter_text`、Q15⑤ 同章匹配；A5 的 `load_chapter` / `chapter_count` 写明 chapter_index = order，空洞下标一律 404 / 400。验收：order 为 `[0, 2]` 的书上，`/read/{id}/2` 得第二章；`chapter_index=1` 得 404 / 400；`chapter_index=2` 上建的笔记不判孤儿；rebind 在正确的章里匹配
+    - ⬛ 2026-10-09（协调者裁定，R-6 回写）：🔨 **分支上完成，未合入**。commit：`08ba210`（4c.1 `book_store` 章节 API 按 order ＋ rebind 按 order 查）、`b0583da`（4c.2 `/read` 与 notes 路由按 order，R-1 宽松 `/read`、R-3 空洞读放行写拒）、`476a5a7`（4c.3a 关键词 / 语义 / 混合检索输出 order，语义命中在边界上换算）、`4cd34b9`（4c.3b 高亮按 order）。verify-reader3：F-009 **DEVIATES**（`.claude/verify-evidence/20261009-114459-F-009`，空洞书上客户端导航 / 指示器）、F-018 **DEVIATES**（`.claude/verify-evidence/20261009-114716-F-018`，唯一偏差是子步 7 的 Next 导航前置步骤，笔记路由断言全部 PASS）——两条都归 [009 欠账 #76](./009-e2e-annotations.md#跨波欠账)（014 WI-17），不阻塞 012；F-011 **PASS**（`.claude/verify-evidence/20261009-135730-F-011`，合成空洞 EPUB，检索 / 高亮按 order，走真实 UI）。#75 据此改为部分结清（服务端半），客户端半归 014
   - （⬛ 2026-10-09，D-1 补充裁定）**进入 WI-3.1 前的门**：用「只有 `manifest.json` + `gen/{g}/…`、没有任何平铺文件」的夹具跑通全部读取方与书目发现方，并加上 ADR-0016 L86 的 grep 棘轮门。门不过，不开 3.1
   - 测试矩阵：待 /tdd-guardian:design-tests
 
@@ -379,6 +380,17 @@
 ## 8. 合入记录
 
 _未合入。合入后本节是「012 是否在主干上」的唯一定义处，格式照 [011 §8 合入记录](./011-backend-refactor.md)。_
+
+### PR 正文待记事项（未合入前暂存）
+
+⬛ 2026-10-09（协调者裁定，R-6 回写）：开 PR 时逐条抄进 PR 正文，抄完不删、在条目后注明已抄。
+
+- **ADR-0011 语义注**：检索（关键词 / 语义 / 混合）与高亮响应里的 `chapter_order` 现在是 ADR-0016 的 `order`（原始 spine 下标），不再是列表位置；无空洞的书逐字节不变（`476a5a7`、`4cd34b9`）
+- **语义检索丢弃陈旧索引命中**：语义命中里存的 spine 位置若超出该书当前 spine，直接丢弃，不夹逼、不原样输出（`search_service._semantic_to_order`，`476a5a7`）
+- **E2E 未分组白名单 12→15**：`scripts/lint_e2e_groups.py` 的 `UNGROUPED_E2E_MODULES` 白名单收进 spine 空洞寻址检查 `tests/e2e/test_spine_gap_reader.py`（3 条用例），`EXPECTED_UNGROUPED_ITEMS` 12→15，`tests/unit/test_e2e_group_guard.py` 常量同步；长期住户、无到期条件、不在 `HASH_COVERED_PATHS`，`suite_hash` 不动（`b0583da`）
+- **历史遗留的 `books/.locks` 发现**：worktree 未跟踪的 `books/` 下的 `ge01_*_data.lock` 来自 4c.2 在 `b0583da` 之前的草稿（`wi4c2_world.books_dir_patched` 当时不 chdir，uuid 铸造把锁写进 cwd 下的 `books/.locks/`）；`520216e` 上无活漏，`de99cbc`（只改测试）加了守卫钉住不复发；清理归用户
+- **SG-01 的 manifest 一腿待 WI-3.1**：`tests/unit/test_reader3_spine_gaps.py` SG-01 本该比较 gen `Book` 的 order 与 manifest `chapters` 的 order（4c.1 adversary Observation 2），但本 HEAD 上 `process_epub` 还不调 `book_format.publish`（WI-3.1 双写未落地），暂改比指纹组件的 spine order 并断言 `book.pkl` 存在；WI-3.1 落地后补回 manifest 比较
+- **`vector_search` 的位置桥**：向量索引仍按 spine 位置存储，`search_service` 在边界上换算成 order；改键（re-key）带到 WI-7
 
 ### 红灯记录（门槛 R）
 
