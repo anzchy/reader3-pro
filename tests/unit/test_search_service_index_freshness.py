@@ -346,6 +346,7 @@ def test_substituting_the_loader_still_keeps_the_index_off_the_disk(
     class _Chapter:
         title = "Only Chapter"
         text = "WI8SEAMMARKER the tide went out."
+        order = 0  # rule 12: coordinator ruling 2026-10-09 WI-4c.3 (fake must model ChapterContent.order)
 
     class _Metadata:
         title = "Seam Book"

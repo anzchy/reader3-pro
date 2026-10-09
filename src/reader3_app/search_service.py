@@ -7,12 +7,12 @@ import unicodedata
 import html
 import logging
 from array import array
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from functools import lru_cache
 from typing import Optional, List, Tuple, Dict, Union
 
-from .book_store import _book_pkl_path, load_book_cached
+from .book_store import _book_pkl_path, chapter_orders, load_book_cached
 # 不再 import safe_pickle：反序列化只经 book_store（011 §4）。占位保留行号：本文件多处 docstring 按行号引用。
 
 logger = logging.getLogger("reader3.search")
@@ -336,16 +336,20 @@ def _load_book_index_for_stat(
     author = ", ".join(getattr(getattr(book, "metadata", None), "authors", []) or [])
     title = getattr(getattr(book, "metadata", None), "title", book_id)
 
+    # ADR-0016: `chapter_order` is the chapter's `order` (what search emits); `spine_position` is
+    # its index in `book.spine` (what every lookup below uses). Equal on gapless books.
+    orders = chapter_orders(book, book_id=book_id)
     chapters: List[ChapterIndex] = []
-    for chapter_order, chapter in enumerate(getattr(book, "spine", []) or []):
+    for spine_position, (order, chapter) in enumerate(zip(orders, getattr(book, "spine", []) or [])):
         original_text = getattr(chapter, "text", "") or ""
         normalized_text, index_map = _normalize_with_map(original_text, case_sensitive=case_sensitive)
         chapters.append(
             ChapterIndex(
-                chapter_title=getattr(chapter, "title", f"Section {chapter_order + 1}"),
-                chapter_order=chapter_order,
+                chapter_title=getattr(chapter, "title", f"Section {spine_position + 1}"),
+                chapter_order=order,
                 normalized_text=normalized_text,
                 index_map=index_map,
+                spine_position=spine_position,
             )
         )
     return BookIndex(book_id=book_id, book_title=title, book_author=author, chapters=chapters)
@@ -448,6 +452,20 @@ def _semantic_results_for_book(
     return out
 
 
+def _semantic_to_order(results: List[SearchResult], orders: List[int]) -> List[SearchResult]:
+    """Translate semantic hits from spine positions to ADR-0016 orders.
+
+    The vector index stores the spine *position* as ``chapter_order`` (``vector_search``), so every
+    semantic hit is relabelled here, at the search boundary. A position outside the book's current
+    spine (an index older than a republish) has no chapter to link to and is dropped.
+    """
+    return [
+        replace(r, chapter_order=orders[r.chapter_order])
+        for r in results
+        if 0 <= r.chapter_order < len(orders)
+    ]
+
+
 def search_book(book_id: str, query: SearchQuery, *, books_dir: str) -> SearchResultSet:
     start_time = time.perf_counter()
     trimmed = validate_search_term(query.term)
@@ -455,6 +473,7 @@ def search_book(book_id: str, query: SearchQuery, *, books_dir: str) -> SearchRe
         return SearchResultSet(query=query, searched_books=1, execution_time_ms=0.0)
 
     book = load_book_cached(book_id, books_dir)
+    orders = chapter_orders(book, book_id=book_id)  # BookCorrupt -> the central 500, in every mode
     author = ", ".join(getattr(getattr(book, "metadata", None), "authors", []) or [])
     title = getattr(getattr(book, "metadata", None), "title", book_id)
 
@@ -475,13 +494,16 @@ def search_book(book_id: str, query: SearchQuery, *, books_dir: str) -> SearchRe
         )
 
     if query.mode == SearchMode.SEMANTIC:
-        results = _semantic_results_for_book(
-            book_id,
-            title=title,
-            author=author,
-            term=trimmed,
-            books_dir=books_dir,
-            n_results=min(50, query.max_results),
+        results = _semantic_to_order(
+            _semantic_results_for_book(
+                book_id,
+                title=title,
+                author=author,
+                term=trimmed,
+                books_dir=books_dir,
+                n_results=min(50, query.max_results),
+            ),
+            orders,
         )
         elapsed = (time.perf_counter() - start_time) * 1000
         return SearchResultSet(
@@ -502,7 +524,7 @@ def search_book(book_id: str, query: SearchQuery, *, books_dir: str) -> SearchRe
     results: List[SearchResult] = []
     total_matches = 0
     for chapter_info in index.chapters:
-        chapter = spine[chapter_info.chapter_order]
+        chapter = spine[chapter_info.spine_position]
         chapter_text = getattr(chapter, "text", "") or ""
         spans, count = _find_spans_with_map(
             chapter_info.normalized_text,
@@ -536,13 +558,16 @@ def search_book(book_id: str, query: SearchQuery, *, books_dir: str) -> SearchRe
 
     if query.mode == SearchMode.HYBRID and query.term.strip():
         try:
-            semantic = _semantic_results_for_book(
-                book_id,
-                title=title,
-                author=author,
-                term=trimmed,
-                books_dir=books_dir,
-                n_results=10,
+            semantic = _semantic_to_order(
+                _semantic_results_for_book(
+                    book_id,
+                    title=title,
+                    author=author,
+                    term=trimmed,
+                    books_dir=books_dir,
+                    n_results=10,
+                ),
+                orders,
             )
             for r in semantic:
                 if len(results) >= query.max_results:
@@ -617,19 +642,23 @@ def search_library(
     for book_id in book_ids:
         try:
             book = load_book_cached(book_id, books_dir)
+            orders = chapter_orders(book, book_id=book_id)  # BookCorrupt -> failed_books, in every mode
             author = ", ".join(getattr(getattr(book, "metadata", None), "authors", []) or [])
             title = getattr(getattr(book, "metadata", None), "title", book_id)
             book_meta[book_id] = (title, author)
 
             if query.mode == SearchMode.SEMANTIC:
                 try:
-                    semantic = _semantic_results_for_book(
-                        book_id,
-                        title=title,
-                        author=author,
-                        term=trimmed,
-                        books_dir=books_dir,
-                        n_results=max_results_per_book,
+                    semantic = _semantic_to_order(
+                        _semantic_results_for_book(
+                            book_id,
+                            title=title,
+                            author=author,
+                            term=trimmed,
+                            books_dir=books_dir,
+                            n_results=max_results_per_book,
+                        ),
+                        orders,
                     )
                 except RuntimeError as e:
                     msg = str(e)
@@ -652,7 +681,7 @@ def search_library(
             results_for_book: List[SearchResult] = []
 
             for chapter_info in index.chapters:
-                chapter = getattr(book, "spine", [])[chapter_info.chapter_order]
+                chapter = getattr(book, "spine", [])[chapter_info.spine_position]
                 chapter_text = getattr(chapter, "text", "") or ""
                 spans, count = _find_spans_with_map(
                     chapter_info.normalized_text,
@@ -664,7 +693,9 @@ def search_library(
                     continue
                 total_hits += count
                 if earliest_key is None and spans:
-                    earliest_key = chapter_info.chapter_order * 1_000_000 + spans[0][0]
+                    # Deliberately positional: cross-book ranking stays byte-identical to pre-4c.3
+                    # (pinned by SO-05), and a position is comparable where gapped orders are not.
+                    earliest_key = chapter_info.spine_position * 1_000_000 + spans[0][0]
 
                 for occurrence_index, (start, end) in enumerate(spans):
                     match_text = chapter_text[start:end]
@@ -690,13 +721,16 @@ def search_library(
 
             if query.mode == SearchMode.HYBRID:
                 try:
-                    semantic = _semantic_results_for_book(
-                        book_id,
-                        title=title,
-                        author=author,
-                        term=trimmed,
-                        books_dir=books_dir,
-                        n_results=max(1, max_results_per_book - len(results_for_book)),
+                    semantic = _semantic_to_order(
+                        _semantic_results_for_book(
+                            book_id,
+                            title=title,
+                            author=author,
+                            term=trimmed,
+                            books_dir=books_dir,
+                            n_results=max(1, max_results_per_book - len(results_for_book)),
+                        ),
+                        orders,
                     )
                     for r in semantic:
                         if len(results_for_book) >= max_results_per_book:
@@ -850,11 +884,14 @@ def highlight_ranges_for_chapter(
 @dataclass
 class ChapterIndex:
     chapter_title: str
+    #: ADR-0016 ``ChapterContent.order`` -- the address search emits (012 WI-4c.3).
     chapter_order: int
     normalized_text: str
     #: ``array("I")`` of original-text offsets, one per normalised character
     #: (011 WI-9). Indexed and len()'d only -- never mutated, never sliced.
     index_map: array
+    #: Index in ``book.spine``: internal only (spine lookups, cross-book ranking).
+    spine_position: int
 
 
 @dataclass
