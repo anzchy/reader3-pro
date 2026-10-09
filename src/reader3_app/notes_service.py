@@ -579,15 +579,18 @@ def rebind_annotations(
     them -- an import needs EX, so the generation cannot change under us. Per annotation (D-9):
 
     - orphaned, or ``accepted`` with ``bound == current``: untouched;
-    - otherwise ``match_resolution`` on the text at its own ``chapter_index`` (by position; at or past
-      the chapter count is ``unmatched``, never orphaned). ``resolved`` sets resolution, bound and
-      evaluated to current; ``ambiguous`` / ``unmatched`` set only resolution and evaluated.
+    - otherwise ``match_resolution`` on the text of the chapter whose ``order`` equals its own
+      ``chapter_index`` (ADR-0016 D-b, 012 WI-4c.1; a gap or past-the-end order has no chapter and is
+      ``unmatched``, never orphaned). ``resolved`` sets resolution, bound and evaluated to current;
+      ``ambiguous`` / ``unmatched`` set only resolution and evaluated.
 
     Binding fields (quote, prefix, suffix, position, cfi, chapter_index, chapter_href, orphaned, ...)
     are never written. Saves iff a record changed or the advance target is a str that differs from the
     stored notes value (ruling 1/3). Cannot judge -- no generation, corrupt manifest, any chapter read
-    failure -- changes nothing and returns ``fingerprint=None``. A missing ``notes.json`` is never
-    created (ruling 6). ``BookLockBusy`` / ``BookChanged`` propagate; ``deadline`` bounds the lock wait.
+    failure, manifest chapter orders that are not non-negative and strictly increasing (checked eagerly,
+    before any note is looked at; DP-4b) -- changes nothing and returns ``fingerprint=None``. A missing
+    ``notes.json`` is never created (ruling 6). ``BookLockBusy`` / ``BookChanged`` propagate; ``deadline``
+    bounds the lock wait.
     """
     path = _notes_path(books_dir, book_id)
     outcome: Dict[str, object] = {"fingerprint": None, "counts": {}, "advanced": False}
@@ -595,6 +598,10 @@ def rebind_annotations(
     def rebind(annotations: List[Annotation]) -> bool:
         gen = book_store.current_generation(book_id, books_dir)
         if gen is None:
+            return False
+        try:
+            gen.orders()  # DP-4b: a non-strict manifest is "cannot judge" even with nothing to look up
+        except book_format.BookCorrupt:
             return False
         current = gen.fingerprint
         if not os.path.exists(path):
@@ -606,7 +613,7 @@ def rebind_annotations(
                 index = ann.chapter_index
                 if _rebind_skips(ann, current) or index in texts:
                     continue
-                texts[index] = gen.chapter_text(index) if 0 <= index < gen.chapter_count else None
+                texts[index] = gen.chapter_text(index) if gen.has_chapter(index) else None
         except (book_format.BookFormatError, OSError):
             return False
 

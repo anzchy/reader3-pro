@@ -10,6 +10,10 @@ Not a test file and not frozen. It is built up one work item at a time:
 - WI-2b.4: ``gen_inputs`` (``publish_gen``'s inputs, for a publish under an EX lock the test
   already holds), ``flip_chapter_byte``, ``post_counts``, ``FakeClock`` and ``run_in_worker``
   (self-checks in ``test_notes_rebind.py``).
+- WI-4c.1: the keyword-only ``orders=`` on ``gen_inputs`` / ``_book`` / ``publish_gen`` / ``write_book_pkl``
+  (matrix ``tests-20261009-wi4c1.md`` section 0.1; self-check CO-00 in ``test_book_store_chapter_order.py``).
+  ``None`` keeps ``order = position``, so every earlier caller is byte-identical. Monotonicity is not checked
+  here: ``_book`` must be able to build a non-strict Book, and ``publish`` refuses non-strict manifests itself.
 
 ``seed_notes`` writes raw JSON and never goes through ``save_annotations``, so a test
 can put on disk exactly the bytes it means to (the ``_write_raw`` pattern in
@@ -169,39 +173,53 @@ def _chapter_href(i: int) -> str:
     return f"Text/c{i}.xhtml"
 
 
-def gen_inputs(texts: List[str], fp: str, tag: str) -> book_format.PublishInputs:
-    """The ``PublishInputs`` ``publish_gen`` publishes: one chapter per text, ``order`` = position."""
+def _orders(texts: List[str], orders: Optional[List[int]]) -> List[int]:
+    """``orders`` as given (its length must match ``texts``), or ``range(len(texts))`` when it is None."""
+    if orders is None:
+        return list(range(len(texts)))
+    assert len(orders) == len(texts), (orders, texts)
+    return list(orders)
+
+
+def gen_inputs(
+    texts: List[str], fp: str, tag: str, *, orders: Optional[List[int]] = None
+) -> book_format.PublishInputs:
+    """The ``PublishInputs`` ``publish_gen`` publishes: one chapter per text, ``order`` = position unless given."""
     return dataclasses.replace(
         make_inputs(tag, book_fingerprint=fp, images=False, pkl=False),
         chapters=tuple(
-            ChapterRecord(id=f"c{i}", href=_chapter_href(i), title=f"T{i}", content=f"<p>{t}</p>", text=t, order=i)
-            for i, t in enumerate(texts)
+            ChapterRecord(id=f"c{i}", href=_chapter_href(i), title=f"T{i}", content=f"<p>{t}</p>", text=t, order=o)
+            for i, (t, o) in enumerate(zip(texts, _orders(texts, orders)))
         ),
     )
 
 
-def publish_gen(books_dir: Any, folder: str, texts: List[str], fp: str, tag: str) -> int:
+def publish_gen(
+    books_dir: Any, folder: str, texts: List[str], fp: str, tag: str, *, orders: Optional[List[int]] = None
+) -> int:
     """Publish one real generation of ``texts`` under the EX book lock; return its number.
 
     rule 12: coordinator ruling 2026-10-09 WI-4a -- the generation declares a real pickled ``book.pkl`` (the
     same ``Book`` ``write_book_pkl`` writes: title = folder, chapters ``c{i}``, ``book_fingerprint = fp``). From
     WI-4a.2 a valid book is read only from ``gen/{g}/book.pkl`` (D-a); ``gen_inputs`` itself stays ``pkl=False``.
     """
-    inputs = dataclasses.replace(gen_inputs(texts, fp, tag), pkl=pickle.dumps(_book(folder, texts, fp)))
+    inputs = dataclasses.replace(
+        gen_inputs(texts, fp, tag, orders=orders), pkl=pickle.dumps(_book(folder, texts, fp, orders=orders))
+    )
     book_dir = Path(books_dir) / folder
     book_dir.mkdir(parents=True, exist_ok=True)
     with book_lock.acquire(str(books_dir), folder, mode=book_lock.EXCLUSIVE, holder="import"):
         return book_format.publish(book_dir, inputs)
 
 
-def _book(folder: str, texts: List[str], fp: Optional[str]) -> Book:
+def _book(folder: str, texts: List[str], fp: Optional[str], *, orders: Optional[List[int]] = None) -> Book:
     """The one ``Book`` builder ``write_book_pkl`` and ``publish_gen`` share (rule 12: coordinator ruling
     2026-10-09 WI-4a): title = folder, one chapter ``c{i}`` per text, ``book_fingerprint = fp``."""
     book = Book(
         metadata=BookMetadata(title=folder, language="en"),
         spine=[
-            ChapterContent(id=f"c{i}", href=_chapter_href(i), title=f"T{i}", content=f"<p>{t}</p>", text=t, order=i)
-            for i, t in enumerate(texts)
+            ChapterContent(id=f"c{i}", href=_chapter_href(i), title=f"T{i}", content=f"<p>{t}</p>", text=t, order=o)
+            for i, (t, o) in enumerate(zip(texts, _orders(texts, orders)))
         ],
         toc=[],
         images={},
@@ -213,9 +231,11 @@ def _book(folder: str, texts: List[str], fp: Optional[str]) -> Book:
     return book
 
 
-def write_book_pkl(books_dir: Any, folder: str, texts: List[str], fp: Optional[str]) -> Path:
+def write_book_pkl(
+    books_dir: Any, folder: str, texts: List[str], fp: Optional[str], *, orders: Optional[List[int]] = None
+) -> Path:
     """Pickle a real ``Book`` whose spine carries ``texts``; ``book.book_fingerprint = fp``."""
-    book = _book(folder, texts, fp)
+    book = _book(folder, texts, fp, orders=orders)
     path = Path(books_dir) / folder / "book.pkl"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(pickle.dumps(book))

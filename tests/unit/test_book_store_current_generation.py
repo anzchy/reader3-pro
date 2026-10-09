@@ -4,8 +4,10 @@ Matrix: ``.claude/tdd-guardian/tests-20261009-wi2b.md`` cases R4-01 … R4-06 (c
 
 The law: read-only and consistent with ``book_fingerprint``. ``current_generation(b, d) is None`` iff
 ``book_fingerprint(b, d) is None``; otherwise ``.fingerprint == book_fingerprint(b, d)``,
-``.chapter_count == len(manifest.chapters)`` and ``chapter_text(i)`` is the text of ``manifest.chapters[i]``
-by position (R-3: never by the ``order`` field).
+``.chapter_count == len(manifest.chapters)`` and ``chapter_text(o)`` is the text of the manifest entry whose
+``order`` is ``o``: by order (D-b, coordinator ruling 2026-10-09, WI-4c.1); a gap raises ``ChapterNotFound``;
+supersedes R-3's "by position". On the gapless fixtures of R4-01..R4-04 order equals position, so they are
+unchanged.
 
 Every case runs against real generations (``book_format.publish`` under the real EX book lock) in ``tmp_path``.
 """
@@ -114,7 +116,8 @@ def test_r4_05_traversal_id_is_refused_before_any_path_is_built(books: Path, bad
 # --------------------------------------------------------------------------- R4-06 (WI-3.3 O3-12)
 #
 # Matrix: ``.claude/tdd-guardian/tests-20261009-wi3.md`` case O3-12. The first fixtures anywhere with
-# ``order != position``: ``chapter_text(i)`` must read ``manifest.chapters[i]`` by position (R-3), never by order.
+# ``order != position``. Rewritten in WI-4c.1 (``tests-20261009-wi4c1.md`` CO-05 / CO-06) under rule 12,
+# coordinator ruling 2026-10-09 D-b: ``chapter_text(o)`` reads the entry whose ``order`` is ``o``; a gap raises.
 
 
 def _publish_with_orders(books_dir: Path, texts: List[str], orders: List[int]) -> None:
@@ -126,7 +129,7 @@ def _publish_with_orders(books_dir: Path, texts: List[str], orders: List[int]) -
         book_format.publish(books_dir / G, inputs)
 
 
-def test_r4_06_chapter_text_is_positional_on_gapped_orders(books: Path) -> None:
+def test_r4_06_chapter_text_is_by_order_on_gapped_orders(books: Path) -> None:
     _publish_with_orders(books, TEXTS, [0, 2, 5])
     before = snapshot(books / G)
 
@@ -134,15 +137,20 @@ def test_r4_06_chapter_text_is_positional_on_gapped_orders(books: Path) -> None:
 
     assert g is not None
     assert g.chapter_count == 3
-    assert g.chapter_text(1) == "t1 one"  # the chapter whose order is 2
-    assert g.chapter_text(2) == "t2 two"
-    assert [g.chapter_text(i) for i in range(3)] == TEXTS
+    assert hasattr(book_store, "ChapterNotFound")  # rule 12: coordinator ruling 2026-10-09 D-b
+    assert g.chapter_text(0) == "t0 zero"  # rule 12: coordinator ruling 2026-10-09 D-b
+    assert g.chapter_text(2) == "t1 one"  # rule 12: coordinator ruling 2026-10-09 D-b -- the order-2 chapter
+    assert g.chapter_text(5) == "t2 two"  # rule 12: coordinator ruling 2026-10-09 D-b
+    with pytest.raises(book_store.ChapterNotFound):  # rule 12: coordinator ruling 2026-10-09 D-b
+        g.chapter_text(1)
+    has = [g.has_chapter(n) for n in range(7)]  # rule 12: coordinator ruling 2026-10-09 D-b
+    assert has == [True, False, True, False, False, True, False]  # rule 12: coordinator ruling 2026-10-09 D-b
     assert snapshot(books / G) == before
 
 
 @settings(max_examples=15, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(xs=st.lists(st.integers(0, 50), min_size=1, max_size=5, unique=True).map(sorted))
-def test_r4_06_chapter_text_is_positional_on_gapped_orders_property(xs: List[int]) -> None:
+def test_r4_06_chapter_text_is_by_order_on_gapped_orders_property(xs: List[int]) -> None:
     texts = [f"text-{i}-{x}" for i, x in enumerate(xs)]
     with tempfile.TemporaryDirectory() as d:
         books_dir = Path(d)
@@ -155,5 +163,15 @@ def test_r4_06_chapter_text_is_positional_on_gapped_orders_property(xs: List[int
 
         assert g is not None
         assert g.chapter_count == len(xs)
+        assert hasattr(book_store, "ChapterNotFound")  # rule 12: coordinator ruling 2026-10-09 D-b
         for i in range(len(xs)):
-            assert g.chapter_text(i) == texts[i] == book_format.read_chapter(gen_dir, m.chapters[i]).text
+            # rule 12: coordinator ruling 2026-10-09 D-b
+            assert g.chapter_text(xs[i]) == texts[i] == book_format.read_chapter(gen_dir, m.chapters[i]).text
+        for n in range(0, max(xs) + 3):
+            if n in xs:
+                continue
+            assert not g.has_chapter(n)  # rule 12: coordinator ruling 2026-10-09 D-b
+            with pytest.raises(book_store.ChapterNotFound):  # rule 12: coordinator ruling 2026-10-09 D-b
+                g.chapter_text(n)
+        assert all(g.has_chapter(x) for x in xs)  # rule 12: coordinator ruling 2026-10-09 D-b
+        assert g.has_chapter(-1) is False  # rule 12: coordinator ruling 2026-10-09 D-b

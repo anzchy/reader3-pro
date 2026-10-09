@@ -49,11 +49,15 @@ pinned by a test rather than left to be rediscovered.
 
 from __future__ import annotations
 
+import bisect
 import logging
 import os
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Any, Literal, Optional
+from typing import TYPE_CHECKING, Any, Iterable, Iterator, Literal, Optional
+
+if TYPE_CHECKING:
+    from .reader3 import ChapterContent
 
 from . import book_format
 from .safe_paths import safe_book_folder
@@ -183,7 +187,9 @@ def load_book_cached(book_id: str, books_dir: str) -> object:
     * ``missing``: the flat ``book.pkl``, keyed on its stat as before; one ``os.stat`` per call is the price of
       freshness, and an absent file raises ``FileNotFoundError`` from that stat.
 
-    Reads of unchanged storage return the ``is``-identical object every time.
+    Reads of unchanged storage return the ``is``-identical object every time. A flat pickle that is not a ``Book``
+    is returned unchanged (and unstamped); ``load_book_cached`` passes a non-Book through unchanged while the
+    chapter helpers (:func:`load_chapter`, :func:`chapter_count`, :func:`iter_chapters`) raise ``BookCorrupt``.
     """
     resolved = resolve_generation(book_id, books_dir)
     manifest, key = resolved.manifest, resolved.manifest_key
@@ -365,19 +371,42 @@ def book_fingerprint(book_id: str, books_dir: str) -> Optional[str]:
 class CurrentGeneration:
     """One published generation, as rebind reads it: fingerprint, chapter count, lazy chapter texts.
 
-    ``chapter_text(i)`` reads ``manifest.chapters[i]`` **by position**, never by its ``order`` field
-    (plan R-3; WI-3 must keep position aligned with ``Book.spine[i]``). Each call is one seek-read
-    through ``book_format.read_chapter`` and raises what it raises (``ChapterReadError`` / ``OSError``):
-    a chapter that cannot be read is "cannot judge", which only the caller can turn into a no-op.
+    Chapters are addressed by ``order`` (ADR-0016 D-b, 012 WI-4c.1): ``chapter_text(o)`` reads the manifest
+    entry whose ``order`` field is ``o``, and ``has_chapter(o)`` says whether one exists. A gap is not a chapter:
+    an order between two entries, past the last one, or negative is absent, and ``chapter_text`` raises
+    :class:`ChapterNotFound` for it. Both methods first check that the manifest's orders are non-negative and
+    strictly increasing (the same core as :func:`chapter_orders`) and raise ``BookCorrupt`` naming the book id
+    when they are not, whatever order was asked for. ``chapter_count`` is the number of entries, not an order
+    bound. Each text read is one seek-read through ``book_format.read_chapter`` and raises what it raises
+    (``ChapterReadError`` / ``OSError``): a chapter that cannot be read is "cannot judge", which only the caller
+    can turn into a no-op.
     """
 
     fingerprint: str
     chapter_count: int
     gen_dir: str
     entries: tuple[book_format.ChapterIndexEntry, ...]
+    book_id: str
 
-    def chapter_text(self, index: int) -> str:
-        return book_format.read_chapter(self.gen_dir, self.entries[index]).text
+    def orders(self) -> tuple[int, ...]:
+        """The manifest's chapter orders; ``BookCorrupt`` unless non-negative and strictly increasing."""
+        return _strict_orders((e.order for e in self.entries), self.book_id)
+
+    def _position(self, order: int) -> Optional[int]:
+        orders = self.orders()
+        i = bisect.bisect_left(orders, order)
+        return i if i < len(orders) and orders[i] == order else None
+
+    def has_chapter(self, order: int) -> bool:
+        """Whether an entry with this ``order`` exists (a gap is not a chapter)."""
+        return self._position(order) is not None
+
+    def chapter_text(self, order: int) -> str:
+        """The text of the entry whose ``order`` is ``order``; :class:`ChapterNotFound` for a gap."""
+        i = self._position(order)
+        if i is None:
+            raise ChapterNotFound(_not_found_message(self.book_id, order))
+        return book_format.read_chapter(self.gen_dir, self.entries[i]).text
 
 
 def current_generation(book_id: str, books_dir: str) -> Optional[CurrentGeneration]:
@@ -394,4 +423,92 @@ def current_generation(book_id: str, books_dir: str) -> Optional[CurrentGenerati
     except (book_format.BookFormatError, OSError):
         return None
     gen_dir = os.path.join(book_dir, book_format.GEN_DIR, str(manifest.generation))
-    return CurrentGeneration(manifest.book_fingerprint, len(manifest.chapters), gen_dir, manifest.chapters)
+    return CurrentGeneration(manifest.book_fingerprint, len(manifest.chapters), gen_dir, manifest.chapters, book_id)
+
+
+# --- chapters by order (012 WI-4c.1, ADR-0016 D-b) ----------------------------
+#
+# ``chapter_index`` means ``ChapterContent.order``: the raw EPUB spine index, >= 0, strictly increasing, gaps
+# allowed. Nothing here caches or mutates the Book: every call re-derives the orders from the spine it is given
+# (one ``load_book_cached`` call per A5 function), so the one ``lru_cache`` above stays the only memo.
+
+
+class ChapterNotFound(KeyError):
+    """No chapter has the requested ``order`` (a gap, past the end, or negative). Not a ``BookFormatError``."""
+
+
+def _not_found_message(book_id: str, order: int) -> str:
+    return f"book {book_id!r}: no chapter with order {order}"
+
+
+def _strict_orders(orders: Iterable[int], book_id: str) -> tuple[int, ...]:
+    """The one order-validation core: ``BookCorrupt`` unless every order is >= 0 and strictly increasing."""
+    out = tuple(orders)
+    if (out and out[0] < 0) or any(a >= b for a, b in zip(out, out[1:])):
+        raise book_format.BookCorrupt(f"book {book_id!r}: chapter orders are not non-negative and strictly increasing")
+    return out
+
+
+def chapter_orders(book: Any, *, book_id: str) -> tuple[int, ...]:
+    """The ``order`` of every spine chapter, in spine order; ``BookCorrupt`` unless >= 0 and strictly increasing."""
+    return _strict_orders((c.order for c in book.spine), book_id)
+
+
+def find_chapter(book: Any, chapter_index: int, *, book_id: str) -> Optional[ChapterContent]:
+    """The spine chapter whose ``order`` is ``chapter_index`` (the same object), or ``None`` for a gap.
+
+    Pure: no I/O, no memo. ``BookCorrupt`` when the book's orders are not strictly increasing.
+    """
+    orders = chapter_orders(book, book_id=book_id)
+    i = bisect.bisect_left(orders, chapter_index)
+    if i < len(orders) and orders[i] == chapter_index:
+        chapter: ChapterContent = book.spine[i]
+        return chapter
+    return None
+
+
+def neighbour_orders(book: Any, chapter_index: int, *, book_id: str) -> tuple[Optional[int], Optional[int]]:
+    """``(previous order, next order)`` around ``chapter_index``, ``None`` on an empty side; works for a gap too."""
+    orders = chapter_orders(book, book_id=book_id)
+    lo = bisect.bisect_left(orders, chapter_index)
+    hi = bisect.bisect_right(orders, chapter_index)
+    return (orders[lo - 1] if lo > 0 else None, orders[hi] if hi < len(orders) else None)
+
+
+def _loaded_book(book_id: str, books_dir: str) -> Any:
+    from .reader3 import Book  # lazy: see _load_book_for_stat
+
+    book = load_book_cached(book_id, books_dir)
+    if not isinstance(book, Book):
+        raise book_format.BookCorrupt(f"book {book_id!r}: book.pkl does not hold a Book")
+    return book
+
+
+def load_chapter(book_id: str, books_dir: str, chapter_index: int) -> ChapterContent:
+    """The chapter whose ``order`` is ``chapter_index``, through one :func:`load_book_cached` call.
+
+    A gap is not a chapter: :class:`ChapterNotFound` (a ``KeyError``) for any order the spine lacks. Loader
+    failures propagate as they are (``FileNotFoundError``, ``ValueError``, ``BookCorrupt``); a non-Book pickle or
+    non-strict orders raise ``BookCorrupt``.
+    """
+    chapter = find_chapter(_loaded_book(book_id, books_dir), chapter_index, book_id=book_id)
+    if chapter is None:
+        raise ChapterNotFound(_not_found_message(book_id, chapter_index))
+    return chapter
+
+
+def chapter_count(book_id: str, books_dir: str) -> int:
+    """How many chapters the book has -- a count, not an index bound: a gap is not a chapter, and orders may
+    run past the count. Raises as :func:`load_chapter` does (except ``ChapterNotFound``)."""
+    return len(chapter_orders(_loaded_book(book_id, books_dir), book_id=book_id))
+
+
+def iter_chapters(book_id: str, books_dir: str) -> Iterator[tuple[int, ChapterContent]]:
+    """``(order, chapter)`` for every spine chapter, in order, through one :func:`load_book_cached` call.
+
+    Validates eagerly: every failure (loader errors, non-Book, non-strict orders) raises at the call, before
+    anything is yielded.
+    """
+    book = _loaded_book(book_id, books_dir)
+    orders = chapter_orders(book, book_id=book_id)
+    return iter(list(zip(orders, book.spine)))
