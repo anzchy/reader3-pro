@@ -9,7 +9,8 @@ Laws pinned here:
 * ``storage_format`` is a total, read-only, silent query whose answer depends on the manifest alone, and equals
   ``book_format.classify(<dir>, full=False)`` for every id ``safe_book_folder`` accepts.
 * No fallback: corrupt raises ``book_format.BookCorrupt`` from every loader entry point, with zero unpickles and
-  exactly one ERROR per call. Missing reads the flat pkl silently; valid also reads the flat pkl in WI-3.2 (Q1).
+  exactly one ERROR per call. Missing reads the flat pkl silently; valid reads only gen/{g}/book.pkl from WI-4a
+  (D-a).
 * The verdict is evaluated on every call, outside the ``lru_cache`` (never memoized on any stat).
 * Unsafe ids raise ``safe_book_folder``'s ``ValueError`` before any path is touched.
 
@@ -402,7 +403,7 @@ def _s3_10_check(kind: str, pos: int, xor: int, blob: bytes) -> None:
         books = Path(td)
         book = books / G
         write_book_pkl(books, G, TEXTS, None)
-        real_gen_pkl(books, G, TEXTS, FP_A, "A")
+        g = real_gen_pkl(books, G, TEXTS, FP_A, "A")
         raw = (book / MANIFEST).read_bytes()
         if kind == "truncate":
             mutated = raw[: pos % len(raw)]
@@ -427,7 +428,8 @@ def _s3_10_check(kind: str, pos: int, xor: int, blob: bytes) -> None:
             else:
                 b = book_store.load_book(G, str(books))
                 assert [ch.text for ch in b.spine] == TEXTS  # type: ignore[attr-defined]
-                assert c.paths == [str(book / PKL)]
+                # rule 12: coordinator ruling 2026-10-09 WI-4a -- valid reads only gen/{g}/book.pkl (D-a)
+                assert c.paths == [str(book / book_format.GEN_DIR / str(g) / PKL)]
         finally:
             book_store.load_book_cached.cache_clear()
 
@@ -465,6 +467,7 @@ def test_s3_11_corrupt_logs_exactly_one_error_per_call(books: Path, caplog: pyte
     errors = [r for r in ours if r.levelno == logging.ERROR]
     assert len(errors) == 3, [r.getMessage() for r in ours]
     assert all(G in r.getMessage() for r in errors)
+    assert all(r.getMessage() == f"book {G!r}: manifest.json is corrupt; refusing to load" for r in errors)
     assert [r for r in ours if r.levelno == logging.WARNING] == []
     assert "Traceback" not in caplog.text
 
@@ -594,6 +597,8 @@ def test_s3_14b_verdict_not_memoized_on_manifest_identity(
     assert counters.n == 1
     ours = [r for r in caplog.records if r.name in LOUD_LOGGERS]
     assert len([r for r in ours if r.levelno == logging.ERROR]) == 2
+    assert all(r.getMessage() == f"book {G!r}: manifest.json is corrupt; refusing to load"
+               for r in ours if r.levelno == logging.ERROR)
     assert [r for r in ours if r.levelno == logging.WARNING] == []
 
 
@@ -626,9 +631,15 @@ def test_s3_05b_loaders_reject_unsafe_ids_with_safe_book_folder_error(
 
 
 @pytest.mark.parametrize("row", ["dual-different", "gen-only"])
-def test_s3_15_valid_reads_the_flat_pkl_in_wi_3_2(
+def test_s3_15_valid_reads_the_gen_pkl_from_wi_4a(
     books: Path, counters: Counters, caplog: pytest.LogCaptureFixture, row: str
 ) -> None:
+    """rule 12: coordinator ruling 2026-10-09 WI-4a -- renamed from ``..._valid_reads_the_flat_pkl_in_wi_3_2``.
+
+    ADR-0016 dual-write sub-ruling plus D-a: from WI-4a a valid book is read only from ``gen/{g}/book.pkl``. The
+    dual-different row now expects the gen title and path; the gen-only row now returns the gen Book instead of
+    raising ``FileNotFoundError``.
+    """
     book = books / G
     gen_pkl = book_bytes("GEN", ["gen text"])
     if row == "dual-different":
@@ -639,17 +650,26 @@ def test_s3_15_valid_reads_the_flat_pkl_in_wi_3_2(
     d = str(books)
 
     assert book_store.storage_format(G, d) == "valid"
+    gen_path = str(book / "gen" / "1" / PKL)
     if row == "dual-different":
         b: Any = book_store.load_book(G, d)
-        assert b.metadata.title == G
-        assert [c.text for c in b.spine] == TEXTS
-        assert book_store.load_book_metadata(G, d).title == G
-        assert counters.paths == [str(book / PKL)]
+        assert b.metadata.title == "GEN"
+        assert [c.text for c in b.spine] == ["gen text"]
+        assert book_store.load_book_metadata(G, d).title == "GEN"
+        assert counters.paths == [gen_path]
     else:
         for name, call in entry_points():
-            with pytest.raises(FileNotFoundError) as ei:
-                call(G, d)
-            assert not isinstance(ei.value, book_format.BookFormatError), name
+            try:
+                got: Any = call(G, d)
+            except Exception as exc:  # noqa: BLE001 - a raise is a failed expectation, not a crash
+                raise AssertionError(f"{name} raised {type(exc).__name__}") from None
+            if name == "book_store.load_book_metadata":
+                assert got.title == "GEN", name
+            else:
+                assert got.metadata.title == "GEN", name
+                assert [c.text for c in got.spine] == ["gen text"], name
+        assert counters.paths and all(p == gen_path for p in counters.paths), counters.paths
+    assert str(book / PKL) not in counters.paths
     assert loud(caplog) == []
 
 

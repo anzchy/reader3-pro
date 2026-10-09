@@ -72,16 +72,38 @@ def _book_pkl_path(book_id: str, books_dir: str) -> str:
 
 
 @lru_cache(maxsize=10)
-def _load_book_for_stat(
-    book_id: str, books_dir: str, st_mtime_ns: int, st_size: int
-) -> Any:
-    """The memoized half. ``st_mtime_ns`` and ``st_size`` are key material only.
+def _load_book_for_stat(book_id: str, books_dir: str, kind: str, *identity: Any) -> Any:
+    """The memoized half: one ``lru_cache(maxsize=10)`` for both storage forms (012 WI-4a.2).
 
-    They are read by the caller, not here: recomputing the stat inside the
-    cached function would defeat the point, since the memo is consulted before
-    the body ever runs.
+    ``identity`` is key material only, read by the caller (recomputing it here would defeat the point, since the
+    memo is consulted before the body runs):
+
+    * ``kind == "flat"``: ``(st_mtime_ns, st_size)`` of the flat ``book.pkl``, unchanged from before WI-4a.
+    * ``kind == "gen"``: ``(st_ino, st_mtime_ns, st_size, generation, book_fingerprint)`` -- the root manifest's
+      fstat identity plus its ``g`` and fingerprint, all from the one manifest read. A republish always changes
+      the key (OQ-6): it lands a new manifest inode and either a new ``g`` or a new fingerprint, so a stale
+      generation is never served after a stat-visible republish.
+
+    A gen key reads only ``gen/{g}/book.pkl`` and never the flat pickle (D-a). Generations are immutable once
+    published, which is what makes keying them on the manifest sound. The one accepted gap: damage to an
+    already-cached generation that leaves the manifest's stat untouched is invisible, so a warm hit keeps
+    serving the Book loaded before the damage. A cold load of a damaged generation always raises.
     """
-    return load_book_file(_book_pkl_path(book_id, books_dir))
+    if kind == "flat":
+        return load_book_file(_book_pkl_path(book_id, books_dir))
+    from .reader3 import Book  # lazy: reader3 -> library_delete -> book_store would be an import cycle
+
+    path = os.path.join(books_dir, book_id, book_format.GEN_DIR, str(identity[3]), book_format.PKL)
+    try:
+        book = load_book_file(path)
+        if not isinstance(book, Book):
+            raise TypeError("gen book.pkl did not hold a Book")
+    except MemoryError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - OQ-4: any unreadable generation is BookCorrupt, never a fallback
+        logger.error("book %r: gen book.pkl is unreadable (%s); refusing to load", book_id, type(exc).__name__)
+        raise book_format.BookCorrupt(f"book {book_id!r}: storage is corrupt") from exc
+    return book
 
 
 def storage_format(book_id: str, books_dir: str) -> book_format.BookState:
@@ -105,7 +127,7 @@ class ResolvedGeneration:
     ``gen_dir``, ``manifest`` and ``manifest_key`` are set exactly when ``state == "valid"``, and all three come
     from the same read: ``manifest_key`` is ``(st_ino, st_mtime_ns, st_size)`` of the ``fstat`` of the fd the
     manifest bytes were parsed from (OQ-2(b)), so it never pairs one file's identity with another file's
-    contents. ``book_dir`` is ``join(books_dir, book_id)`` in every state, existing or not.
+    contents. ``book_dir`` is ``join(books_dir, safe_book_folder(book_id))`` in every state, existing or not.
     """
 
     state: Literal["valid", "missing"]
@@ -122,7 +144,7 @@ def resolve_generation(book_id: str, books_dir: str) -> ResolvedGeneration:
     call to ``book_format.classify_with_manifest`` (the shared silent core) reads the root manifest exactly once.
     Corrupt logs exactly one ERROR here, at the raise site, and raises ``BookCorrupt`` whose message carries the
     book id and never a path (OQ-3). Nothing is cached: every call re-reads, so a republish, a deletion or a
-    corruption is visible on the very next call. No loader calls this yet (WI-4a.2 switches them).
+    corruption is visible on the very next call. :func:`load_book_cached` calls it once per load (WI-4a.2).
     """
     book_dir = os.path.join(books_dir, safe_book_folder(book_id))
     state, manifest, manifest_st = book_format.classify_with_manifest(book_dir)
@@ -136,34 +158,28 @@ def resolve_generation(book_id: str, books_dir: str) -> ResolvedGeneration:
     return ResolvedGeneration("valid", book_dir, gen_dir, manifest, key)
 
 
-def _refuse_corrupt(book_id: str, books_dir: str) -> None:
-    """Raise ``BookCorrupt`` (logging exactly one ERROR) when the book's ``manifest.json`` is corrupt.
-
-    ``missing`` and ``valid`` both fall through to the flat ``book.pkl`` (WI-3.2 Q1: ``valid`` keeps reading the
-    flat pickle until WI-4a). ``corrupt`` never falls back: a book whose manifest exists but cannot be trusted is
-    answered loudly rather than served from a pickle that may be stale.
-    """
-    if storage_format(book_id, books_dir) == "corrupt":
-        logger.error("book %r: manifest.json is corrupt; refusing to serve the flat book.pkl", book_id)
-        raise book_format.BookCorrupt(f"book {book_id!r}: storage is corrupt")
-
-
 def load_book_cached(book_id: str, books_dir: str) -> object:
-    """Return the ``Book`` in ``{books_dir}/{book_id}/book.pkl``, or raise.
+    """Return the book's ``Book``, or raise.
 
-    One ``os.stat`` per call is the price of freshness — roughly a microsecond
-    against the tens of milliseconds an unpickle of a real book costs. Reads of
-    an unchanged file return the ``is``-identical object every time.
+    Every call first runs :func:`resolve_generation`, outside the cache: one root-manifest read per call, and the
+    storage state is never memoized (an unsafe ``book_id`` raises ``ValueError``; a corrupt manifest raises
+    ``book_format.BookCorrupt`` after its one ERROR log, without reading any pickle).
 
-    012 WI-3.2: every call first asks :func:`storage_format`, outside the cache.
-    An unsafe ``book_id`` raises ``ValueError``; a corrupt manifest raises
-    ``book_format.BookCorrupt`` after one ERROR log, without reading the pickle.
+    * ``valid`` (012 WI-4a.2, D-a): the Book comes only from ``gen/{g}/book.pkl``, keyed on the manifest's
+      identity plus ``g`` and fingerprint. An absent, unreadable or non-``Book`` generation pickle raises
+      ``BookCorrupt`` after exactly one ERROR, and never falls back to the flat ``book.pkl``. A warm hit after
+      damage that leaves the manifest's stat unchanged serves the Book cached before the damage (accepted).
+    * ``missing``: the flat ``book.pkl``, keyed on its stat as before; one ``os.stat`` per call is the price of
+      freshness, and an absent file raises ``FileNotFoundError`` from that stat.
+
+    Reads of unchanged storage return the ``is``-identical object every time.
     """
-    _refuse_corrupt(book_id, books_dir)
+    resolved = resolve_generation(book_id, books_dir)
+    manifest, key = resolved.manifest, resolved.manifest_key
+    if manifest is not None and key is not None:
+        return _load_book_for_stat(book_id, books_dir, "gen", *key, manifest.generation, manifest.book_fingerprint)
     stat_result = os.stat(_book_pkl_path(book_id, books_dir))
-    return _load_book_for_stat(
-        book_id, books_dir, stat_result.st_mtime_ns, stat_result.st_size
-    )
+    return _load_book_for_stat(book_id, books_dir, "flat", stat_result.st_mtime_ns, stat_result.st_size)
 
 
 # The cache surface belongs to the public name, because that is the name every

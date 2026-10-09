@@ -297,7 +297,14 @@ def _seed_corrupt_manifest(books: Path) -> None:
 def _seed_fingerprint_mismatch(books: Path) -> None:
     from deg_assertions import make_notes_stale, write_stale_index_meta  # type: ignore[import-not-found]
 
-    book_dir = publish_book(books, "a_data", FP_X)
+    # rule 12: coordinator ruling 2026-10-09 WI-4a -- seed only: from WI-4a.2 a valid book is read from
+    # gen/{g}/book.pkl (D-a), so the generation must carry a real pickled "T" book, not make_inputs' garbage pkl.
+    t = make_book(0, chapters=2, chapter_chars=200)
+    t.metadata.title = "T"
+    books.mkdir(parents=True, exist_ok=True)
+    book_dir = books / "a_data"
+    inputs = dataclasses.replace(make_inputs("v0", book_fingerprint=FP_X), pkl=pickle.dumps(t))
+    book_format.publish(book_dir, inputs, create=True)
     write_pkl(book_dir)
     make_notes_stale(books, "a_data")
     write_stale_index_meta(books, "a_data")

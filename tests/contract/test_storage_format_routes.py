@@ -416,3 +416,44 @@ def test_s3_23_corrupt_500_bodies_disclose_no_path_and_no_folder_name(world: Wor
         assert MANIFEST not in resp.text, name
         if name != "html":
             assert resp.json() == CORRUPT_JSON, name
+
+
+# --------------------------------------------------------------------------- 012 WI-4a.2: valid manifest, garbage gen pkl
+#
+# Matrix ``tests-20261009-wi4a.md`` DF-14 / DF-14b. A separate builder rather than a new ``corrupt()`` shape: this
+# book classifies ``valid`` (the gen pkl is declared and stat-correct, only its bytes are garbage), and ``corrupt()``
+# ends by asserting ``classify == "corrupt"``.
+
+
+def _gen_pkl_garbage(world: World) -> None:
+    real_gen_pkl(world.books_dir, BOOK_ID, ["x"], FP_A, "A", pkl=b"\x00" * 64)
+    assert (world.book_dir / PKL).is_file(), "the flat pkl must stay so the book stays listed"
+    assert book_format.classify(world.book_dir, full=False) == "valid"
+
+
+def test_df_14_listing_survives_a_valid_manifest_with_a_garbage_gen_pkl(world: World) -> None:
+    _gen_pkl_garbage(world)
+    write_book_pkl(world.books_dir, GOOD, ["good text"], None)
+    _clear_caches()
+
+    home = world.client.get("/")
+    assert home.status_code == 200, home.text
+    assert GOOD in home.text
+    assert BOOK_TITLE not in home.text
+    assert "Traceback" not in home.text
+
+    stats = world.client.get("/api/library/stats?fresh=1")
+    assert stats.status_code == 200, stats.text
+    body = stats.json()
+    assert body["books_total"] == 2
+    assert body["sections_total"] == 1
+    no_disclosure(world, stats.text)
+
+
+def test_df_14b_reader_route_on_a_garbage_gen_pkl_is_the_corrupt_500_without_fallback(world: World) -> None:
+    _gen_pkl_garbage(world)
+    _clear_caches()
+
+    resp = world.client.get(f"/read/{BOOK_ID}/0")
+
+    _assert_corrupt_html(world, resp)

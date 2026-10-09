@@ -181,16 +181,22 @@ def gen_inputs(texts: List[str], fp: str, tag: str) -> book_format.PublishInputs
 
 
 def publish_gen(books_dir: Any, folder: str, texts: List[str], fp: str, tag: str) -> int:
-    """Publish one real generation of ``texts`` under the EX book lock; return its number."""
-    inputs = gen_inputs(texts, fp, tag)
+    """Publish one real generation of ``texts`` under the EX book lock; return its number.
+
+    rule 12: coordinator ruling 2026-10-09 WI-4a -- the generation declares a real pickled ``book.pkl`` (the
+    same ``Book`` ``write_book_pkl`` writes: title = folder, chapters ``c{i}``, ``book_fingerprint = fp``). From
+    WI-4a.2 a valid book is read only from ``gen/{g}/book.pkl`` (D-a); ``gen_inputs`` itself stays ``pkl=False``.
+    """
+    inputs = dataclasses.replace(gen_inputs(texts, fp, tag), pkl=pickle.dumps(_book(folder, texts, fp)))
     book_dir = Path(books_dir) / folder
     book_dir.mkdir(parents=True, exist_ok=True)
     with book_lock.acquire(str(books_dir), folder, mode=book_lock.EXCLUSIVE, holder="import"):
         return book_format.publish(book_dir, inputs)
 
 
-def write_book_pkl(books_dir: Any, folder: str, texts: List[str], fp: Optional[str]) -> Path:
-    """Pickle a real ``Book`` whose spine carries ``texts``; ``book.book_fingerprint = fp``."""
+def _book(folder: str, texts: List[str], fp: Optional[str]) -> Book:
+    """The one ``Book`` builder ``write_book_pkl`` and ``publish_gen`` share (rule 12: coordinator ruling
+    2026-10-09 WI-4a): title = folder, one chapter ``c{i}`` per text, ``book_fingerprint = fp``."""
     book = Book(
         metadata=BookMetadata(title=folder, language="en"),
         spine=[
@@ -204,6 +210,12 @@ def write_book_pkl(books_dir: Any, folder: str, texts: List[str], fp: Optional[s
     )
     # Set after construction so this works before WI-2b.3 adds the field to Book.
     setattr(book, "book_fingerprint", fp)
+    return book
+
+
+def write_book_pkl(books_dir: Any, folder: str, texts: List[str], fp: Optional[str]) -> Path:
+    """Pickle a real ``Book`` whose spine carries ``texts``; ``book.book_fingerprint = fp``."""
+    book = _book(folder, texts, fp)
     path = Path(books_dir) / folder / "book.pkl"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(pickle.dumps(book))
