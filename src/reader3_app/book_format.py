@@ -516,16 +516,21 @@ def _require_real_dir(path: str, what: str) -> None:
         raise ReadbackError(f"{what} is not a real directory (file or symlink): {path}")
 
 
-def _read_nofollow(path: str) -> bytes:
-    """Read a regular file without following a final symlink and without going through ``open()``."""
+def _read_nofollow(path: str) -> tuple[bytes, os.stat_result]:
+    """Read a regular file without following a final symlink and without going through ``open()``.
+
+    Returns the bytes and the ``fstat`` of the fd they were read from (012 WI-4a.1, OQ-2(b)): the stat is the
+    identity of the file actually read, never the path's identity at some other instant.
+    """
     fd = os.open(path, os.O_RDONLY | _O_NOFOLLOW)
     try:
-        if not stat.S_ISREG(os.fstat(fd).st_mode):
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
             raise ReadbackError(f"not a regular file: {path}")
         chunks: list[bytes] = []
         while chunk := os.read(fd, _READ_CHUNK):
             chunks.append(chunk)
-        return b"".join(chunks)
+        return b"".join(chunks), st
     finally:
         os.close(fd)
 
@@ -544,15 +549,16 @@ def _sha256_nofollow(path: str) -> tuple[int, str]:
         os.close(fd)
 
 
-def _read_manifest(book_dir: str | os.PathLike[str]) -> BookManifest:
+def _read_manifest(book_dir: str | os.PathLike[str]) -> tuple[BookManifest, os.stat_result]:
+    """The parsed root manifest and the ``fstat`` of the fd its bytes came from."""
     path = os.path.join(book_dir, MANIFEST)
     if not stat.S_ISREG(os.lstat(path).st_mode):
         raise ManifestError(f"{MANIFEST} is not a regular file (directory or symlink)")
     try:
-        data = _read_nofollow(path)
+        data, st = _read_nofollow(path)
     except ReadbackError as exc:  # swapped for a non-file between lstat and open
         raise ManifestError(str(exc)) from None
-    return manifest_from_bytes(data)
+    return manifest_from_bytes(data), st
 
 
 def _check_artifacts_stat(gen_dir: str, manifest: BookManifest) -> None:
@@ -577,13 +583,18 @@ def validate_stat(book_dir: str | os.PathLike[str]) -> BookManifest:
     Raises :class:`ManifestError` for the manifest, :class:`ReadbackError` for the generation, and
     ``OSError`` (``FileNotFoundError`` when the manifest is absent) for anything the OS refuses.
     """
-    manifest = _read_manifest(book_dir)
+    return _validate_stat_keyed(book_dir)[0]
+
+
+def _validate_stat_keyed(book_dir: str | os.PathLike[str]) -> tuple[BookManifest, os.stat_result]:
+    """:func:`validate_stat`, also returning the manifest's ``fstat`` from the same single read."""
+    manifest, manifest_st = _read_manifest(book_dir)
     gen_root = os.path.join(book_dir, GEN_DIR)
     _require_real_dir(gen_root, f"{GEN_DIR}/")
     gen_dir = os.path.join(gen_root, str(manifest.generation))
     _require_real_dir(gen_dir, f"{GEN_DIR}/{manifest.generation}/")
     _check_artifacts_stat(gen_dir, manifest)
-    return manifest
+    return manifest, manifest_st
 
 
 def validate_full(gen_dir: str | os.PathLike[str], manifest: BookManifest) -> None:
@@ -619,20 +630,41 @@ def classify(book_dir: str | os.PathLike[str], *, full: bool) -> BookState:
     ``gen/``, ``manifest.json.tmp`` and flat legacy files are never evidence of a book. ``corrupt``: the
     manifest exists but cannot be read (any ``OSError``), is not a regular file, does not parse, or the
     generation fails :func:`validate_stat` (and, when ``full``, :func:`validate_full`). ``valid`` otherwise.
+
+    The stat-level verdict is :func:`classify_with_manifest`'s, the one ladder (012 WI-4a.1, OQ-1(a)).
+    """
+    state, manifest, _ = classify_with_manifest(book_dir)
+    if state != "valid" or not full or manifest is None:
+        return state
+    gen_dir = os.path.join(book_dir, GEN_DIR, str(manifest.generation))
+    try:
+        validate_full(gen_dir, manifest)
+    except (BookFormatError, OSError):
+        return "corrupt"
+    return "valid"
+
+
+def classify_with_manifest(
+    book_dir: str | os.PathLike[str],
+) -> tuple[BookState, BookManifest | None, os.stat_result | None]:
+    """``classify(book_dir, full=False)``, plus the manifest and its stat from the one read. Silent, never raises.
+
+    The single classification ladder (012 WI-4a.1, OQ-1(a)): :func:`classify` and ``book_store``'s
+    ``storage_format`` / ``resolve_generation`` all delegate here. The manifest and the stat are non-``None``
+    exactly when the state is ``"valid"``; the stat is the ``fstat`` of the fd the manifest bytes were read
+    from (OQ-2(b)), so it can never describe a different file than the one parsed. Nothing is cached.
     """
     try:
         os.lstat(os.path.join(book_dir, MANIFEST))
     except (FileNotFoundError, NotADirectoryError):
-        return "missing"
+        return "missing", None, None
     except OSError:
-        return "corrupt"
+        return "corrupt", None, None
     try:
-        manifest = validate_stat(book_dir)
-        if full:
-            validate_full(os.path.join(book_dir, GEN_DIR, str(manifest.generation)), manifest)
+        manifest, manifest_st = _validate_stat_keyed(book_dir)
     except (BookFormatError, OSError):
-        return "corrupt"
-    return "valid"
+        return "corrupt", None, None
+    return "valid", manifest, manifest_st
 
 
 # --------------------------------------------------------------------------- legacy pre-012 sibling staging
@@ -1143,7 +1175,7 @@ def _probe_root(book: str) -> tuple[int, str]:
             raise BookCorrupt(f"{manifest_path} is a directory; refusing to publish over it")
         if stat.S_ISREG(man_st.st_mode):
             try:
-                raw = _read_nofollow(manifest_path)
+                raw, _ = _read_nofollow(manifest_path)
             except (OSError, ReadbackError) as exc:
                 logger.warning("publish: %s cannot be read (%s); repairing", manifest_path, _describe(exc))
     if raw is not None and _higher_version(raw):
@@ -1284,7 +1316,7 @@ def publish(book_dir: str | os.PathLike[str], inputs: PublishInputs, *, create: 
             validate_full(gen_dir, manifest)
         except (ChapterReadError, ManifestError) as exc:
             raise ReadbackError(f"generation {g} failed read-back: {exc}") from exc
-        if _read_nofollow(tmp_path) != data:
+        if _read_nofollow(tmp_path)[0] != data:
             raise ReadbackError(f"{tmp_path} does not hold the manifest just written")
         _crash_point("p6", "after")
 

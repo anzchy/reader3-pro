@@ -53,7 +53,7 @@ import logging
 import os
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from . import book_format
 from .safe_paths import safe_book_folder
@@ -88,12 +88,52 @@ def storage_format(book_id: str, books_dir: str) -> book_format.BookState:
     """``"missing"`` / ``"corrupt"`` / ``"valid"`` for one book (012 WI-3.2). Read-only, silent, never cached.
 
     ``safe_book_folder`` runs first, so an unsafe id raises its ``ValueError`` before any filesystem read; the
-    verdict itself is ``book_format.classify(..., full=False)`` and is never re-implemented here. Not memoized
-    on purpose: a manifest can go bad without its stat changing (a removed generation), and the loaders below
-    ask this question on every call, outside the stat-keyed cache.
+    verdict is ``book_format.classify_with_manifest``'s, the one ladder ``classify(..., full=False)`` also
+    delegates to (WI-4a.1, OQ-1(a)), and is never re-implemented here. Not memoized on purpose: a manifest can
+    go bad without its stat changing (a removed generation), and the loaders below ask this question on every
+    call, outside the stat-keyed cache. Silent at every state: it never goes through :func:`resolve_generation`,
+    which logs on corrupt (OQ-3).
     """
-    folder = safe_book_folder(book_id)
-    return book_format.classify(os.path.join(books_dir, folder), full=False)
+    book_dir = os.path.join(books_dir, safe_book_folder(book_id))
+    return book_format.classify_with_manifest(book_dir)[0]
+
+
+@dataclass(frozen=True)
+class ResolvedGeneration:
+    """One book's storage state, from a single read of its root ``manifest.json`` (012 WI-4a.1).
+
+    ``gen_dir``, ``manifest`` and ``manifest_key`` are set exactly when ``state == "valid"``, and all three come
+    from the same read: ``manifest_key`` is ``(st_ino, st_mtime_ns, st_size)`` of the ``fstat`` of the fd the
+    manifest bytes were parsed from (OQ-2(b)), so it never pairs one file's identity with another file's
+    contents. ``book_dir`` is ``join(books_dir, book_id)`` in every state, existing or not.
+    """
+
+    state: Literal["valid", "missing"]
+    book_dir: str
+    gen_dir: Optional[str]
+    manifest: Optional[book_format.BookManifest]
+    manifest_key: Optional[tuple[int, int, int]]
+
+
+def resolve_generation(book_id: str, books_dir: str) -> ResolvedGeneration:
+    """Where a book's current generation lives, or that it has none; raise ``BookCorrupt`` when it cannot be trusted.
+
+    ``safe_book_folder`` runs first, so an unsafe id raises ``ValueError`` before any filesystem access. Then one
+    call to ``book_format.classify_with_manifest`` (the shared silent core) reads the root manifest exactly once.
+    Corrupt logs exactly one ERROR here, at the raise site, and raises ``BookCorrupt`` whose message carries the
+    book id and never a path (OQ-3). Nothing is cached: every call re-reads, so a republish, a deletion or a
+    corruption is visible on the very next call. No loader calls this yet (WI-4a.2 switches them).
+    """
+    book_dir = os.path.join(books_dir, safe_book_folder(book_id))
+    state, manifest, manifest_st = book_format.classify_with_manifest(book_dir)
+    if state == "corrupt":
+        logger.error("book %r: manifest.json is corrupt; refusing to load", book_id)
+        raise book_format.BookCorrupt(f"book {book_id!r}: storage is corrupt")
+    if manifest is None or manifest_st is None:  # the core's contract: both are set iff state == "valid"
+        return ResolvedGeneration("missing", book_dir, None, None, None)
+    gen_dir = os.path.join(book_dir, book_format.GEN_DIR, str(manifest.generation))
+    key = (manifest_st.st_ino, manifest_st.st_mtime_ns, manifest_st.st_size)
+    return ResolvedGeneration("valid", book_dir, gen_dir, manifest, key)
 
 
 def _refuse_corrupt(book_id: str, books_dir: str) -> None:
