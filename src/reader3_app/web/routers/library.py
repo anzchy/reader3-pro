@@ -14,7 +14,6 @@
 """
 from __future__ import annotations
 
-import os
 import time
 import uuid
 from dataclasses import dataclass
@@ -39,29 +38,27 @@ async def library_view(request: Request):
     """Lists all available processed books."""
     books = []
 
-    # Scan directory for folders ending in '_data' that have a book.pkl
-    if os.path.exists(_server.BOOKS_DIR):
-        for item in os.listdir(_server.BOOKS_DIR):
-            if item.endswith("_data") and os.path.isdir(os.path.join(_server.BOOKS_DIR, item)):
-                # Try to load it to get the title
-                try:
-                    book = _server.load_book_cached(item)
-                except BookCorrupt:
-                    # 012 WI-3.2: one corrupt book must not 500 the library; its own routes answer 500.
-                    continue
-                if book:
-                    cover_image = book_store.pick_cover_image(item, _server.BOOKS_DIR)
-                    cover_url = build_cover_url(item, cover_image)
-                    books.append({
-                        "id": item,
-                        "title": book.metadata.title,
-                        "author": ", ".join(book.metadata.authors),
-                        "chapters": len(book.spine),
-                        "section_count": len(book.spine),
-                        "cover_url": cover_url,
-                        "format": "epub",
-                        "book_uuid": None,
-                    })
+    # 012 WI-4b.1: enumerate through list_book_ids -- the one enumeration law (sorted; flat book.pkl required).
+    for item in list_book_ids(_server.BOOKS_DIR):
+        # Try to load it to get the title
+        try:
+            book = _server.load_book_cached(item)
+        except BookCorrupt:
+            # 012 WI-3.2: one corrupt book must not 500 the library; its own routes answer 500.
+            continue
+        if book:
+            cover_image = book_store.pick_cover_image(item, _server.BOOKS_DIR)
+            cover_url = build_cover_url(item, cover_image)
+            books.append({
+                "id": item,
+                "title": book.metadata.title,
+                "author": ", ".join(book.metadata.authors),
+                "chapters": len(book.spine),
+                "section_count": len(book.spine),
+                "cover_url": cover_url,
+                "format": "epub",
+                "book_uuid": None,
+            })
 
     # 018 WI-2 (#6)：解析 uuid 可能要取书锁，整张列表一次进线程池，不在事件循环上等。
     uuids = await run_in_threadpool(_server._book_uuids_or_none, [str(b["id"]) for b in books])
