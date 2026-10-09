@@ -25,6 +25,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from ... import book_lock
+from ...book_store import chapter_orders, find_chapter
 from ...models.annotations import Annotation
 from ...notes_service import (
     NOTES_SCHEMA_VERSION,
@@ -38,7 +39,7 @@ from ...notes_service import (
     refresh_annotations_and_version,
     update_annotation_and_version as update_note_annotation,
 )
-from ...reader3 import Book
+from ...reader3 import Book, ChapterContent
 
 router: APIRouter = APIRouter()
 
@@ -78,29 +79,44 @@ def _conflict(exc: NotesVersionConflict) -> JSONResponse:
     )
 
 
-def _mark_orphans(book: Book, annotations: list[Annotation]) -> bool:
+def _mark_orphans(book: Book, annotations: list[Annotation], *, book_id: str) -> bool:
     """把正文里找不到的标注标成 orphaned，返回「改没改」。
 
     纯内存、不碰盘：它在书级写锁里跑（见 `refresh_annotations_and_version`），
     这里做的任何 I/O 都是在加长其他写者的排队时间。
+
+    012 WI-4c.2（裁定 R-3）：chapter_index 是 order。负数照旧判孤儿；缺口（含越尾）没有章节可比，
+    原样留着、不判孤儿。次序不严格递增时先抛 BookCorrupt（DP-7），不降级成「全孤儿」或「全不判」。
     """
     changed = False
     chapter_text_by_index: dict[int, str] = {}
+    chapter_orders(book, book_id=book_id)
 
     for ann in annotations:
         if ann.orphaned:
             continue
-        if ann.chapter_index < 0 or ann.chapter_index >= len(book.spine):
+        if ann.chapter_index < 0:
             ann.orphaned = True
             changed = True
             continue
         if ann.chapter_index not in chapter_text_by_index:
-            chapter_text_by_index[ann.chapter_index] = book.spine[ann.chapter_index].text or ""
+            chapter = find_chapter(book, ann.chapter_index, book_id=book_id)
+            if chapter is None:
+                continue
+            chapter_text_by_index[ann.chapter_index] = chapter.text or ""
         if not _server._annotation_matches_chapter_text(chapter_text_by_index[ann.chapter_index], ann):
             ann.orphaned = True
             changed = True
 
     return changed
+
+
+def _require_order(book: Book, chapter_index: int, book_id: str) -> ChapterContent:
+    """写路由的章节号闸（012 WI-4c.2，裁定 R-3）：必须是书里某一章的 order，缺口与越尾一律 400。"""
+    chapter = find_chapter(book, chapter_index, book_id=book_id) if chapter_index >= 0 else None
+    if chapter is None:
+        raise HTTPException(status_code=400, detail="Invalid chapter_index")
+    return chapter
 
 
 def _book_uuid_snapshot(book_id: str) -> Optional[str]:
@@ -123,7 +139,7 @@ def _refresh_orphaned_annotations(
     annotations, version = refresh_annotations_and_version(
         _server.BOOKS_DIR,
         book_id,
-        lambda anns: _mark_orphans(book, anns),
+        lambda anns: _mark_orphans(book, anns, book_id=book_id),
         expected_book_uuid=expected_book_uuid,
         book_fingerprint=getattr(book, "book_fingerprint", None),
     )
@@ -168,7 +184,8 @@ async def api_get_book_notes(book_id: str, response: Response):
     total_count = 0
     for chapter_index in sorted(by_chapter.keys()):
         items = sorted(by_chapter[chapter_index], key=_sort_key)
-        chapter_title = book.spine[chapter_index].title if 0 <= chapter_index < len(book.spine) else ""
+        chapter = find_chapter(book, chapter_index, book_id=safe_book_id) if chapter_index >= 0 else None
+        chapter_title = chapter.title if chapter is not None else ""
 
         summaries = []
         for a in items:
@@ -218,7 +235,7 @@ async def api_get_chapter_notes(book_id: str, chapter_index: int, response: Resp
     book = _server.load_book_cached(safe_book_id)
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
-    if chapter_index < 0 or chapter_index >= len(book.spine):
+    if chapter_index < 0:  # 012 WI-4c.2 裁定 R-3：读路由对缺口 / 越尾放行（200，回它已存的标注）
         raise HTTPException(status_code=400, detail="Invalid chapter_index")
 
     annotations, active, version = await run_in_threadpool(
@@ -260,8 +277,7 @@ async def api_create_annotation(
     book = _server.load_book_cached(safe_book_id)
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
-    if chapter_index < 0 or chapter_index >= len(book.spine):
-        raise HTTPException(status_code=400, detail="Invalid chapter_index")
+    chapter = _require_order(book, chapter_index, safe_book_id)
 
     ann_type = str(payload.type or "").strip().lower()
     if ann_type not in ("marker", "wavy", "underline", "note"):
@@ -317,7 +333,7 @@ async def api_create_annotation(
         cfi=cfi,
         note_text=note_text,
         orphaned=False,
-        chapter_href=book.spine[chapter_index].href,  # 012 WI-2b.2 (ADR-0019 五); fingerprints are stamped in-lock
+        chapter_href=chapter.href,  # 012 WI-2b.2 (ADR-0019 五); fingerprints are stamped in-lock
     )
 
     try:
@@ -347,7 +363,7 @@ async def api_delete_annotation(
     book = _server.load_book_cached(safe_book_id)
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
-    if chapter_index < 0 or chapter_index >= len(book.spine):
+    if chapter_index < 0:  # 012 WI-4c.2 NO-11（R-3 amendment 2026-10-09）：删除对任何 n >= 0 放行
         raise HTTPException(status_code=400, detail="Invalid chapter_index")
 
     try:
@@ -382,8 +398,7 @@ async def api_update_annotation(
     book = _server.load_book_cached(safe_book_id)
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
-    if chapter_index < 0 or chapter_index >= len(book.spine):
-        raise HTTPException(status_code=400, detail="Invalid chapter_index")
+    _require_order(book, chapter_index, safe_book_id)
 
     note_text = str(payload.note_text or "").strip()
     if not note_text:
@@ -428,7 +443,7 @@ async def api_dispose_annotation(
 
     Order: 422 (FastAPI) → 428 → 400 book_id → 404 book → 400 chapter_index → 404 note → 409 fingerprint
     unavailable → 409 orphaned → 409 version; a no-op accept is decided only after all of them. The note is
-    found by id; the path chapter is only range-checked (D-7). If-Match is required here (only here): a
+    found by id; the path chapter is only membership-checked (D-7). If-Match is required here (only here): a
     disposition must name the state it judged. Consequence: accept_binding on an ``unmatched`` note may
     advance the notes fingerprint, and the next agreeing GET may then orphan it.
     """
@@ -439,8 +454,7 @@ async def api_dispose_annotation(
     book = _server.load_book_cached(safe_book_id)
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
-    if chapter_index < 0 or chapter_index >= len(book.spine):
-        raise HTTPException(status_code=400, detail="Invalid chapter_index")
+    _require_order(book, chapter_index, safe_book_id)
     try:
         result = await run_in_threadpool(
             dispose_annotation_and_version,

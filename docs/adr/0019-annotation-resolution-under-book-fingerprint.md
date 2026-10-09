@@ -42,14 +42,14 @@
 | `resolution` | `"resolved"`／`"ambiguous"`／`"unmatched"`／`"accepted"` | `"resolved"` | 在 `evaluated_fingerprint` 那一代正文下的判定结果；`accepted` 只由用户处置写入 |
 | `bound_fingerprint` | `str` 或 `None` | `None` | 绑定字段（quote／prefix／suffix／position／cfi／chapter_index）最后一次被确认所对着的那一代 |
 | `evaluated_fingerprint` | `str` 或 `None` | `None` | 最后一次被评估所对着的那一代 |
-| `chapter_href` | `str` | `""` | 创建时由后端从 `book.spine[chapter_index].href` 取；本期只存不用（「按 href 跟随」是遗留） |
+| `chapter_href` | `str` | `""` | 创建时由后端从 `order` 等于 `chapter_index` 的那一章 spine 章节取 `href`；本期只存不用（「按 href 跟随」是遗留） |
 
 `from_dict` 的降级（D-5）确定、不抛、不丢记录：`resolution` 缺失或为 `null` → `"resolved"`（旧记录都是对着当时那份正文建的）；不在四值集合内的任何值（含大小写不同、非 str）→ `"unmatched"`（坏值必须挡住推进，而不是放行）；两个指纹字段非 str → `None`；`chapter_href` 非 str → `""`。
 
 **二、严格匹配器 `match_resolution(chapter_text, prefix, quote, suffix)`（Q15 M-1 … M-7，WI-2b.1，已落地）。** 纯函数：
 
 - M-1 两侧都用 `"".join(s.split())` 去掉**全部** `str.isspace` 字符（NBSP、全角空格、U+2028 等都算；零宽空格 U+200B 不是空白，照原样比较）。
-- M-2 草堆是**锁内**读到的当前 generation 里**同一 `chapter_index`** 那一章的 `text`（不走按 stat 缓存的 `load_book_cached`）；`chapter_index` 越过章数 → `unmatched`。
+- M-2 草堆是**锁内**读到的当前 generation 里**同一 `chapter_index`** 那一章的 `text`（不走按 stat 缓存的 `load_book_cached`）；该 `order` 没有章节（缺口或越尾）→ `unmatched`（ADR-0016 D-b，012 WI-4c）。
 - M-3 针 = `prefix + quote + suffix` **先拼接再**去空白。
 - M-4 用 `find` 逐位前进数**可重叠**的出现次数，数到 2 即停；不用 `str.count`。
 - M-5 恰 1 次 → `resolved`；≥ 2 → `ambiguous`；0 → `unmatched`；去空白后 quote 为空 → `unmatched`。

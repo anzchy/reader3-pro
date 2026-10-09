@@ -1422,7 +1422,7 @@
         <ul class="toc-list">
         {% for item in items %}
             <li class="toc-item">
-                {% set is_active = current_chapter.href == item.file_href %}
+                {% set is_active = current_chapter is not none and current_chapter.href == item.file_href %}
                 <a href="#" onclick="findAndGo('{{ item.file_href }}')"
                    class="toc-link {% if is_active %}active{% endif %}"
                    data-testid="rd-toc-row"
@@ -1479,7 +1479,7 @@
                         {% endif %}
 
                         <span class="nav-indicator" data-testid="rd-chapter-count">
-                            Section {{ chapter_index + 1 }} of {{ book.spine|length }}
+                            Section {{ chapter_position or '–' }} of {{ book.spine|length }}
                         </span>
 
                         {% if next_idx is not none %}

@@ -218,7 +218,9 @@ CANONICAL_ACCEPTANCE_ITEMS = 126
 # 68 → 12：2026-10-01 023 #65，moved 56 items——四个带到期条件的白名单模块迁入 `baseline_1b/`
 # （见上面 76 → 132；45 + 3 + 4 + 4），白名单条目撤掉；**实测**白名单 12、baseline 132。
 # 一段换一段，`CANONICAL_E2E_ITEMS` 不动（270，变基到 `c08317b` 后重数）。
-CANONICAL_UNGROUPED_ITEMS = 12
+# 12 → 15：2026-10-09 012 WI-4c.2（Unit G）新增 `tests/e2e/test_spine_gap_reader.py`，**实测 3 条 item**
+# （E2E-01..03 各一条，不参数化），白名单 15。没有到期条件——理由写在 `scripts/lint_e2e_groups.py` 的白名单注释里。
+CANONICAL_UNGROUPED_ITEMS = 15
 # 140 → 149：同上，`shell_4a` 的 9 条。
 # 149 → 183：2026-09-24 013 WI-10 往 `shell_4a` 加的 34 条（见上面 26 → 60 那条注释）。
 # 183 → 184：同上，深色 OS 回归 1 条。
@@ -233,7 +235,8 @@ CANONICAL_UNGROUPED_ITEMS = 12
 # 269 → 270：2026-10-01 018 WI-3 / 欠账 #51 的 1 条（见上面 125 → 126 那条注释；全量实测 270）。
 # 270 不变：2026-10-01 023 #65 的 56 条只是从白名单段换到 baseline 段（变基到 `c08317b` 后全量实测仍 270）——
 # 这正是那次迁移的守恒检查。
-CANONICAL_E2E_ITEMS = 270
+# 270 → 273：2026-10-09 012 WI-4c.2 的 3 条白名单 item（见上面 12 → 15；全量实测 273）。
+CANONICAL_E2E_ITEMS = 273
 
 #: **已激活**的 acceptance 组，与 `scripts/lint_e2e_groups.py` 的
 #: `ACTIVATED_ACCEPTANCE_DIRS` 各写一份——本文件是守卫的独立 oracle，不从被测脚本 import
@@ -419,6 +422,9 @@ def test_real_tree_collection_is_a_partition_and_counts_match() -> None:
         # 020 WI-2：`Reader3Epub.getDebugState()` 只读观测面的真浏览器验收（E1–E4）。
         # 工具用的观测面，与 009 各组正交，没有到期条件——理由在 `scripts/lint_e2e_groups.py`。
         f"{E2E_REL}/test_debug_state.py",
+        # 012 WI-4c.2（Unit G）：spine 空洞书在真 epub.js 里的显示（E2E-01..03）。012 存储格式的寻址检查，
+        # 不属于任何一组，没有到期条件——理由在 `scripts/lint_e2e_groups.py` 的白名单注释里。
+        f"{E2E_REL}/test_spine_gap_reader.py",
     }, f"白名单的内容变了：{sorted(whitelist)}（加项要写理由，且它必须真的贡献 item）"
 
     # (1) 划分：恰好一个组 marker，或模块在白名单里。双 marker 也红。

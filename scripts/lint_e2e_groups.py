@@ -316,6 +316,13 @@ UNGROUPED_E2E_MODULES = {
     # E2E）用的观测面，与 009 的各组正交——和 `test_testid_dom_uniqueness.py` 同类。
     # 因此**没有到期条件**，不打算迁进 `baseline_1b/`。
     "tests/e2e/test_debug_state.py",
+    # 012 WI-4c.2（Unit G，E2E-01..03）：带 spine 空洞的书在真 epub.js 里怎么显示——越界 n 回落到第一节
+    # 并把 URL 改写成 `/0`、空洞 n 显示空洞那一节本身、最后一个成员 order 正常渲染。六个组 marker 与目录
+    # 一一绑定：`baseline_1b` 冻结在 `suite_hash` 下，`acceptance_*` 是别的功能的分阶段激活组，`shell_4a`
+    # 是 013 Phase-4A 的外壳回归门——012 存储格式的寻址检查不属于其中任何一组。它与各组正交，是长期住户
+    # （与 `test_debug_state.py` 同类），**没有到期条件**；根下新文件与它用的 `tests/fixtures/gap_epub.py`
+    # 都不在 `HASH_COVERED_PATHS` 里，放这里不移动 `suite_hash`。
+    "tests/e2e/test_spine_gap_reader.py",
 }
 
 # 上面几个白名单模块在一次 `tests/e2e --collect-only` 里贡献的 item 数。
@@ -399,7 +406,11 @@ UNGROUPED_E2E_MODULES = {
 # 迁入 `baseline_1b/`（共享的非测试模块 `notes_conflict_support.py` 同批迁入，不贡献 item），白名单条目已撤，
 # `EXPECTED_BASELINE_ITEMS` 同批 76 → 132。**−56 是执行过的 `--collect-only` 实测值**
 # （baseline 132 / 白名单 12 / 全量 270，总数不变；变基到 `c08317b` 后重数）。
-EXPECTED_UNGROUPED_ITEMS = 12
+#
+# 12 → **15**（2026-10-09，012 WI-4c.2，Unit G: +3）：新增 `tests/e2e/test_spine_gap_reader.py`
+# （E2E-01..03 各一条，不参数化）。**+3 是执行过的 `--collect-only` 实测值**（白名单 15 / 全量 273）。
+# 落白名单而不进组的理由写在上面 `UNGROUPED_E2E_MODULES` 那条注释里。
+EXPECTED_UNGROUPED_ITEMS = 15
 
 # 派生值，不是字面量。见文件头「为什么必须派生」。
 EXPECTED_E2E_ITEMS = (

@@ -301,7 +301,15 @@ READER_CASES = [
         content_type="text/html",
         must_contain=(BOOK_TITLE, CHAPTER_0_TITLE),
     ),
-    ContractCase("GET", "/read/{book_id}/99", 404, note="章节越界"),
+    # rule 12: coordinator ruling 2026-10-09 WI-4c R-1 -- /read is total for n >= 0 (was 404).
+    ContractCase(
+        "GET",
+        "/read/{book_id}/99",
+        200,
+        content_type="text/html",
+        must_contain=(BOOK_TITLE,),
+        note="章节越界：R-1 起 n >= 0 一律 200",
+    ),
     ContractCase("GET", "/read/{missing_book_id}/0", 404),
     ContractCase(
         "GET",
@@ -319,8 +327,9 @@ READER_CASES = [
         expected_bytes=b"\xff\xd8\xff\xe0 jpeg-ish",
     ),
     ContractCase("GET", "/read/{book_id}/images/nope.jpg", 404),
-    # GET /read/{book_id} 现在必然抛 TypeError（见 test_known_defects.py），
-    # 所以它不在这张表里；清单快照仍然守着这条路由的存在。
+    # GET /read/{book_id}（裸路由）的契约在 test_known_defects.py 里（008 修好的那条），不在这张表里；
+    # 清单快照仍然守着这条路由的存在。上面 /99 那行是 012 WI-4c R-1 的口径（n >= 0 一律 200）；
+    # notes 章级 GET 的 /99 同理是 R-3 follow-up 2 的 200，见下面 NOTES_CASES。
 ]
 
 
@@ -342,7 +351,10 @@ NOTES_CASES = [
     ),
     ContractCase("GET", "/api/notes/{missing_book_id}", 404),
     ContractCase("GET", "/api/notes/{book_id}/0", 200, expected_keys=NOTE_LIST_KEYS),
-    ContractCase("GET", "/api/notes/{book_id}/99", 400, note="章节越界在 notes 上是 400，不是 404"),
+    # rule 12: coordinator ruling 2026-10-09 WI-4c R-3 follow-up 2 -- chapter GET past the end is 200 (was 400).
+    ContractCase(
+        "GET", "/api/notes/{book_id}/99", 200, expected_keys=NOTE_LIST_KEYS, note="越界读：R-3 起 200，列出盘上该章的标注"
+    ),
     ContractCase("GET", "/api/notes/{book_id}/abc", 422, note="路径参数不是整数"),
     ContractCase("GET", "/api/notes/{missing_book_id}/0", 404),
     ContractCase(

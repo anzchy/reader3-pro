@@ -17,6 +17,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, HTMLResponse
 
+from ...book_store import chapter_orders, find_chapter, neighbour_orders
 from ..urls import cover_url as build_cover_url
 
 
@@ -66,14 +67,17 @@ async def read_chapter(request: Request, book_id: str, chapter_index: int):
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
 
-    if chapter_index < 0 or chapter_index >= len(book.spine):
+    if chapter_index < 0:
         raise HTTPException(status_code=404, detail="Chapter not found")
 
-    current_chapter = book.spine[chapter_index]
-
-    # Calculate Prev/Next links
-    prev_idx = chapter_index - 1 if chapter_index > 0 else None
-    next_idx = chapter_index + 1 if chapter_index < len(book.spine) - 1 else None
+    # 012 WI-4c.2（ADR-0016 D-b，裁定 R-1）：chapter_index 是 order，不是位置。任何 n >= 0 都渲染 200；
+    # 缺口（含越尾）没有章节 —— current_chapter 为 None、目录无高亮，epub.js 自己去显示那一节。
+    # 次序不严格递增时这三个 helper 抛 BookCorrupt，交给中央的 book_corrupt_http（DP-7）。
+    current_chapter = find_chapter(book, chapter_index, book_id=safe_book_id)
+    prev_idx, next_idx = neighbour_orders(book, chapter_index, book_id=safe_book_id)
+    chapter_position = (
+        chapter_orders(book, book_id=safe_book_id).index(chapter_index) + 1 if current_chapter is not None else None
+    )
 
     # 018 WI-2 (#6)：可能要取书锁，放进线程池，不在事件循环上等。
     book_uuid = await run_in_threadpool(_server._book_uuid_or_none, safe_book_id)
@@ -94,6 +98,7 @@ async def read_chapter(request: Request, book_id: str, chapter_index: int):
         "book": book,
         "current_chapter": current_chapter,
         "chapter_index": chapter_index,
+        "chapter_position": chapter_position,
         "book_id": safe_book_id,
         "book_uuid": book_uuid,
         "cover_url": cover_url,

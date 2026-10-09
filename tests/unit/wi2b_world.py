@@ -14,6 +14,10 @@ Not a test file and not frozen. It is built up one work item at a time:
   (matrix ``tests-20261009-wi4c1.md`` section 0.1; self-check CO-00 in ``test_book_store_chapter_order.py``).
   ``None`` keeps ``order = position``, so every earlier caller is byte-identical. Monotonicity is not checked
   here: ``_book`` must be able to build a non-strict Book, and ``publish`` refuses non-strict manifests itself.
+- WI-4c.2: the keyword-only ``toc=`` on ``_book`` / ``publish_gen`` / ``write_book_pkl`` (matrix
+  ``tests-20261009-wi4c2.md`` F-1). ``False`` (the default) keeps ``Book.toc == []``, so every earlier caller is
+  byte-identical; ``True`` gives one ``TOCEntry`` per spine chapter, in spine order, so ``.toc-link.active``
+  assertions on the reader page are not vacuous.
 
 ``seed_notes`` writes raw JSON and never goes through ``save_annotations``, so a test
 can put on disk exactly the bytes it means to (the ``_write_raw`` pattern in
@@ -37,7 +41,7 @@ from book_format_helpers import FINGERPRINT, make_inputs
 
 from reader3_app import book_format, book_lock, notes_service
 from reader3_app.book_format import ChapterRecord
-from reader3_app.reader3 import Book, BookMetadata, ChapterContent
+from reader3_app.reader3 import Book, BookMetadata, ChapterContent, TOCEntry
 
 #: Generation A's fingerprint: the one ``book_format_helpers.make_inputs`` publishes with.
 FP_A: str = FINGERPRINT
@@ -195,7 +199,14 @@ def gen_inputs(
 
 
 def publish_gen(
-    books_dir: Any, folder: str, texts: List[str], fp: str, tag: str, *, orders: Optional[List[int]] = None
+    books_dir: Any,
+    folder: str,
+    texts: List[str],
+    fp: str,
+    tag: str,
+    *,
+    orders: Optional[List[int]] = None,
+    toc: bool = False,
 ) -> int:
     """Publish one real generation of ``texts`` under the EX book lock; return its number.
 
@@ -204,7 +215,7 @@ def publish_gen(
     WI-4a.2 a valid book is read only from ``gen/{g}/book.pkl`` (D-a); ``gen_inputs`` itself stays ``pkl=False``.
     """
     inputs = dataclasses.replace(
-        gen_inputs(texts, fp, tag, orders=orders), pkl=pickle.dumps(_book(folder, texts, fp, orders=orders))
+        gen_inputs(texts, fp, tag, orders=orders), pkl=pickle.dumps(_book(folder, texts, fp, orders=orders, toc=toc))
     )
     book_dir = Path(books_dir) / folder
     book_dir.mkdir(parents=True, exist_ok=True)
@@ -212,16 +223,19 @@ def publish_gen(
         return book_format.publish(book_dir, inputs)
 
 
-def _book(folder: str, texts: List[str], fp: Optional[str], *, orders: Optional[List[int]] = None) -> Book:
+def _book(
+    folder: str, texts: List[str], fp: Optional[str], *, orders: Optional[List[int]] = None, toc: bool = False
+) -> Book:
     """The one ``Book`` builder ``write_book_pkl`` and ``publish_gen`` share (rule 12: coordinator ruling
     2026-10-09 WI-4a): title = folder, one chapter ``c{i}`` per text, ``book_fingerprint = fp``."""
+    spine = [
+        ChapterContent(id=f"c{i}", href=_chapter_href(i), title=f"T{i}", content=f"<p>{t}</p>", text=t, order=o)
+        for i, (t, o) in enumerate(zip(texts, _orders(texts, orders)))
+    ]
     book = Book(
         metadata=BookMetadata(title=folder, language="en"),
-        spine=[
-            ChapterContent(id=f"c{i}", href=_chapter_href(i), title=f"T{i}", content=f"<p>{t}</p>", text=t, order=o)
-            for i, (t, o) in enumerate(zip(texts, _orders(texts, orders)))
-        ],
-        toc=[],
+        spine=spine,
+        toc=[TOCEntry(title=ch.title, href=ch.href, file_href=ch.href, anchor="") for ch in spine] if toc else [],
         images={},
         source_file=f"{folder}.epub",
         processed_at="2026-10-09T00:00:00+00:00",
@@ -232,10 +246,16 @@ def _book(folder: str, texts: List[str], fp: Optional[str], *, orders: Optional[
 
 
 def write_book_pkl(
-    books_dir: Any, folder: str, texts: List[str], fp: Optional[str], *, orders: Optional[List[int]] = None
+    books_dir: Any,
+    folder: str,
+    texts: List[str],
+    fp: Optional[str],
+    *,
+    orders: Optional[List[int]] = None,
+    toc: bool = False,
 ) -> Path:
     """Pickle a real ``Book`` whose spine carries ``texts``; ``book.book_fingerprint = fp``."""
-    book = _book(folder, texts, fp, orders=orders)
+    book = _book(folder, texts, fp, orders=orders, toc=toc)
     path = Path(books_dir) / folder / "book.pkl"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(pickle.dumps(book))
