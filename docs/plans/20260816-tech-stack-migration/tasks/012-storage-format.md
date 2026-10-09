@@ -157,7 +157,10 @@
   - `web/routers/library.py` 的 `library_view`：按 `_data` 目录扫、逐本 `load_book_cached` 取标题
   - `vector_search.BookVectorIndex._load_book` 的直读留给 WI-7（与索引改造同批）
 - **涉及文件**: `book_store.py`、`search_service.py`（`list_book_ids`、`load_book_index`）、`web/routers/reader.py`、`web/routers/library.py`；018 的列表 / 删书 / 导出路由若有同类直读，一并收口。⬛ 2026-10-02（§6 Q8）：`book_store` 新增 `resolve_generation(book_id)`（每次请求读一次指针），`storage_format` 调 `book_format` 的分类
-- **依赖**: WI-1、WI-3；`tests/unit/test_server_patch_seam_ownership.py` 的接缝规则
+  - ⬛ 2026-10-09（协调者补充裁定，D-1）：补入 ADR-0016 列出而本条漏掉的两个站点——`reader3.py` 的 `--index`（今天没有平铺 pkl 就拒绝）与 `ai/books.py` 的 `BookUuidResolver.scan`（把每个 `_data` 目录都当候选书，不走 `list_book_ids` 的判定）。`vector_search._load_book` 仍留 WI-7
+- **依赖**: WI-1、WI-3.2（`storage_format` 三态）；**不依赖 WI-3.1**；`tests/unit/test_server_patch_seam_ownership.py` 的接缝规则
+  - ⬛ 2026-10-09（协调者调序，WI-3 D-1）：执行顺序改为 WI-3.3 → WI-3.2 → WI-4（整个）→ WI-3.1 → WI-3.4。理由：ADR-0016 子裁定把双写期 `book.pkl` 只写进 `gen/{g}/`，若 3.1 先接入导入，新书在读路径收口前不可见，或者能列出却拿不到 `book.epub` 和图片。WI-4 的夹具直接用 `book_format.publish` 造 gen 书，不需要 `process_epub`；3.1 之前现实中没有 gen 书，所以 WI-4 每个 commit 对线上零影响。
+  - ⬛ 2026-10-09（协调者补充裁定，D-1）：WI-4 拆 **4a / 4b**，书目枚举最后切换。4a：`resolve_generation`、双格式 `load_book` 与缓存键（manifest 的 `(st_ino, st_mtime_ns, st_size)`）、R-5。4b：metadata、封面、`serve_epub`、images、`epub_available`、搜索缓存 freshness、`--index`、UUID scan、018 消费方，最后才是 `list_book_ids`。原则：加载、资源路由、`--index`、UUID 发现都支持 gen 之前，任何 commit 不得让「只有 gen 的书」经枚举对外可见。4a / 4b 内部再拆，开工前报协调者
 - **验收（种子）**:
   - 同一本书在 `valid` 与 `missing` 两态下，经 `book_store` 读出的章节文本、标题、spine 顺序逐项相等
   - republish 为新格式后缓存失效（沿用 011 WI-3 的 freshness 断言形状）——**搜索缓存同样失效**（`load_book_index` 不再只看 pkl 的 stat）
@@ -165,6 +168,8 @@
   - `src/` 下除 `book_store.py`、`reader3.py`（写入端与 legacy loader）外 grep 不到 `_book_pkl_path` / `"book.pkl"` 的读路径
   - `book_store` 仍不 import `reader3_app.web`
   - （⬛ 2026-10-09，§6 Q15 / WI-2b R-5）凡产出 `Book` 的加载路径都给 `Book.book_fingerprint` 赋值：新格式读到的书取 manifest 里的值，pkl-only 的取 `None`——否则 notes 被 rebind 盖上指纹后，ADR-0019 的跳过规则会让该书永久不判孤儿
+  - （⬛ 2026-10-09，D-1 补充裁定）018 消费方回归矩阵（§8 第 13 项）：列表（`library_books.py`）、删书预检、导出（`library_export.py`）、删书终结的同名 / ABA 判定（`library_delete.py`）各跑 4 种目录形态——只有 gen 的合法书可见；只有平铺的书可见；只有 `gen/` 无 `manifest.json` 跳过（ADR-0016：`gen/` 本身永远不是书的证据）；manifest 损坏大声失败，不得静默消失
+  - （⬛ 2026-10-09，D-1 补充裁定）**进入 WI-3.1 前的门**：用「只有 `manifest.json` + `gen/{g}/…`、没有任何平铺文件」的夹具跑通全部读取方与书目发现方，并加上 ADR-0016 L86 的 grep 棘轮门。门不过，不开 3.1
   - 测试矩阵：待 /tdd-guardian:design-tests
 
 ### WI-5: 欠账 #35 —— `load_book_metadata()` 改读 manifest

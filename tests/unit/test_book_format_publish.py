@@ -967,7 +967,8 @@ INVALID: dict[str, Callable[[], PublishInputs]] = {
     "slash": lambda: _bad_image("a/b.png"),
     "empty": lambda: _bad_image(""),
     "dup-id": _dup_ids,
-    "gap-order": _gap_order,
+    # rule 12: "gap-order" (orders (0, 1, 3)) removed -- coordinator ruling 2026-10-09 (Q15/R6): order is the raw
+    # EPUB spine index, gaps are legal and never renumbered; now covered as accepted by O3-01 (was: rejected).
 }
 
 
@@ -1643,3 +1644,228 @@ def test_m2_08_invalid_field_is_refused_before_any_write(
     assert isinstance(ei.value, ValueError) and isinstance(ei.value, BookFormatError)
     assert field in str(ei.value)
     assert snapshot(tmp_path) == before
+
+
+# ======================================================== WI-3.3: chapter order = raw spine index (gaps legal)
+#
+# Matrix: ``.claude/tdd-guardian/tests-20261009-wi3.md`` section "WI-3.3" (O3-01 .. O3-11, O3-13; O3-12 lives in
+# ``test_book_store_current_generation.py`` as R4-06). Coordinator ruling 2026-10-09 (Q15/R6): ``order`` is an
+# exact ``int``, ``>= 0``, strictly increasing over ``chapters``; gaps legal; never renumbered. A rejection is a
+# ``PublishInputError`` naming the lowest offending index ``chapters[k]`` (one left-to-right pass, type then
+# order per chapter), raised before any ``_crash_point`` / filesystem effect.
+
+import re  # noqa: E402
+from typing import Sequence  # noqa: E402
+
+from hypothesis import example  # noqa: E402
+
+from reader3_app.book_format import ManifestError, compute_book_fingerprint, read_chapter  # noqa: E402
+
+_EPUB_SHA_V2 = hashlib.sha256(b"EPUB-v2").hexdigest()
+
+
+def _with_orders(orders: Sequence[Any], **kw: Any) -> PublishInputs:
+    base = make_inputs("v2", n_chapters=len(orders), **kw)
+    return dataclasses.replace(base, chapters=tuple(
+        dataclasses.replace(c, order=o) for c, o in zip(base.chapters, orders)))
+
+
+def _first_index(msg: str) -> int:
+    """The first ``chapters[k]`` token the message names."""
+    found = re.search(r"chapters\[(\d+)\]", msg)
+    assert found is not None, msg
+    return int(found.group(1))
+
+
+def _increasing_nonneg(xs: Sequence[int]) -> bool:
+    return all(x >= 0 for x in xs) and all(a < b for a, b in zip(xs, xs[1:]))
+
+
+def _lowest_offender(xs: Sequence[int]) -> int:
+    return next(i for i, x in enumerate(xs) if x < 0 or (i > 0 and x <= xs[i - 1]))
+
+
+def _orders_on_disk(book: Path, g: int) -> tuple[list[int], list[int]]:
+    m = validate_stat(book)
+    return [e.order for e in m.chapters], [read_chapter(gen_g(book, g), e).order for e in m.chapters]
+
+
+def _publish_recorded(book: Path, inputs: PublishInputs, rec: HookRecorder, **kw: Any) -> int:
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("reader3_app.book_format._crash_point", rec)
+        return publish(book, inputs, **kw)
+
+
+def _assert_rejected_effect_free(scenario: str, create: bool, base: Path, inputs: PublishInputs, k: int) -> None:
+    book = setup_scenario(scenario, base)
+    before = snapshot(books_dir(book))
+    rec = HookRecorder()
+    with pytest.raises(PublishInputError) as ei:
+        _publish_recorded(book, inputs, rec, create=create)
+    assert type(ei.value) is PublishInputError and not isinstance(ei.value, ManifestError)
+    assert _first_index(str(ei.value)) == k, str(ei.value)
+    assert snapshot(books_dir(book)) == before
+    assert rec.calls == []
+    if scenario == "S0u":
+        assert not os.path.lexists(book / GEN_DIR)
+    if scenario == "S0":
+        assert not os.path.lexists(book)
+
+
+_DIR_STATES = [("S1", False), ("S0u", False), ("S0", True)]
+
+
+@pytest.mark.parametrize("scenario,create", [("S4", False), ("S0", True)])
+def test_o3_01_recorded_gap_order_now_publishes_raw(tmp_path: Path, scenario: str, create: bool) -> None:
+    """O3-01 (state, S2, Level 1+2): rule-12 flip of INVALID["gap-order"] -- (0, 1, 3) publishes, kept raw."""
+    book = setup_scenario(scenario, tmp_path)
+    g = publish(book, _gap_order(), create=create)
+    assert g == G_NEW[scenario]
+    assert_valid_with(book, "v2")
+    m = validate_stat(book)
+    assert [e.order for e in m.chapters] == [0, 1, 3]
+    assert [e.id for e in m.chapters] == ["c0", "c1", "c2"]
+
+
+@pytest.mark.parametrize("orders", [[0, 2], [0, 2, 5]], ids=["0-2", "0-2-5"])
+def test_o3_02_gapped_orders_publish_with_raw_orders_in_both_places(tmp_path: Path, orders: list[int]) -> None:
+    """O3-02 (success, S2, Level 1+2): manifest index and chapters.jsonl both keep the raw orders."""
+    book = setup_scenario("S0", tmp_path)
+    assert publish(book, _with_orders(orders), create=True) == 1
+    assert classify(book, full=True) == "valid"
+    assert _orders_on_disk(book, 1) == (orders, orders)
+    assert [e.id for e in validate_stat(book).chapters] == [f"c{i}" for i in range(len(orders))]
+
+
+@pytest.mark.parametrize("orders", [[0], [7], [3, 4, 5], [0, 1_000_000_000]], ids=str)
+def test_o3_03_accepted_class_boundaries(tmp_path: Path, orders: list[int]) -> None:
+    """O3-03 (boundary, S2, Level 1+2): lone 0, lone 7, no zero at all, a very large gap."""
+    book = setup_scenario("S0", tmp_path)
+    assert publish(book, _with_orders(orders), create=True) == 1
+    assert classify(book, full=True) == "valid"
+    assert _orders_on_disk(book, 1) == (orders, orders)
+
+
+def test_o3_04_empty_chapter_list_publishes_as_today(tmp_path: Path) -> None:
+    """O3-04 (boundary, S1, Level 1+2): characterization -- chapters=() publishes an empty chapters.jsonl."""
+    book = setup_scenario("S0", tmp_path)
+    assert publish(book, make_inputs("v2", n_chapters=0), create=True) == 1
+    m = validate_stat(book)
+    assert m.chapters == ()
+    assert m.chapters_size_bytes == 0
+    assert (gen_g(book, 1) / CHAPTERS).read_bytes() == b""
+    assert classify(book, full=True) == "valid"
+
+
+@pytest.mark.parametrize("scenario,create", _DIR_STATES)
+def test_o3_05_out_of_order_rejected_at_index_2_effect_free(tmp_path: Path, scenario: str, create: bool) -> None:
+    """O3-05 (guard, S3, Level 1+2, Level 6 supplement): [0, 2, 1] names chapters[2]; nothing touched."""
+    _assert_rejected_effect_free(scenario, create, tmp_path, _with_orders([0, 2, 1]), 2)
+
+
+@pytest.mark.parametrize("scenario,create", _DIR_STATES)
+def test_o3_06_duplicate_order_rejected_at_index_2_effect_free(tmp_path: Path, scenario: str, create: bool) -> None:
+    """O3-06 (guard, S3, Level 1+2, Level 6 supplement): [0, 1, 1] names chapters[2]; strict comparison."""
+    _assert_rejected_effect_free(scenario, create, tmp_path, _with_orders([0, 1, 1]), 2)
+
+
+@pytest.mark.parametrize("orders,k", [([-1, 0], 0), ([0, -1], 1), ([-5], 0)], ids=["-1,0", "0,-1", "-5"])
+@pytest.mark.parametrize("scenario,create", _DIR_STATES)
+def test_o3_07_negative_order_rejected_in_validate_inputs(
+    tmp_path: Path, scenario: str, create: bool, orders: list[int], k: int
+) -> None:
+    """O3-07 (guard, S3): a negative order is a PublishInputError before p0, not a ManifestError at p4."""
+    _assert_rejected_effect_free(scenario, create, tmp_path, _with_orders(orders), k)
+
+
+class _IntSub(int):
+    pass
+
+
+@pytest.mark.parametrize(
+    "i,value", [(0, False), (1, True), (1, 1.0), (1, "1"), (1, None), (1, _IntSub(1))],
+    ids=["false", "true", "float", "str", "none", "int-subclass"],
+)
+def test_o3_08_non_int_order_stays_rejected(tmp_path: Path, i: int, value: Any) -> None:
+    """O3-08 (guard, S3, Level 1+2): exact-type rule kept -- bool and int subclasses refused at their index."""
+    book = setup_scenario("S1", tmp_path)
+    before = snapshot(tmp_path)
+    rec = HookRecorder()
+    with pytest.raises(PublishInputError) as ei:
+        _publish_recorded(book, _replace_chapter(i, order=value), rec)
+    assert _first_index(str(ei.value)) == i, str(ei.value)
+    assert snapshot(tmp_path) == before
+    assert rec.calls == []
+
+
+_INCREASING = st.lists(st.integers(0, 10**6), min_size=1, max_size=6, unique=True).map(sorted)
+
+
+@props(30)
+@given(xs=_INCREASING)
+@example([0, 2])
+@example([7])
+@example([0, 1, 2])
+def test_o3_09_property_increasing_nonneg_orders_round_trip(xs: list[int]) -> None:
+    """O3-09 (property, S5, Level 1+2): every strictly increasing non-negative list publishes and round-trips."""
+    with tempfile.TemporaryDirectory() as d:
+        book = book_path(Path(d))
+        assert publish(book, _with_orders(xs), create=True) == 1
+        assert _orders_on_disk(book, 1) == (xs, xs)
+        assert classify(book, full=True) == "valid"
+
+
+@props(100)
+@given(xs=st.lists(st.integers(-3, 12), min_size=1, max_size=6))
+@example([0, 5, 3])
+@example([0, 0])
+@example([2, 1])
+@example([5, 2, -1])
+@example([-1, -2])
+def test_o3_10_property_other_int_lists_rejected_at_lowest_offender(xs: list[int]) -> None:
+    """O3-10 (property, S4+S5): rejected at the lowest offending index, with the tree conserved."""
+    assume(not _increasing_nonneg(xs))
+    with tempfile.TemporaryDirectory() as d:
+        book = book_path(Path(d))
+        before = snapshot(book.parent)
+        rec = HookRecorder()
+        with pytest.raises(PublishInputError) as ei:
+            _publish_recorded(book, _with_orders(xs), rec, create=True)
+        assert _first_index(str(ei.value)) == _lowest_offender(xs), (xs, str(ei.value))
+        assert not os.path.lexists(book)
+        assert snapshot(book.parent) == before
+        assert rec.calls == []
+
+
+@props(20)
+@given(xs=_INCREASING)
+@example([0, 2])
+@example([0, 2, 5])
+def test_o3_11_property_fingerprint_over_raw_orders(xs: list[int]) -> None:
+    """O3-11 (property, S6): recomputing from the persisted raw orders reproduces the stored fingerprint;
+    the renumbered spine yields a different one."""
+    assume(xs != list(range(len(xs))))
+    base = _with_orders(xs)
+    spine_raw = [(c.href, c.order, hashlib.sha256(c.content.encode()).hexdigest()) for c in base.chapters]
+    fp = compute_book_fingerprint(_EPUB_SHA_V2, spine_raw, EXTRACTOR_VERSION)
+    with tempfile.TemporaryDirectory() as d:
+        book = book_path(Path(d))
+        assert publish(book, dataclasses.replace(base, book_fingerprint=fp), create=True) == 1
+        m = validate_stat(book)
+        gen = gen_g(book, m.generation)
+        persisted = [(e.href, e.order, hashlib.sha256(read_chapter(gen, e).content.encode()).hexdigest())
+                     for e in m.chapters]
+        assert compute_book_fingerprint(_EPUB_SHA_V2, persisted, m.extractor_version) == m.book_fingerprint == fp
+        renumbered = [(h, i, s) for i, (h, _, s) in enumerate(spine_raw)]
+        assert compute_book_fingerprint(_EPUB_SHA_V2, renumbered, EXTRACTOR_VERSION) != m.book_fingerprint
+
+
+@pytest.mark.parametrize(
+    "orders,k",
+    [([5, 2, "x"], 1), ([0, -1, None], 1), ([0, 3, 1, 1.0], 2), (["x", -1], 0), ([4, True, 1], 1),
+     ([0, 5, "x", 1], 2)],
+    ids=["5,2,x", "0,-1,None", "0,3,1,1.0", "x,-1", "4,True,1", "0,5,x,1"],
+)
+def test_o3_13_mixed_type_and_order_failures_single_pass(tmp_path: Path, orders: list[Any], k: int) -> None:
+    """O3-13 (guard, S2): the first offender across type and order checks wins; never a TypeError."""
+    _assert_rejected_effect_free("S0", True, tmp_path, _with_orders(orders), k)

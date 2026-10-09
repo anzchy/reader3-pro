@@ -89,6 +89,7 @@
 - **EXDEV**：`rename(2)`／`os.replace` 只在同一文件系统内成立；跨设备时它**不退化为拷贝**，而是直接抛 `OSError(EXDEV)`（会退化为拷贝的是 `shutil.move`，本协议禁用它）。协议因此要求 generation 建在书目录**内部**（`<book>_data/gen/`），并在第 1 步之前断言 `st_dev` 相等，不等即拒绝发布、目录不动。跨卷部署下发布失败而不损坏，不是静默降级。（替换措辞取自 REPORT §5.5；本条更正 ADR-0007 第 25、52、67、78 行。）
 - **退役同级 staging**：不再创建 `<book>_data.staging-<pid>`；pid／flock 所有权探测（`_acquire_staging_lock`、`_staging_dir_is_owned`、`_pid_is_running`）删除——EX 书锁下不存在「别人的在途运行」（REPORT §8）。**012 前遗留的同级 staging**（本文补充，裁定未明示）：保留只读的旧格式分类器（`_is_own_staging_name` ＋ `_parked_asides` 的判定）到日落，在 EX 锁内处理——纯残骸删除；含未落地提交（parked aside 未归位）或无法判定的遗留则拒绝发布并给出人工恢复步骤，不自动处理。
 - **无锁读者的解析**：读一次 `manifest.json` 得 g，再打开 `gen/{g}/…`。解析与打开之间的 TOCTOU 窗口以保留期为界：g 被删除至少要求「之后又有一次发布开始」或「提交已逾 `RETAIN_S`」；跨过的读者得到 404／`FileNotFoundError`，不重试、不回退平铺。
+- **manifest 的 `chapters[].order`**（2026-10-09 裁定 Q15/R6）：`order` 是该文档条目在原 EPUB spine 里的原始下标，非负、严格递增，但可以有空洞（被跳过的非文档或缺失的 spine 条目不占号），任何地方都不重新编号；条目在 `chapters[]` 里的位置才是阅读下标，与 `Book.spine[i]` 对齐。
 
 **明确不做：** 不用 immutable 缓存；不在 GC 校验里读内容或算哈希（只 stat）；不自动删除平铺遗留文件（等日落裁定）；不为跨过 GC 的读者做重试；不为 `FileResponse` 提供快照（ADR-0015 的非保证不变）；不改 ADR-0007 的读取三态与 pickle 日落两时间窗——只把上面的 generation 校验条件并入 `corrupt`。
 

@@ -1023,6 +1023,7 @@ class PublishInputs:
 def _validate_inputs(inputs: PublishInputs) -> None:
     """Reject inputs that cannot be published, before any filesystem effect (matrix A5)."""
     seen: set[str] = set()
+    prev_order = -1  # ``order`` is the raw EPUB spine index: >= 0, strictly increasing, gaps legal, never renumbered
     for i, ch in enumerate(inputs.chapters):
         if type(ch) is not ChapterRecord:
             raise PublishInputError(f"chapters[{i}] is not a ChapterRecord")
@@ -1032,8 +1033,12 @@ def _validate_inputs(inputs: PublishInputs) -> None:
         if ch.id in seen:
             raise PublishInputError(f"duplicate chapter id {ch.id!r}")
         seen.add(ch.id)
-        if ch.order != i:
-            raise PublishInputError(f"chapters[{i}].order is {ch.order}; orders must be 0..n-1 in sequence")
+        if ch.order <= prev_order:
+            raise PublishInputError(
+                f"chapters[{i}].order is {ch.order}; orders must be non-negative and strictly increasing"
+                f" (previous: {prev_order if i else 'none'})"
+            )
+        prev_order = ch.order
     for name in inputs.images:
         if type(name) is not str or not is_legal_artifact_path(f"{IMAGES}/{name}"):
             raise PublishInputError(f"illegal image basename {name!r}")
