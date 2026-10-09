@@ -89,7 +89,7 @@ DEFAULT_AUDIT = {
 
 
 #: Refs an `absent` row's Summary cell may track: a debt `#N`, else a plan / branch `NNN`.
-_TRACKED_DEBT_RE = re.compile(r"#\d+")
+_TRACKED_DEBT_RE = re.compile(r"(?<!\d)#\d+")
 _TRACKED_BRANCH_RE = re.compile(r"(?<!\d)\d{3}(?!\d)")
 
 
@@ -833,8 +833,21 @@ def test_u3_p1_exhaustive_grammar_vs_oracle(script):
     assert failures == [], f"{len(failures)} combinations disagree with the oracle; first: {failures[:3]}"
 
 
+_ROW0 = {
+    "name": "0", "area": "0", "what": "0", "routes": [], "adr": [], "tracked": "", "limits": "",
+}
+
+
 @settings(max_examples=100, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(features=st_features(min_size=1, max_size=8))
+# A digit glued to `#` (`0#0`) is not a ref to the script; the oracle once read it as `#0`.
+@example(
+    features=[
+        dict(_ROW0, id="F-001", status="accepted", code=["0"], tests=["0"], confirm="0", evidence="PR #1"),
+        dict(_ROW0, id="F-002", status="accepted", code=["0"], tests=["0"], confirm="0", evidence="baseline"),
+        dict(_ROW0, id="F-003", status="absent", code=[], tests=[], confirm="", evidence="", tracked="debt #1 0#0"),
+    ]
+)
 def test_u3_p2_grammar_conforming_ledgers_validate_clean(script, features):
     assert row_errors(script, md_doc(features=[md_feature(f) for f in features])) == []
 
