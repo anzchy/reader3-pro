@@ -12,7 +12,7 @@ from enum import Enum
 from functools import lru_cache
 from typing import Optional, List, Tuple, Dict, Union
 
-from .book_store import _book_pkl_path, chapter_orders, load_book_cached
+from .book_store import _book_pkl_path, chapter_orders, find_chapter, load_book_cached
 # 不再 import safe_pickle：反序列化只经 book_store（011 §4）。占位保留行号：本文件多处 docstring 按行号引用。
 
 logger = logging.getLogger("reader3.search")
@@ -829,17 +829,21 @@ def highlight_ranges_for_chapter(
 
     The two pairs are equal for text that is entirely inside the BMP and differ
     by one unit per non-BMP character at or before the offset.
+
+    ``chapter_order`` is the ADR-0016 order (raw EPUB spine index); a gap or
+    past-the-end order is not a chapter -> ``IndexError``. A blank term returns
+    ``([], 0, None)`` before any chapter resolution. ``BookCorrupt`` (orders not
+    strictly increasing) propagates to the central 500 handler (DP-7).
     """
     trimmed = validate_search_term(search_term)
     if not trimmed:
         return [], 0, None
 
     book = load_book_cached(book_id, books_dir)
-    spine = getattr(book, "spine", []) or []
-    if chapter_order < 0 or chapter_order >= len(spine):
+    chapter = find_chapter(book, chapter_order, book_id=book_id)
+    if chapter is None:
         raise IndexError("chapter out of range")
 
-    chapter = spine[chapter_order]
     index = load_book_index(book_id, books_dir, case_sensitive=case_sensitive)
     normalized_term = _normalize_query(trimmed, case_sensitive=case_sensitive)
     chapter_info = next((c for c in index.chapters if c.chapter_order == chapter_order), None)
