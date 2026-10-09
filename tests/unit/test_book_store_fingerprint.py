@@ -307,11 +307,23 @@ def _seed_fingerprint_mismatch(books: Path) -> None:
     "seed", [_seed_corrupt_manifest, _seed_fingerprint_mismatch], ids=["corrupt_manifest", "fingerprint_mismatch"]
 )
 def test_b5_09_load_book_is_unaffected_by_manifest_state(tmp_path, caplog, merged_loader_cache, seed):
+    """Since 012 WI-3.2 the ``corrupt_manifest`` row fails loud (``BookCorrupt``, one ERROR per load, no pkl
+    fallback); "unaffected" now holds only for the ``fingerprint_mismatch`` row."""
     caplog.set_level(logging.WARNING)
     books = tmp_path / "books"
     seed(books)
 
     bs = book_store()
+    if seed is _seed_corrupt_manifest:
+        # rule 12: coordinator ruling 2026-10-09 (WI-3.2) — corrupt no longer falls back to pkl
+        for load in (bs.load_book, bs.load_book_metadata):
+            caplog.clear()
+            with pytest.raises(book_format.BookCorrupt) as excinfo:
+                load("a_data", str(books))
+            assert type(excinfo.value) is book_format.BookCorrupt
+            assert len([r for r in caplog.records if r.levelno == logging.ERROR]) == 1
+            assert warnings_of(caplog) == []
+        return
     assert bs.load_book("a_data", str(books)).metadata.title == "T"
     assert bs.load_book_metadata("a_data", str(books)).title == "T"
     assert warnings_of(caplog) == []

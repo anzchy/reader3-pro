@@ -361,6 +361,12 @@ from .. import book_lock  # noqa: E402
 
 book_lock_http.install(app)
 
+# 012 WI-3.2：损坏的书（manifest.json 在但不可信）在这里一处映射成 500，理由同上。映射本身在 book_corrupt_http。
+from . import book_corrupt_http  # noqa: E402
+from .. import book_format  # noqa: E402
+
+book_corrupt_http.install(app)
+
 
 @app.on_event("startup")
 async def _startup_scan_books() -> None:
@@ -423,7 +429,7 @@ def _share_loader_cache_surface(
 
 @_share_loader_cache_surface
 def load_book_cached(folder_name: str) -> Optional[Book]:
-    """The web layer's view of ``book_store.load_book_cached``: total, and never raising.
+    """The web layer's view of ``book_store.load_book_cached``: ``None`` on failure, raising only ``BookCorrupt``.
 
     ``BOOKS_DIR`` is read **here, on every call**, not captured at import. Tests
     rebind it with ``monkeypatch.setattr`` and ``server.py:104`` already
@@ -440,7 +446,8 @@ def load_book_cached(folder_name: str) -> Optional[Book]:
     call that reaches it, and a republished ``book.pkl`` is visible on the next
     read rather than after a restart.
 
-    Two degradation paths, and the asymmetry is the point (D1-a):
+    Two degradation paths, and the asymmetry is the point (D1-a), plus the one
+    exception that is not degraded (012 WI-3.2, last bullet):
 
     * **Absence is silent.** A ``*_data`` directory with no ``book.pkl`` is the
       state between ``mkdir`` and the atomic publish. ``library_view`` walks
@@ -460,6 +467,11 @@ def load_book_cached(folder_name: str) -> Optional[Book]:
       owns that claim; anyone deleting this ``noqa`` has to delete that test
       and argue for the 500.
 
+    * **``book_format.BookCorrupt`` is the one exception let through** (012
+      WI-3.2 Q3). A corrupt ``manifest.json`` is not "this book is missing":
+      single-book routes answer 500 through ``book_corrupt_http``, and the
+      listing callers (``library_view``, the stats scope) guard per book.
+
     The core raises on every one of these; deciding what the *user* sees is
     this layer's job, because this is the layer with a status code to spend.
     """
@@ -473,6 +485,9 @@ def load_book_cached(folder_name: str) -> Optional[Book]:
         return cast(Book, book_store.load_book_cached(folder_name, BOOKS_DIR))
     except FileNotFoundError:
         return None
+    except book_format.BookCorrupt:
+        # 012 WI-3.2 Q3：唯一放行的类型。由 book_corrupt_http 的中央处理器答 500；ERROR 已在 book_store 记过。
+        raise
     except Exception as e:  # noqa: BLE001 - 第 2 档：坏掉的 book.pkl 只让这一本书从书库消失，其余照常；已 print 留痕（该换成 logger，见 008 报告）
         print(f"Error loading book {folder_name}: {e}")
         return None

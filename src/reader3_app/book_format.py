@@ -78,7 +78,10 @@ class ChapterReadError(ValueError, BookFormatError):
 
 
 class BookCorrupt(BookFormatError):
-    """The book directory is in a state publish refuses to write over."""
+    """The book directory is in a state publish refuses to write over.
+
+    Read paths raise it too: ``book_store`` loaders raise it for a corrupt ``manifest.json`` (012 WI-3.2).
+    """
 
 
 class ReadbackError(BookFormatError):

@@ -28,7 +28,8 @@ Three decisions worth knowing before editing this file:
   has to turn it red deliberately.
 * **This module raises.** Corrupt bytes raise ``pickle.UnpicklingError``, an
   absent file raises ``FileNotFoundError`` from the ``os.stat`` before any
-  ``open()``. It does not swallow and never returns ``None``: a loader that
+  ``open()``, and (012 WI-3.2) a corrupt ``manifest.json`` raises
+  ``book_format.BookCorrupt`` before the pickle is touched. It does not swallow and never returns ``None``: a loader that
   answers ``None`` for "corrupt" and for "absent" alike forces every caller to
   re-derive which one happened. Deciding what the *user* sees is the web
   layer's job, at the boundary that has a status code to spend. (The loaders
@@ -83,13 +84,42 @@ def _load_book_for_stat(
     return load_book_file(_book_pkl_path(book_id, books_dir))
 
 
+def storage_format(book_id: str, books_dir: str) -> book_format.BookState:
+    """``"missing"`` / ``"corrupt"`` / ``"valid"`` for one book (012 WI-3.2). Read-only, silent, never cached.
+
+    ``safe_book_folder`` runs first, so an unsafe id raises its ``ValueError`` before any filesystem read; the
+    verdict itself is ``book_format.classify(..., full=False)`` and is never re-implemented here. Not memoized
+    on purpose: a manifest can go bad without its stat changing (a removed generation), and the loaders below
+    ask this question on every call, outside the stat-keyed cache.
+    """
+    folder = safe_book_folder(book_id)
+    return book_format.classify(os.path.join(books_dir, folder), full=False)
+
+
+def _refuse_corrupt(book_id: str, books_dir: str) -> None:
+    """Raise ``BookCorrupt`` (logging exactly one ERROR) when the book's ``manifest.json`` is corrupt.
+
+    ``missing`` and ``valid`` both fall through to the flat ``book.pkl`` (WI-3.2 Q1: ``valid`` keeps reading the
+    flat pickle until WI-4a). ``corrupt`` never falls back: a book whose manifest exists but cannot be trusted is
+    answered loudly rather than served from a pickle that may be stale.
+    """
+    if storage_format(book_id, books_dir) == "corrupt":
+        logger.error("book %r: manifest.json is corrupt; refusing to serve the flat book.pkl", book_id)
+        raise book_format.BookCorrupt(f"book {book_id!r}: storage is corrupt")
+
+
 def load_book_cached(book_id: str, books_dir: str) -> object:
     """Return the ``Book`` in ``{books_dir}/{book_id}/book.pkl``, or raise.
 
     One ``os.stat`` per call is the price of freshness — roughly a microsecond
     against the tens of milliseconds an unpickle of a real book costs. Reads of
     an unchanged file return the ``is``-identical object every time.
+
+    012 WI-3.2: every call first asks :func:`storage_format`, outside the cache.
+    An unsafe ``book_id`` raises ``ValueError``; a corrupt manifest raises
+    ``book_format.BookCorrupt`` after one ERROR log, without reading the pickle.
     """
+    _refuse_corrupt(book_id, books_dir)
     stat_result = os.stat(_book_pkl_path(book_id, books_dir))
     return _load_book_for_stat(
         book_id, books_dir, stat_result.st_mtime_ns, stat_result.st_size

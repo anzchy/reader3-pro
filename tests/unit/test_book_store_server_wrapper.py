@@ -34,10 +34,10 @@ import shutil
 from pathlib import Path
 
 import pytest
-from hypothesis import HealthCheck, given, settings
+from hypothesis import HealthCheck, example, given, settings
 from hypothesis import strategies as st
 
-from reader3_app import book_store, safe_pickle, search_service
+from reader3_app import book_format, book_store, safe_pickle, search_service
 from reader3_app.web import server
 from synthetic_library import make_book, make_synthetic_library
 
@@ -436,9 +436,17 @@ def test_the_server_swallows_what_the_core_raises(
         search_service.load_book_cached(names[0], str(books_dir))
 
 
+# rule 12: coordinator ruling 2026-10-09 (WI-3.2 Q3, option 1) — BookCorrupt is the one class the wrapper lets
+# through, so the central handler answers 500 {"detail": "Book storage is corrupt", "state": "corrupt"} instead of a
+# silent 404; every other exception still maps to None (was: every Exception → None).
 @given(
     exc_type=st.sampled_from([RuntimeError, MemoryError, OSError, ValueError, RecursionError])
 )
+@example(exc_type=book_format.ManifestError)
+@example(exc_type=book_format.ChapterReadError)
+@example(exc_type=book_format.PublishInputError)
+@example(exc_type=book_format.ReadbackError)
+@example(exc_type=book_format.LegacyStagingRefused)
 @settings(suppress_health_check=[HealthCheck.function_scoped_fixture], deadline=None)
 def test_the_wrapper_swallows_every_exception_class_not_just_the_two_it_has_seen(
     books_dir: Path,
@@ -466,6 +474,13 @@ def test_the_wrapper_swallows_every_exception_class_not_just_the_two_it_has_seen
     claim is "any `Exception`", and hypothesis is how this case says so rather
     than enumerating. **Anyone deleting the `# noqa: BLE001` must delete this
     test and argue for a 500-on-one-bad-book homepage.**
+
+    Amended under rule 12 (WI-3.2 Q3, S3-24): the claim is now "any `Exception`
+    except `book_format.BookCorrupt`". The `@example` rows pin every *other*
+    `BookFormatError` subclass to `None`, so a wrapper that re-raises
+    `BookFormatError` broadly fails here; the one re-raised class is pinned by
+    `test_w3_c5x_book_corrupt_is_reraised`. Listing callers carry their own
+    per-book guard for it (S3-20).
     """
     names = _library_once(books_dir, 1)
     monkeypatch.setattr(server, "BOOKS_DIR", str(books_dir))
@@ -493,6 +508,36 @@ def test_the_wrapper_swallows_every_exception_class_not_just_the_two_it_has_seen
 
     with pytest.raises(exc_type):
         search_service.load_book_cached(names[0], str(books_dir))
+
+
+def test_w3_c5x_book_corrupt_is_reraised(
+    books_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys,
+    merged_loader_cache,
+):
+    """L4 / S1 (S3-24) — the one class the wrapper does not swallow.
+
+    rule 12: coordinator ruling 2026-10-09 (WI-3.2 Q3, option 1). `BookCorrupt`
+    leaves the wrapper as the same object (not re-wrapped) and without the
+    "Error loading book" print, so the central handler is the only voice.
+    """
+    names = _library_once(books_dir, 1)
+    monkeypatch.setattr(server, "BOOKS_DIR", str(books_dir))
+
+    def raiser(f):
+        raise book_format.BookCorrupt("injected")
+
+    monkeypatch.setattr("reader3_app.safe_pickle.safe_load", raiser)
+    book_store.load_book_cached.cache_clear()
+    server.load_book_cached.cache_clear()
+    capsys.readouterr()
+
+    with pytest.raises(book_format.BookCorrupt) as ei:
+        server.load_book_cached(names[0])
+    assert type(ei.value) is book_format.BookCorrupt
+    assert str(ei.value) == "injected"
+    assert "Error loading book" not in capsys.readouterr().out
 
 
 # ==========================================================================

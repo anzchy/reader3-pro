@@ -169,6 +169,8 @@
   - `book_store` 仍不 import `reader3_app.web`
   - （⬛ 2026-10-09，§6 Q15 / WI-2b R-5）凡产出 `Book` 的加载路径都给 `Book.book_fingerprint` 赋值：新格式读到的书取 manifest 里的值，pkl-only 的取 `None`——否则 notes 被 rebind 盖上指纹后，ADR-0019 的跳过规则会让该书永久不判孤儿
   - （⬛ 2026-10-09，D-1 补充裁定）018 消费方回归矩阵（§8 第 13 项）：列表（`library_books.py`）、删书预检、导出（`library_export.py`）、删书终结的同名 / ABA 判定（`library_delete.py`）各跑 4 种目录形态——只有 gen 的合法书可见；只有平铺的书可见；只有 `gen/` 无 `manifest.json` 跳过（ADR-0016：`gen/` 本身永远不是书的证据）；manifest 损坏大声失败，不得静默消失
+  - （⬛ 2026-10-09，WI-3.2 adversary 缺口 1）4a：缓存键是 manifest stat，但 storage 状态不能跟着它缓存；gen 损坏而 manifest stat 不变时，下一次加载必须抛 `BookCorrupt`
+  - （⬛ 2026-10-09，协调者裁定，兑付 [009 欠账 #75](./009-e2e-annotations.md)）**WI-4c**（排在 4a 之后、4b 枚举切换之前）：服务端把 `chapter_index` 解释为 `order`（原始 spine 下标），不再是列表位置；前端与既有 `notes.json` 不动、不迁移。站点：`reader.py` 的 `/read/{id}/{n}`（404 判定与取章）、notes 的 400 范围检查、`_mark_orphans`、rebind、`chapter_text`、Q15⑤ 同章匹配；A5 的 `load_chapter` / `chapter_count` 写明 chapter_index = order，空洞下标一律 404 / 400。验收：order 为 `[0, 2]` 的书上，`/read/{id}/2` 得第二章；`chapter_index=1` 得 404 / 400；`chapter_index=2` 上建的笔记不判孤儿；rebind 在正确的章里匹配
   - （⬛ 2026-10-09，D-1 补充裁定）**进入 WI-3.1 前的门**：用「只有 `manifest.json` + `gen/{g}/…`、没有任何平铺文件」的夹具跑通全部读取方与书目发现方，并加上 ADR-0016 L86 的 grep 棘轮门。门不过，不开 3.1
   - 测试矩阵：待 /tdd-guardian:design-tests
 
@@ -215,6 +217,7 @@
   - 翻指针后第一次查询命中新 generation（chunk 内容可区分新旧）；旧 generation 被删后查询不报错
   - 只有 `book.pkl` 被删、只剩新格式的书可以建索引
   - （⬛ 2026-10-08，§6 Q15 / WI-2a R3）012 之前建的索引 `index_meta.json` 没有 `book_fingerprint` 键，2a 起按「无法判断」不判 stale；本 WI 的重建写入指纹后这个缺口收口——加一条断言：无键旧 meta 经一次重建后带上当前书指纹，此后指纹不一致能判出 stale
+  - （⬛ 2026-10-09，WI-3.2 Deferred）`POST /api/index/{id}` 与 `BookVectorIndex._load_book` 对 corrupt 的书拒绝建索引：返回 500，不写 `index_meta`，也不读平铺 pkl 作回退
   - 测试矩阵：待 /tdd-guardian:design-tests
 
 ### WI-8: DEG-S1–DEG-S4 朴素 Jinja 横幅

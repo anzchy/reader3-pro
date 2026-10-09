@@ -27,6 +27,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from ... import book_store, collections_service
+from ...book_format import BookCorrupt
 from ...search_service import list_book_ids
 from ..urls import cover_url as build_cover_url
 
@@ -43,7 +44,11 @@ async def library_view(request: Request):
         for item in os.listdir(_server.BOOKS_DIR):
             if item.endswith("_data") and os.path.isdir(os.path.join(_server.BOOKS_DIR, item)):
                 # Try to load it to get the title
-                book = _server.load_book_cached(item)
+                try:
+                    book = _server.load_book_cached(item)
+                except BookCorrupt:
+                    # 012 WI-3.2: one corrupt book must not 500 the library; its own routes answer 500.
+                    continue
                 if book:
                     cover_image = book_store.pick_cover_image(item, _server.BOOKS_DIR)
                     cover_url = build_cover_url(item, cover_image)
@@ -273,7 +278,11 @@ def _compute_stats_for_scope(scope: str) -> LibraryStats:
     chunks_total = 0
 
     for bid in book_ids:
-        book = _server.load_book_cached(bid)
+        try:
+            book = _server.load_book_cached(bid)
+        except BookCorrupt:
+            # 012 WI-3.2: a corrupt book still counts in books_total but contributes no sections; never str(exc).
+            book = None
         if book:
             sections_total += len(book.spine)
 
