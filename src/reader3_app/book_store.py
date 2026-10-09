@@ -89,20 +89,31 @@ def _load_book_for_stat(book_id: str, books_dir: str, kind: str, *identity: Any)
     already-cached generation that leaves the manifest's stat untouched is invisible, so a warm hit keeps
     serving the Book loaded before the damage. A cold load of a damaged generation always raises.
     """
-    if kind == "flat":
-        return load_book_file(_book_pkl_path(book_id, books_dir))
     from .reader3 import Book  # lazy: reader3 -> library_delete -> book_store would be an import cycle
 
-    path = os.path.join(books_dir, book_id, book_format.GEN_DIR, str(identity[3]), book_format.PKL)
-    try:
-        book = load_book_file(path)
-        if not isinstance(book, Book):
-            raise TypeError("gen book.pkl did not hold a Book")
-    except MemoryError:
-        raise
-    except Exception as exc:  # noqa: BLE001 - OQ-4: any unreadable generation is BookCorrupt, never a fallback
-        logger.error("book %r: gen book.pkl is unreadable (%s); refusing to load", book_id, type(exc).__name__)
-        raise book_format.BookCorrupt(f"book {book_id!r}: storage is corrupt") from exc
+    fingerprint: Optional[str] = None  # R-5: a flat key means "no generation", so the stamp is None
+    if kind == "flat":
+        book = load_book_file(_book_pkl_path(book_id, books_dir))
+    else:
+        fingerprint = identity[4]  # the manifest's fingerprint, from the same read that built the key
+        gen_dir = os.path.join(books_dir, safe_book_folder(book_id), book_format.GEN_DIR, str(identity[3]))
+        path = os.path.join(gen_dir, book_format.PKL)
+        try:
+            book = load_book_file(path)
+            if not isinstance(book, Book):
+                raise TypeError("gen book.pkl did not hold a Book")
+        except MemoryError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - OQ-4: any unreadable generation is BookCorrupt, never a fallback
+            logger.error("book %r: gen book.pkl is unreadable (%s); refusing to load", book_id, type(exc).__name__)
+            raise book_format.BookCorrupt(f"book {book_id!r}: storage is corrupt") from exc
+    # R-5 (012 WI-4a.3): the one place a Book's fingerprint is assigned (test_book_store_r5.py R5-05 pins that).
+    # Here, inside the memoized body and outside the try (OQ-4(1)), it runs exactly once per cached object,
+    # before the lru_cache publishes it, so a hit never mutates a shared Book and no reader sees the pickled
+    # value. Plain attribute assignment, never a __dict__ write, so R5-04's __setattr__ spy observes it. A flat
+    # pickle that is not a Book passes through unstamped, as it always has: R-5 is about Books.
+    if isinstance(book, Book):
+        book.book_fingerprint = fingerprint
     return book
 
 
@@ -265,6 +276,10 @@ def load_book_metadata(book_id: str, books_dir: str) -> BookMetadataView:
     It does not swallow. A corrupt or absent ``book.pkl`` raises out of here
     exactly as it does out of ``load_book``; deciding what the user sees is the
     web layer's job, at the boundary that has a status code to spend (D1-a).
+
+    R-5 (012 WI-4a.3) is N/A here: this returns a ``BookMetadataView``, not a
+    ``Book``, so it carries no ``book_fingerprint`` (the Book it projects from
+    is stamped inside ``load_book_cached``'s memoized body).
     """
     book = load_book_cached(book_id, books_dir)
     return BookMetadataView(

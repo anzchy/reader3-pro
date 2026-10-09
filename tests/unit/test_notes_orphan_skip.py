@@ -447,12 +447,16 @@ def test_k3_13b_old_pickle_without_the_attribute_reads_none(tmp_path: Path) -> N
     book.__dict__.pop("book_fingerprint", None)
     books = tmp_path / "books"
     (books / "old_data").mkdir(parents=True)
-    (books / "old_data" / "book.pkl").write_bytes(pickle.dumps(book))
+    raw_bytes = pickle.dumps(book)
+    (books / "old_data" / "book.pkl").write_bytes(raw_bytes)
+    # rule 12: coordinator ruling 2026-10-09 WI-4a.3 K3-13b — flat books are stamped unconditionally (R-5); the
+    # "attribute absent" check moves to the raw pickle as a fixture guard
+    assert "book_fingerprint" not in pickle.loads(raw_bytes).__dict__
     _clear_caches()
     try:
         loaded = book_store.load_book_cached("old_data", str(books))
     finally:
         _clear_caches()
 
-    assert "book_fingerprint" not in loaded.__dict__
-    assert getattr(loaded, "book_fingerprint", "MISSING") is None
+    assert loaded.book_fingerprint is None
+    assert "book_fingerprint" in loaded.__dict__
