@@ -126,10 +126,17 @@
     },
     {
       "glob": "src/reader3_app/book_store.py",
-      "description": "011 §4：进程内所有 book.pkl 的唯一读取路径。0 分支，所以门槛压在语句上；分支沿用全局底线，等真的长出分支再说。",
+      "description": "011 §4：进程内所有 book.pkl 的唯一读取路径。012 起已长出分支（WI-2a book_fingerprint、WI-2b.4 current_generation 等），分支门槛暂沿用全局底线；语句与行仍压 100。",
       "thresholds": {
         "lines": 100,
         "statements": 100
+      }
+    },
+    {
+      "glob": "src/reader3_app/book_format.py",
+      "description": "012 新格式读写的唯一实现（publish 八步提交、manifest 分类、三态读取）。",
+      "thresholds": {
+        "branches": 85
       }
     }
   ]
